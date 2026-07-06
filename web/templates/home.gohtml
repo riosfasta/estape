@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ .AppName }} | Task management with visual website feedback</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body class="public-page">
+  <header class="public-nav">
+    <a class="brand" href="/"><span class="brand-mark">P</span>{{ .AppName }}</a>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="/pricing">Pricing</a>
+      <a href="#resources">Resources</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="text-link" href="/login">Login</a>
+      <a class="btn primary" href="/register">Get Started</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Visual feedback meets team delivery</p>
+        <h1>{{ .AppName }}</h1>
+        <p class="hero-line">Manage tasks, website feedback, chat, billing, and time tracking in one self-hosted workspace.</p>
+        <div class="hero-actions">
+          <a class="btn primary large" href="/register">Start Free Trial</a>
+          <a class="btn quiet large" href="#how">See how it works</a>
+        </div>
+      </div>
+      <figure class="hero-media">
+        <img src="/static/img/product-preview.png" alt="{{ .AppName }} workspace showing boards, feedback pins, chat, and time tracking">
+      </figure>
+    </section>
+
+    <section class="trust-strip">
+      <span>Stripe and PayPal ready</span>
+    </section>
+
+    <section id="features" class="section">
+      <div class="section-head">
+        <p class="eyebrow">Core modules</p>
+        <h2>One operating layer for product, QA, and client feedback.</h2>
+      </div>
+      <div class="feature-grid">
+        <article class="feature-card">
+          <i data-lucide="layout-list"></i>
+          <h3>Task & Team Management</h3>
+          <p>Spaces, projects, lists, tasks, statuses, priorities, assignees, due dates, comments, and board views.</p>
+        </article>
+        <article class="feature-card">
+          <i data-lucide="map-pin"></i>
+          <h3>Visual Website Feedback</h3>
+          <p>Embed a site when possible, fall back to screenshots when required, and turn pins into trackable bugs.</p>
+        </article>
+        <article class="feature-card">
+          <i data-lucide="messages-square"></i>
+          <h3>Real-Time Collaboration</h3>
+          <p>Team chat, support conversations, live notifications, subscription approvals, and time reports.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="how" class="section band">
+      <div class="section-head">
+        <p class="eyebrow">How it works</p>
+        <h2>Capture the issue where it happens, then move it through delivery.</h2>
+      </div>
+      <div class="steps">
+        <article><span>1</span><h3>Add a website</h3><p>Choose iframe mode or upload a screenshot when headers block embedding.</p></article>
+        <article><span>2</span><h3>Drop pins</h3><p>Click directly on the page to capture percentage coordinates and context.</p></article>
+        <article><span>3</span><h3>Create tasks</h3><p>Convert feedback into assigned work with status, priority, due dates, and estimates.</p></article>
+        <article><span>4</span><h3>Track progress</h3><p>Use boards, chat, approvals, billing, integrations, and time reports.</p></article>
+      </div>
+    </section>
+
+    <section class="section testimonials">
+      <article>
+        <p>"The feedback pin flow finally keeps QA comments attached to the actual page state."</p>
+        <strong>Studio operations lead</strong>
+      </article>
+      <article>
+        <p>"A compact replacement for task boards, bug triage, and support chat during client review."</p>
+        <strong>Product delivery manager</strong>
+      </article>
+    </section>
+
+    <section class="section pricing-teaser">
+      <div class="section-head">
+        <p class="eyebrow">Plans</p>
+        <h2>Start small, then scale seats and projects as the team grows.</h2>
+      </div>
+      <div class="pricing-grid">
+        <article><h3>Starter</h3><p>$29 flat</p><span>5 seats, 3 projects</span></article>
+        <article class="featured"><h3>Team</h3><p>$9 per seat</p><span>25 seats, 15 projects</span></article>
+        <article><h3>Business</h3><p>$249 flat</p><span>100 seats, high storage</span></article>
+      </div>
+    </section>
+
+    <section class="closing-cta">
+      <h2>Bring visual QA and delivery work into the same workspace.</h2>
+      <a class="btn primary large" href="/register">Start Free Trial</a>
+    </section>
+  </main>
+
+  <footer class="public-footer" id="resources">
+    <div>
+      <a class="brand" href="/"><span class="brand-mark">P</span>{{ .AppName }}</a>
+      <p>Self-hosted task management and website feedback for delivery teams.</p>
+    </div>
+    <div><h4>Product</h4><a href="#features">Features</a><a href="/pricing">Pricing</a><a href="/login">Login</a></div>
+    <div><h4>Company</h4><a href="#resources">Resources</a><a href="/register">Get Started</a></div>
+    <div><h4>Legal</h4><a href="/legal/terms-of-service">Terms</a><a href="/legal/privacy-policy">Privacy</a></div>
+  </footer>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script>window.lucide && lucide.createIcons();</script>
+</body>
+</html>

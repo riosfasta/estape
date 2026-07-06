@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ .AppName }} Workspace</title>
+  <script>
+    (function () {
+      var saved = localStorage.getItem('pinflow_theme') || 'system';
+      var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.dataset.theme = saved === 'system' ? (prefersDark ? 'dark' : 'light') : saved;
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260706-2110">
+</head>
+<body class="workspace-page">
+  <div id="app"></div>
+  <script type="module" src="/static/js/app.js?v=20260706-2110"></script>
+  <script async src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script async src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
+</body>
+</html>

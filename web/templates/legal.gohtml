@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ .Title }} | {{ .AppName }}</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body class="public-page">
+  <header class="public-nav">
+    <a class="brand" href="/"><span class="brand-mark">P</span>{{ .AppName }}</a>
+    <div class="nav-actions"><a class="btn quiet" href="/">Home</a></div>
+  </header>
+  <main class="legal-page">
+    {{ .HTML }}
+  </main>
+  <footer class="public-footer compact">
+    <span>&copy; {{ .Year }} {{ .AppName }}</span>
+    <a href="/legal/terms-of-service">Terms</a>
+    <a href="/legal/privacy-policy">Privacy</a>
+  </footer>
+</body>
+</html>

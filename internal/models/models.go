@@ -1,0 +1,446 @@
+package models
+
+import (
+	"time"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
+)
+
+type Role string
+
+const (
+	RoleOwnerAdmin  Role = "owner_adm"
+	RoleTeamAdmin   Role = "users_admin"
+	RoleMember      Role = "users_member"
+	RoleClientAdmin Role = "client_admin"
+)
+
+type UserStatus string
+
+const (
+	StatusActive    UserStatus = "active"
+	StatusPending   UserStatus = "pending_approval"
+	StatusSuspended UserStatus = "suspended"
+)
+
+type User struct {
+	ID               primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	Name             string             `bson:"name" json:"name"`
+	Email            string             `bson:"email" json:"email"`
+	Username         string             `bson:"username,omitempty" json:"username,omitempty"`
+	PasswordHash     string             `bson:"password_hash" json:"-"`
+	RefreshTokenHash string             `bson:"refresh_token_hash,omitempty" json:"-"`
+	Role             Role               `bson:"role" json:"role"`
+	StaffRole        string             `bson:"staff_role,omitempty" json:"staff_role,omitempty"`
+	TeamID           primitive.ObjectID `bson:"team_id,omitempty" json:"team_id,omitempty"`
+	Status           UserStatus         `bson:"status" json:"status"`
+	AvatarURL        string             `bson:"avatar_url,omitempty" json:"avatar_url,omitempty"`
+	ThemePreference  string             `bson:"theme_preference" json:"theme_preference"`
+	TwoFactorEnabled bool               `bson:"two_factor_enabled,omitempty" json:"two_factor_enabled"`
+	TwoFactorSecret  string             `bson:"two_factor_secret,omitempty" json:"-"`
+	CreatedAt        time.Time          `bson:"created_at" json:"created_at"`
+	LastActiveAt     time.Time          `bson:"last_active_at,omitempty" json:"last_active_at,omitempty"`
+}
+
+type Team struct {
+	ID              primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	Name            string               `bson:"name" json:"name"`
+	CompanyEmail    string               `bson:"company_email,omitempty" json:"company_email,omitempty"`
+	LogoURL         string               `bson:"logo_url,omitempty" json:"logo_url,omitempty"`
+	OwnerAdminID    primitive.ObjectID   `bson:"owner_admin_id" json:"owner_admin_id"`
+	MemberIDs       []primitive.ObjectID `bson:"member_ids" json:"member_ids"`
+	SubscriptionID  primitive.ObjectID   `bson:"subscription_id,omitempty" json:"subscription_id,omitempty"`
+	CreatedAt       time.Time            `bson:"created_at" json:"created_at"`
+	SeatLimitCached int                  `bson:"seat_limit_cached,omitempty" json:"seat_limit_cached,omitempty"`
+}
+
+type Subscription struct {
+	ID                    primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	TeamID                primitive.ObjectID `bson:"team_id" json:"team_id"`
+	PlanID                primitive.ObjectID `bson:"plan_id" json:"plan_id"`
+	Status                string             `bson:"status" json:"status"`
+	PaymentProvider       string             `bson:"payment_provider,omitempty" json:"payment_provider,omitempty"`
+	ExternalTransactionID string             `bson:"external_transaction_id,omitempty" json:"external_transaction_id,omitempty"`
+	TrialEndsAt           *time.Time         `bson:"trial_ends_at,omitempty" json:"trial_ends_at,omitempty"`
+	ApprovedBy            primitive.ObjectID `bson:"approved_by,omitempty" json:"approved_by,omitempty"`
+	StartedAt             time.Time          `bson:"started_at" json:"started_at"`
+	ExpiresAt             *time.Time         `bson:"expires_at,omitempty" json:"expires_at,omitempty"`
+	CreatedAt             time.Time          `bson:"created_at" json:"created_at"`
+}
+
+type Plan struct {
+	ID             primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	Name           string             `bson:"name" json:"name"`
+	Description    string             `bson:"description" json:"description"`
+	PricingModel   string             `bson:"pricing_model" json:"pricing_model"`
+	Price          int64              `bson:"price" json:"price"`
+	PricePerSeat   int64              `bson:"price_per_seat,omitempty" json:"price_per_seat,omitempty"`
+	TrialDays      int                `bson:"trial_days" json:"trial_days"`
+	SeatLimit      int                `bson:"seat_limit" json:"seat_limit"`
+	ProjectLimit   int                `bson:"project_limit" json:"project_limit"`
+	StorageLimitMB int                `bson:"storage_limit_mb" json:"storage_limit_mb"`
+	Featured       bool               `bson:"featured,omitempty" json:"featured,omitempty"`
+	CreatedAt      time.Time          `bson:"created_at" json:"created_at"`
+}
+
+type Invoice struct {
+	ID                 primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	TeamID             primitive.ObjectID `bson:"team_id" json:"team_id"`
+	SubscriptionID     primitive.ObjectID `bson:"subscription_id" json:"subscription_id"`
+	Amount             int64              `bson:"amount" json:"amount"`
+	Currency           string             `bson:"currency" json:"currency"`
+	Status             string             `bson:"status" json:"status"`
+	PaymentProvider    string             `bson:"payment_provider" json:"payment_provider"`
+	ExternalInvoiceURL string             `bson:"external_invoice_url,omitempty" json:"external_invoice_url,omitempty"`
+	IssuedAt           time.Time          `bson:"issued_at" json:"issued_at"`
+}
+
+type Space struct {
+	ID         primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	TeamID     primitive.ObjectID   `bson:"team_id" json:"team_id"`
+	Name       string               `bson:"name" json:"name"`
+	ProjectIDs []primitive.ObjectID `bson:"project_ids" json:"project_ids"`
+	CreatedAt  time.Time            `bson:"created_at" json:"created_at"`
+}
+
+type Project struct {
+	ID        primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	SpaceID   primitive.ObjectID   `bson:"space_id" json:"space_id"`
+	Name      string               `bson:"name" json:"name"`
+	ListIDs   []primitive.ObjectID `bson:"list_ids" json:"list_ids"`
+	CreatedAt time.Time            `bson:"created_at" json:"created_at"`
+}
+
+type ClientProject struct {
+	ID             primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	TeamID         primitive.ObjectID   `bson:"team_id" json:"team_id"`
+	Name           string               `bson:"name" json:"name"`
+	CompanyEmail   string               `bson:"company_email,omitempty" json:"company_email,omitempty"`
+	ContactName    string               `bson:"contact_name,omitempty" json:"contact_name,omitempty"`
+	Details        string               `bson:"details,omitempty" json:"details,omitempty"`
+	MemberIDs      []primitive.ObjectID `bson:"member_ids" json:"member_ids"`
+	ClientAdminIDs []primitive.ObjectID `bson:"client_admin_ids" json:"client_admin_ids"`
+	CreatedBy      primitive.ObjectID   `bson:"created_by" json:"created_by"`
+	CreatedAt      time.Time            `bson:"created_at" json:"created_at"`
+	UpdatedAt      time.Time            `bson:"updated_at" json:"updated_at"`
+}
+
+type ClientWebsite struct {
+	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	ClientID  primitive.ObjectID `bson:"client_id" json:"client_id"`
+	TeamID    primitive.ObjectID `bson:"team_id" json:"team_id"`
+	Name      string             `bson:"name" json:"name"`
+	URL       string             `bson:"url,omitempty" json:"url,omitempty"`
+	Details   string             `bson:"details,omitempty" json:"details,omitempty"`
+	CreatedBy primitive.ObjectID `bson:"created_by" json:"created_by"`
+	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
+	UpdatedAt time.Time          `bson:"updated_at" json:"updated_at"`
+}
+
+type ClientDocument struct {
+	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	ClientID  primitive.ObjectID `bson:"client_id" json:"client_id"`
+	WebsiteID primitive.ObjectID `bson:"website_id,omitempty" json:"website_id,omitempty"`
+	TeamID    primitive.ObjectID `bson:"team_id" json:"team_id"`
+	Title     string             `bson:"title" json:"title"`
+	Kind      string             `bson:"kind" json:"kind"`
+	Content   string             `bson:"content,omitempty" json:"content,omitempty"`
+	URL       string             `bson:"url,omitempty" json:"url,omitempty"`
+	FileURL   string             `bson:"file_url,omitempty" json:"file_url,omitempty"`
+	CreatedBy primitive.ObjectID `bson:"created_by" json:"created_by"`
+	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
+	UpdatedAt time.Time          `bson:"updated_at" json:"updated_at"`
+}
+
+type ClientTab struct {
+	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	ClientID  primitive.ObjectID `bson:"client_id" json:"client_id"`
+	WebsiteID primitive.ObjectID `bson:"website_id" json:"website_id"`
+	TeamID    primitive.ObjectID `bson:"team_id" json:"team_id"`
+	Type      string             `bson:"type" json:"type"`
+	Title     string             `bson:"title" json:"title"`
+	Content   string             `bson:"content,omitempty" json:"content,omitempty"`
+	CreatedBy primitive.ObjectID `bson:"created_by" json:"created_by"`
+	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
+	UpdatedAt time.Time          `bson:"updated_at" json:"updated_at"`
+}
+
+type ClientTask struct {
+	ID          primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	ClientID    primitive.ObjectID   `bson:"client_id" json:"client_id"`
+	WebsiteID   primitive.ObjectID   `bson:"website_id" json:"website_id"`
+	TabID       primitive.ObjectID   `bson:"tab_id" json:"tab_id"`
+	TeamID      primitive.ObjectID   `bson:"team_id" json:"team_id"`
+	Type        string               `bson:"type" json:"type"`
+	Title       string               `bson:"title" json:"title"`
+	Content     string               `bson:"content,omitempty" json:"content,omitempty"`
+	URL         string               `bson:"url,omitempty" json:"url,omitempty"`
+	Comment     string               `bson:"comment,omitempty" json:"comment,omitempty"`
+	Attachments []string             `bson:"attachments" json:"attachments"`
+	AssigneeIDs []primitive.ObjectID `bson:"assignee_ids" json:"assignee_ids"`
+	DueDate     *time.Time           `bson:"due_date,omitempty" json:"due_date,omitempty"`
+	Status      string               `bson:"status" json:"status"`
+	CreatedBy   primitive.ObjectID   `bson:"created_by" json:"created_by"`
+	CreatedAt   time.Time            `bson:"created_at" json:"created_at"`
+	UpdatedAt   time.Time            `bson:"updated_at" json:"updated_at"`
+}
+
+type ClientTaskComment struct {
+	ID             primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	TaskID         primitive.ObjectID `bson:"task_id" json:"task_id"`
+	ClientID       primitive.ObjectID `bson:"client_id" json:"client_id"`
+	WebsiteID      primitive.ObjectID `bson:"website_id" json:"website_id"`
+	TabID          primitive.ObjectID `bson:"tab_id" json:"tab_id"`
+	TeamID         primitive.ObjectID `bson:"team_id" json:"team_id"`
+	AuthorID       primitive.ObjectID `bson:"author_id" json:"author_id"`
+	Content        string             `bson:"content" json:"content"`
+	ReplyToID      primitive.ObjectID `bson:"reply_to_id,omitempty" json:"reply_to_id,omitempty"`
+	ReplyText      string             `bson:"reply_text,omitempty" json:"reply_text,omitempty"`
+	AttachmentURL  string             `bson:"attachment_url,omitempty" json:"attachment_url,omitempty"`
+	AttachmentName string             `bson:"attachment_name,omitempty" json:"attachment_name,omitempty"`
+	CreatedAt      time.Time          `bson:"created_at" json:"created_at"`
+}
+
+type List struct {
+	ID        primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	ProjectID primitive.ObjectID   `bson:"project_id" json:"project_id"`
+	Name      string               `bson:"name" json:"name"`
+	Statuses  []string             `bson:"statuses" json:"statuses"`
+	TaskIDs   []primitive.ObjectID `bson:"task_ids" json:"task_ids"`
+	CreatedAt time.Time            `bson:"created_at" json:"created_at"`
+}
+
+type ChecklistItem struct {
+	Text string `bson:"text" json:"text"`
+	Done bool   `bson:"done" json:"done"`
+}
+
+type Comment struct {
+	ID        primitive.ObjectID   `bson:"id" json:"id"`
+	AuthorID  primitive.ObjectID   `bson:"author_id" json:"author_id"`
+	Content   string               `bson:"content" json:"content"`
+	CreatedAt time.Time            `bson:"created_at" json:"created_at"`
+	ReadBy    []primitive.ObjectID `bson:"read_by,omitempty" json:"read_by,omitempty"`
+}
+
+type ExternalRef struct {
+	Provider    string `bson:"provider,omitempty" json:"provider,omitempty"`
+	ExternalID  string `bson:"external_id,omitempty" json:"external_id,omitempty"`
+	ExternalURL string `bson:"external_url,omitempty" json:"external_url,omitempty"`
+}
+
+type Task struct {
+	ID              primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	ListID          primitive.ObjectID   `bson:"list_id" json:"list_id"`
+	Title           string               `bson:"title" json:"title"`
+	Description     string               `bson:"description,omitempty" json:"description,omitempty"`
+	Status          string               `bson:"status" json:"status"`
+	Priority        string               `bson:"priority" json:"priority"`
+	AssigneeIDs     []primitive.ObjectID `bson:"assignee_ids" json:"assignee_ids"`
+	DueDate         *time.Time           `bson:"due_date,omitempty" json:"due_date,omitempty"`
+	StartDate       *time.Time           `bson:"start_date,omitempty" json:"start_date,omitempty"`
+	Tags            []string             `bson:"tags" json:"tags"`
+	Checklist       []ChecklistItem      `bson:"checklist" json:"checklist"`
+	Attachments     []string             `bson:"attachments" json:"attachments"`
+	Comments        []Comment            `bson:"comments" json:"comments"`
+	EstimateMinutes int                  `bson:"estimate_minutes,omitempty" json:"estimate_minutes,omitempty"`
+	ExternalRef     ExternalRef          `bson:"external_ref,omitempty" json:"external_ref,omitempty"`
+	CreatedBy       primitive.ObjectID   `bson:"created_by" json:"created_by"`
+	CreatedAt       time.Time            `bson:"created_at" json:"created_at"`
+	UpdatedAt       time.Time            `bson:"updated_at" json:"updated_at"`
+}
+
+type Website struct {
+	ID            primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	TeamID        primitive.ObjectID `bson:"team_id" json:"team_id"`
+	Name          string             `bson:"name" json:"name"`
+	URL           string             `bson:"url" json:"url"`
+	EmbedMode     string             `bson:"embed_mode" json:"embed_mode"`
+	ScreenshotURL string             `bson:"screenshot_url,omitempty" json:"screenshot_url,omitempty"`
+	CreatedBy     primitive.ObjectID `bson:"created_by" json:"created_by"`
+	CreatedAt     time.Time          `bson:"created_at" json:"created_at"`
+}
+
+type Bug struct {
+	ID            primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	WebsiteID     primitive.ObjectID `bson:"website_id" json:"website_id"`
+	PinX          float64            `bson:"pin_x" json:"pin_x"`
+	PinY          float64            `bson:"pin_y" json:"pin_y"`
+	PageURL       string             `bson:"page_url" json:"page_url"`
+	ScreenshotURL string             `bson:"screenshot_url,omitempty" json:"screenshot_url,omitempty"`
+	Description   string             `bson:"description" json:"description"`
+	Severity      string             `bson:"severity" json:"severity"`
+	Status        string             `bson:"status" json:"status"`
+	AssigneeID    primitive.ObjectID `bson:"assignee_id,omitempty" json:"assignee_id,omitempty"`
+	LinkedTaskID  primitive.ObjectID `bson:"linked_task_id,omitempty" json:"linked_task_id,omitempty"`
+	Comments      []Comment          `bson:"comments" json:"comments"`
+	CreatedBy     primitive.ObjectID `bson:"created_by" json:"created_by"`
+	CreatedAt     time.Time          `bson:"created_at" json:"created_at"`
+}
+
+type Chat struct {
+	ID             primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	Type           string               `bson:"type" json:"type"`
+	ParticipantIDs []primitive.ObjectID `bson:"participant_ids" json:"participant_ids"`
+	TeamID         primitive.ObjectID   `bson:"team_id,omitempty" json:"team_id,omitempty"`
+	Status         string               `bson:"status,omitempty" json:"status,omitempty"`
+	EndedAt        *time.Time           `bson:"ended_at,omitempty" json:"ended_at,omitempty"`
+	EndedBy        primitive.ObjectID   `bson:"ended_by,omitempty" json:"ended_by,omitempty"`
+	CreatedBy      primitive.ObjectID   `bson:"created_by,omitempty" json:"created_by,omitempty"`
+	DeletedAt      *time.Time           `bson:"deleted_at,omitempty" json:"deleted_at,omitempty"`
+	DeletedBy      primitive.ObjectID   `bson:"deleted_by,omitempty" json:"deleted_by,omitempty"`
+	CreatedAt      time.Time            `bson:"created_at" json:"created_at"`
+}
+
+type Message struct {
+	ID             primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	ChatID         primitive.ObjectID   `bson:"chat_id" json:"chat_id"`
+	SenderID       primitive.ObjectID   `bson:"sender_id" json:"sender_id"`
+	Content        string               `bson:"content" json:"content"`
+	ReplyToID      primitive.ObjectID   `bson:"reply_to_id,omitempty" json:"reply_to_id,omitempty"`
+	ReplyText      string               `bson:"reply_text,omitempty" json:"reply_text,omitempty"`
+	AttachmentURL  string               `bson:"attachment_url,omitempty" json:"attachment_url,omitempty"`
+	AttachmentName string               `bson:"attachment_name,omitempty" json:"attachment_name,omitempty"`
+	SentAt         time.Time            `bson:"sent_at" json:"sent_at"`
+	ReadBy         []primitive.ObjectID `bson:"read_by" json:"read_by"`
+}
+
+type Notification struct {
+	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	UserID    primitive.ObjectID `bson:"user_id" json:"user_id"`
+	Type      string             `bson:"type" json:"type"`
+	Content   string             `bson:"content" json:"content"`
+	RelatedID primitive.ObjectID `bson:"related_id,omitempty" json:"related_id,omitempty"`
+	Read      bool               `bson:"read" json:"read"`
+	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
+}
+
+type TeamInvitation struct {
+	ID             primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	TeamID         primitive.ObjectID `bson:"team_id" json:"team_id"`
+	Email          string             `bson:"email" json:"email"`
+	Username       string             `bson:"username,omitempty" json:"username,omitempty"`
+	StaffRole      string             `bson:"staff_role" json:"staff_role"`
+	InvitedBy      primitive.ObjectID `bson:"invited_by" json:"invited_by"`
+	ExistingUserID primitive.ObjectID `bson:"existing_user_id,omitempty" json:"existing_user_id,omitempty"`
+	Token          string             `bson:"token" json:"-"`
+	Status         string             `bson:"status" json:"status"`
+	CreatedAt      time.Time          `bson:"created_at" json:"created_at"`
+	ExpiresAt      time.Time          `bson:"expires_at" json:"expires_at"`
+	RespondedAt    *time.Time         `bson:"responded_at,omitempty" json:"responded_at,omitempty"`
+}
+
+type EmailQueueItem struct {
+	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	Recipient string             `bson:"recipient" json:"recipient"`
+	Type      string             `bson:"type" json:"type"`
+	Subject   string             `bson:"subject" json:"subject"`
+	BodyHTML  string             `bson:"body_html" json:"body_html"`
+	Status    string             `bson:"status" json:"status"`
+	SentAt    *time.Time         `bson:"sent_at,omitempty" json:"sent_at,omitempty"`
+	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
+	Error     string             `bson:"error,omitempty" json:"error,omitempty"`
+}
+
+type AuditLog struct {
+	ID         primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	ActorID    primitive.ObjectID `bson:"actor_id" json:"actor_id"`
+	Action     string             `bson:"action" json:"action"`
+	TargetType string             `bson:"target_type" json:"target_type"`
+	TargetID   primitive.ObjectID `bson:"target_id,omitempty" json:"target_id,omitempty"`
+	Timestamp  time.Time          `bson:"timestamp" json:"timestamp"`
+}
+
+type SiteSettings struct {
+	ID             primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	SiteName       string             `bson:"site_name" json:"site_name"`
+	CompanyEmail   string             `bson:"company_email" json:"company_email"`
+	OwnerName      string             `bson:"owner_name" json:"owner_name"`
+	CompanyAddress string             `bson:"company_address" json:"company_address"`
+	LogoURL        string             `bson:"logo_url,omitempty" json:"logo_url,omitempty"`
+	SupportPhone   string             `bson:"support_phone,omitempty" json:"support_phone,omitempty"`
+	UpdatedAt      time.Time          `bson:"updated_at" json:"updated_at"`
+}
+
+type PageBlock struct {
+	ID       string                 `bson:"id" json:"id"`
+	Type     string                 `bson:"type" json:"type"`
+	Props    map[string]interface{} `bson:"props" json:"props"`
+	Children []PageBlock            `bson:"children" json:"children"`
+}
+
+type PageVersion struct {
+	ID        primitive.ObjectID `bson:"id" json:"id"`
+	Blocks    []PageBlock        `bson:"blocks" json:"blocks"`
+	HTML      string             `bson:"html" json:"html"`
+	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
+	CreatedBy primitive.ObjectID `bson:"created_by,omitempty" json:"created_by,omitempty"`
+}
+
+type StaticPage struct {
+	ID                primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	Slug              string             `bson:"slug" json:"slug"`
+	Title             string             `bson:"title" json:"title"`
+	Blocks            []PageBlock        `bson:"blocks" json:"blocks"`
+	Status            string             `bson:"status" json:"status"`
+	RenderedHTMLCache string             `bson:"rendered_html_cache" json:"rendered_html_cache"`
+	CacheExpiresAt    *time.Time         `bson:"cache_expires_at,omitempty" json:"cache_expires_at,omitempty"`
+	Versions          []PageVersion      `bson:"versions" json:"versions"`
+	UpdatedBy         primitive.ObjectID `bson:"updated_by,omitempty" json:"updated_by,omitempty"`
+	UpdatedAt         time.Time          `bson:"updated_at" json:"updated_at"`
+}
+
+type Integration struct {
+	ID                   primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	TeamID               primitive.ObjectID `bson:"team_id" json:"team_id"`
+	Provider             string             `bson:"provider" json:"provider"`
+	AuthType             string             `bson:"auth_type" json:"auth_type"`
+	CredentialsEncrypted string             `bson:"credentials_encrypted" json:"-"`
+	ConnectedBy          primitive.ObjectID `bson:"connected_by" json:"connected_by"`
+	ConnectedAt          time.Time          `bson:"connected_at" json:"connected_at"`
+	Status               string             `bson:"status" json:"status"`
+}
+
+type ImportJob struct {
+	ID                primitive.ObjectID     `bson:"_id,omitempty" json:"id"`
+	TeamID            primitive.ObjectID     `bson:"team_id" json:"team_id"`
+	Provider          string                 `bson:"provider" json:"provider"`
+	ExternalProjectID string                 `bson:"external_project_id" json:"external_project_id"`
+	TargetListID      primitive.ObjectID     `bson:"target_list_id" json:"target_list_id"`
+	FieldMapping      map[string]interface{} `bson:"field_mapping" json:"field_mapping"`
+	Status            string                 `bson:"status" json:"status"`
+	Total             int                    `bson:"total" json:"total"`
+	ImportedCount     int                    `bson:"imported_count" json:"imported_count"`
+	SkippedCount      int                    `bson:"skipped_count" json:"skipped_count"`
+	Errors            []string               `bson:"errors" json:"errors"`
+	CreatedBy         primitive.ObjectID     `bson:"created_by" json:"created_by"`
+	CreatedAt         time.Time              `bson:"created_at" json:"created_at"`
+}
+
+type ExportJob struct {
+	ID                primitive.ObjectID     `bson:"_id,omitempty" json:"id"`
+	TeamID            primitive.ObjectID     `bson:"team_id" json:"team_id"`
+	Provider          string                 `bson:"provider" json:"provider"`
+	TaskIDs           []primitive.ObjectID   `bson:"task_ids" json:"task_ids"`
+	ExternalProjectID string                 `bson:"external_project_id" json:"external_project_id"`
+	FieldMapping      map[string]interface{} `bson:"field_mapping" json:"field_mapping"`
+	Status            string                 `bson:"status" json:"status"`
+	ExportedCount     int                    `bson:"exported_count" json:"exported_count"`
+	Errors            []string               `bson:"errors" json:"errors"`
+	CreatedBy         primitive.ObjectID     `bson:"created_by" json:"created_by"`
+	CreatedAt         time.Time              `bson:"created_at" json:"created_at"`
+}
+
+type TimeEntry struct {
+	ID              primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	TaskID          primitive.ObjectID `bson:"task_id" json:"task_id"`
+	UserID          primitive.ObjectID `bson:"user_id" json:"user_id"`
+	TeamID          primitive.ObjectID `bson:"team_id" json:"team_id"`
+	StartTime       time.Time          `bson:"start_time" json:"start_time"`
+	EndTime         *time.Time         `bson:"end_time,omitempty" json:"end_time,omitempty"`
+	DurationMinutes int                `bson:"duration_minutes" json:"duration_minutes"`
+	IsManual        bool               `bson:"is_manual" json:"is_manual"`
+	Note            string             `bson:"note,omitempty" json:"note,omitempty"`
+	Billable        bool               `bson:"billable" json:"billable"`
+	CreatedAt       time.Time          `bson:"created_at" json:"created_at"`
+}

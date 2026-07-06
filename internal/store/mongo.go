@@ -1,0 +1,216 @@
+package store
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"bugmark/internal/auth"
+	"bugmark/internal/config"
+	"bugmark/internal/models"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	mongomodels "go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readpref"
+)
+
+type Store struct {
+	Client *mongo.Client
+	DB     *mongo.Database
+}
+
+func Connect(ctx context.Context, cfg config.Config) (*Store, error) {
+	client, err := mongo.Connect(ctx, mongomodels.Client().ApplyURI(cfg.MongoURI))
+	if err != nil {
+		return nil, err
+	}
+	if err := client.Ping(ctx, readpref.Primary()); err != nil {
+		return nil, err
+	}
+	return &Store{Client: client, DB: client.Database(cfg.MongoDBName)}, nil
+}
+
+func (s *Store) C(name string) *mongo.Collection {
+	return s.DB.Collection(name)
+}
+
+func (s *Store) CreateIndexes(ctx context.Context) error {
+	indexes := map[string][]mongo.IndexModel{
+		"users": {
+			{Keys: bson.D{{Key: "email", Value: 1}}, Options: mongomodels.Index().SetUnique(true)},
+			{Keys: bson.D{{Key: "username", Value: 1}}, Options: mongomodels.Index().SetUnique(true).SetSparse(true)},
+			{Keys: bson.D{{Key: "team_id", Value: 1}}},
+		},
+		"team_invitations": {
+			{Keys: bson.D{{Key: "token", Value: 1}}, Options: mongomodels.Index().SetUnique(true)},
+			{Keys: bson.D{{Key: "email", Value: 1}, {Key: "team_id", Value: 1}, {Key: "status", Value: 1}}},
+			{Keys: bson.D{{Key: "existing_user_id", Value: 1}, {Key: "status", Value: 1}}},
+		},
+		"notifications": {
+			{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "read", Value: 1}, {Key: "created_at", Value: -1}}},
+		},
+		"tasks": {
+			{Keys: bson.D{{Key: "list_id", Value: 1}}},
+			{Keys: bson.D{{Key: "assignee_ids", Value: 1}}},
+			{Keys: bson.D{{Key: "status", Value: 1}}},
+		},
+		"bugs": {
+			{Keys: bson.D{{Key: "website_id", Value: 1}}},
+			{Keys: bson.D{{Key: "status", Value: 1}}},
+		},
+		"messages": {
+			{Keys: bson.D{{Key: "chat_id", Value: 1}, {Key: "sent_at", Value: 1}}},
+		},
+		"subscriptions": {
+			{Keys: bson.D{{Key: "team_id", Value: 1}}},
+		},
+		"plans": {
+			{Keys: bson.D{{Key: "name", Value: 1}}, Options: mongomodels.Index().SetUnique(true)},
+		},
+		"websites": {
+			{Keys: bson.D{{Key: "team_id", Value: 1}}},
+		},
+		"static_pages": {
+			{Keys: bson.D{{Key: "slug", Value: 1}}, Options: mongomodels.Index().SetUnique(true)},
+		},
+		"integrations": {
+			{Keys: bson.D{{Key: "team_id", Value: 1}, {Key: "provider", Value: 1}}, Options: mongomodels.Index().SetUnique(true)},
+		},
+		"time_entries": {
+			{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "end_time", Value: 1}}},
+			{Keys: bson.D{{Key: "team_id", Value: 1}, {Key: "start_time", Value: -1}}},
+			{Keys: bson.D{{Key: "task_id", Value: 1}}},
+		},
+	}
+
+	for collection, models := range indexes {
+		if len(models) == 0 {
+			continue
+		}
+		if _, err := s.C(collection).Indexes().CreateMany(ctx, models); err != nil {
+			return fmt.Errorf("%s: %w", collection, err)
+		}
+	}
+	return nil
+}
+
+func (s *Store) Seed(ctx context.Context, cfg config.Config) error {
+	now := time.Now()
+	if err := s.seedPlans(ctx, now); err != nil {
+		return err
+	}
+	if err := s.seedOwner(ctx, cfg, now); err != nil {
+		return err
+	}
+	if err := s.seedSettings(ctx, cfg, now); err != nil {
+		return err
+	}
+	return s.seedPages(ctx, now)
+}
+
+func (s *Store) seedPlans(ctx context.Context, now time.Time) error {
+	count, err := s.C("plans").CountDocuments(ctx, bson.M{})
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	plans := []interface{}{
+		models.Plan{ID: primitive.NewObjectID(), Name: "Starter", Description: "A focused plan for a small product team validating visual feedback workflows.", PricingModel: "flat", Price: 2900, TrialDays: 14, SeatLimit: 5, ProjectLimit: 3, StorageLimitMB: 1024, CreatedAt: now},
+		models.Plan{ID: primitive.NewObjectID(), Name: "Team", Description: "More seats, projects, and storage for active delivery teams.", PricingModel: "per_seat", PricePerSeat: 900, TrialDays: 14, SeatLimit: 25, ProjectLimit: 15, StorageLimitMB: 10240, Featured: true, CreatedAt: now},
+		models.Plan{ID: primitive.NewObjectID(), Name: "Business", Description: "Higher limits and owner approval workflows for agencies and larger teams.", PricingModel: "flat", Price: 24900, TrialDays: 0, SeatLimit: 100, ProjectLimit: 100, StorageLimitMB: 102400, CreatedAt: now},
+	}
+	_, err = s.C("plans").InsertMany(ctx, plans)
+	return err
+}
+
+func (s *Store) seedOwner(ctx context.Context, cfg config.Config, now time.Time) error {
+	email := strings.ToLower(strings.TrimSpace(cfg.OwnerEmail))
+	count, err := s.C("users").CountDocuments(ctx, bson.M{"email": email})
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	hash, err := auth.HashPassword(cfg.OwnerPassword)
+	if err != nil {
+		return err
+	}
+	owner := models.User{
+		ID:              primitive.NewObjectID(),
+		Name:            cfg.OwnerName,
+		Email:           email,
+		Username:        "owner",
+		PasswordHash:    hash,
+		Role:            models.RoleOwnerAdmin,
+		StaffRole:       "manager",
+		Status:          models.StatusActive,
+		ThemePreference: "system",
+		CreatedAt:       now,
+	}
+	_, err = s.C("users").InsertOne(ctx, owner)
+	return err
+}
+
+func (s *Store) seedSettings(ctx context.Context, cfg config.Config, now time.Time) error {
+	count, err := s.C("site_settings").CountDocuments(ctx, bson.M{})
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	settings := models.SiteSettings{
+		ID:             primitive.NewObjectID(),
+		SiteName:       cfg.AppName,
+		CompanyEmail:   "support@pinflow.local",
+		OwnerName:      cfg.OwnerName,
+		CompanyAddress: "Set your company address in Admin Settings",
+		UpdatedAt:      now,
+	}
+	_, err = s.C("site_settings").InsertOne(ctx, settings)
+	return err
+}
+
+func (s *Store) seedPages(ctx context.Context, now time.Time) error {
+	count, err := s.C("static_pages").CountDocuments(ctx, bson.M{})
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	pages := []interface{}{
+		models.StaticPage{
+			ID:     primitive.NewObjectID(),
+			Slug:   "terms-of-service",
+			Title:  "Terms of Service",
+			Status: "published",
+			Blocks: []models.PageBlock{
+				{ID: "terms-heading", Type: "heading", Props: map[string]interface{}{"text": "Terms of Service", "level": "h1"}},
+				{ID: "terms-text", Type: "rich_text", Props: map[string]interface{}{"text": "These terms are a starter template for [[site_name]]. Update them in the owner page builder before public launch."}},
+			},
+			RenderedHTMLCache: `<section class="legal-section"><h1>Terms of Service</h1><p>These terms are a starter template for PinFlow. Update them in the owner page builder before public launch.</p></section>`,
+			UpdatedAt:         now,
+		},
+		models.StaticPage{
+			ID:     primitive.NewObjectID(),
+			Slug:   "privacy-policy",
+			Title:  "Privacy Policy",
+			Status: "published",
+			Blocks: []models.PageBlock{
+				{ID: "privacy-heading", Type: "heading", Props: map[string]interface{}{"text": "Privacy Policy", "level": "h1"}},
+				{ID: "privacy-text", Type: "rich_text", Props: map[string]interface{}{"text": "This privacy policy is a starter template. Add your data handling details before public launch."}},
+			},
+			RenderedHTMLCache: `<section class="legal-section"><h1>Privacy Policy</h1><p>This privacy policy is a starter template. Add your data handling details before public launch.</p></section>`,
+			UpdatedAt:         now,
+		},
+	}
+	_, err = s.C("static_pages").InsertMany(ctx, pages)
+	return err
+}
