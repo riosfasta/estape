@@ -28,6 +28,7 @@ const state = {
   clientProjects: [],
   clientWebsites: [],
   projectSidebarOpen: readStoredObject("pinflow_project_sidebar_open"),
+  sidebarCollapsed: localStorage.getItem("pinflow_sidebar_collapsed") === "1",
   dropdownDismissBound: false,
   clientTaskReply: null,
   clientTaskCommentEdit: null,
@@ -57,6 +58,102 @@ function mentionText(value) {
 
 function chatText(value) {
   return mentionText(value).replace(/(https?:\/\/[^\s<]+)/g, (url) => `<a class="text-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>`);
+}
+
+const NIL_OBJECT_ID = "000000000000000000000000";
+
+function fileNameFromURL(url) {
+  const clean = String(url || "").split("?")[0].split("#")[0];
+  try {
+    return decodeURIComponent(clean.split("/").pop() || "Attachment");
+  } catch {
+    return clean.split("/").pop() || "Attachment";
+  }
+}
+
+function attachmentKind(url, name = "") {
+  const extFrom = (value) => (String(value || "").toLowerCase().split("?")[0].split("#")[0].match(/\.([a-z0-9]+)$/)?.[1] || "").toLowerCase();
+  const ext = extFrom(name) || extFrom(url);
+  const images = new Set(["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "avif"]);
+  if (images.has(ext)) return { ext, isImage: true, icon: "file-image", label: "Image" };
+  if (ext === "pdf") return { ext, isImage: false, icon: "file-text", label: "PDF" };
+  if (["doc", "docx", "odt", "rtf"].includes(ext)) return { ext, isImage: false, icon: "file-type", label: "Document" };
+  if (["xls", "xlsx", "csv", "ods"].includes(ext)) return { ext, isImage: false, icon: "file-spreadsheet", label: "Spreadsheet" };
+  if (["zip", "rar", "7z"].includes(ext)) return { ext, isImage: false, icon: "file-archive", label: "Archive" };
+  return { ext, isImage: false, icon: "file", label: "File" };
+}
+
+function attachmentPreviewHTML(url, name = "", options = {}) {
+  const href = String(url || "").trim();
+  if (!href) return "";
+  const label = name || fileNameFromURL(href);
+  const kind = attachmentKind(href, label);
+  const classes = ["attachment-tile", kind.isImage ? "is-image" : "is-file", options.compact ? "compact" : ""].filter(Boolean).join(" ");
+  return `<button class="${classes}" type="button" data-open-attachment data-attachment-url="${esc(href)}" data-attachment-name="${esc(label)}" title="${esc(label)}">
+    ${kind.isImage ? `<img src="${esc(href)}" alt="${esc(label)} preview" loading="lazy">` : `<span class="attachment-file-icon">${icon(kind.icon)}</span>`}
+    <span>${esc(label)}</span>
+    ${options.source ? `<small>${esc(options.source)}</small>` : ""}
+  </button>`;
+}
+
+function taskAttachmentGalleryHTML(task = {}, comments = []) {
+  const items = [];
+  const seen = new Set();
+  (task.attachments || []).forEach((url) => {
+    const href = String(url || "").trim();
+    if (!href || seen.has(href)) return;
+    seen.add(href);
+    items.push({ url: href, name: fileNameFromURL(href), source: "Task" });
+  });
+  (comments || []).forEach((comment) => {
+    const href = String(comment.attachment_url || "").trim();
+    if (!href || seen.has(href)) return;
+    seen.add(href);
+    items.push({ url: href, name: comment.attachment_name || fileNameFromURL(href), source: "Comment" });
+  });
+  if (!items.length) return "";
+  return `<section class="task-attachment-gallery">
+    <h3>Attachments</h3>
+    <div class="attachment-grid">${items.map((item) => attachmentPreviewHTML(item.url, item.name, { source: item.source })).join("")}</div>
+  </section>`;
+}
+
+function openAttachmentLightbox(url, name = "") {
+  const href = String(url || "").trim();
+  if (!href) return;
+  const label = name || fileNameFromURL(href);
+  const kind = attachmentKind(href, label);
+  let dialog = document.getElementById("attachmentLightboxDialog");
+  if (!dialog) {
+    dialog = document.createElement("dialog");
+    dialog.id = "attachmentLightboxDialog";
+    dialog.className = "modal attachment-lightbox-modal";
+    document.body.appendChild(dialog);
+  }
+  dialog.innerHTML = `
+    <div class="modal-head">
+      <div><h2>${esc(label)}</h2><p class="muted">${esc(kind.label)}</p></div>
+      <button class="btn icon quiet" type="button" data-close-attachment-lightbox title="Close">${icon("x")}</button>
+    </div>
+    <div class="attachment-lightbox-body">
+      ${kind.isImage ? `<img src="${esc(href)}" alt="${esc(label)}" data-lightbox-image>` : kind.ext === "pdf" ? `<iframe src="${esc(href)}" title="${esc(label)}"></iframe>` : `<div class="attachment-document-preview"><span>${icon(kind.icon)}</span><strong>${esc(label)}</strong><small>${esc(kind.label)}</small></div>`}
+    </div>
+    <div class="toolbar">
+      <a class="btn primary" href="${esc(href)}" download target="_blank" rel="noopener noreferrer">${icon("download")}Download</a>
+      <a class="btn" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${icon("external-link")}Open</a>
+    </div>`;
+  dialog.querySelector("[data-close-attachment-lightbox]")?.addEventListener("click", () => dialog.close());
+  dialog.querySelector("[data-lightbox-image]")?.addEventListener("click", (event) => event.currentTarget.classList.toggle("is-zoomed"));
+  dialog.showModal();
+  icons();
+}
+
+function bindAttachmentOpeners(root = document) {
+  root.querySelectorAll("[data-open-attachment]").forEach((btn) => {
+    if (btn.dataset.attachmentBound === "1") return;
+    btn.dataset.attachmentBound = "1";
+    btn.addEventListener("click", () => openAttachmentLightbox(btn.dataset.attachmentUrl, btn.dataset.attachmentName));
+  });
 }
 
 const STAFF_ROLES = [
@@ -590,8 +687,9 @@ function shell(title, html) {
   const userDisplayName = state.me?.name || state.me?.username || state.me?.email || "User";
   const workspaceName = displayTeam?.name || (state.me?.role === "owner_adm" ? "Owner Admin" : `${userDisplayName}'s Company`);
   const workspaceLogo = userChip();
+  document.body.classList.toggle("sidebar-collapsed", Boolean(state.sidebarCollapsed));
   app.innerHTML = `
-    <div class="workspace-shell clickup-shell">
+    <div class="workspace-shell clickup-shell ${state.sidebarCollapsed ? "sidebar-collapsed" : ""}">
       <aside class="workspace-nav" aria-label="Workspace">
         <div class="workspace-switcher">
           ${workspaceLogo}
@@ -599,7 +697,7 @@ function shell(title, html) {
             <strong>${esc(workspaceName)}</strong>
             <span>${esc(userDisplayName)}</span>
           </div>
-          <a class="btn icon quiet" href="/tasks" title="Create task">${icon("plus")}</a>
+          <button class="btn icon quiet sidebar-toggle" id="sidebarToggle" type="button" title="${state.sidebarCollapsed ? "Expand menu" : "Collapse menu"}">${icon(state.sidebarCollapsed ? "panel-left-open" : "panel-left-close")}</button>
         </div>
         <nav class="workspace-menu">
           <p class="nav-kicker">Home</p>
@@ -687,6 +785,19 @@ function shell(title, html) {
   bindMentionSuggestions(app);
   bindDialogCloseButtons(app);
   bindSidebarProjectControls();
+  $("#sidebarToggle")?.addEventListener("click", () => {
+    state.sidebarCollapsed = !state.sidebarCollapsed;
+    localStorage.setItem("pinflow_sidebar_collapsed", state.sidebarCollapsed ? "1" : "0");
+    document.body.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
+    const shellEl = app.querySelector(".workspace-shell");
+    shellEl?.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
+    const btn = $("#sidebarToggle");
+    if (btn) {
+      btn.title = state.sidebarCollapsed ? "Expand menu" : "Collapse menu";
+      btn.innerHTML = icon(state.sidebarCollapsed ? "panel-left-open" : "panel-left-close");
+      icons();
+    }
+  });
   $("#commandSearch")?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
     const query = event.currentTarget.value.trim();
@@ -1259,14 +1370,137 @@ function statusStylesPayload(tab, tasks, statusValue, iconColor, textColor) {
 }
 
 function dueDateDeltaLabel(value) {
-  if (!value) return "";
-  const due = new Date(String(value).slice(0, 10) + "T00:00:00");
+  return dueDateDeltaLabelFromDate(parseLocalDate(value));
+}
+
+function parseLocalDate(value) {
+  if (!value) return null;
+  const match = String(value).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function localISODate(date) {
+  if (!date || Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function todayLocalDate() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function dueDateDeltaLabelFromDate(due) {
+  if (!due) return "";
+  const today = todayLocalDate();
   const days = Math.ceil((due.getTime() - today.getTime()) / 86400000);
   if (Number.isNaN(days)) return "";
   if (days === 0) return "Today";
   return `${Math.abs(days)}D${days < 0 ? " late" : ""}`;
+}
+
+function daysInMonth(year, monthIndex) {
+  return new Date(year, monthIndex + 1, 0).getDate();
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+const WEEKDAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const ORDINAL_LABELS = { 1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth", "-1": "last" };
+
+function monthlyOrdinalFromDate(date) {
+  if (!date) return 1;
+  return Math.floor((date.getDate() - 1) / 7) + 1;
+}
+
+function monthlyNthWeekdayDate(year, monthIndex, ordinal, weekday) {
+  const lastDay = daysInMonth(year, monthIndex);
+  if (ordinal === -1) {
+    for (let day = lastDay; day >= 1; day -= 1) {
+      const candidate = new Date(year, monthIndex, day);
+      if (candidate.getDay() === weekday) return candidate;
+    }
+    return null;
+  }
+  const first = new Date(year, monthIndex, 1);
+  const offset = (weekday - first.getDay() + 7) % 7;
+  const day = 1 + offset + ((ordinal || 1) - 1) * 7;
+  return day <= lastDay ? new Date(year, monthIndex, day) : null;
+}
+
+function nextRecurringDueDate(dueValue, recurrence = {}) {
+  const start = parseLocalDate(dueValue);
+  if (!start) return null;
+  const today = todayLocalDate();
+  const minDate = today > start ? today : start;
+  const frequency = recurrence?.frequency || "";
+  if (!frequency || frequency === "none") return start;
+  if (frequency === "daily") return minDate;
+  if (frequency === "weekly") {
+    const delta = (start.getDay() - minDate.getDay() + 7) % 7;
+    const candidate = addDays(minDate, delta);
+    return candidate < start ? addDays(candidate, 7) : candidate;
+  }
+  if (frequency !== "monthly") return start;
+  const monthlyMode = recurrence.monthly_mode || "dates";
+  for (let offset = 0; offset < 36; offset += 1) {
+    const cursor = new Date(minDate.getFullYear(), minDate.getMonth() + offset, 1);
+    const candidates = [];
+    if (monthlyMode === "nth_weekday") {
+      const ordinal = Number(recurrence.week_ordinal || monthlyOrdinalFromDate(start));
+      const weekday = Number.isInteger(recurrence.weekday) ? recurrence.weekday : start.getDay();
+      const candidate = monthlyNthWeekdayDate(cursor.getFullYear(), cursor.getMonth(), ordinal, weekday);
+      if (candidate) candidates.push(candidate);
+    } else {
+      const dates = Array.isArray(recurrence.month_dates) && recurrence.month_dates.length ? recurrence.month_dates : [start.getDate()];
+      dates.forEach((day) => {
+        const numericDay = Number(day);
+        if (numericDay >= 1 && numericDay <= daysInMonth(cursor.getFullYear(), cursor.getMonth())) {
+          candidates.push(new Date(cursor.getFullYear(), cursor.getMonth(), numericDay));
+        }
+      });
+    }
+    const next = candidates.sort((a, b) => a - b).find((candidate) => candidate >= minDate && candidate >= start);
+    if (next) return next;
+  }
+  return start;
+}
+
+function recurrenceLabel(recurrence = {}, dueValue = "") {
+  const frequency = recurrence?.frequency || "";
+  const start = parseLocalDate(dueValue);
+  if (!frequency || frequency === "none") return "";
+  if (frequency === "daily") return "Daily";
+  if (frequency === "weekly") return `Weekly${start ? ` on ${WEEKDAY_LABELS[start.getDay()]}` : ""}`;
+  if (frequency !== "monthly") return "";
+  if ((recurrence.monthly_mode || "dates") === "nth_weekday") {
+    const ordinal = recurrence.week_ordinal || monthlyOrdinalFromDate(start);
+    const weekday = Number.isInteger(recurrence.weekday) ? recurrence.weekday : (start ? start.getDay() : 1);
+    return `Monthly ${ORDINAL_LABELS[ordinal] || "first"} ${WEEKDAY_LABELS[weekday] || "Monday"}`;
+  }
+  const dates = Array.isArray(recurrence.month_dates) && recurrence.month_dates.length ? recurrence.month_dates : (start ? [start.getDate()] : []);
+  return dates.length ? `Monthly on ${dates.join(", ")}` : "Monthly";
+}
+
+function taskDueInfo(task = {}) {
+  const nextDue = nextRecurringDueDate(task.due_date, task.recurrence || {});
+  const label = dueDateDeltaLabelFromDate(nextDue);
+  const repeat = recurrenceLabel(task.recurrence || {}, task.due_date);
+  return {
+    date: nextDue ? localISODate(nextDue) : "",
+    label,
+    repeat,
+    text: [repeat, label].filter(Boolean).join(" · "),
+  };
 }
 
 function showDueDateCalendar(value) {
@@ -1566,7 +1800,7 @@ function bindStatusAddControls(root, tab, tasks = [], onSaved = () => {}) {
   }));
 }
 
-function bindClientTaskQuickAutosave(root, taskID, afterSave = () => {}) {
+function bindClientTaskQuickAutosave(root, taskID, afterSave = () => {}, task = {}) {
   const form = root.querySelector("#clientTaskQuickEditForm");
   if (!form || !taskID) return;
   const dueInput = form.querySelector("input[name='due_date']");
@@ -1603,7 +1837,7 @@ function bindClientTaskQuickAutosave(root, taskID, afterSave = () => {}) {
   }));
   dueInput?.addEventListener("change", (event) => {
     const label = form.querySelector("[data-due-edit-label]");
-    if (label) label.textContent = dueDateDeltaLabel(event.currentTarget.value) || "No due date";
+    if (label) label.textContent = taskDueInfo({ due_date: event.currentTarget.value, recurrence: task.recurrence || {} }).text || "No due date";
     save({ due_date: event.currentTarget.value });
   });
   form.querySelector(".assignee-picker")?.addEventListener("assigneeschange", () => {
@@ -1682,6 +1916,174 @@ function syncRichEditors(root = document) {
   });
 }
 
+function recurrenceControlsHTML(recurrence = {}, dueValue = "") {
+  const frequency = recurrence?.frequency || "none";
+  const monthlyMode = recurrence?.monthly_mode || "dates";
+  const dueDate = parseLocalDate(dueValue);
+  const dates = Array.isArray(recurrence?.month_dates) && recurrence.month_dates.length ? recurrence.month_dates : (dueDate ? [dueDate.getDate()] : []);
+  const ordinal = recurrence?.week_ordinal || monthlyOrdinalFromDate(dueDate);
+  const weekday = Number.isInteger(recurrence?.weekday) ? recurrence.weekday : (dueDate ? dueDate.getDay() : 1);
+  return `<div class="recurrence-controls" data-recurrence-controls>
+    <div class="field"><label>Repeat</label><select name="recurrence_frequency" data-recurrence-frequency>
+      <option value="none" ${frequency === "none" || !frequency ? "selected" : ""}>Does not repeat</option>
+      <option value="daily" ${frequency === "daily" ? "selected" : ""}>Daily</option>
+      <option value="weekly" ${frequency === "weekly" ? "selected" : ""}>Weekly</option>
+      <option value="monthly" ${frequency === "monthly" ? "selected" : ""}>Monthly</option>
+    </select></div>
+    <div class="recurrence-monthly" data-recurrence-monthly ${frequency === "monthly" ? "" : "hidden"}>
+      <div class="field"><label>Monthly repeat</label><select name="recurrence_monthly_mode" data-recurrence-monthly-mode>
+        <option value="dates" ${monthlyMode !== "nth_weekday" ? "selected" : ""}>Specific dates</option>
+        <option value="nth_weekday" ${monthlyMode === "nth_weekday" ? "selected" : ""}>First/second weekday</option>
+      </select></div>
+      <div class="field" data-recurrence-month-dates ${monthlyMode === "nth_weekday" ? "hidden" : ""}><label>Dates in month</label><input name="recurrence_month_dates" value="${esc(dates.join(", "))}" placeholder="1, 15, 28"></div>
+      <div class="grid-2 recurrence-nth-fields" data-recurrence-nth ${monthlyMode === "nth_weekday" ? "" : "hidden"}>
+        <div class="field"><label>Week</label><select name="recurrence_week_ordinal">
+          ${[1, 2, 3, 4, 5].map((value) => `<option value="${value}" ${Number(ordinal) === value ? "selected" : ""}>${esc(ORDINAL_LABELS[value])}</option>`).join("")}
+          <option value="-1" ${Number(ordinal) === -1 ? "selected" : ""}>last</option>
+        </select></div>
+        <div class="field"><label>Day</label><select name="recurrence_weekday">
+          ${WEEKDAY_LABELS.map((label, index) => `<option value="${index}" ${Number(weekday) === index ? "selected" : ""}>${esc(label)}</option>`).join("")}
+        </select></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function bindRecurrenceControls(root = document) {
+  root.querySelectorAll("[data-recurrence-controls]").forEach((box) => {
+    if (box.dataset.recurrenceBound === "1") return;
+    box.dataset.recurrenceBound = "1";
+    const frequency = box.querySelector("[data-recurrence-frequency]");
+    const mode = box.querySelector("[data-recurrence-monthly-mode]");
+    const monthly = box.querySelector("[data-recurrence-monthly]");
+    const dates = box.querySelector("[data-recurrence-month-dates]");
+    const nth = box.querySelector("[data-recurrence-nth]");
+    const update = () => {
+      if (monthly) monthly.hidden = frequency?.value !== "monthly";
+      if (dates) dates.hidden = mode?.value === "nth_weekday";
+      if (nth) nth.hidden = mode?.value !== "nth_weekday";
+    };
+    frequency?.addEventListener("change", update);
+    mode?.addEventListener("change", update);
+    update();
+  });
+}
+
+function recurrencePayloadFromForm(form) {
+  const frequency = form.elements.recurrence_frequency?.value || "none";
+  if (!frequency || frequency === "none") return { frequency: "none" };
+  const recurrence = { frequency };
+  if (frequency === "monthly") {
+    const mode = form.elements.recurrence_monthly_mode?.value || "dates";
+    recurrence.monthly_mode = mode;
+    if (mode === "nth_weekday") {
+      recurrence.week_ordinal = Number(form.elements.recurrence_week_ordinal?.value || 1);
+      recurrence.weekday = Number(form.elements.recurrence_weekday?.value || 1);
+    } else {
+      recurrence.month_dates = String(form.elements.recurrence_month_dates?.value || "")
+        .split(",")
+        .map((item) => Number(item.trim()))
+        .filter((day) => Number.isInteger(day) && day >= 1 && day <= 31);
+    }
+  }
+  return recurrence;
+}
+
+function checklistBuilderRowHTML(item = {}) {
+  return `<div class="checklist-builder-row" data-checklist-row>
+    <input type="checkbox" data-checklist-done ${item.done ? "checked" : ""} title="Done">
+    <input type="text" data-checklist-text value="${esc(item.text || "")}" placeholder="Checklist item">
+    <button class="btn icon quiet" type="button" data-remove-checklist-row title="Remove item">${icon("x")}</button>
+  </div>`;
+}
+
+function checklistBuilderHTML(items = []) {
+  const rows = Array.isArray(items) && items.length ? items : [{ text: "", done: false }];
+  return `<div class="checklist-builder" data-checklist-builder>
+    <div class="checklist-builder-head">
+      <label>Checklist</label>
+      <button class="btn compact" type="button" data-add-checklist-row>${icon("list-checks")}Add item</button>
+    </div>
+    <div class="checklist-builder-rows" data-checklist-rows>${rows.map(checklistBuilderRowHTML).join("")}</div>
+  </div>`;
+}
+
+function bindChecklistBuilders(root = document) {
+  root.querySelectorAll("[data-checklist-builder]").forEach((builder) => {
+    if (builder.dataset.checklistBound === "1") return;
+    builder.dataset.checklistBound = "1";
+    const rows = builder.querySelector("[data-checklist-rows]");
+    const bindRow = (row) => {
+      row.querySelector("[data-remove-checklist-row]")?.addEventListener("click", () => {
+        row.remove();
+        if (!rows.querySelector("[data-checklist-row]")) {
+          rows.insertAdjacentHTML("beforeend", checklistBuilderRowHTML());
+          bindRow(rows.lastElementChild);
+          icons();
+        }
+      });
+    };
+    rows.querySelectorAll("[data-checklist-row]").forEach(bindRow);
+    builder.querySelector("[data-add-checklist-row]")?.addEventListener("click", () => {
+      rows.insertAdjacentHTML("beforeend", checklistBuilderRowHTML());
+      const row = rows.lastElementChild;
+      bindRow(row);
+      row.querySelector("[data-checklist-text]")?.focus();
+      icons();
+    });
+  });
+}
+
+function readChecklistItems(root = document) {
+  return Array.from(root.querySelectorAll("[data-checklist-row]")).map((row) => ({
+    text: row.querySelector("[data-checklist-text]")?.value.trim() || "",
+    done: Boolean(row.querySelector("[data-checklist-done]")?.checked),
+  })).filter((item) => item.text);
+}
+
+function taskChecklistHTML(items = [], canUpdate = false) {
+  const checklist = Array.isArray(items) ? items.filter((item) => String(item.text || "").trim()) : [];
+  if (!checklist.length) return "";
+  const doneCount = checklist.filter((item) => item.done).length;
+  return `<section class="task-checklist" data-task-checklist>
+    <div class="task-checklist-head"><h3>Checklist</h3><span class="muted">${doneCount}/${checklist.length} done</span><span class="status-line" data-checklist-save-status></span></div>
+    <div class="task-checklist-items">
+      ${checklist.map((item, index) => `<label class="task-checklist-item ${item.done ? "done" : ""}">
+        <input type="checkbox" data-task-checklist-done data-index="${index}" ${item.done ? "checked" : ""} ${canUpdate ? "" : "disabled"}>
+        <span>${chatText(item.text)}</span>
+      </label>`).join("")}
+    </div>
+  </section>`;
+}
+
+function readVisibleTaskChecklist(root = document) {
+  return Array.from(root.querySelectorAll(".task-checklist-item")).map((row) => ({
+    text: row.querySelector("span")?.innerText.trim() || "",
+    done: Boolean(row.querySelector("[data-task-checklist-done]")?.checked),
+  })).filter((item) => item.text);
+}
+
+function bindTaskChecklistAutosave(root, taskID, afterSave = () => {}) {
+  const box = root.querySelector("[data-task-checklist]");
+  if (!box || !taskID) return;
+  const status = box.querySelector("[data-checklist-save-status]");
+  box.querySelectorAll("[data-task-checklist-done]").forEach((input) => input.addEventListener("change", async () => {
+    input.closest(".task-checklist-item")?.classList.toggle("done", input.checked);
+    if (status) status.textContent = "Saving...";
+    try {
+      await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify({ checklist: readVisibleTaskChecklist(box) }) });
+      const items = readVisibleTaskChecklist(box);
+      const doneCount = items.filter((item) => item.done).length;
+      const count = box.querySelector(".task-checklist-head .muted");
+      if (count) count.textContent = `${doneCount}/${items.length} done`;
+      if (status) status.textContent = "Saved";
+      await afterSave();
+    } catch (error) {
+      if (status) status.textContent = error.message;
+    }
+  }));
+}
+
 function bindClientTaskTypeToggle(form) {
   const select = form?.querySelector("[data-client-task-type]");
   const descriptionFields = form?.querySelector("[data-task-description-fields]");
@@ -1711,14 +2113,14 @@ function clientTaskBoardHTML(tasks, tab, members, canManage, canManageStatuses =
       ${(tasks || []).filter((task) => (task.status || "todo") === status.value && task.tab_id === tab.id).map((task) => {
         const canManageTask = canManageClientTaskUI(task, canManage);
         const canUpdateTaskProgress = Boolean(canUpdateProgress || canManageTask);
-        const dueLabel = dueDateDeltaLabel(task.due_date);
+        const dueInfo = taskDueInfo(task);
         return `<article class="task-card client-task-card" data-client-task-id="${esc(task.id)}" data-can-drag="${canUpdateTaskProgress ? "true" : "false"}">
           <button class="client-task-open" type="button" data-open-client-task="${esc(task.id)}">${esc(compactClientTaskTitle(task.title))}</button>
           <p>${chatText(compactClientTaskContent(task.type === "annotation" ? task.comment || task.content : task.content) || "No content yet.")}</p>
           <div class="client-task-card-meta">
             ${statusBadgeHTML(status, "status-badge status-pill")}
             <span class="pill">${esc(fmtDate(task.created_at))}</span>
-            ${dueLabel ? `<button class="pill warn due-count" type="button" data-due-calendar="${esc(task.due_date)}">${icon("calendar-days")}${esc(dueLabel)}</button>` : ""}
+            ${dueInfo.text ? `<button class="pill warn due-count" type="button" data-due-calendar="${esc(dueInfo.date || task.due_date)}">${icon("calendar-days")}${esc(dueInfo.text)}</button>` : ""}
             ${assigneeAvatarsHTML(task.assignee_ids || [], usersByID)}
           </div>
           ${(canUpdateTaskProgress || canManageTask) ? `<div class="toolbar compact-toolbar">
@@ -1735,21 +2137,90 @@ function clientTaskUsersByID(members = []) {
   return Object.fromEntries(members.map((entry) => [entry.user?.id, entry.user]).filter(([id]) => id));
 }
 
-function clientTaskCommentHTML(comment, usersByID = {}, canManageFolder = false) {
+function clientTaskCommentArticleHTML(comment, usersByID = {}, canManageFolder = false, nested = false) {
   const author = usersByID[comment.author_id] || {};
   const authorName = author.name || author.username || "Someone";
   const replyText = comment.content || comment.attachment_name || "Attachment";
   const canManageComment = canManageFolder || comment.author_id === state.me?.id;
-  return `<article class="client-task-comment" data-client-comment-id="${esc(comment.id)}">
+  return `<article class="client-task-comment ${nested ? "is-reply" : ""}" data-client-comment-id="${esc(comment.id)}">
     <div class="message-head"><strong>${esc(authorName)}</strong><time>${inboxTime(comment.created_at)}</time></div>
-    ${comment.reply_text ? `<blockquote>${chatText(comment.reply_text)}</blockquote>` : ""}
+    ${comment.reply_text && !nested ? `<blockquote>${chatText(comment.reply_text)}</blockquote>` : ""}
     ${comment.content ? `<p>${chatText(comment.content)}</p>` : ""}
-    ${comment.attachment_url ? `<a class="attachment-link" href="${esc(comment.attachment_url)}" target="_blank" rel="noopener noreferrer">${icon("paperclip")}${esc(comment.attachment_name || "Attachment")}</a>` : ""}
+    ${comment.attachment_url ? `<div class="comment-attachment">${attachmentPreviewHTML(comment.attachment_url, comment.attachment_name || "Attachment", { compact: true })}</div>` : ""}
     <div class="client-comment-actions">
       <button class="message-reply-btn" type="button" data-client-comment-reply="${esc(comment.id)}" data-reply-text="${esc(replyText.slice(0, 160))}">${icon("reply")}Reply</button>
       ${canManageComment ? `<button class="message-reply-btn" type="button" data-edit-client-comment="${esc(comment.id)}" data-comment-content="${esc(comment.content || "")}">${icon("pencil")}Edit</button><button class="message-reply-btn danger-text" type="button" data-delete-client-comment="${esc(comment.id)}">${icon("trash-2")}Delete</button>` : ""}
     </div>
   </article>`;
+}
+
+function clientTaskCommentThreadHTML(node, usersByID = {}, canManageFolder = false, nested = false) {
+  const replies = node.replies || [];
+  return `<div class="client-comment-thread ${nested ? "is-nested" : ""}">
+    ${clientTaskCommentArticleHTML(node, usersByID, canManageFolder, nested)}
+    ${replies.length ? `<details class="comment-thread-replies" open>
+      <summary>${replies.length} ${replies.length === 1 ? "reply" : "replies"}</summary>
+      <div class="comment-thread-reply-list">${replies.map((reply) => clientTaskCommentArticleHTML(reply, usersByID, canManageFolder, true)).join("")}</div>
+    </details>` : ""}
+  </div>`;
+}
+
+function clientTaskCommentsHTML(comments = [], usersByID = {}, canManageFolder = false) {
+  if (!comments.length) return `<p class="muted">No comments yet.</p>`;
+  const nodes = new Map();
+  comments.forEach((comment) => nodes.set(String(comment.id), { ...comment, replies: [] }));
+  const roots = [];
+  comments.forEach((comment) => {
+    const id = String(comment.id || "");
+    const replyToID = String(comment.reply_to_id || "");
+    const node = nodes.get(id);
+    if (!node) return;
+    if (replyToID && replyToID !== NIL_OBJECT_ID && replyToID !== id && nodes.has(replyToID)) {
+      let rootID = replyToID;
+      const seen = new Set([id]);
+      while (nodes.has(rootID)) {
+        const parent = nodes.get(rootID);
+        const nextID = String(parent.reply_to_id || "");
+        if (!nextID || nextID === NIL_OBJECT_ID || !nodes.has(nextID) || seen.has(nextID)) break;
+        seen.add(rootID);
+        rootID = nextID;
+      }
+      nodes.get(rootID).replies.push(node);
+      return;
+    }
+    roots.push(node);
+  });
+  return roots.map((comment) => clientTaskCommentThreadHTML(comment, usersByID, canManageFolder)).join("");
+}
+
+function taskLogActionLabel(action = "") {
+  const labels = {
+    created_task: "Created task",
+    updated_status: "Updated status",
+    updated_assignment: "Updated assignment",
+    created_comment: "Created comment",
+    edited_comment: "Edited comment",
+    deleted_comment: "Deleted comment",
+  };
+  return labels[action] || String(action || "Update").replaceAll("_", " ").replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+function taskUpdateLogHTML(logs = [], usersByID = {}) {
+  if (!logs.length) return `<p class="muted">No update log yet.</p>`;
+  return `<div class="task-update-log-list">
+    ${logs.map((entry) => {
+      const actor = usersByID[entry.actor_id] || {};
+      const actorName = actor.name || actor.username || actor.email || "Someone";
+      return `<article class="task-update-log-row">
+        ${userChip(actor.id ? actor : { name: actorName })}
+        <div>
+          <h3>${esc(taskLogActionLabel(entry.action))}</h3>
+          <p><strong>${esc(actorName)}</strong> ${esc(entry.detail || "updated this task")}</p>
+          <time>${inboxTime(entry.created_at)}</time>
+        </div>
+      </article>`;
+    }).join("")}
+  </div>`;
 }
 
 function setClientTaskReply(reply) {
@@ -1802,6 +2273,9 @@ async function openClientTaskPanel(taskID) {
   const data = await api(`/api/client-tasks/${taskID}`);
   const task = data.task || {};
   const usersByID = clientTaskUsersByID(data.members || []);
+  (data.log_users || []).forEach((user) => {
+    if (user?.id) usersByID[user.id] = user;
+  });
   let panel = $("#clientTaskPanel");
   if (!panel) {
     panel = document.createElement("section");
@@ -1815,7 +2289,7 @@ async function openClientTaskPanel(taskID) {
   const canManageStatuses = Boolean(data.can_manage_statuses);
   const statuses = clientTaskStatuses(data.tab, [task]);
   const taskContent = task.type === "annotation" ? task.comment || task.content : task.content;
-  const dueLabel = dueDateDeltaLabel(task.due_date);
+  const dueInfo = taskDueInfo(task);
   panel.innerHTML = `
     <header class="client-task-panel-head">
       <div><span class="muted">${esc(data.client?.name || "Client")} / ${esc(data.website?.name || "Website")}</span><h2>${esc(compactClientTaskTitle(task.title))}</h2></div>
@@ -1830,24 +2304,27 @@ async function openClientTaskPanel(taskID) {
           ${statusPickerHTML(statuses, task.status || "todo", "status", "", { canManageStatuses, tabID: data.tab?.id })}
           <span class="pill">${esc(task.type || "description")}</span>
           <span class="pill">${icon("calendar-days")}${esc(fmtDate(task.created_at))}</span>
-          <span class="pill warn due-edit-pill"><button class="due-icon-btn" type="button" data-due-edit-open title="Change due date">${icon("calendar-days")}</button><button class="due-date-text-btn" type="button" data-due-edit-open><span data-due-edit-label>${esc(dueLabel || "No due date")}</span></button><input class="due-edit-input" type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}" title="Due date"></span>
+          <span class="pill warn due-edit-pill"><button class="due-icon-btn" type="button" data-due-edit-open title="Change due date">${icon("calendar-days")}</button><button class="due-date-text-btn" type="button" data-due-edit-open><span data-due-edit-label>${esc(dueInfo.text || "No due date")}</span></button><input class="due-edit-input" type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}" title="Due date"></span>
           ${assigneePickerHTML(data.members || [], task.assignee_ids || [])}
           <span class="status-line"></span>
         </form>` : `<div class="task-detail-meta">
           ${statusBadgeHTML(statuses.find((item) => item.value === (task.status || "todo")) || statuses[0], "status-badge status-pill")}
           <span class="pill">${esc(task.type || "description")}</span>
           <span class="pill">${icon("calendar-days")}${esc(fmtDate(task.created_at))}</span>
-          ${dueLabel ? `<button class="pill warn due-count" type="button" data-due-calendar="${esc(task.due_date)}">${icon("calendar-days")}${esc(dueLabel)}</button>` : ""}
+          ${dueInfo.text ? `<button class="pill warn due-count" type="button" data-due-calendar="${esc(dueInfo.date || task.due_date)}">${icon("calendar-days")}${esc(dueInfo.text)}</button>` : ""}
           ${assigneeAvatarsHTML(task.assignee_ids || [], usersByID)}
         </div>`}
         <h3>Content</h3>
-        <p>${chatText(taskContent || "No content yet.")}</p>
+        <div class="task-rich-content">${chatText(taskContent || "No content yet.")}</div>
+        ${taskChecklistHTML(task.checklist || [], canUpdateProgress)}
         ${task.url ? `<h3>Annotation URL</h3><p><a class="text-link" href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">${esc(task.url)}</a></p>` : ""}
-        ${(task.attachments || []).length ? `<h3>Attachments</h3><div class="attachment-list">${task.attachments.map((url) => `<a class="attachment-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${icon("paperclip")}${esc(url.split("/").pop() || "Attachment")}</a>`).join("")}</div>` : ""}
+        ${task.pin_x !== undefined && task.pin_y !== undefined && task.pin_x !== null && task.pin_y !== null ? `<h3>Annotation Pin</h3><p class="muted">${Number(task.pin_x).toFixed(1)}%, ${Number(task.pin_y).toFixed(1)}%</p>` : ""}
+        ${taskAttachmentGalleryHTML(task, data.comments || [])}
+        <div class="task-log-actions"><button class="btn compact" type="button" id="taskUpdateLogBtn">${icon("history")}Update Log</button></div>
       </section>
       <aside class="client-task-comments">
         <h3>Comments</h3>
-        <div class="client-task-comment-list">${(data.comments || []).map((comment) => clientTaskCommentHTML(comment, usersByID, canManageFolder)).join("") || `<p class="muted">No comments yet.</p>`}</div>
+        <div class="client-task-comment-list">${clientTaskCommentsHTML(data.comments || [], usersByID, canManageFolder)}</div>
         <form id="clientTaskCommentForm" class="client-comment-form">
           <div class="reply-preview" data-client-task-reply-preview hidden></div>
           <div class="attachment-preview" data-client-task-attachment-preview hidden></div>
@@ -1866,13 +2343,19 @@ async function openClientTaskPanel(taskID) {
       <form id="editClientTaskForm" class="form-grid" method="dialog">
         <div class="modal-head"><h2>Edit task</h2><button class="btn icon quiet" type="button" data-close-dialog="editClientTaskDialog" title="Close">${icon("x")}</button></div>
         <div class="quick-task-controls"><label class="compact-field"><span>Status</span>${statusPickerHTML(statuses, task.status || "todo", "status", "", { canManageStatuses, tabID: data.tab?.id })}</label><label class="compact-field"><span>Due</span><input type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}"></label></div>
+        ${recurrenceControlsHTML(task.recurrence || {}, task.due_date)}
         <div class="field"><label>Title</label><input name="title" maxlength="80" value="${esc(task.title || "")}" required></div>
         <div class="field"><label>${task.type === "annotation" ? "Comment" : "Content"}</label>${richEditorHTML(task.type === "annotation" ? "comment" : "content", taskContent || "", "Write task details")}</div>
+        ${task.type === "annotation" ? "" : checklistBuilderHTML(task.checklist || [])}
         <div class="field" ${task.type === "annotation" ? "" : "hidden"}><label>Annotation URL</label><input name="url" value="${esc(task.url || "")}" placeholder="https://example.com/page"></div>
         <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [], task.assignee_ids || [])}</div>
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="editClientTaskDialog">Cancel</button></div>
         <p class="status-line"></p>
       </form>
+    </dialog>
+    <dialog id="taskUpdateLogDialog" class="modal client-dialog update-log-dialog">
+      <div class="modal-head"><h2>Update Log</h2><button class="btn icon quiet" type="button" data-close-dialog="taskUpdateLogDialog" title="Close">${icon("x")}</button></div>
+      <div data-task-update-log-body>${taskUpdateLogHTML(data.logs || [], usersByID)}</div>
     </dialog>`;
   panel.querySelector("[data-close-client-task]")?.addEventListener("click", () => {
     panel.remove();
@@ -1880,6 +2363,22 @@ async function openClientTaskPanel(taskID) {
     state.clientTaskCommentEdit = null;
   });
   panel.querySelector("#editClientTaskBtn")?.addEventListener("click", () => panel.querySelector("#editClientTaskDialog")?.showModal());
+  panel.querySelector("#taskUpdateLogBtn")?.addEventListener("click", async () => {
+    const dialog = panel.querySelector("#taskUpdateLogDialog");
+    const body = dialog?.querySelector("[data-task-update-log-body]");
+    try {
+      const latest = await api(`/api/client-tasks/${taskID}`);
+      const logUsersByID = clientTaskUsersByID(latest.members || data.members || []);
+      (latest.log_users || []).forEach((user) => {
+        if (user?.id) logUsersByID[user.id] = user;
+      });
+      if (body) body.innerHTML = taskUpdateLogHTML(latest.logs || [], logUsersByID);
+    } catch {
+      if (body) body.innerHTML = taskUpdateLogHTML(data.logs || [], usersByID);
+    }
+    dialog?.showModal();
+    icons();
+  });
   panel.querySelector("#deleteClientTaskPanelBtn")?.addEventListener("click", async () => {
     if (!confirm("Delete this task?")) return;
     await api(`/api/client-tasks/${taskID}`, { method: "DELETE" });
@@ -1892,9 +2391,11 @@ async function openClientTaskPanel(taskID) {
     syncRichEditors(form);
     const body = Object.fromEntries(new FormData(form).entries());
     body.title = compactClientTaskTitle(body.title);
-    body.content = compactClientTaskContent(body.content || "");
-    body.comment = compactClientTaskContent(body.comment || "");
+    body.content = String(body.content || "").trim();
+    body.comment = String(body.comment || "").trim();
+    body.checklist = readChecklistItems(form);
     body.assignee_ids = selectedAssigneeIDs(form);
+    body.recurrence = recurrencePayloadFromForm(form);
     try {
       await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify(body) });
       panel.querySelector("#editClientTaskDialog")?.close();
@@ -1912,8 +2413,14 @@ async function openClientTaskPanel(taskID) {
   });
   bindClientTaskQuickAutosave(panel, taskID, async () => {
     route();
-  });
+  }, task);
   bindRichEditors(panel);
+  bindChecklistBuilders(panel);
+  bindRecurrenceControls(panel);
+  bindTaskChecklistAutosave(panel, taskID, async () => {
+    route();
+  });
+  bindAttachmentOpeners(panel);
   panel.querySelectorAll("[data-client-comment-reply]").forEach((btn) => btn.addEventListener("click", () => {
     setClientTaskReply({ id: btn.dataset.clientCommentReply, text: btn.dataset.replyText || "Comment" });
     panel.querySelector("textarea[name='content']")?.focus();
@@ -1934,9 +2441,11 @@ async function openClientTaskPanel(taskID) {
     const file = form.elements.attachment.files?.[0];
     const preview = form.querySelector("[data-client-task-attachment-preview]");
     if (!file || !preview) return;
+    const localURL = file.type.startsWith("image/") ? URL.createObjectURL(file) : "";
     preview.hidden = false;
-    preview.innerHTML = `<span>${icon("paperclip")}${esc(file.name)}</span><button class="btn icon quiet" type="button" data-clear-client-comment-attachment>${icon("x")}</button>`;
+    preview.innerHTML = `<span>${localURL ? `<img class="attachment-preview-mini" src="${esc(localURL)}" alt="${esc(file.name)} preview">` : icon("paperclip")}${esc(file.name)}</span><button class="btn icon quiet" type="button" data-clear-client-comment-attachment>${icon("x")}</button>`;
     preview.querySelector("[data-clear-client-comment-attachment]")?.addEventListener("click", () => {
+      if (localURL) URL.revokeObjectURL(localURL);
       form.elements.attachment.value = "";
       preview.hidden = true;
       preview.innerHTML = "";
@@ -2245,20 +2754,55 @@ async function renderClientWebsite(clientID, websiteID) {
       </form>
     </dialog>
     ${clientDocumentDialogHTML("websiteDocumentDialog", "Add website document", websiteID)}
-    <dialog id="clientTaskDialog" class="modal client-dialog">
-      <form id="clientTaskForm" class="form-grid" method="dialog">
-        <div class="modal-head"><h2>Add task</h2><button class="btn icon quiet" type="button" data-close-dialog="clientTaskDialog" title="Close">${icon("x")}</button></div>
-        <div class="grid-2"><div class="field"><label>Task option</label><select name="type" data-client-task-type><option value="description">Task Description</option><option value="annotation">Annotation</option></select></div><div class="field"><label>Due date</label><input type="date" name="due_date"></div></div>
+    <dialog id="clientTaskDialog" class="modal client-dialog task-choice-dialog">
+      <div class="modal-head"><h2>Add task</h2><button class="btn icon quiet" type="button" data-close-dialog="clientTaskDialog" title="Close">${icon("x")}</button></div>
+      <div class="task-choice-grid" data-client-task-choice>
+        <button class="task-choice-card" type="button" id="chooseDescriptionTask">${icon("file-text")}<strong>Task description</strong><span>Use the current task form and workflow.</span></button>
+        <button class="task-choice-card" type="button" id="chooseAnnotationTask">${icon("map-pin")}<strong>Annotation</strong><span>Open a full-page website annotation workspace.</span></button>
+      </div>
+      <form id="clientTaskForm" class="form-grid" method="dialog" hidden>
+        <input type="hidden" name="type" value="description">
+        <div class="toolbar compact-toolbar"><button class="btn compact" type="button" data-back-task-options>${icon("arrow-left")}Options</button></div>
+        <div class="field"><label>Due date</label><input type="date" name="due_date"></div>
+        ${recurrenceControlsHTML()}
         <div class="field"><label>Title</label><input name="title" maxlength="80" required></div>
-        <div class="field" data-task-description-fields><label>Content</label>${richEditorHTML("content", "", "Write task details")}</div>
-        <div data-task-annotation-fields hidden>
-          <div class="field"><label>Annotation URL</label><input name="url" placeholder="https://example.com/page"></div>
-          <div class="field"><label>Comment</label>${richEditorHTML("comment", "", "Write annotation comment")}</div>
-          <div class="field"><label>Attachments</label><input type="file" name="attachments" multiple></div>
+        <div data-task-description-fields>
+          <div class="field"><label>Content</label>${richEditorHTML("content", "", "Write task details")}</div>
+          ${checklistBuilderHTML()}
         </div>
         <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [])}</div>
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Create task</button><button class="btn" type="button" data-close-dialog="clientTaskDialog">Cancel</button></div>
         <p class="status-line"></p>
+      </form>
+    </dialog>
+    <dialog id="clientAnnotationDialog" class="modal annotation-task-dialog">
+      <form id="clientAnnotationTaskForm" class="annotation-task-form" method="dialog">
+        <header class="annotation-task-head">
+          <div><span class="muted">${esc(data.client?.name || "Client")} / ${esc(website.name || "Website")}</span><h2>Website annotation</h2></div>
+          <button class="btn icon quiet" type="button" data-close-dialog="clientAnnotationDialog" title="Close">${icon("x")}</button>
+        </header>
+        <div class="annotation-task-body">
+          <section class="annotation-stage annotation-task-stage" id="clientAnnotationStage">
+            ${website.url ? `<iframe src="${esc(website.url)}" title="${esc(website.name)}"></iframe>` : `<div class="annotation-empty"><p class="muted">Add a website URL before annotating.</p></div>`}
+            <div class="click-catcher" id="clientAnnotationClickCatcher"></div>
+            <div class="pin-layer" id="clientAnnotationPinLayer"></div>
+          </section>
+          <aside class="bug-side annotation-task-side">
+            <input type="hidden" name="type" value="annotation">
+            <input type="hidden" name="pin_x">
+            <input type="hidden" name="pin_y">
+            <div class="field"><label>Coordinates</label><input id="clientAnnotationCoordLabel" disabled placeholder="Click the page to place a pin"></div>
+            <div class="field"><label>Title</label><input name="title" maxlength="80" required placeholder="Annotation title"></div>
+            <div class="field"><label>Annotation URL</label><input name="url" value="${esc(website.url || "")}" placeholder="https://example.com/page" required></div>
+            <div class="field"><label>Comment</label>${richEditorHTML("comment", "", "Write annotation comment")}</div>
+            <div class="field"><label>Attachments</label><input type="file" name="attachments" multiple></div>
+            <div class="grid-2"><div class="field"><label>Due date</label><input type="date" name="due_date"></div></div>
+            ${recurrenceControlsHTML()}
+            <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [])}</div>
+            <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Create annotation</button><button class="btn" type="button" data-close-dialog="clientAnnotationDialog">Cancel</button></div>
+            <p class="status-line"></p>
+          </aside>
+        </div>
       </form>
     </dialog>`);
   document.querySelectorAll("[data-client-tab-link]").forEach((btn) => btn.addEventListener("click", () => {
@@ -2269,7 +2813,40 @@ async function renderClientWebsite(clientID, websiteID) {
   $("#addClientTabInline")?.addEventListener("click", () => $("#clientTabDialog")?.showModal());
   $("#editClientTabBtn")?.addEventListener("click", () => $("#editClientTabDialog")?.showModal());
   $("#addWebsiteDocBtn")?.addEventListener("click", () => $("#websiteDocumentDialog")?.showModal());
-  $("#addClientTaskBtn")?.addEventListener("click", () => $("#clientTaskDialog")?.showModal());
+  $("#addClientTaskBtn")?.addEventListener("click", () => {
+    $("#clientTaskForm")?.setAttribute("hidden", "");
+    document.querySelector("[data-client-task-choice]")?.removeAttribute("hidden");
+    $("#clientTaskDialog")?.showModal();
+  });
+  $("#chooseDescriptionTask")?.addEventListener("click", () => {
+    document.querySelector("[data-client-task-choice]")?.setAttribute("hidden", "");
+    $("#clientTaskForm")?.removeAttribute("hidden");
+    $("#clientTaskForm input[name='title']")?.focus();
+  });
+  document.querySelector("[data-back-task-options]")?.addEventListener("click", () => {
+    $("#clientTaskForm")?.setAttribute("hidden", "");
+    document.querySelector("[data-client-task-choice]")?.removeAttribute("hidden");
+  });
+  $("#chooseAnnotationTask")?.addEventListener("click", () => {
+    $("#clientTaskDialog")?.close();
+    $("#clientAnnotationDialog")?.showModal();
+    $("#clientAnnotationTaskForm input[name='title']")?.focus();
+  });
+  $("#clientAnnotationClickCatcher")?.addEventListener("click", (event) => {
+    const stage = $("#clientAnnotationStage");
+    const form = $("#clientAnnotationTaskForm");
+    if (!stage || !form) return;
+    const rect = stage.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 100;
+    const y = ((event.clientY - rect.top) / rect.height) * 100;
+    form.elements.pin_x.value = x.toFixed(2);
+    form.elements.pin_y.value = y.toFixed(2);
+    $("#clientAnnotationCoordLabel").value = `${x.toFixed(1)}%, ${y.toFixed(1)}%`;
+    const layer = $("#clientAnnotationPinLayer");
+    if (layer) layer.innerHTML = `<button class="pin" type="button" style="left:${x.toFixed(2)}%;top:${y.toFixed(2)}%;" title="Annotation pin">1</button>`;
+    $("#clientAnnotationTaskForm [data-rich-editor='comment']")?.focus();
+    icons();
+  });
   $("#editWebsiteForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -2328,11 +2905,14 @@ async function renderClientWebsite(clientID, websiteID) {
     const body = Object.fromEntries(new FormData(form).entries());
     body.title = compactClientTaskTitle(body.title);
     body.assignee_ids = selectedAssigneeIDs(form);
+    body.checklist = readChecklistItems(form);
+    body.recurrence = recurrencePayloadFromForm(form);
     body.attachments = [];
     try {
       if (body.type === "annotation") {
-        body.comment = compactClientTaskContent(body.comment || "");
+        body.comment = String(body.comment || "").trim();
         body.content = body.comment;
+        body.checklist = [];
         if (!String(body.url || "").startsWith("https://")) {
           throw new Error("annotation URL must start with https://");
         }
@@ -2340,9 +2920,40 @@ async function renderClientWebsite(clientID, websiteID) {
           body.attachments.push(await upload(file));
         }
       } else {
-        body.content = compactClientTaskContent(body.content || "");
+        body.content = String(body.content || "").trim();
         body.comment = "";
         body.url = "";
+      }
+      await api(`/api/client-tabs/${selectedTab.id}/tasks`, { method: "POST", body: JSON.stringify(body) });
+      renderClientWebsite(clientID, websiteID);
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
+  $("#clientAnnotationTaskForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    syncRichEditors(form);
+    const body = Object.fromEntries(new FormData(form).entries());
+    body.type = "annotation";
+    body.title = compactClientTaskTitle(body.title);
+    body.comment = String(body.comment || "").trim();
+    body.content = body.comment;
+    body.checklist = [];
+    body.assignee_ids = selectedAssigneeIDs(form);
+    body.recurrence = recurrencePayloadFromForm(form);
+    body.attachments = [];
+    try {
+      if (!String(body.url || "").startsWith("https://")) {
+        throw new Error("annotation URL must start with https://");
+      }
+      if (!body.pin_x || !body.pin_y) {
+        throw new Error("Click the page first");
+      }
+      body.pin_x = Number(body.pin_x);
+      body.pin_y = Number(body.pin_y);
+      for (const file of Array.from(form.attachments?.files || [])) {
+        body.attachments.push(await upload(file));
       }
       await api(`/api/client-tabs/${selectedTab.id}/tasks`, { method: "POST", body: JSON.stringify(body) });
       renderClientWebsite(clientID, websiteID);
@@ -2383,6 +2994,9 @@ async function renderClientWebsite(clientID, websiteID) {
     renderClientWebsite(clientID, websiteID);
   });
   bindRichEditors(app);
+  bindChecklistBuilders(app);
+  bindRecurrenceControls(app);
+  bindAttachmentOpeners(app);
   bindDialogCloseButtons();
   bindMentionSuggestions(app);
   icons();

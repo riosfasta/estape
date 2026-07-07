@@ -3,6 +3,8 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -774,14 +776,18 @@ func (s *Server) createClientTask(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Type        string   `json:"type"`
-		Title       string   `json:"title"`
-		Content     string   `json:"content"`
-		URL         string   `json:"url"`
-		Comment     string   `json:"comment"`
-		Attachments []string `json:"attachments"`
-		AssigneeIDs []string `json:"assignee_ids"`
-		DueDate     string   `json:"due_date"`
+		Type        string                      `json:"type"`
+		Title       string                      `json:"title"`
+		Content     string                      `json:"content"`
+		URL         string                      `json:"url"`
+		Comment     string                      `json:"comment"`
+		PinX        *float64                    `json:"pin_x"`
+		PinY        *float64                    `json:"pin_y"`
+		Attachments []string                    `json:"attachments"`
+		Checklist   []models.ChecklistItem      `json:"checklist"`
+		AssigneeIDs []string                    `json:"assignee_ids"`
+		DueDate     string                      `json:"due_date"`
+		Recurrence  models.ClientTaskRecurrence `json:"recurrence"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task body"})
@@ -825,6 +831,14 @@ func (s *Server) createClientTask(c *gin.Context) {
 		}
 		content = ""
 	}
+	var pinX *float64
+	var pinY *float64
+	if req.PinX != nil && req.PinY != nil {
+		x := clampFloat(*req.PinX, 0, 100)
+		y := clampFloat(*req.PinY, 0, 100)
+		pinX = &x
+		pinY = &y
+	}
 	task := models.ClientTask{
 		ID:          primitive.NewObjectID(),
 		ClientID:    tab.ClientID,
@@ -836,9 +850,13 @@ func (s *Server) createClientTask(c *gin.Context) {
 		Content:     content,
 		URL:         taskURL,
 		Comment:     comment,
+		PinX:        pinX,
+		PinY:        pinY,
 		Attachments: compactStrings(req.Attachments),
+		Checklist:   normalizeClientTaskChecklist(req.Checklist),
 		AssigneeIDs: assigneeIDs,
 		DueDate:     dueDate,
+		Recurrence:  normalizeClientTaskRecurrence(req.Recurrence, dueDate),
 		Status:      "todo",
 		CreatedBy:   userCtx.ID,
 		CreatedAt:   now,
@@ -848,6 +866,7 @@ func (s *Server) createClientTask(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create task"})
 		return
 	}
+	s.recordClientTaskLog(c.Request.Context(), task, userCtx.ID, "created_task", "created this task")
 	s.notifyClientTaskAssignees(c.Request.Context(), task)
 	c.JSON(http.StatusCreated, gin.H{"task": task})
 }
@@ -864,6 +883,7 @@ func (s *Server) getClientTask(c *gin.Context) {
 	var tab models.ClientTab
 	_ = s.store.C("client_tabs").FindOne(c.Request.Context(), bson.M{"_id": task.TabID}).Decode(&tab)
 	comments, _ := s.clientTaskComments(c.Request.Context(), task.ID)
+	logs, _ := s.clientTaskLogs(c.Request.Context(), task.ID)
 	members := s.clientProjectMembers(c.Request.Context(), client)
 	userCtx, _ := currentUser(c)
 	c.JSON(http.StatusOK, gin.H{
@@ -872,6 +892,8 @@ func (s *Server) getClientTask(c *gin.Context) {
 		"website":             website,
 		"tab":                 tab,
 		"comments":            comments,
+		"logs":                logs,
+		"log_users":           s.clientTaskLogUsers(c.Request.Context(), logs),
 		"members":             members,
 		"can_manage":          s.canManageClientProject(c.Request.Context(), userCtx, client),
 		"can_manage_task":     s.canManageClientTask(c.Request.Context(), userCtx, task),
@@ -886,14 +908,16 @@ func (s *Server) updateClientTask(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Title       *string  `json:"title"`
-		Content     *string  `json:"content"`
-		URL         *string  `json:"url"`
-		Comment     *string  `json:"comment"`
-		Status      *string  `json:"status"`
-		Attachments []string `json:"attachments"`
-		AssigneeIDs []string `json:"assignee_ids"`
-		DueDate     *string  `json:"due_date"`
+		Title       *string                      `json:"title"`
+		Content     *string                      `json:"content"`
+		URL         *string                      `json:"url"`
+		Comment     *string                      `json:"comment"`
+		Status      *string                      `json:"status"`
+		Attachments []string                     `json:"attachments"`
+		Checklist   []models.ChecklistItem       `json:"checklist"`
+		AssigneeIDs []string                     `json:"assignee_ids"`
+		DueDate     *string                      `json:"due_date"`
+		Recurrence  *models.ClientTaskRecurrence `json:"recurrence"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task update"})
@@ -906,6 +930,11 @@ func (s *Server) updateClientTask(c *gin.Context) {
 		return
 	}
 	set := bson.M{"updated_at": time.Now()}
+	activityLogs := []struct {
+		action string
+		detail string
+	}{}
+	effectiveDueDate := task.DueDate
 	if req.Title != nil {
 		title := normalizeClientTaskTitle(*req.Title)
 		if title == "" {
@@ -938,10 +967,19 @@ func (s *Server) updateClientTask(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "status is not in this task board"})
 			return
 		}
+		if status != task.Status {
+			activityLogs = append(activityLogs, struct {
+				action string
+				detail string
+			}{"updated_status", "changed status from " + clientTaskStatusLogLabel(task.Status) + " to " + clientTaskStatusLogLabel(status)})
+		}
 		set["status"] = status
 	}
 	if req.Attachments != nil {
 		set["attachments"] = compactStrings(req.Attachments)
+	}
+	if req.Checklist != nil {
+		set["checklist"] = normalizeClientTaskChecklist(req.Checklist)
 	}
 	if req.AssigneeIDs != nil {
 		assignees, err := objectIDsFromStrings(req.AssigneeIDs)
@@ -961,6 +999,12 @@ func (s *Server) updateClientTask(c *gin.Context) {
 				return
 			}
 		}
+		if !sameObjectIDSet(task.AssigneeIDs, assignees) {
+			activityLogs = append(activityLogs, struct {
+				action string
+				detail string
+			}{"updated_assignment", "updated assignment"})
+		}
 		set["assignee_ids"] = assignees
 	}
 	if req.DueDate != nil {
@@ -969,11 +1013,18 @@ func (s *Server) updateClientTask(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid due date"})
 			return
 		}
+		effectiveDueDate = due
 		set["due_date"] = due
+	}
+	if req.Recurrence != nil {
+		set["recurrence"] = normalizeClientTaskRecurrence(*req.Recurrence, effectiveDueDate)
 	}
 	if _, err := s.store.C("client_tasks").UpdateByID(c.Request.Context(), task.ID, bson.M{"$set": set}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update task"})
 		return
+	}
+	for _, entry := range activityLogs {
+		s.recordClientTaskLog(c.Request.Context(), task, userCtx.ID, entry.action, entry.detail)
 	}
 	c.JSON(http.StatusOK, gin.H{"updated": true})
 }
@@ -983,7 +1034,15 @@ func (s *Server) deleteClientTask(c *gin.Context) {
 	if !ok {
 		return
 	}
+	comments, _ := s.clientTaskComments(c.Request.Context(), task.ID)
+	for _, url := range task.Attachments {
+		s.deleteLocalUploadFile(url)
+	}
+	for _, comment := range comments {
+		s.deleteLocalUploadFile(comment.AttachmentURL)
+	}
 	_, _ = s.store.C("client_task_comments").DeleteMany(c.Request.Context(), bson.M{"task_id": task.ID})
+	_, _ = s.store.C("client_task_logs").DeleteMany(c.Request.Context(), bson.M{"task_id": task.ID})
 	if _, err := s.store.C("client_tasks").DeleteOne(c.Request.Context(), bson.M{"_id": task.ID}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete task"})
 		return
@@ -1043,6 +1102,15 @@ func (s *Server) createClientTaskComment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create comment"})
 		return
 	}
+	detail := "created a comment"
+	if attachmentURL != "" {
+		name := attachmentName
+		if name == "" {
+			name = filepath.Base(attachmentURL)
+		}
+		detail = "created a comment with attachment " + name
+	}
+	s.recordClientTaskLog(c.Request.Context(), task, userCtx.ID, "created_comment", detail)
 	s.notifyMentions(c.Request.Context(), task.TeamID, userCtx.ID, comment.Content, "client_task_comment", comment.ID)
 	c.JSON(http.StatusCreated, gin.H{"comment": comment})
 }
@@ -1084,6 +1152,10 @@ func (s *Server) updateClientTaskComment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update comment"})
 		return
 	}
+	if req.AttachmentURL != nil && strings.TrimSpace(*req.AttachmentURL) != comment.AttachmentURL {
+		s.deleteLocalUploadFile(comment.AttachmentURL)
+	}
+	s.recordClientTaskLog(c.Request.Context(), task, userCtx.ID, "edited_comment", "edited a comment")
 	c.JSON(http.StatusOK, gin.H{"updated": true})
 }
 
@@ -1101,6 +1173,8 @@ func (s *Server) deleteClientTaskComment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete comment"})
 		return
 	}
+	s.deleteLocalUploadFile(comment.AttachmentURL)
+	s.recordClientTaskLog(c.Request.Context(), task, userCtx.ID, "deleted_comment", "deleted a comment")
 	c.JSON(http.StatusOK, gin.H{"deleted": true})
 }
 
@@ -1330,6 +1404,88 @@ func (s *Server) clientTaskComments(ctx context.Context, taskID primitive.Object
 	return comments, err
 }
 
+func (s *Server) clientTaskLogs(ctx context.Context, taskID primitive.ObjectID) ([]models.ClientTaskLog, error) {
+	cursor, err := s.store.C("client_task_logs").Find(ctx, bson.M{"task_id": taskID}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var logs []models.ClientTaskLog
+	err = cursor.All(ctx, &logs)
+	if logs == nil {
+		logs = []models.ClientTaskLog{}
+	}
+	return logs, err
+}
+
+func (s *Server) clientTaskLogUsers(ctx context.Context, logs []models.ClientTaskLog) []models.User {
+	ids := []primitive.ObjectID{}
+	for _, log := range logs {
+		if !log.ActorID.IsZero() && !containsObjectID(ids, log.ActorID) {
+			ids = append(ids, log.ActorID)
+		}
+	}
+	if len(ids) == 0 {
+		return []models.User{}
+	}
+	cursor, err := s.store.C("users").Find(ctx, bson.M{"_id": bson.M{"$in": ids}})
+	if err != nil {
+		return []models.User{}
+	}
+	defer cursor.Close(ctx)
+	users := []models.User{}
+	if cursor.All(ctx, &users) != nil {
+		return []models.User{}
+	}
+	return users
+}
+
+func (s *Server) recordClientTaskLog(ctx context.Context, task models.ClientTask, actorID primitive.ObjectID, action string, detail string) {
+	detail = strings.TrimSpace(detail)
+	runes := []rune(detail)
+	if len(runes) > 300 {
+		detail = string(runes[:300])
+	}
+	log := models.ClientTaskLog{
+		ID:        primitive.NewObjectID(),
+		TaskID:    task.ID,
+		ClientID:  task.ClientID,
+		WebsiteID: task.WebsiteID,
+		TabID:     task.TabID,
+		TeamID:    task.TeamID,
+		ActorID:   actorID,
+		Action:    strings.TrimSpace(action),
+		Detail:    detail,
+		CreatedAt: time.Now(),
+	}
+	_, _ = s.store.C("client_task_logs").InsertOne(ctx, log)
+}
+
+func (s *Server) deleteLocalUploadFile(url string) {
+	url = strings.TrimSpace(url)
+	if !strings.HasPrefix(url, "/uploads/") {
+		return
+	}
+	name := strings.TrimPrefix(url, "/uploads/")
+	clean := filepath.Clean(name)
+	if clean == "." || strings.HasPrefix(clean, "..") || filepath.IsAbs(clean) {
+		return
+	}
+	base, err := filepath.Abs(s.cfg.UploadDir)
+	if err != nil {
+		return
+	}
+	target, err := filepath.Abs(filepath.Join(s.cfg.UploadDir, clean))
+	if err != nil {
+		return
+	}
+	rel, err := filepath.Rel(base, target)
+	if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return
+	}
+	_ = os.Remove(target)
+}
+
 func (s *Server) clientProjectMembers(ctx context.Context, client models.ClientProject) []gin.H {
 	ids := uniqueObjectIDs(append(append([]primitive.ObjectID{}, client.MemberIDs...), client.ClientAdminIDs...))
 	if len(ids) == 0 {
@@ -1367,10 +1523,106 @@ func normalizeClientTaskTitle(value string) string {
 func normalizeClientTaskContent(value string) string {
 	content := strings.TrimSpace(value)
 	runes := []rune(content)
-	if len(runes) > 100 {
-		content = string(runes[:100])
+	if len(runes) > 10000 {
+		content = string(runes[:10000])
 	}
 	return strings.TrimSpace(content)
+}
+
+func normalizeClientTaskChecklist(values []models.ChecklistItem) []models.ChecklistItem {
+	out := []models.ChecklistItem{}
+	for _, item := range values {
+		text := strings.TrimSpace(item.Text)
+		if text == "" {
+			continue
+		}
+		runes := []rune(text)
+		if len(runes) > 180 {
+			text = string(runes[:180])
+		}
+		out = append(out, models.ChecklistItem{Text: strings.TrimSpace(text), Done: item.Done})
+		if len(out) >= 100 {
+			break
+		}
+	}
+	return out
+}
+
+func normalizeClientTaskRecurrence(value models.ClientTaskRecurrence, dueDate *time.Time) models.ClientTaskRecurrence {
+	frequency := strings.ToLower(strings.TrimSpace(value.Frequency))
+	switch frequency {
+	case "", "none":
+		return models.ClientTaskRecurrence{}
+	case "daily", "weekly":
+		return models.ClientTaskRecurrence{Frequency: frequency}
+	case "monthly":
+	default:
+		return models.ClientTaskRecurrence{}
+	}
+
+	recurrence := models.ClientTaskRecurrence{Frequency: "monthly"}
+	mode := strings.ToLower(strings.TrimSpace(value.MonthlyMode))
+	if mode == "nth_weekday" {
+		recurrence.MonthlyMode = "nth_weekday"
+		ordinal := value.WeekOrdinal
+		if ordinal != -1 && (ordinal < 1 || ordinal > 5) {
+			ordinal = 1
+			if dueDate != nil {
+				ordinal = ((dueDate.Day() - 1) / 7) + 1
+			}
+		}
+		weekday := value.Weekday
+		if weekday < 0 || weekday > 6 {
+			weekday = 1
+			if dueDate != nil {
+				weekday = int(dueDate.Weekday())
+			}
+		}
+		recurrence.WeekOrdinal = ordinal
+		recurrence.Weekday = weekday
+		return recurrence
+	}
+
+	seen := map[int]bool{}
+	for _, day := range value.MonthDates {
+		if day >= 1 && day <= 31 {
+			seen[day] = true
+		}
+	}
+	if len(seen) == 0 && dueDate != nil {
+		seen[dueDate.Day()] = true
+	}
+	if len(seen) == 0 {
+		seen[1] = true
+	}
+	recurrence.MonthlyMode = "dates"
+	recurrence.MonthDates = []int{}
+	for day := 1; day <= 31; day++ {
+		if seen[day] {
+			recurrence.MonthDates = append(recurrence.MonthDates, day)
+		}
+	}
+	return recurrence
+}
+
+func clientTaskStatusLogLabel(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		value = "todo"
+	}
+	return strings.ReplaceAll(value, "_", " ")
+}
+
+func sameObjectIDSet(a []primitive.ObjectID, b []primitive.ObjectID) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for _, id := range a {
+		if !containsObjectID(b, id) {
+			return false
+		}
+	}
+	return true
 }
 
 func defaultClientTaskStatuses() []string {

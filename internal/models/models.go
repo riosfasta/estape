@@ -183,13 +183,25 @@ type ClientTask struct {
 	Content     string               `bson:"content,omitempty" json:"content,omitempty"`
 	URL         string               `bson:"url,omitempty" json:"url,omitempty"`
 	Comment     string               `bson:"comment,omitempty" json:"comment,omitempty"`
+	PinX        *float64             `bson:"pin_x,omitempty" json:"pin_x,omitempty"`
+	PinY        *float64             `bson:"pin_y,omitempty" json:"pin_y,omitempty"`
 	Attachments []string             `bson:"attachments" json:"attachments"`
+	Checklist   []ChecklistItem      `bson:"checklist,omitempty" json:"checklist,omitempty"`
 	AssigneeIDs []primitive.ObjectID `bson:"assignee_ids" json:"assignee_ids"`
 	DueDate     *time.Time           `bson:"due_date,omitempty" json:"due_date,omitempty"`
+	Recurrence  ClientTaskRecurrence `bson:"recurrence,omitempty" json:"recurrence,omitempty"`
 	Status      string               `bson:"status" json:"status"`
 	CreatedBy   primitive.ObjectID   `bson:"created_by" json:"created_by"`
 	CreatedAt   time.Time            `bson:"created_at" json:"created_at"`
 	UpdatedAt   time.Time            `bson:"updated_at" json:"updated_at"`
+}
+
+type ClientTaskRecurrence struct {
+	Frequency   string `bson:"frequency,omitempty" json:"frequency,omitempty"`
+	MonthlyMode string `bson:"monthly_mode,omitempty" json:"monthly_mode,omitempty"`
+	MonthDates  []int  `bson:"month_dates,omitempty" json:"month_dates,omitempty"`
+	WeekOrdinal int    `bson:"week_ordinal,omitempty" json:"week_ordinal,omitempty"`
+	Weekday     int    `bson:"weekday,omitempty" json:"weekday,omitempty"`
 }
 
 type ClientTaskComment struct {
@@ -206,6 +218,19 @@ type ClientTaskComment struct {
 	AttachmentURL  string             `bson:"attachment_url,omitempty" json:"attachment_url,omitempty"`
 	AttachmentName string             `bson:"attachment_name,omitempty" json:"attachment_name,omitempty"`
 	CreatedAt      time.Time          `bson:"created_at" json:"created_at"`
+}
+
+type ClientTaskLog struct {
+	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	TaskID    primitive.ObjectID `bson:"task_id" json:"task_id"`
+	ClientID  primitive.ObjectID `bson:"client_id" json:"client_id"`
+	WebsiteID primitive.ObjectID `bson:"website_id" json:"website_id"`
+	TabID     primitive.ObjectID `bson:"tab_id" json:"tab_id"`
+	TeamID    primitive.ObjectID `bson:"team_id" json:"team_id"`
+	ActorID   primitive.ObjectID `bson:"actor_id" json:"actor_id"`
+	Action    string             `bson:"action" json:"action"`
+	Detail    string             `bson:"detail" json:"detail"`
+	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
 }
 
 type List struct {
