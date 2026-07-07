@@ -466,13 +466,15 @@ func (s *Server) getClientWebsite(c *gin.Context) {
 	members := s.clientProjectMembers(c.Request.Context(), client)
 	userCtx, _ := currentUser(c)
 	c.JSON(http.StatusOK, gin.H{
-		"client":     client,
-		"website":    site,
-		"tabs":       tabs,
-		"documents":  documents,
-		"tasks":      tasks,
-		"members":    members,
-		"can_manage": s.canManageClientProject(c.Request.Context(), userCtx, client),
+		"client":              client,
+		"website":             site,
+		"tabs":                tabs,
+		"documents":           documents,
+		"tasks":               tasks,
+		"members":             members,
+		"can_manage":          s.canManageClientProject(c.Request.Context(), userCtx, client),
+		"can_update_progress": true,
+		"can_manage_statuses": s.canManageTeamSilently(c.Request.Context(), userCtx, client.TeamID),
 	})
 }
 
@@ -546,9 +548,11 @@ func (s *Server) createClientTab(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Type    string `json:"type"`
-		Title   string `json:"title"`
-		Content string `json:"content"`
+		Type         string                                  `json:"type"`
+		Title        string                                  `json:"title"`
+		Content      string                                  `json:"content"`
+		Statuses     []string                                `json:"statuses"`
+		StatusStyles map[string]models.ClientTaskStatusStyle `json:"status_styles"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tab body"})
@@ -560,18 +564,25 @@ func (s *Server) createClientTab(c *gin.Context) {
 		title = clientTabDefaultTitle(tabType)
 	}
 	userCtx, _ := currentUser(c)
+	if (len(req.Statuses) > 0 || len(req.StatusStyles) > 0) && !s.canManageTeamSilently(c.Request.Context(), userCtx, site.TeamID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only user admins can customize board statuses"})
+		return
+	}
 	now := time.Now()
+	statuses := normalizeClientTaskStatuses(req.Statuses)
 	tab := models.ClientTab{
-		ID:        primitive.NewObjectID(),
-		ClientID:  site.ClientID,
-		WebsiteID: site.ID,
-		TeamID:    site.TeamID,
-		Type:      tabType,
-		Title:     title,
-		Content:   strings.TrimSpace(req.Content),
-		CreatedBy: userCtx.ID,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:           primitive.NewObjectID(),
+		ClientID:     site.ClientID,
+		WebsiteID:    site.ID,
+		TeamID:       site.TeamID,
+		Type:         tabType,
+		Title:        title,
+		Content:      strings.TrimSpace(req.Content),
+		Statuses:     statuses,
+		StatusStyles: normalizeClientTaskStatusStyles(statuses, req.StatusStyles),
+		CreatedBy:    userCtx.ID,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 	if _, err := s.store.C("client_tabs").InsertOne(c.Request.Context(), tab); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create tab"})
@@ -586,8 +597,10 @@ func (s *Server) updateClientTab(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Title   *string `json:"title"`
-		Content *string `json:"content"`
+		Title        *string                                 `json:"title"`
+		Content      *string                                 `json:"content"`
+		Statuses     []string                                `json:"statuses"`
+		StatusStyles map[string]models.ClientTaskStatusStyle `json:"status_styles"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tab update"})
@@ -605,11 +618,136 @@ func (s *Server) updateClientTab(c *gin.Context) {
 	if req.Content != nil {
 		set["content"] = strings.TrimSpace(*req.Content)
 	}
+	if (req.Statuses != nil || req.StatusStyles != nil) && !s.canManageClientStatuses(c, tab) {
+		return
+	}
+	if req.Statuses != nil {
+		set["statuses"] = normalizeClientTaskStatuses(req.Statuses)
+	}
+	if req.StatusStyles != nil {
+		statuses := normalizeClientTaskStatuses(tab.Statuses)
+		if req.Statuses != nil {
+			statuses = set["statuses"].([]string)
+		}
+		set["status_styles"] = normalizeClientTaskStatusStyles(statuses, req.StatusStyles)
+	}
 	if _, err := s.store.C("client_tabs").UpdateByID(c.Request.Context(), tab.ID, bson.M{"$set": set}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update tab"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"updated": true})
+}
+
+func (s *Server) updateClientTabStatus(c *gin.Context) {
+	tab, ok := s.loadClientTabForAccess(c, true)
+	if !ok {
+		return
+	}
+	if !s.canManageClientStatuses(c, tab) {
+		return
+	}
+	oldStatus := normalizeClientTaskStatus(c.Param("status"))
+	if oldStatus == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid status"})
+		return
+	}
+	var req struct {
+		Status    *string `json:"status"`
+		IconColor *string `json:"icon_color"`
+		TextColor *string `json:"text_color"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid status update"})
+		return
+	}
+	statuses := normalizeClientTaskStatuses(tab.Statuses)
+	oldIndex := indexOfString(statuses, oldStatus)
+	if oldIndex < 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "status not found"})
+		return
+	}
+	nextStatus := oldStatus
+	if req.Status != nil {
+		nextStatus = normalizeClientTaskStatus(*req.Status)
+		if nextStatus == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "status name is required"})
+			return
+		}
+		if nextStatus != oldStatus && containsString(statuses, nextStatus) {
+			c.JSON(http.StatusConflict, gin.H{"error": "status already exists"})
+			return
+		}
+	}
+	styles := normalizeClientTaskStatusStyles(statuses, tab.StatusStyles)
+	if styles == nil {
+		styles = map[string]models.ClientTaskStatusStyle{}
+	}
+	style := styles[oldStatus]
+	if req.IconColor != nil {
+		color := normalizeHexColor(*req.IconColor)
+		if color == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid icon color"})
+			return
+		}
+		style.IconColor = color
+	}
+	if req.TextColor != nil {
+		color := normalizeHexColor(*req.TextColor)
+		if color == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid text color"})
+			return
+		}
+		style.TextColor = color
+	}
+	statuses[oldIndex] = nextStatus
+	delete(styles, oldStatus)
+	styles[nextStatus] = style
+	styles = normalizeClientTaskStatusStyles(statuses, styles)
+	now := time.Now()
+	if _, err := s.store.C("client_tabs").UpdateByID(c.Request.Context(), tab.ID, bson.M{"$set": bson.M{"statuses": statuses, "status_styles": styles, "updated_at": now}}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update status"})
+		return
+	}
+	if nextStatus != oldStatus {
+		_, _ = s.store.C("client_tasks").UpdateMany(c.Request.Context(), bson.M{"tab_id": tab.ID, "status": oldStatus}, bson.M{"$set": bson.M{"status": nextStatus, "updated_at": now}})
+	}
+	c.JSON(http.StatusOK, gin.H{"updated": true, "statuses": statuses, "status_styles": styles})
+}
+
+func (s *Server) deleteClientTabStatus(c *gin.Context) {
+	tab, ok := s.loadClientTabForAccess(c, true)
+	if !ok {
+		return
+	}
+	if !s.canManageClientStatuses(c, tab) {
+		return
+	}
+	status := normalizeClientTaskStatus(c.Param("status"))
+	if status == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid status"})
+		return
+	}
+	statuses := normalizeClientTaskStatuses(tab.Statuses)
+	statusIndex := indexOfString(statuses, status)
+	if statusIndex < 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "status not found"})
+		return
+	}
+	if len(statuses) <= 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one status is required"})
+		return
+	}
+	nextStatuses := append([]string{}, statuses[:statusIndex]...)
+	nextStatuses = append(nextStatuses, statuses[statusIndex+1:]...)
+	fallback := nextStatuses[0]
+	styles := normalizeClientTaskStatusStyles(nextStatuses, tab.StatusStyles)
+	now := time.Now()
+	if _, err := s.store.C("client_tabs").UpdateByID(c.Request.Context(), tab.ID, bson.M{"$set": bson.M{"statuses": nextStatuses, "status_styles": styles, "updated_at": now}}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete status"})
+		return
+	}
+	_, _ = s.store.C("client_tasks").UpdateMany(c.Request.Context(), bson.M{"tab_id": tab.ID, "status": status}, bson.M{"$set": bson.M{"status": fallback, "updated_at": now}})
+	c.JSON(http.StatusOK, gin.H{"deleted": true, "fallback_status": fallback, "statuses": nextStatuses, "status_styles": styles})
 }
 
 func (s *Server) deleteClientTab(c *gin.Context) {
@@ -679,6 +817,14 @@ func (s *Server) createClientTask(c *gin.Context) {
 	}
 	userCtx, _ := currentUser(c)
 	now := time.Now()
+	content := normalizeClientTaskContent(req.Content)
+	comment := normalizeClientTaskContent(req.Comment)
+	if taskType == "annotation" {
+		if comment == "" {
+			comment = content
+		}
+		content = ""
+	}
 	task := models.ClientTask{
 		ID:          primitive.NewObjectID(),
 		ClientID:    tab.ClientID,
@@ -687,9 +833,9 @@ func (s *Server) createClientTask(c *gin.Context) {
 		TeamID:      tab.TeamID,
 		Type:        taskType,
 		Title:       title,
-		Content:     strings.TrimSpace(req.Content),
+		Content:     content,
 		URL:         taskURL,
-		Comment:     "",
+		Comment:     comment,
 		Attachments: compactStrings(req.Attachments),
 		AssigneeIDs: assigneeIDs,
 		DueDate:     dueDate,
@@ -721,19 +867,21 @@ func (s *Server) getClientTask(c *gin.Context) {
 	members := s.clientProjectMembers(c.Request.Context(), client)
 	userCtx, _ := currentUser(c)
 	c.JSON(http.StatusOK, gin.H{
-		"task":            task,
-		"client":          client,
-		"website":         website,
-		"tab":             tab,
-		"comments":        comments,
-		"members":         members,
-		"can_manage":      s.canManageClientProject(c.Request.Context(), userCtx, client),
-		"can_manage_task": s.canManageClientTask(c.Request.Context(), userCtx, task),
+		"task":                task,
+		"client":              client,
+		"website":             website,
+		"tab":                 tab,
+		"comments":            comments,
+		"members":             members,
+		"can_manage":          s.canManageClientProject(c.Request.Context(), userCtx, client),
+		"can_manage_task":     s.canManageClientTask(c.Request.Context(), userCtx, task),
+		"can_update_progress": true,
+		"can_manage_statuses": s.canManageTeamSilently(c.Request.Context(), userCtx, client.TeamID),
 	})
 }
 
 func (s *Server) updateClientTask(c *gin.Context) {
-	task, ok := s.loadClientTaskForAccess(c, true)
+	task, ok := s.loadClientTaskForAccess(c, false)
 	if !ok {
 		return
 	}
@@ -751,6 +899,12 @@ func (s *Server) updateClientTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task update"})
 		return
 	}
+	userCtx, _ := currentUser(c)
+	hasContentChanges := req.Title != nil || req.Content != nil || req.URL != nil || req.Comment != nil || req.Attachments != nil
+	if hasContentChanges && !s.canManageClientTask(c.Request.Context(), userCtx, task) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only the task creator or a folder admin can edit task wording"})
+		return
+	}
 	set := bson.M{"updated_at": time.Now()}
 	if req.Title != nil {
 		title := normalizeClientTaskTitle(*req.Title)
@@ -761,7 +915,7 @@ func (s *Server) updateClientTask(c *gin.Context) {
 		set["title"] = title
 	}
 	if req.Content != nil {
-		set["content"] = strings.TrimSpace(*req.Content)
+		set["content"] = normalizeClientTaskContent(*req.Content)
 	}
 	if req.URL != nil {
 		taskURL := strings.TrimSpace(*req.URL)
@@ -772,12 +926,17 @@ func (s *Server) updateClientTask(c *gin.Context) {
 		set["url"] = taskURL
 	}
 	if req.Comment != nil {
-		set["comment"] = strings.TrimSpace(*req.Comment)
+		set["comment"] = normalizeClientTaskContent(*req.Comment)
 	}
 	if req.Status != nil {
-		status := strings.ToLower(strings.TrimSpace(*req.Status))
+		status := normalizeClientTaskStatus(*req.Status)
 		if status == "" {
 			status = "todo"
+		}
+		var tab models.ClientTab
+		if err := s.store.C("client_tabs").FindOne(c.Request.Context(), bson.M{"_id": task.TabID}).Decode(&tab); err == nil && status != task.Status && !containsString(normalizeClientTaskStatuses(tab.Statuses), status) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "status is not in this task board"})
+			return
 		}
 		set["status"] = status
 	}
@@ -789,6 +948,18 @@ func (s *Server) updateClientTask(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid assignee id"})
 			return
+		}
+		var client models.ClientProject
+		if err := s.store.C("client_projects").FindOne(c.Request.Context(), bson.M{"_id": task.ClientID}).Decode(&client); err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "client folder not found"})
+			return
+		}
+		allowedAssignees := uniqueObjectIDs(append(append([]primitive.ObjectID{}, client.MemberIDs...), client.ClientAdminIDs...))
+		for _, assigneeID := range assignees {
+			if !containsObjectID(allowedAssignees, assigneeID) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "assignee must be listed on this client project"})
+				return
+			}
 		}
 		set["assignee_ids"] = assignees
 	}
@@ -1191,6 +1362,125 @@ func normalizeClientTaskTitle(value string) string {
 		title = string(runes[:80])
 	}
 	return strings.TrimSpace(title)
+}
+
+func normalizeClientTaskContent(value string) string {
+	content := strings.TrimSpace(value)
+	runes := []rune(content)
+	if len(runes) > 100 {
+		content = string(runes[:100])
+	}
+	return strings.TrimSpace(content)
+}
+
+func defaultClientTaskStatuses() []string {
+	return []string{"todo", "in_progress", "done"}
+}
+
+func normalizeClientTaskStatus(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.ReplaceAll(value, "-", "_")
+	value = strings.ReplaceAll(value, " ", "_")
+	var b strings.Builder
+	lastUnderscore := false
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastUnderscore = false
+		case r == '_':
+			if !lastUnderscore && b.Len() > 0 {
+				b.WriteByte('_')
+				lastUnderscore = true
+			}
+		}
+	}
+	return strings.Trim(b.String(), "_")
+}
+
+func normalizeClientTaskStatuses(values []string) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	input := values
+	if len(input) == 0 {
+		input = defaultClientTaskStatuses()
+	}
+	for _, value := range input {
+		status := normalizeClientTaskStatus(value)
+		if status == "" || seen[status] {
+			continue
+		}
+		seen[status] = true
+		out = append(out, status)
+	}
+	return out
+}
+
+func (s *Server) canManageClientStatuses(c *gin.Context, tab models.ClientTab) bool {
+	userCtx, _ := currentUser(c)
+	if s.canManageTeamSilently(c.Request.Context(), userCtx, tab.TeamID) {
+		return true
+	}
+	c.JSON(http.StatusForbidden, gin.H{"error": "only user admins can manage board statuses"})
+	return false
+}
+
+func indexOfString(values []string, needle string) int {
+	for index, value := range values {
+		if value == needle {
+			return index
+		}
+	}
+	return -1
+}
+
+func normalizeClientTaskStatusStyles(statuses []string, styles map[string]models.ClientTaskStatusStyle) map[string]models.ClientTaskStatusStyle {
+	if len(styles) == 0 {
+		return nil
+	}
+	allowed := map[string]bool{}
+	for _, status := range normalizeClientTaskStatuses(statuses) {
+		allowed[status] = true
+	}
+	out := map[string]models.ClientTaskStatusStyle{}
+	for rawStatus, style := range styles {
+		status := normalizeClientTaskStatus(rawStatus)
+		if status == "" || !allowed[status] {
+			continue
+		}
+		iconColor := normalizeHexColor(style.IconColor)
+		textColor := normalizeHexColor(style.TextColor)
+		if iconColor == "" && textColor == "" {
+			continue
+		}
+		out[status] = models.ClientTaskStatusStyle{IconColor: iconColor, TextColor: textColor}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func normalizeHexColor(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) != 7 || !strings.HasPrefix(value, "#") {
+		return ""
+	}
+	for _, r := range value[1:] {
+		if !(r >= '0' && r <= '9') && !(r >= 'a' && r <= 'f') && !(r >= 'A' && r <= 'F') {
+			return ""
+		}
+	}
+	return strings.ToLower(value)
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }
 
 func clientDocumentKind(value string) string {

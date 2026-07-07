@@ -28,6 +28,7 @@ const state = {
   clientProjects: [],
   clientWebsites: [],
   projectSidebarOpen: readStoredObject("pinflow_project_sidebar_open"),
+  dropdownDismissBound: false,
   clientTaskReply: null,
   clientTaskCommentEdit: null,
 };
@@ -1018,7 +1019,7 @@ function teamMemberRows(members, canManageTeam) {
           <summary class="btn icon quiet" title="Manage staff">${icon("more-horizontal")}</summary>
           <div class="row-menu-list">
             <button type="button" data-edit-member="${member.id}">${icon("pencil")}Edit</button>
-            <button type="button" class="${isSuspended ? "" : "danger-text"}" data-member-status="${member.id}" data-next-status="${isSuspended ? "active" : "suspended"}">${icon(isSuspended ? "rotate-ccw" : "ban")}${isSuspended ? "Reactivate" : "Suspend / Block"}</button>
+            <button type="button" class="${isSuspended ? "" : "danger-text"}" data-member-status="${member.id}" data-next-status="${isSuspended ? "active" : "suspended"}">${icon(isSuspended ? "rotate-ccw" : "ban")}${isSuspended ? "Reactivate" : "Block"}</button>
             <button type="button" class="danger-text" data-delete-member="${member.id}">${icon("trash-2")}Delete</button>
           </div>
         </details>` : ""}
@@ -1179,26 +1180,550 @@ function compactClientTaskTitle(value) {
   return Array.from(String(value || "").trim()).slice(0, 80).join("").trim();
 }
 
+function compactClientTaskContent(value) {
+  return Array.from(String(value || "").trim()).slice(0, 100).join("").trim();
+}
+
+const DEFAULT_CLIENT_TASK_STATUSES = ["todo", "in_progress", "done"];
+const DEFAULT_CLIENT_TASK_STATUS_STYLES = {
+  todo: { icon_color: "#9ca3af", text_color: "#d1d5db" },
+  in_progress: { icon_color: "#f59e0b", text_color: "#fbbf24" },
+  done: { icon_color: "#10b981", text_color: "#6ee7b7" },
+};
+
+function normalizeClientTaskStatusValue(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[-\s]+/g, "_")
+    .replace(/[^a-z0-9_]/g, "")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function clientTaskStatusLabel(value) {
+  const labels = { todo: "To do", in_progress: "In progress", done: "Done" };
+  return labels[value] || String(value || "").replaceAll("_", " ").replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+function normalizeStatusColor(value, fallback) {
+  const color = String(value || "").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(color) ? color : fallback;
+}
+
+function clientTaskStatuses(tab, tasks = []) {
+  const seen = new Set();
+  const savedStyles = tab?.status_styles || {};
+  const savedStatuses = Array.isArray(tab?.statuses) && tab.statuses.length ? tab.statuses : DEFAULT_CLIENT_TASK_STATUSES;
+  const values = [...savedStatuses, ...(tasks || []).map((task) => task.status || "todo")];
+  return values.map(normalizeClientTaskStatusValue).filter((value) => {
+    if (!value || seen.has(value)) return false;
+    seen.add(value);
+    return true;
+  }).map((value) => {
+    const fallback = DEFAULT_CLIENT_TASK_STATUS_STYLES[value] || { icon_color: "#8b5cf6", text_color: "#e5e7eb" };
+    const style = savedStyles[value] || {};
+    return {
+      value,
+      label: clientTaskStatusLabel(value),
+      icon_color: normalizeStatusColor(style.icon_color, fallback.icon_color),
+      text_color: normalizeStatusColor(style.text_color, fallback.text_color),
+    };
+  });
+}
+
+function statusStyleVars(status) {
+  return `style="--status-icon-color:${esc(status?.icon_color || "#8b5cf6")}; --status-text-color:${esc(status?.text_color || "#e5e7eb")}"`;
+}
+
+function statusBadgeHTML(status, className = "status-badge") {
+  return `<span class="${esc(className)}" ${statusStyleVars(status)}><span class="status-dot"></span><span>${esc(status?.label || clientTaskStatusLabel(status?.value || "todo"))}</span></span>`;
+}
+
+function statusStylesPayload(tab, tasks, statusValue, iconColor, textColor) {
+  const status = normalizeClientTaskStatusValue(statusValue);
+  const statuses = clientTaskStatuses(tab, tasks);
+  const values = statuses.map((item) => item.value);
+  if (status && !values.includes(status)) values.push(status);
+  const styles = {};
+  statuses.forEach((item) => {
+    styles[item.value] = { icon_color: item.icon_color, text_color: item.text_color };
+  });
+  if (status) {
+    styles[status] = {
+      icon_color: normalizeStatusColor(iconColor, "#f97316"),
+      text_color: normalizeStatusColor(textColor, "#fed7aa"),
+    };
+  }
+  return { statuses: values, status_styles: styles };
+}
+
+function dueDateDeltaLabel(value) {
+  if (!value) return "";
+  const due = new Date(String(value).slice(0, 10) + "T00:00:00");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.ceil((due.getTime() - today.getTime()) / 86400000);
+  if (Number.isNaN(days)) return "";
+  if (days === 0) return "Today";
+  return `${Math.abs(days)}D${days < 0 ? " late" : ""}`;
+}
+
+function showDueDateCalendar(value) {
+  if (!value) return;
+  const input = document.createElement("input");
+  input.type = "date";
+  input.value = String(value).slice(0, 10);
+  input.style.position = "fixed";
+  input.style.left = "-1000px";
+  input.style.top = "0";
+  document.body.appendChild(input);
+  const cleanup = () => setTimeout(() => input.remove(), 120);
+  input.addEventListener("blur", cleanup, { once: true });
+  input.addEventListener("change", cleanup, { once: true });
+  input.focus();
+  if (input.showPicker) input.showPicker();
+}
+
+function assigneeAvatarsHTML(ids = [], usersByID = {}) {
+  const users = (ids || []).map((id) => usersByID[id]).filter(Boolean);
+  if (!users.length) return "";
+  return `<div class="assignee-avatars">${users.slice(0, 5).map((user) => userChip(user)).join("")}${users.length > 5 ? `<span class="avatar-more">+${users.length - 5}</span>` : ""}</div>`;
+}
+
+function assigneePickerHTML(members = [], selected = []) {
+  const selectedSet = new Set(selected || []);
+  const selectedUsers = (members || []).map((entry) => entry.user || {}).filter((user) => selectedSet.has(user.id));
+  const rows = (members || []).map((entry) => {
+    const user = entry.user || {};
+    const name = user.name || user.username || user.email || "Member";
+    const searchable = [name, user.username, user.email, entry.staff_role, entry.role].filter(Boolean).join(" ");
+    return `<label class="assignee-choice ${selectedSet.has(user.id) ? "selected" : ""}" data-assignee-search="${esc(searchable)}">
+      <input type="checkbox" name="assignee_ids" value="${esc(user.id || "")}" ${selectedSet.has(user.id) ? "checked" : ""}>
+      ${userChip(user)}
+      <strong>${esc(name)}</strong>
+      <span class="assignee-remove-hint" aria-hidden="true">${icon("x")}</span>
+    </label>`;
+  }).join("");
+  return `<div class="assignee-picker">
+    <button class="assignee-trigger" type="button" data-assignee-trigger>
+      <span class="assignee-trigger-icons">${selectedUsers.length ? selectedUsers.slice(0, 3).map((user) => userChip(user)).join("") : icon("user-plus")}</span>
+      <span data-assignee-trigger-label>${selectedUsers.length ? `${selectedUsers.length} assigned` : "Assign"}</span>
+    </button>
+    <div class="assignee-menu" data-assignee-menu hidden>
+      <input class="assignee-search" type="search" placeholder="Search or enter email...">
+      <span class="muted">Assignees</span>
+      <div class="assignee-list">${rows || `<p class="muted">No listed members yet.</p>`}</div>
+    </div>
+  </div>`;
+}
+
+function statusAddControlsHTML(tabID = "") {
+  if (!tabID) return "";
+  return `<div class="status-add-form" data-status-add-form data-status-tab-id="${esc(tabID)}">
+    <span class="muted">Add status</span>
+    <input data-status-add-name placeholder="Needs revisions">
+    <div class="status-color-row">
+      <label><span>Icon</span><input type="color" data-status-add-icon-color value="#f97316"></label>
+      <label><span>Text</span><input type="color" data-status-add-text-color value="#fed7aa"></label>
+      <button class="btn icon quiet status-add-submit" type="button" data-status-add-submit title="Add status">${icon("plus")}</button>
+    </div>
+    <small data-status-add-message></small>
+  </div>`;
+}
+
+function statusEditControlsHTML(tabID = "") {
+  if (!tabID) return "";
+  return `<div class="status-edit-form" data-status-edit-form data-status-tab-id="${esc(tabID)}" hidden>
+    <span class="muted">Edit status</span>
+    <input data-status-edit-name placeholder="Status name">
+    <div class="status-color-row">
+      <label><span>Icon</span><input type="color" data-status-edit-icon-color value="#f97316"></label>
+      <label><span>Text</span><input type="color" data-status-edit-text-color value="#fed7aa"></label>
+      <button class="btn icon quiet status-edit-submit" type="button" data-status-edit-submit title="Save status">${icon("check")}</button>
+      <button class="btn icon quiet" type="button" data-status-edit-cancel title="Cancel">${icon("x")}</button>
+    </div>
+    <small data-status-edit-message></small>
+  </div>`;
+}
+
+function statusPickerHTML(statuses = [], selected = "todo", name = "status", autoTaskID = "", options = {}) {
+  const selectedValue = normalizeClientTaskStatusValue(selected || "todo") || "todo";
+  const selectedStatus = statuses.find((item) => item.value === selectedValue) || { value: selectedValue, label: clientTaskStatusLabel(selectedValue), icon_color: "#8b5cf6", text_color: "#e5e7eb" };
+  const triggerLabel = options.triggerLabel || selectedStatus.label;
+  const canManageStatuses = Boolean(options.canManageStatuses && options.tabID);
+  const canAdd = Boolean((options.canAdd || canManageStatuses) && options.tabID);
+  return `<div class="status-picker" data-status-picker ${autoTaskID ? `data-auto-task-id="${esc(autoTaskID)}"` : ""}>
+    <button class="status-trigger" type="button" data-status-trigger ${statusStyleVars(selectedStatus)}>
+      <span class="status-dot"></span><span data-status-trigger-label>${esc(triggerLabel)}</span>${icon("chevron-down")}
+    </button>
+    <input type="hidden" name="${esc(name)}" value="${esc(selectedValue)}">
+    <div class="status-menu" data-status-menu hidden>
+      ${statuses.map((item) => `<div class="status-option-row">
+        <button type="button" data-status-option="${esc(item.value)}" ${autoTaskID ? `data-auto-client-task-status="${esc(autoTaskID)}"` : ""} ${statusStyleVars(item)}><span class="status-dot"></span><span data-status-option-label>${esc(item.label)}</span></button>
+        ${canManageStatuses ? `<span class="status-option-actions">
+          <button class="btn icon quiet" type="button" data-status-edit="${esc(item.value)}" data-status-label="${esc(item.label)}" data-status-icon-color="${esc(item.icon_color)}" data-status-text-color="${esc(item.text_color)}" title="Edit status">${icon("pencil")}</button>
+          <button class="btn icon quiet danger-text" type="button" data-status-delete="${esc(item.value)}" data-status-label="${esc(item.label)}" title="Delete status">${icon("trash-2")}</button>
+        </span>` : ""}
+      </div>`).join("")}
+      ${canAdd ? statusAddControlsHTML(options.tabID) : ""}
+      ${canManageStatuses ? statusEditControlsHTML(options.tabID) : ""}
+    </div>
+  </div>`;
+}
+
+function selectedAssigneeIDs(form) {
+  return Array.from(form.querySelectorAll("input[name='assignee_ids']:checked")).map((input) => input.value).filter(Boolean);
+}
+
+function bindAssigneePickers(root = document) {
+  bindFloatingDropdownDismissal();
+  root.querySelectorAll(".assignee-picker").forEach((picker) => {
+    const trigger = picker.querySelector("[data-assignee-trigger]");
+    const menu = picker.querySelector("[data-assignee-menu]");
+    const search = picker.querySelector(".assignee-search");
+    menu?.addEventListener("click", (event) => event.stopPropagation());
+    const resetSearch = () => {
+      if (search) search.value = "";
+      picker.querySelectorAll(".assignee-choice").forEach((row) => {
+        row.hidden = false;
+      });
+    };
+    const updateTrigger = () => {
+      const checkedRows = Array.from(picker.querySelectorAll(".assignee-choice input:checked")).map((input) => input.closest(".assignee-choice")).filter(Boolean);
+      picker.querySelectorAll(".assignee-choice").forEach((row) => row.classList.toggle("selected", Boolean(row.querySelector("input:checked"))));
+      const icons = checkedRows.slice(0, 3).map((row) => row.querySelector(".user-chip")?.outerHTML || "").join("");
+      picker.querySelector(".assignee-trigger-icons").innerHTML = checkedRows.length ? icons : icon("user-plus");
+      picker.querySelector("[data-assignee-trigger-label]").textContent = checkedRows.length ? `${checkedRows.length} assigned` : "Assign";
+      window.lucide?.createIcons();
+    };
+    trigger?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      document.querySelectorAll(".assignee-menu").forEach((other) => {
+        if (other !== menu) other.hidden = true;
+      });
+      const shouldOpen = Boolean(menu?.hidden);
+      if (menu) menu.hidden = !menu.hidden;
+      if (shouldOpen) {
+        resetSearch();
+        search?.focus();
+      }
+    });
+    search?.addEventListener("click", (event) => event.stopPropagation());
+    search?.addEventListener("keydown", (event) => event.stopPropagation());
+    search?.addEventListener("input", () => {
+      const q = search.value.trim().toLowerCase();
+      picker.querySelectorAll(".assignee-choice").forEach((row) => {
+        const searchable = row.dataset.assigneeSearch || row.textContent || "";
+        row.hidden = Boolean(q) && !searchable.toLowerCase().includes(q);
+      });
+    });
+    picker.querySelectorAll(".assignee-choice input").forEach((input) => input.addEventListener("change", () => {
+      updateTrigger();
+      picker.dispatchEvent(new CustomEvent("assigneeschange", { bubbles: true }));
+    }));
+  });
+}
+
+function bindStatusPickers(root = document) {
+  bindFloatingDropdownDismissal();
+  root.querySelectorAll("[data-status-picker]").forEach((picker) => {
+    const trigger = picker.querySelector("[data-status-trigger]");
+    const menu = picker.querySelector("[data-status-menu]");
+    const input = picker.querySelector("input[type='hidden']");
+    menu?.addEventListener("click", (event) => event.stopPropagation());
+    trigger?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      document.querySelectorAll(".status-menu").forEach((other) => {
+        if (other !== menu) other.hidden = true;
+      });
+      if (menu) menu.hidden = !menu.hidden;
+    });
+    picker.querySelectorAll("[data-status-option]").forEach((option) => option.addEventListener("click", () => {
+      const value = option.dataset.statusOption;
+      if (input) input.value = value;
+      const trigger = picker.querySelector("[data-status-trigger]");
+      const label = option.querySelector("[data-status-option-label]")?.textContent || clientTaskStatusLabel(value);
+      picker.querySelector("[data-status-trigger-label]").textContent = label;
+      trigger?.style.setProperty("--status-icon-color", option.style.getPropertyValue("--status-icon-color"));
+      trigger?.style.setProperty("--status-text-color", option.style.getPropertyValue("--status-text-color"));
+      if (menu) menu.hidden = true;
+      input?.dispatchEvent(new Event("change", { bubbles: true }));
+      picker.dispatchEvent(new CustomEvent("statuschange", { bubbles: true, detail: { value } }));
+    }));
+  });
+}
+
+function bindStatusAddControls(root, tab, tasks = [], onSaved = () => {}) {
+  root.querySelectorAll("[data-status-add-form]").forEach((box) => {
+    const submit = box.querySelector("[data-status-add-submit]");
+    const nameInput = box.querySelector("[data-status-add-name]");
+    const message = box.querySelector("[data-status-add-message]");
+    const save = async () => {
+      const status = normalizeClientTaskStatusValue(nameInput?.value || "");
+      if (!status || !tab?.id) {
+        if (message) message.textContent = "Status name is required.";
+        return;
+      }
+      if (submit) submit.disabled = true;
+      if (message) message.textContent = "Saving...";
+      try {
+        const payload = statusStylesPayload(
+          tab,
+          tasks,
+          status,
+          box.querySelector("[data-status-add-icon-color]")?.value,
+          box.querySelector("[data-status-add-text-color]")?.value,
+        );
+        await api(`/api/client-tabs/${tab.id}`, { method: "PATCH", body: JSON.stringify(payload) });
+        if (message) message.textContent = "Saved";
+        await onSaved(status);
+      } catch (error) {
+        if (message) message.textContent = error.message;
+      } finally {
+        if (submit) submit.disabled = false;
+      }
+    };
+    submit?.addEventListener("click", save);
+    nameInput?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      save();
+    });
+  });
+  root.querySelectorAll("[data-status-edit]").forEach((btn) => btn.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const menu = btn.closest("[data-status-menu]");
+    const form = menu?.querySelector("[data-status-edit-form]");
+    if (!form) return;
+    form.hidden = false;
+    form.dataset.editingStatus = btn.dataset.statusEdit || "";
+    form.querySelector("[data-status-edit-name]").value = btn.dataset.statusLabel || clientTaskStatusLabel(btn.dataset.statusEdit);
+    form.querySelector("[data-status-edit-icon-color]").value = normalizeStatusColor(btn.dataset.statusIconColor, "#f97316");
+    form.querySelector("[data-status-edit-text-color]").value = normalizeStatusColor(btn.dataset.statusTextColor, "#fed7aa");
+    const message = form.querySelector("[data-status-edit-message]");
+    if (message) message.textContent = "";
+    form.querySelector("[data-status-edit-name]")?.focus();
+  }));
+  root.querySelectorAll("[data-status-edit-cancel]").forEach((btn) => btn.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const form = btn.closest("[data-status-edit-form]");
+    if (form) form.hidden = true;
+  }));
+  root.querySelectorAll("[data-status-edit-submit]").forEach((btn) => btn.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const form = btn.closest("[data-status-edit-form]");
+    const oldStatus = form?.dataset.editingStatus;
+    const message = form?.querySelector("[data-status-edit-message]");
+    const nextName = form?.querySelector("[data-status-edit-name]")?.value || "";
+    if (!oldStatus || !tab?.id) return;
+    if (!normalizeClientTaskStatusValue(nextName)) {
+      if (message) message.textContent = "Status name is required.";
+      return;
+    }
+    btn.disabled = true;
+    if (message) message.textContent = "Saving...";
+    try {
+      await api(`/api/client-tabs/${tab.id}/statuses/${oldStatus}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: nextName,
+          icon_color: form.querySelector("[data-status-edit-icon-color]")?.value,
+          text_color: form.querySelector("[data-status-edit-text-color]")?.value,
+        }),
+      });
+      if (message) message.textContent = "Saved";
+      await onSaved(normalizeClientTaskStatusValue(nextName));
+    } catch (error) {
+      if (message) message.textContent = error.message;
+    } finally {
+      btn.disabled = false;
+    }
+  }));
+  root.querySelectorAll("[data-status-delete]").forEach((btn) => btn.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const status = btn.dataset.statusDelete;
+    const label = btn.dataset.statusLabel || clientTaskStatusLabel(status);
+    if (!status || !tab?.id) return;
+    if (!typedConfirm(`Delete status "${label}"? Tasks in this status will move to the first remaining status.`)) return;
+    btn.disabled = true;
+    try {
+      await api(`/api/client-tabs/${tab.id}/statuses/${status}`, { method: "DELETE" });
+      await onSaved();
+    } catch (error) {
+      const menu = btn.closest("[data-status-menu]");
+      const message = menu?.querySelector("[data-status-add-message]") || menu?.querySelector("[data-status-edit-message]");
+      if (message) message.textContent = error.message;
+    } finally {
+      btn.disabled = false;
+    }
+  }));
+}
+
+function bindClientTaskQuickAutosave(root, taskID, afterSave = () => {}) {
+  const form = root.querySelector("#clientTaskQuickEditForm");
+  if (!form || !taskID) return;
+  const dueInput = form.querySelector("input[name='due_date']");
+  let saveVersion = 0;
+  const save = async (body) => {
+    const currentVersion = ++saveVersion;
+    setFormStatus(form, "Saving...");
+    try {
+      await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify(body) });
+      if (currentVersion === saveVersion) {
+        setFormStatus(form, "Saved");
+      }
+      await afterSave();
+    } catch (error) {
+      if (currentVersion === saveVersion) {
+        setFormStatus(form, error.message, true);
+      }
+    }
+  };
+  form.querySelector("input[name='status']")?.addEventListener("change", (event) => {
+    save({ status: event.currentTarget.value });
+  });
+  form.querySelectorAll("[data-due-edit-open]").forEach((btn) => btn.addEventListener("click", () => {
+    dueInput?.focus();
+    if (dueInput?.showPicker) {
+      try {
+        dueInput.showPicker();
+      } catch {
+        dueInput.click();
+      }
+    } else {
+      dueInput?.click();
+    }
+  }));
+  dueInput?.addEventListener("change", (event) => {
+    const label = form.querySelector("[data-due-edit-label]");
+    if (label) label.textContent = dueDateDeltaLabel(event.currentTarget.value) || "No due date";
+    save({ due_date: event.currentTarget.value });
+  });
+  form.querySelector(".assignee-picker")?.addEventListener("assigneeschange", () => {
+    save({ assignee_ids: selectedAssigneeIDs(form) });
+  });
+}
+
+function bindClientBoardDrag(root, onMoved = () => {}) {
+  const setup = () => {
+    if (!window.Sortable) {
+      setTimeout(setup, 120);
+      return;
+    }
+    root.querySelectorAll(".client-board .kanban-column").forEach((column) => {
+      Sortable.create(column, {
+        group: "client-tasks",
+        animation: 150,
+        draggable: ".client-task-card[data-can-drag='true']",
+        filter: "button, input, textarea, a, .status-picker, .assignee-picker",
+        preventOnFilter: false,
+        ghostClass: "task-card-ghost",
+        dragClass: "task-card-dragging",
+        onAdd: async (event) => {
+          const taskID = event.item?.dataset.clientTaskId;
+          const status = event.to?.dataset.clientStatus;
+          if (!taskID || !status) return;
+          try {
+            await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify({ status }) });
+            await onMoved();
+          } catch (error) {
+            setStatus(error.message, true);
+            await onMoved();
+          }
+        },
+      });
+    });
+  };
+  setup();
+}
+
+function bindFloatingDropdownDismissal() {
+  if (state.dropdownDismissBound) return;
+  state.dropdownDismissBound = true;
+  document.addEventListener("click", () => {
+    document.querySelectorAll(".assignee-menu, .status-menu").forEach((menu) => {
+      menu.hidden = true;
+    });
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    document.querySelectorAll(".assignee-menu, .status-menu").forEach((menu) => {
+      menu.hidden = true;
+    });
+  });
+}
+
+function richEditorHTML(name, value = "", placeholder = "") {
+  return `<div class="rich-editor" contenteditable="true" data-rich-editor="${esc(name)}" data-placeholder="${esc(placeholder)}">${esc(value)}</div><input type="hidden" name="${esc(name)}" value="${esc(value)}">`;
+}
+
+function bindRichEditors(root = document) {
+  root.querySelectorAll("[data-rich-editor]").forEach((editor) => {
+    const input = root.querySelector(`input[name="${editor.dataset.richEditor}"]`);
+    const sync = () => {
+      if (input) input.value = editor.innerText.trim();
+    };
+    editor.addEventListener("input", sync);
+    sync();
+  });
+}
+
+function syncRichEditors(root = document) {
+  root.querySelectorAll("[data-rich-editor]").forEach((editor) => {
+    const input = root.querySelector(`input[name="${editor.dataset.richEditor}"]`);
+    if (input) input.value = editor.innerText.trim();
+  });
+}
+
+function bindClientTaskTypeToggle(form) {
+  const select = form?.querySelector("[data-client-task-type]");
+  const descriptionFields = form?.querySelector("[data-task-description-fields]");
+  const annotationFields = form?.querySelector("[data-task-annotation-fields]");
+  const urlInput = form?.elements.url;
+  if (!select) return;
+  const update = () => {
+    const isAnnotation = select.value === "annotation";
+    if (descriptionFields) descriptionFields.hidden = isAnnotation;
+    if (annotationFields) annotationFields.hidden = !isAnnotation;
+    if (urlInput) urlInput.required = isAnnotation;
+  };
+  select.addEventListener("change", update);
+  update();
+}
+
 function canManageClientTaskUI(task, canManageFolder = false) {
   return Boolean(canManageFolder || task?.created_by === state.me?.id);
 }
 
-function clientTaskBoardHTML(tasks, tab, members, canManage) {
-  const statuses = [
-    { value: "todo", label: "To do" },
-    { value: "in_progress", label: "In progress" },
-    { value: "done", label: "Done" },
-  ];
+function clientTaskBoardHTML(tasks, tab, members, canManage, canManageStatuses = false, canUpdateProgress = false) {
+  const statuses = clientTaskStatuses(tab, tasks);
+  const usersByID = clientTaskUsersByID(members);
   return `<div class="client-board">
-    ${statuses.map((status) => `<section class="kanban-column">
-      <h3>${esc(status.label)}</h3>
+    ${statuses.map((status) => `<section class="kanban-column" data-client-status="${esc(status.value)}">
+      <h3>${statusBadgeHTML(status, "status-badge status-heading")}</h3>
       ${(tasks || []).filter((task) => (task.status || "todo") === status.value && task.tab_id === tab.id).map((task) => {
         const canManageTask = canManageClientTaskUI(task, canManage);
-        return `<article class="task-card client-task-card">
+        const canUpdateTaskProgress = Boolean(canUpdateProgress || canManageTask);
+        const dueLabel = dueDateDeltaLabel(task.due_date);
+        return `<article class="task-card client-task-card" data-client-task-id="${esc(task.id)}" data-can-drag="${canUpdateTaskProgress ? "true" : "false"}">
           <button class="client-task-open" type="button" data-open-client-task="${esc(task.id)}">${esc(compactClientTaskTitle(task.title))}</button>
-          ${canManageTask ? `<div class="toolbar compact-toolbar">
-            <select data-client-task-status="${esc(task.id)}">${statuses.map((item) => `<option value="${item.value}" ${item.value === (task.status || "todo") ? "selected" : ""}>${esc(item.label)}</option>`).join("")}</select>
-            <button class="btn compact danger" type="button" data-delete-client-task="${esc(task.id)}">${icon("trash-2")}Delete</button>
+          <p>${chatText(compactClientTaskContent(task.type === "annotation" ? task.comment || task.content : task.content) || "No content yet.")}</p>
+          <div class="client-task-card-meta">
+            ${statusBadgeHTML(status, "status-badge status-pill")}
+            <span class="pill">${esc(fmtDate(task.created_at))}</span>
+            ${dueLabel ? `<button class="pill warn due-count" type="button" data-due-calendar="${esc(task.due_date)}">${icon("calendar-days")}${esc(dueLabel)}</button>` : ""}
+            ${assigneeAvatarsHTML(task.assignee_ids || [], usersByID)}
+          </div>
+          ${(canUpdateTaskProgress || canManageTask) ? `<div class="toolbar compact-toolbar">
+            ${canUpdateTaskProgress ? statusPickerHTML(statuses, task.status || "todo", "status", task.id, { canManageStatuses, tabID: tab.id }) : ""}
+            ${canManageTask ? `<button class="btn compact danger" type="button" data-delete-client-task="${esc(task.id)}">${icon("trash-2")}Delete</button>` : ""}
           </div>` : ""}
         </article>`;
       }).join("") || `<p class="muted">No tasks.</p>`}
@@ -1284,14 +1809,13 @@ async function openClientTaskPanel(taskID) {
     panel.className = "client-task-panel";
     document.body.appendChild(panel);
   }
-  const assignees = (task.assignee_ids || []).map((id) => usersByID[id]?.name || usersByID[id]?.username || "").filter(Boolean).join(", ");
   const canManageFolder = Boolean(data.can_manage);
   const canManageTask = Boolean(data.can_manage_task || canManageClientTaskUI(task, canManageFolder));
-  const statuses = [
-    { value: "todo", label: "To do" },
-    { value: "in_progress", label: "In progress" },
-    { value: "done", label: "Done" },
-  ];
+  const canUpdateProgress = Boolean(data.can_update_progress || canManageTask);
+  const canManageStatuses = Boolean(data.can_manage_statuses);
+  const statuses = clientTaskStatuses(data.tab, [task]);
+  const taskContent = task.type === "annotation" ? task.comment || task.content : task.content;
+  const dueLabel = dueDateDeltaLabel(task.due_date);
   panel.innerHTML = `
     <header class="client-task-panel-head">
       <div><span class="muted">${esc(data.client?.name || "Client")} / ${esc(data.website?.name || "Website")}</span><h2>${esc(compactClientTaskTitle(task.title))}</h2></div>
@@ -1302,14 +1826,22 @@ async function openClientTaskPanel(taskID) {
     </header>
     <div class="client-task-panel-body">
       <section class="client-task-detail-main">
-        <div class="task-detail-meta">
-          <span class="pill">${esc(task.status || "todo")}</span>
+        ${canUpdateProgress ? `<form id="clientTaskQuickEditForm" class="task-detail-meta task-detail-meta-form">
+          ${statusPickerHTML(statuses, task.status || "todo", "status", "", { canManageStatuses, tabID: data.tab?.id })}
           <span class="pill">${esc(task.type || "description")}</span>
-          ${task.due_date ? `<span class="pill warn">${icon("calendar-days")}${esc(fmtDate(task.due_date))}</span>` : ""}
-          ${assignees ? `<span class="pill">${icon("user-check")}${esc(assignees)}</span>` : ""}
-        </div>
+          <span class="pill">${icon("calendar-days")}${esc(fmtDate(task.created_at))}</span>
+          <span class="pill warn due-edit-pill"><button class="due-icon-btn" type="button" data-due-edit-open title="Change due date">${icon("calendar-days")}</button><button class="due-date-text-btn" type="button" data-due-edit-open><span data-due-edit-label>${esc(dueLabel || "No due date")}</span></button><input class="due-edit-input" type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}" title="Due date"></span>
+          ${assigneePickerHTML(data.members || [], task.assignee_ids || [])}
+          <span class="status-line"></span>
+        </form>` : `<div class="task-detail-meta">
+          ${statusBadgeHTML(statuses.find((item) => item.value === (task.status || "todo")) || statuses[0], "status-badge status-pill")}
+          <span class="pill">${esc(task.type || "description")}</span>
+          <span class="pill">${icon("calendar-days")}${esc(fmtDate(task.created_at))}</span>
+          ${dueLabel ? `<button class="pill warn due-count" type="button" data-due-calendar="${esc(task.due_date)}">${icon("calendar-days")}${esc(dueLabel)}</button>` : ""}
+          ${assigneeAvatarsHTML(task.assignee_ids || [], usersByID)}
+        </div>`}
         <h3>Content</h3>
-        <p>${chatText(task.content || "No content yet.")}</p>
+        <p>${chatText(taskContent || "No content yet.")}</p>
         ${task.url ? `<h3>Annotation URL</h3><p><a class="text-link" href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">${esc(task.url)}</a></p>` : ""}
         ${(task.attachments || []).length ? `<h3>Attachments</h3><div class="attachment-list">${task.attachments.map((url) => `<a class="attachment-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${icon("paperclip")}${esc(url.split("/").pop() || "Attachment")}</a>`).join("")}</div>` : ""}
       </section>
@@ -1333,11 +1865,11 @@ async function openClientTaskPanel(taskID) {
     <dialog id="editClientTaskDialog" class="modal client-dialog">
       <form id="editClientTaskForm" class="form-grid" method="dialog">
         <div class="modal-head"><h2>Edit task</h2><button class="btn icon quiet" type="button" data-close-dialog="editClientTaskDialog" title="Close">${icon("x")}</button></div>
-        <div class="grid-2"><div class="field"><label>Status</label><select name="status">${statuses.map((item) => `<option value="${item.value}" ${item.value === (task.status || "todo") ? "selected" : ""}>${esc(item.label)}</option>`).join("")}</select></div><div class="field"><label>Due date</label><input type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}"></div></div>
+        <div class="quick-task-controls"><label class="compact-field"><span>Status</span>${statusPickerHTML(statuses, task.status || "todo", "status", "", { canManageStatuses, tabID: data.tab?.id })}</label><label class="compact-field"><span>Due</span><input type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}"></label></div>
         <div class="field"><label>Title</label><input name="title" maxlength="80" value="${esc(task.title || "")}" required></div>
-        <div class="field"><label>Content</label><textarea name="content" data-mentionable>${esc(task.content || "")}</textarea></div>
-        <div class="field"><label>Annotation URL</label><input name="url" value="${esc(task.url || "")}" placeholder="https://example.com/page"></div>
-        <div class="field"><label>Assignment</label><select name="assignee_ids" multiple>${(data.members || []).map((entry) => `<option value="${esc(entry.user?.id || "")}" ${(task.assignee_ids || []).includes(entry.user?.id) ? "selected" : ""}>${esc(entry.user?.name || entry.user?.email || "Member")}</option>`).join("")}</select></div>
+        <div class="field"><label>${task.type === "annotation" ? "Comment" : "Content"}</label>${richEditorHTML(task.type === "annotation" ? "comment" : "content", taskContent || "", "Write task details")}</div>
+        <div class="field" ${task.type === "annotation" ? "" : "hidden"}><label>Annotation URL</label><input name="url" value="${esc(task.url || "")}" placeholder="https://example.com/page"></div>
+        <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [], task.assignee_ids || [])}</div>
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="editClientTaskDialog">Cancel</button></div>
         <p class="status-line"></p>
       </form>
@@ -1357,10 +1889,12 @@ async function openClientTaskPanel(taskID) {
   panel.querySelector("#editClientTaskForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
+    syncRichEditors(form);
     const body = Object.fromEntries(new FormData(form).entries());
     body.title = compactClientTaskTitle(body.title);
-    body.content = String(body.content || "").trim();
-    body.assignee_ids = Array.from(form.assignee_ids.selectedOptions).map((option) => option.value).filter(Boolean);
+    body.content = compactClientTaskContent(body.content || "");
+    body.comment = compactClientTaskContent(body.comment || "");
+    body.assignee_ids = selectedAssigneeIDs(form);
     try {
       await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify(body) });
       panel.querySelector("#editClientTaskDialog")?.close();
@@ -1369,6 +1903,17 @@ async function openClientTaskPanel(taskID) {
       setFormStatus(form, error.message, true);
     }
   });
+  panel.querySelectorAll("[data-due-calendar]").forEach((btn) => btn.addEventListener("click", () => showDueDateCalendar(btn.dataset.dueCalendar)));
+  bindAssigneePickers(panel);
+  bindStatusPickers(panel);
+  bindStatusAddControls(panel, data.tab, [task], async () => {
+    await openClientTaskPanel(taskID);
+    route();
+  });
+  bindClientTaskQuickAutosave(panel, taskID, async () => {
+    route();
+  });
+  bindRichEditors(panel);
   panel.querySelectorAll("[data-client-comment-reply]").forEach((btn) => btn.addEventListener("click", () => {
     setClientTaskReply({ id: btn.dataset.clientCommentReply, text: btn.dataset.replyText || "Comment" });
     panel.querySelector("textarea[name='content']")?.focus();
@@ -1441,6 +1986,8 @@ async function openClientTaskPanel(taskID) {
 
 function clientTabContentHTML(tab, data) {
   const canManage = data.can_manage;
+  const canManageStatuses = Boolean(data.can_manage_statuses);
+  const canUpdateProgress = Boolean(data.can_update_progress || canManage);
   if (!tab) return `<section class="panel"><p class="muted">Add a tab to this website.</p></section>`;
   if (tab.type === "doc_list") {
     return `<section class="panel">
@@ -1449,9 +1996,10 @@ function clientTabContentHTML(tab, data) {
     </section>`;
   }
   if (tab.type === "task_board") {
+    const statuses = clientTaskStatuses(tab, data.tasks || []);
     return `<section class="panel">
-      <div class="panel-head"><h2>${esc(tab.title)}</h2>${canManage ? `<button class="btn primary compact" id="addClientTaskBtn">${icon("plus")}Add task</button>` : ""}</div>
-      ${clientTaskBoardHTML(data.tasks || [], tab, data.members || [], canManage)}
+      <div class="panel-head"><h2>${esc(tab.title)}</h2>${canManage ? `<div class="toolbar">${canManageStatuses ? statusPickerHTML(statuses, statuses[0]?.value || "todo", "status_manager", "", { canManageStatuses: true, tabID: tab.id, triggerLabel: "Statuses" }) : ""}<button class="btn primary compact" id="addClientTaskBtn">${icon("plus")}Add task</button></div>` : ""}</div>
+      ${clientTaskBoardHTML(data.tasks || [], tab, data.members || [], canManage, canManageStatuses, canUpdateProgress)}
     </section>`;
   }
   return `<section class="panel">
@@ -1652,6 +2200,7 @@ async function renderClientWebsite(clientID, websiteID) {
   const data = await api(`/api/client-websites/${websiteID}`);
   const website = data.website;
   const canManage = Boolean(data.can_manage);
+  const canManageStatuses = Boolean(data.can_manage_statuses);
   const selectedTabID = new URLSearchParams(location.search).get("tab") || data.tabs?.[0]?.id || "";
   const selectedTab = (data.tabs || []).find((tab) => tab.id === selectedTabID) || data.tabs?.[0] || null;
   shell(website.name, `
@@ -1699,12 +2248,15 @@ async function renderClientWebsite(clientID, websiteID) {
     <dialog id="clientTaskDialog" class="modal client-dialog">
       <form id="clientTaskForm" class="form-grid" method="dialog">
         <div class="modal-head"><h2>Add task</h2><button class="btn icon quiet" type="button" data-close-dialog="clientTaskDialog" title="Close">${icon("x")}</button></div>
-        <div class="grid-2"><div class="field"><label>Task type</label><select name="type"><option value="description">Task description</option><option value="annotation">Annotation</option></select></div><div class="field"><label>Due date</label><input type="date" name="due_date"></div></div>
+        <div class="grid-2"><div class="field"><label>Task option</label><select name="type" data-client-task-type><option value="description">Task Description</option><option value="annotation">Annotation</option></select></div><div class="field"><label>Due date</label><input type="date" name="due_date"></div></div>
         <div class="field"><label>Title</label><input name="title" maxlength="80" required></div>
-        <div class="field"><label>Content</label><textarea name="content" data-mentionable></textarea></div>
-        <div class="field"><label>Annotation URL</label><input name="url" placeholder="https://example.com/page"></div>
-        <div class="field"><label>Assignment</label><select name="assignee_ids" multiple>${(data.members || []).map((entry) => `<option value="${esc(entry.user?.id || "")}">${esc(entry.user?.name || entry.user?.email || "Member")}</option>`).join("")}</select></div>
-        <div class="field"><label>Attachments</label><input type="file" name="attachments" multiple></div>
+        <div class="field" data-task-description-fields><label>Content</label>${richEditorHTML("content", "", "Write task details")}</div>
+        <div data-task-annotation-fields hidden>
+          <div class="field"><label>Annotation URL</label><input name="url" placeholder="https://example.com/page"></div>
+          <div class="field"><label>Comment</label>${richEditorHTML("comment", "", "Write annotation comment")}</div>
+          <div class="field"><label>Attachments</label><input type="file" name="attachments" multiple></div>
+        </div>
+        <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [])}</div>
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Create task</button><button class="btn" type="button" data-close-dialog="clientTaskDialog">Cancel</button></div>
         <p class="status-line"></p>
       </form>
@@ -1772,14 +2324,25 @@ async function renderClientWebsite(clientID, websiteID) {
   $("#clientTaskForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
+    syncRichEditors(form);
     const body = Object.fromEntries(new FormData(form).entries());
     body.title = compactClientTaskTitle(body.title);
-    body.content = String(body.content || "").trim();
-    body.assignee_ids = Array.from(form.assignee_ids.selectedOptions).map((option) => option.value).filter(Boolean);
+    body.assignee_ids = selectedAssigneeIDs(form);
     body.attachments = [];
     try {
-      for (const file of Array.from(form.attachments.files || [])) {
-        body.attachments.push(await upload(file));
+      if (body.type === "annotation") {
+        body.comment = compactClientTaskContent(body.comment || "");
+        body.content = body.comment;
+        if (!String(body.url || "").startsWith("https://")) {
+          throw new Error("annotation URL must start with https://");
+        }
+        for (const file of Array.from(form.attachments?.files || [])) {
+          body.attachments.push(await upload(file));
+        }
+      } else {
+        body.content = compactClientTaskContent(body.content || "");
+        body.comment = "";
+        body.url = "";
       }
       await api(`/api/client-tabs/${selectedTab.id}/tasks`, { method: "POST", body: JSON.stringify(body) });
       renderClientWebsite(clientID, websiteID);
@@ -1787,10 +2350,11 @@ async function renderClientWebsite(clientID, websiteID) {
       setFormStatus(form, error.message, true);
     }
   });
-  document.querySelectorAll("[data-client-task-status]").forEach((select) => select.addEventListener("change", async () => {
-    await api(`/api/client-tasks/${select.dataset.clientTaskStatus}`, { method: "PATCH", body: JSON.stringify({ status: select.value }) });
+  document.querySelectorAll("[data-auto-client-task-status]").forEach((btn) => btn.addEventListener("click", async () => {
+    await api(`/api/client-tasks/${btn.dataset.autoClientTaskStatus}`, { method: "PATCH", body: JSON.stringify({ status: btn.dataset.statusOption }) });
     renderClientWebsite(clientID, websiteID);
   }));
+  document.querySelectorAll("[data-due-calendar]").forEach((btn) => btn.addEventListener("click", () => showDueDateCalendar(btn.dataset.dueCalendar)));
   document.querySelectorAll("[data-open-client-task]").forEach((btn) => btn.addEventListener("click", () => openClientTaskPanel(btn.dataset.openClientTask)));
   document.querySelectorAll("[data-delete-client-task]").forEach((btn) => btn.addEventListener("click", async () => {
     if (!confirm("Delete this task?")) return;
@@ -1807,6 +2371,18 @@ async function renderClientWebsite(clientID, websiteID) {
     await api(`/api/client-tabs/${btn.dataset.deleteClientTab}`, { method: "DELETE" });
     renderClientWebsite(clientID, websiteID);
   }));
+  bindClientTaskTypeToggle($("#clientTaskForm"));
+  bindAssigneePickers(app);
+  bindStatusPickers(app);
+  if (canManageStatuses) {
+    bindStatusAddControls(app, selectedTab, data.tasks || [], async () => {
+      renderClientWebsite(clientID, websiteID);
+    });
+  }
+  bindClientBoardDrag(app, async () => {
+    renderClientWebsite(clientID, websiteID);
+  });
+  bindRichEditors(app);
   bindDialogCloseButtons();
   bindMentionSuggestions(app);
   icons();

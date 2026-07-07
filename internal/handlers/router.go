@@ -122,6 +122,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.DELETE("/client-websites/:id", s.deleteClientWebsite)
 	authed.POST("/client-websites/:id/tabs", s.createClientTab)
 	authed.PATCH("/client-tabs/:id", s.updateClientTab)
+	authed.PATCH("/client-tabs/:id/statuses/:status", s.updateClientTabStatus)
+	authed.DELETE("/client-tabs/:id/statuses/:status", s.deleteClientTabStatus)
 	authed.DELETE("/client-tabs/:id", s.deleteClientTab)
 	authed.POST("/client-tabs/:id/tasks", s.createClientTask)
 	authed.GET("/client-tasks/:id", s.getClientTask)

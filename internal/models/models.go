@@ -152,17 +152,24 @@ type ClientDocument struct {
 	UpdatedAt time.Time          `bson:"updated_at" json:"updated_at"`
 }
 
+type ClientTaskStatusStyle struct {
+	IconColor string `bson:"icon_color,omitempty" json:"icon_color,omitempty"`
+	TextColor string `bson:"text_color,omitempty" json:"text_color,omitempty"`
+}
+
 type ClientTab struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	ClientID  primitive.ObjectID `bson:"client_id" json:"client_id"`
-	WebsiteID primitive.ObjectID `bson:"website_id" json:"website_id"`
-	TeamID    primitive.ObjectID `bson:"team_id" json:"team_id"`
-	Type      string             `bson:"type" json:"type"`
-	Title     string             `bson:"title" json:"title"`
-	Content   string             `bson:"content,omitempty" json:"content,omitempty"`
-	CreatedBy primitive.ObjectID `bson:"created_by" json:"created_by"`
-	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
-	UpdatedAt time.Time          `bson:"updated_at" json:"updated_at"`
+	ID           primitive.ObjectID               `bson:"_id,omitempty" json:"id"`
+	ClientID     primitive.ObjectID               `bson:"client_id" json:"client_id"`
+	WebsiteID    primitive.ObjectID               `bson:"website_id" json:"website_id"`
+	TeamID       primitive.ObjectID               `bson:"team_id" json:"team_id"`
+	Type         string                           `bson:"type" json:"type"`
+	Title        string                           `bson:"title" json:"title"`
+	Content      string                           `bson:"content,omitempty" json:"content,omitempty"`
+	Statuses     []string                         `bson:"statuses,omitempty" json:"statuses,omitempty"`
+	StatusStyles map[string]ClientTaskStatusStyle `bson:"status_styles,omitempty" json:"status_styles,omitempty"`
+	CreatedBy    primitive.ObjectID               `bson:"created_by" json:"created_by"`
+	CreatedAt    time.Time                        `bson:"created_at" json:"created_at"`
+	UpdatedAt    time.Time                        `bson:"updated_at" json:"updated_at"`
 }
 
 type ClientTask struct {
