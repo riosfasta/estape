@@ -128,14 +128,18 @@ func (s *Server) listBugs(c *gin.Context) {
 func (s *Server) createBug(c *gin.Context) {
 	userCtx, _ := currentUser(c)
 	var req struct {
-		WebsiteID     string  `json:"website_id"`
-		PinX          float64 `json:"pin_x"`
-		PinY          float64 `json:"pin_y"`
-		PageURL       string  `json:"page_url"`
-		ScreenshotURL string  `json:"screenshot_url"`
-		Description   string  `json:"description"`
-		Severity      string  `json:"severity"`
-		AssigneeID    string  `json:"assignee_id"`
+		WebsiteID     string   `json:"website_id"`
+		PinX          float64  `json:"pin_x"`
+		PinY          float64  `json:"pin_y"`
+		PageURL       string   `json:"page_url"`
+		ScreenshotURL string   `json:"screenshot_url"`
+		Title         string   `json:"title"`
+		Description   string   `json:"description"`
+		Severity      string   `json:"severity"`
+		Status        string   `json:"status"`
+		AssigneeID    string   `json:"assignee_id"`
+		AssigneeIDs   []string `json:"assignee_ids"`
+		Attachments   []string `json:"attachments"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid bug body"})
@@ -162,8 +166,18 @@ func (s *Server) createBug(c *gin.Context) {
 			return
 		}
 	}
-	if req.Severity == "" {
-		req.Severity = "Normal"
+	assigneeIDs, err := objectIDsFromStrings(req.AssigneeIDs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid assignee_ids"})
+		return
+	}
+	if !assigneeID.IsZero() && len(assigneeIDs) == 0 {
+		assigneeIDs = []primitive.ObjectID{assigneeID}
+	}
+	status := normalizeBugStatus(req.Status)
+	severity := strings.TrimSpace(req.Severity)
+	if severity == "" {
+		severity = status
 	}
 	bug := models.Bug{
 		ID:            primitive.NewObjectID(),
@@ -172,13 +186,22 @@ func (s *Server) createBug(c *gin.Context) {
 		PinY:          clampFloat(req.PinY, 0, 100),
 		PageURL:       strings.TrimSpace(req.PageURL),
 		ScreenshotURL: strings.TrimSpace(req.ScreenshotURL),
+		Title:         normalizeClientTaskTitle(req.Title),
 		Description:   strings.TrimSpace(req.Description),
-		Severity:      req.Severity,
-		Status:        "Open",
+		Severity:      severity,
+		Status:        status,
 		AssigneeID:    assigneeID,
+		AssigneeIDs:   assigneeIDs,
+		Attachments:   cleanStringSlice(req.Attachments, 20),
 		Comments:      []models.Comment{},
 		CreatedBy:     userCtx.ID,
 		CreatedAt:     time.Now(),
+	}
+	if bug.Title == "" {
+		bug.Title = normalizeClientTaskTitle(bug.Description)
+	}
+	if bug.Title == "" {
+		bug.Title = "Pinned feedback"
 	}
 	if bug.Description == "" {
 		bug.Description = "Pinned feedback"
@@ -187,8 +210,8 @@ func (s *Server) createBug(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create bug"})
 		return
 	}
-	if !assigneeID.IsZero() {
-		_, _ = s.store.C("notifications").InsertOne(c.Request.Context(), models.Notification{ID: primitive.NewObjectID(), UserID: assigneeID, Type: "bug_assigned", Content: "You were assigned a visual bug: " + bug.Description, RelatedID: bug.ID, CreatedAt: time.Now()})
+	for _, id := range s.userNotificationRecipients(c.Request.Context(), assigneeIDs, userCtx.ID) {
+		_, _ = s.store.C("notifications").InsertOne(c.Request.Context(), models.Notification{ID: primitive.NewObjectID(), UserID: id, Type: "bug_assigned", Content: "You were assigned visual feedback: " + bug.Title, RelatedID: bug.ID, CreatedAt: time.Now()})
 	}
 	s.notifyMentions(c.Request.Context(), website.TeamID, userCtx.ID, bug.Description, "feedback", bug.ID)
 	c.JSON(http.StatusCreated, gin.H{"bug": bug})
@@ -210,17 +233,25 @@ func (s *Server) updateBug(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Description *string `json:"description"`
-		Severity    *string `json:"severity"`
-		Status      *string `json:"status"`
-		AssigneeID  *string `json:"assignee_id"`
-		Comment     *string `json:"comment"`
+		Title          *string  `json:"title"`
+		Description    *string  `json:"description"`
+		Severity       *string  `json:"severity"`
+		Status         *string  `json:"status"`
+		AssigneeID     *string  `json:"assignee_id"`
+		AssigneeIDs    []string `json:"assignee_ids"`
+		Attachments    []string `json:"attachments"`
+		Comment        *string  `json:"comment"`
+		AttachmentURL  *string  `json:"attachment_url"`
+		AttachmentName *string  `json:"attachment_name"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid bug update"})
 		return
 	}
 	set := bson.M{}
+	if req.Title != nil {
+		set["title"] = normalizeClientTaskTitle(*req.Title)
+	}
 	if req.Description != nil {
 		set["description"] = strings.TrimSpace(*req.Description)
 	}
@@ -228,7 +259,7 @@ func (s *Server) updateBug(c *gin.Context) {
 		set["severity"] = strings.TrimSpace(*req.Severity)
 	}
 	if req.Status != nil {
-		set["status"] = strings.TrimSpace(*req.Status)
+		set["status"] = normalizeBugStatus(*req.Status)
 	}
 	if req.AssigneeID != nil {
 		assigneeID, err := objectIDFromString(*req.AssigneeID)
@@ -238,14 +269,39 @@ func (s *Server) updateBug(c *gin.Context) {
 		}
 		set["assignee_id"] = assigneeID
 	}
+	if req.AssigneeIDs != nil {
+		assigneeIDs, err := objectIDsFromStrings(req.AssigneeIDs)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid assignee_ids"})
+			return
+		}
+		set["assignee_ids"] = assigneeIDs
+	}
+	if req.Attachments != nil {
+		set["attachments"] = cleanStringSlice(req.Attachments, 20)
+	}
 	update := bson.M{}
 	if len(set) > 0 {
 		update["$set"] = set
 	}
-	if req.Comment != nil && strings.TrimSpace(*req.Comment) != "" {
-		comment := strings.TrimSpace(*req.Comment)
-		update["$push"] = bson.M{"comments": models.Comment{ID: primitive.NewObjectID(), AuthorID: userCtx.ID, Content: comment, CreatedAt: time.Now()}}
-		s.notifyMentions(c.Request.Context(), website.TeamID, userCtx.ID, comment, "comment", bug.ID)
+	commentContent := ""
+	if req.Comment != nil {
+		commentContent = strings.TrimSpace(*req.Comment)
+	}
+	attachmentURL := ""
+	if req.AttachmentURL != nil {
+		attachmentURL = strings.TrimSpace(*req.AttachmentURL)
+	}
+	attachmentName := ""
+	if req.AttachmentName != nil {
+		attachmentName = strings.TrimSpace(*req.AttachmentName)
+	}
+	if commentContent != "" || attachmentURL != "" {
+		comment := models.Comment{ID: primitive.NewObjectID(), AuthorID: userCtx.ID, Content: commentContent, AttachmentURL: attachmentURL, AttachmentName: attachmentName, CreatedAt: time.Now()}
+		update["$push"] = bson.M{"comments": comment}
+		if commentContent != "" {
+			s.notifyMentions(c.Request.Context(), website.TeamID, userCtx.ID, commentContent, "comment", comment.ID)
+		}
 	}
 	if len(update) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no changes supplied"})
@@ -301,25 +357,27 @@ func (s *Server) convertBugToTask(c *gin.Context) {
 	}
 	taskTitle := strings.TrimSpace(req.Title)
 	if taskTitle == "" {
-		taskTitle = "Visual bug: " + bug.Description
+		taskTitle = "Visual feedback: " + firstNonEmpty(bug.Title, bug.Description)
 	}
 	task := models.Task{
 		ID:          primitive.NewObjectID(),
 		ListID:      listID,
 		Title:       taskTitle,
 		Description: "Created from website feedback on " + website.URL + "\nPin: " + formatPin(bug.PinX, bug.PinY) + "\nPage: " + bug.PageURL,
-		Status:      "To Do",
+		Status:      clientTaskStatusLabelForLegacy(bug.Status),
 		Priority:    bug.Severity,
 		AssigneeIDs: []primitive.ObjectID{},
 		Tags:        []string{"bug", "visual-feedback"},
 		Checklist:   []models.ChecklistItem{},
-		Attachments: []string{},
+		Attachments: bug.Attachments,
 		Comments:    []models.Comment{},
 		CreatedBy:   userCtx.ID,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
-	if !bug.AssigneeID.IsZero() {
+	if len(bug.AssigneeIDs) > 0 {
+		task.AssigneeIDs = bug.AssigneeIDs
+	} else if !bug.AssigneeID.IsZero() {
 		task.AssigneeIDs = append(task.AssigneeIDs, bug.AssigneeID)
 	}
 	if _, err := s.store.C("tasks").InsertOne(c.Request.Context(), task); err != nil {
@@ -327,9 +385,61 @@ func (s *Server) convertBugToTask(c *gin.Context) {
 		return
 	}
 	_, _ = s.store.C("lists").UpdateByID(c.Request.Context(), listID, bson.M{"$addToSet": bson.M{"task_ids": task.ID}})
-	_, _ = s.store.C("bugs").UpdateByID(c.Request.Context(), bug.ID, bson.M{"$set": bson.M{"linked_task_id": task.ID, "status": "In Progress"}})
+	_, _ = s.store.C("bugs").UpdateByID(c.Request.Context(), bug.ID, bson.M{"$set": bson.M{"linked_task_id": task.ID, "status": "in_progress"}})
 	s.notifyAssignees(c.Request.Context(), task, "A visual bug was converted to a task: "+task.Title)
 	c.JSON(http.StatusCreated, gin.H{"task": task})
+}
+
+func normalizeBugStatus(value string) string {
+	status := normalizeClientTaskStatus(value)
+	switch status {
+	case "", "open", "normal", "low", "high", "urgent":
+		return "todo"
+	case "to_do":
+		return "todo"
+	case "inprogress", "progress":
+		return "in_progress"
+	case "needs_revision", "needs_revisions", "revisions":
+		return "revision"
+	case "review", "ready_review":
+		return "ready_for_review"
+	case "done", "complete", "completed", "closed":
+		return "completed"
+	default:
+		return status
+	}
+}
+
+func clientTaskStatusLabelForLegacy(value string) string {
+	switch normalizeBugStatus(value) {
+	case "in_progress":
+		return "In Progress"
+	case "revision":
+		return "Revision"
+	case "completed":
+		return "Completed"
+	case "ready_for_review":
+		return "Ready for Review"
+	default:
+		return "To Do"
+	}
+}
+
+func cleanStringSlice(values []string, limit int) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, value := range values {
+		clean := strings.TrimSpace(value)
+		if clean == "" || seen[clean] {
+			continue
+		}
+		seen[clean] = true
+		out = append(out, clean)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
 }
 
 func clampFloat(value float64, min float64, max float64) float64 {

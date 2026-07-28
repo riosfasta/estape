@@ -4,20 +4,25 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ .AppName }} | Task management with visual website feedback</title>
-  <link rel="stylesheet" href="/static/css/styles.css">
+  {{ if .FaviconURL }}<link rel="icon" href="{{ .FaviconURL }}">{{ end }}
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260719-0013">
 </head>
 <body class="public-page">
   <header class="public-nav">
-    <a class="brand" href="/"><span class="brand-mark">P</span>{{ .AppName }}</a>
+    <a class="brand" href="/">
+      {{ if .NavLogoURL }}<span class="brand-mark brand-image"><img src="{{ .NavLogoURL }}" alt=""></span>{{ else }}<span class="brand-mark">{{ .NavBrandInitial }}</span>{{ end }}
+      {{ .NavBrandName }}
+    </a>
     <nav>
-      <a href="#features">Features</a>
-      <a href="/pricing">Pricing</a>
-      <a href="#resources">Resources</a>
+      {{ range .NavItems }}
+      <a href="{{ .URL }}">{{ .Label }}</a>
+      {{ end }}
     </nav>
+    {{ if and .NavButtonText .NavButtonURL }}
     <div class="nav-actions">
-      <a class="text-link" href="/login">Login</a>
-      <a class="btn primary" href="/register">Get Started</a>
+      <a class="btn {{ .NavButtonClass }}" href="{{ .NavButtonURL }}">{{ .NavButtonText }}</a>
     </div>
+    {{ end }}
   </header>
 
   <main>
@@ -94,9 +99,16 @@
         <h2>Start small, then scale seats and projects as the team grows.</h2>
       </div>
       <div class="pricing-grid">
-        <article><h3>Starter</h3><p>$29 flat</p><span>5 seats, 3 projects</span></article>
-        <article class="featured"><h3>Team</h3><p>$9 per seat</p><span>25 seats, 15 projects</span></article>
-        <article><h3>Business</h3><p>$249 flat</p><span>100 seats, high storage</span></article>
+        {{ range .Plans }}
+        <article{{ if .Featured }} class="featured"{{ end }}>
+          <h3>{{ .Name }}</h3>
+          <p>{{ .PriceLine }}</p>
+          {{ if .YearlyLine }}<strong>{{ .YearlyLine }}</strong>{{ end }}
+          {{ if .Description }}<span>{{ .Description }}</span>{{ end }}
+          <small>{{ .LimitsLine }}</small>
+          {{ if .TrialLine }}<em>{{ .TrialLine }}</em>{{ end }}
+        </article>
+        {{ end }}
       </div>
     </section>
 
@@ -108,7 +120,10 @@
 
   <footer class="public-footer" id="resources">
     <div>
-      <a class="brand" href="/"><span class="brand-mark">P</span>{{ .AppName }}</a>
+      <a class="brand" href="/">
+        {{ if .NavLogoURL }}<span class="brand-mark brand-image"><img src="{{ .NavLogoURL }}" alt=""></span>{{ else }}<span class="brand-mark">{{ .NavBrandInitial }}</span>{{ end }}
+        {{ .NavBrandName }}
+      </a>
       <p>Self-hosted task management and website feedback for delivery teams.</p>
     </div>
     <div><h4>Product</h4><a href="#features">Features</a><a href="/pricing">Pricing</a><a href="/login">Login</a></div>

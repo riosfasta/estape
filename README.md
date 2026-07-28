@@ -77,12 +77,220 @@ For Docker on Windows/Mac, remember that `localhost` inside the container is the
 
 ## Debian VPS Deployment
 
-Deployment scripts live in [`deploy/vps`](deploy/vps/README.md). They cover first-time Debian setup, Go, MongoDB, nginx, systemd, GitHub pull-based updates, and MongoDB/upload backups.
+Deployment scripts live in [`deploy/vps`](deploy/vps/README.md). They cover first-time Debian setup, Go, MongoDB, nginx, systemd, GitHub pull-based updates, TLS, and MongoDB/upload backups.
 
-After the repo is cloned on the VPS, normal updates are:
+The examples below use `citywebdev.com`. Replace the domain and GitHub URL with your real values.
+
+### 1. Connect the domain to the VPS
+
+In your domain DNS panel, point the domain to your VPS public IP address:
+
+```text
+Type: A
+Name: @
+Value: YOUR_VPS_IPV4
+TTL: Auto / 300
+```
+
+Optional `www` record:
+
+```text
+Type: CNAME
+Name: www
+Value: citywebdev.com
+```
+
+If your VPS provider gives IPv6, you can also add:
+
+```text
+Type: AAAA
+Name: @
+Value: YOUR_VPS_IPV6
+```
+
+Wait for DNS to update, then check from your computer:
+
+```powershell
+nslookup citywebdev.com
+```
+
+The returned IP should be your VPS IP.
+
+In your VPS provider firewall/security group, allow:
+
+```text
+22/tcp   SSH
+80/tcp   HTTP for nginx and Certbot
+443/tcp  HTTPS
+```
+
+Do not expose MongoDB to the public internet. The setup script keeps MongoDB on `127.0.0.1`.
+
+### 2. Push this project to GitHub
+
+The VPS deployment is pull-based. The server clones/pulls your repository from GitHub, builds the Go binary, and restarts the service.
+
+Example repository URL:
+
+```text
+https://github.com/YOUR_USER/YOUR_REPO.git
+```
+
+For a private repo, create a GitHub deploy key or use an SSH key on the VPS, then use:
+
+```text
+git@github.com:YOUR_USER/YOUR_REPO.git
+```
+
+### 3. Prepare the Debian VPS
+
+SSH into the VPS as a sudo user:
+
+```bash
+ssh root@YOUR_VPS_IP
+```
+
+Install the minimum tools needed to pull the deployment scripts from GitHub:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y git ca-certificates curl
+```
+
+Clone your GitHub repo into the live app path:
+
+```bash
+sudo mkdir -p /opt/pinflow
+sudo git clone https://github.com/YOUR_USER/YOUR_REPO.git /opt/pinflow/app
+```
+
+For a private repo:
+
+```bash
+sudo git clone git@github.com:YOUR_USER/YOUR_REPO.git /opt/pinflow/app
+```
+
+### 4. Create the VPS deploy config
+
+Copy the example config:
+
+```bash
+sudo mkdir -p /etc/pinflow
+sudo cp /opt/pinflow/app/deploy/vps/env.example /etc/pinflow/deploy.env
+sudo nano /etc/pinflow/deploy.env
+```
+
+Set at least these values:
+
+```env
+APP_DOMAIN='citywebdev.com'
+APP_URL='https://citywebdev.com'
+REPO_URL='https://github.com/YOUR_USER/YOUR_REPO.git'
+REPO_BRANCH='main'
+
+OWNER_NAME='Platform Owner'
+OWNER_EMAIL='you@citywebdev.com'
+OWNER_PASSWORD='use-a-long-safe-password'
+JWT_SECRET=''
+
+ENABLE_NGINX='true'
+ENABLE_CERTBOT='true'
+CERTBOT_EMAIL='you@citywebdev.com'
+```
+
+Leave `JWT_SECRET=''` blank if you want the script to generate a secure secret.
+
+The default database config is local MongoDB:
+
+```env
+INSTALL_MONGODB='true'
+MONGO_URI='mongodb://127.0.0.1:27017/'
+MONGO_DB_NAME='bugmarking'
+```
+
+### 5. Run the first-time setup script
+
+This script installs base packages, Go, MongoDB, nginx, optional Certbot TLS, creates the system user, builds the Go app, writes the systemd service, and starts the website.
+
+```bash
+sudo bash /opt/pinflow/app/deploy/vps/setup-debian.sh
+```
+
+The setup script currently targets Debian 12 Bookworm and MongoDB 8.0.
+
+### 6. Verify the live website
+
+Check the Go service:
+
+```bash
+sudo systemctl status pinflow
+sudo journalctl -u pinflow -n 100 --no-pager
+```
+
+Check local HTTP from the VPS:
+
+```bash
+curl -I http://127.0.0.1:8080
+```
+
+Check nginx:
+
+```bash
+sudo nginx -t
+sudo systemctl status nginx
+```
+
+Open the live site:
+
+```text
+https://citywebdev.com
+```
+
+### 7. Update the live site from GitHub
+
+After you push changes to GitHub, SSH into the VPS and run:
 
 ```bash
 sudo bash /opt/pinflow/app/deploy/vps/deploy.sh
+```
+
+That script runs `git fetch`, `git pull --ff-only`, `go mod download`, builds `./cmd/server`, writes the environment file, reloads nginx config, and restarts the `pinflow` systemd service.
+
+### 8. Important live paths
+
+```text
+/opt/pinflow/app                  GitHub checkout
+/opt/pinflow/bin/pinflow          Built Go binary
+/etc/pinflow/deploy.env           VPS deployment config and secrets
+/etc/pinflow/pinflow.env          Runtime environment used by systemd
+/var/lib/pinflow/uploads          Uploaded files
+/etc/systemd/system/pinflow.service
+/etc/nginx/sites-available/pinflow.conf
+```
+
+### 9. Backups
+
+Create a MongoDB and uploads backup:
+
+```bash
+sudo bash /opt/pinflow/app/deploy/vps/backup-mongodb.sh
+```
+
+Restore:
+
+```bash
+sudo bash /opt/pinflow/app/deploy/vps/restore-mongodb.sh \
+  /var/backups/pinflow/bugmarking-YYYYMMDD-HHMMSS.archive.gz \
+  /var/backups/pinflow/uploads-YYYYMMDD-HHMMSS.tar.gz
+```
+
+### 10. Mobile app production URL
+
+When the Go backend is live at `https://citywebdev.com`, build the Flutter app with:
+
+```powershell
+cd mobile\pinflow_mobile
+flutter build apk --release --dart-define=PINFLOW_API_URL=https://citywebdev.com
 ```
 
 ## Mobile App API Setup

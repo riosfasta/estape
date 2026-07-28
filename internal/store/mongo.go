@@ -102,6 +102,9 @@ func (s *Store) Seed(ctx context.Context, cfg config.Config) error {
 	if err := s.seedPlans(ctx, now); err != nil {
 		return err
 	}
+	if err := s.backfillPlanYearlyPrices(ctx); err != nil {
+		return err
+	}
 	if err := s.seedOwner(ctx, cfg, now); err != nil {
 		return err
 	}
@@ -120,12 +123,39 @@ func (s *Store) seedPlans(ctx context.Context, now time.Time) error {
 		return nil
 	}
 	plans := []interface{}{
-		models.Plan{ID: primitive.NewObjectID(), Name: "Starter", Description: "A focused plan for a small product team validating visual feedback workflows.", PricingModel: "flat", Price: 2900, TrialDays: 14, SeatLimit: 5, ProjectLimit: 3, StorageLimitMB: 1024, CreatedAt: now},
-		models.Plan{ID: primitive.NewObjectID(), Name: "Team", Description: "More seats, projects, and storage for active delivery teams.", PricingModel: "per_seat", PricePerSeat: 900, TrialDays: 14, SeatLimit: 25, ProjectLimit: 15, StorageLimitMB: 10240, Featured: true, CreatedAt: now},
-		models.Plan{ID: primitive.NewObjectID(), Name: "Business", Description: "Higher limits and owner approval workflows for agencies and larger teams.", PricingModel: "flat", Price: 24900, TrialDays: 0, SeatLimit: 100, ProjectLimit: 100, StorageLimitMB: 102400, CreatedAt: now},
+		models.Plan{ID: primitive.NewObjectID(), Name: "Starter", Description: "A focused plan for a small product team validating visual feedback workflows.", PricingModel: "flat", Price: 2900, PriceYearly: 29000, TrialDays: 14, SeatLimit: 5, ProjectLimit: 3, StorageLimitMB: 1024, CreatedAt: now},
+		models.Plan{ID: primitive.NewObjectID(), Name: "Team", Description: "More seats, projects, and storage for active delivery teams.", PricingModel: "per_seat", PricePerSeat: 900, PricePerSeatYearly: 9000, TrialDays: 14, SeatLimit: 25, ProjectLimit: 15, StorageLimitMB: 10240, Featured: true, CreatedAt: now},
+		models.Plan{ID: primitive.NewObjectID(), Name: "Business", Description: "Higher limits and owner approval workflows for agencies and larger teams.", PricingModel: "flat", Price: 24900, PriceYearly: 249000, TrialDays: 0, SeatLimit: 100, ProjectLimit: 100, StorageLimitMB: 102400, CreatedAt: now},
 	}
 	_, err = s.C("plans").InsertMany(ctx, plans)
 	return err
+}
+
+func (s *Store) backfillPlanYearlyPrices(ctx context.Context) error {
+	cursor, err := s.C("plans").Find(ctx, bson.M{})
+	if err != nil {
+		return err
+	}
+	defer cursor.Close(ctx)
+	for cursor.Next(ctx) {
+		var plan models.Plan
+		if err := cursor.Decode(&plan); err != nil {
+			return err
+		}
+		set := bson.M{}
+		if plan.PriceYearly <= 0 && plan.Price > 0 {
+			set["price_yearly"] = plan.Price * 12
+		}
+		if plan.PricePerSeatYearly <= 0 && plan.PricePerSeat > 0 {
+			set["price_per_seat_yearly"] = plan.PricePerSeat * 12
+		}
+		if len(set) > 0 {
+			if _, err := s.C("plans").UpdateByID(ctx, plan.ID, bson.M{"$set": set}); err != nil {
+				return err
+			}
+		}
+	}
+	return cursor.Err()
 }
 
 func (s *Store) seedOwner(ctx context.Context, cfg config.Config, now time.Time) error {
@@ -166,12 +196,42 @@ func (s *Store) seedSettings(ctx context.Context, cfg config.Config, now time.Ti
 		return nil
 	}
 	settings := models.SiteSettings{
-		ID:             primitive.NewObjectID(),
-		SiteName:       cfg.AppName,
-		CompanyEmail:   "support@pinflow.local",
-		OwnerName:      cfg.OwnerName,
-		CompanyAddress: "Set your company address in Admin Settings",
-		UpdatedAt:      now,
+		ID:                   primitive.NewObjectID(),
+		SiteName:             cfg.AppName,
+		CompanySlogan:        "Task management with visual website feedback",
+		CompanyEmail:         "support@pinflow.local",
+		CompanyContact:       "support@pinflow.local",
+		OwnerName:            cfg.OwnerName,
+		CompanyAddress:       "Set your company address in Admin Settings",
+		GoogleSigninEnabled:  cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "",
+		GoogleClientID:       cfg.GoogleClientID,
+		GoogleClientSecret:   cfg.GoogleClientSecret,
+		GoogleRedirectURL:    cfg.GoogleRedirectURL,
+		SMTPEnabled:          cfg.SMTPHost != "" && cfg.SMTPUser != "",
+		SMTPHost:             cfg.SMTPHost,
+		SMTPPort:             cfg.SMTPPort,
+		SMTPUser:             cfg.SMTPUser,
+		SMTPPassword:         cfg.SMTPPassword,
+		SMTPFrom:             cfg.SMTPFrom,
+		StripeEnabled:        cfg.StripeSecretKey != "",
+		StripePublishableKey: cfg.StripePublishableKey,
+		StripeSecretKey:      cfg.StripeSecretKey,
+		StripeWebhookSecret:  cfg.StripeWebhookSecret,
+		PayPalEnabled:        cfg.PayPalClientID != "" && cfg.PayPalClientSecret != "",
+		PayPalMode:           cfg.PayPalMode,
+		PayPalClientID:       cfg.PayPalClientID,
+		PayPalClientSecret:   cfg.PayPalClientSecret,
+		PayPalWebhookID:      cfg.PayPalWebhookID,
+		PublicNavCompanyName: cfg.AppName,
+		PublicNavButtonText:  "Get Started",
+		PublicNavButtonURL:   "/register",
+		PublicNavButtonStyle: "primary",
+		PublicNavItems: []models.PublicNavItem{
+			{ID: "home", Label: "Home", URL: "/", Visible: true, Order: 1},
+			{ID: "pricing", Label: "Pricing", URL: "/pricing", Visible: true, Order: 2},
+			{ID: "login", Label: "Login", URL: "/login", Visible: true, Order: 3},
+		},
+		UpdatedAt: now,
 	}
 	_, err = s.C("site_settings").InsertOne(ctx, settings)
 	return err

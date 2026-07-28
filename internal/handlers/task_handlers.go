@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"bugmark/internal/middleware"
 	"bugmark/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,11 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
+
+type inboxCommentRow struct {
+	createdAt time.Time
+	data      gin.H
+}
 
 func (s *Server) listSpaces(c *gin.Context) {
 	teamID, ok := objectIDParam(c, "teamId")
@@ -173,16 +179,13 @@ func (s *Server) createList(c *gin.Context) {
 
 func (s *Server) listInboxComments(c *gin.Context) {
 	userCtx, _ := currentUser(c)
-	if userCtx.TeamID.IsZero() {
-		c.JSON(http.StatusOK, gin.H{"comments": []gin.H{}, "projects": []gin.H{}, "unread_count": 0})
-		return
-	}
 	user, err := s.loadUser(c.Request.Context(), userCtx.ID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
 	s.ensureUserIdentity(c.Request.Context(), &user)
+	userCtx.TeamID = user.TeamID
 	projectFilter := primitive.NilObjectID
 	if raw := strings.TrimSpace(c.Query("project_id")); raw != "" {
 		projectFilter, err = objectIDFromString(raw)
@@ -204,6 +207,12 @@ func (s *Server) listInboxComments(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load inbox projects"})
 		return
 	}
+	clientProjects, clientProjectNames, clientIDs, err := s.inboxClientProjectContext(c.Request.Context(), userCtx.ID, userCtx.TeamID, userCtx.Role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load client inbox projects"})
+		return
+	}
+	projects = append(projects, clientProjects...)
 	unreadCount := s.unreadTaskCommentCount(c.Request.Context(), userCtx.ID, userCtx.TeamID)
 	if !projectFilter.IsZero() {
 		filteredListIDs := []primitive.ObjectID{}
@@ -213,23 +222,19 @@ func (s *Server) listInboxComments(c *gin.Context) {
 			}
 		}
 		listIDs = filteredListIDs
+		if _, ok := clientProjectNames[projectFilter]; ok {
+			clientIDs = []primitive.ObjectID{projectFilter}
+		} else {
+			clientIDs = []primitive.ObjectID{}
+		}
 	}
-	if len(listIDs) == 0 {
+	if len(listIDs) == 0 && len(clientIDs) == 0 {
 		c.JSON(http.StatusOK, gin.H{"comments": []gin.H{}, "projects": projects, "unread_count": unreadCount})
 		return
 	}
 	usersByID, teamUsernames := s.teamUserLookup(c.Request.Context(), userCtx.TeamID)
-	cursor, err := s.store.C("tasks").Find(c.Request.Context(), bson.M{"list_id": bson.M{"$in": listIDs}}, options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}}).SetLimit(300))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load inbox comments"})
-		return
-	}
-	defer cursor.Close(c.Request.Context())
-	type inboxRow struct {
-		createdAt time.Time
-		data      gin.H
-	}
-	rows := []inboxRow{}
+	s.mergeClientProjectUsers(c.Request.Context(), clientIDs, usersByID, teamUsernames)
+	rows := []inboxCommentRow{}
 	currentUsername := strings.ToLower(user.Username)
 	projectNames := map[primitive.ObjectID]string{}
 	for _, project := range projects {
@@ -237,49 +242,66 @@ func (s *Server) listInboxComments(c *gin.Context) {
 		name, _ := project["name"].(string)
 		projectNames[id] = name
 	}
-	for cursor.Next(c.Request.Context()) {
-		var task models.Task
-		if cursor.Decode(&task) != nil {
-			continue
+	if len(listIDs) > 0 {
+		cursor, err := s.store.C("tasks").Find(c.Request.Context(), bson.M{"list_id": bson.M{"$in": listIDs}}, options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}}).SetLimit(300))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load inbox comments"})
+			return
 		}
-		projectID := listProjectIDs[task.ListID]
-		for _, comment := range task.Comments {
-			isUnread := !commentReadBy(comment, userCtx.ID)
-			mentionMe, mentionOthers := commentMentionFlags(comment.Content, currentUsername, teamUsernames)
-			if mentionFilter == "mention_me" && !mentionMe {
+		defer cursor.Close(c.Request.Context())
+		for cursor.Next(c.Request.Context()) {
+			var task models.Task
+			if cursor.Decode(&task) != nil {
 				continue
 			}
-			if mentionFilter == "mention_others" && !mentionOthers {
-				continue
+			projectID := listProjectIDs[task.ListID]
+			for _, comment := range task.Comments {
+				isUnread := !commentReadBy(comment, userCtx.ID)
+				mentionMe, mentionOthers := commentMentionFlags(comment.Content, currentUsername, teamUsernames)
+				if mentionFilter == "mention_me" && !mentionMe {
+					continue
+				}
+				if mentionFilter == "mention_others" && !mentionOthers {
+					continue
+				}
+				author := usersByID[comment.AuthorID]
+				authorName := strings.TrimSpace(author.Name)
+				if authorName == "" {
+					authorName = firstNonEmpty(author.Username, author.Email, "Unknown")
+				}
+				rows = append(rows, inboxCommentRow{
+					createdAt: comment.CreatedAt,
+					data: gin.H{
+						"id":               comment.ID,
+						"source_type":      "task",
+						"task_id":          task.ID,
+						"task_title":       task.Title,
+						"task_status":      task.Status,
+						"task_priority":    task.Priority,
+						"task_description": task.Description,
+						"project_id":       projectID,
+						"project_name":     projectNames[projectID],
+						"list_name":        listNames[task.ListID],
+						"comment":          comment.Content,
+						"author_id":        comment.AuthorID,
+						"author_name":      authorName,
+						"author_username":  author.Username,
+						"created_at":       comment.CreatedAt,
+						"read":             !isUnread,
+						"mention_me":       mentionMe,
+						"mention_others":   mentionOthers,
+					},
+				})
 			}
-			author := usersByID[comment.AuthorID]
-			authorName := strings.TrimSpace(author.Name)
-			if authorName == "" {
-				authorName = firstNonEmpty(author.Username, author.Email, "Unknown")
-			}
-			rows = append(rows, inboxRow{
-				createdAt: comment.CreatedAt,
-				data: gin.H{
-					"id":               comment.ID,
-					"task_id":          task.ID,
-					"task_title":       task.Title,
-					"task_status":      task.Status,
-					"task_priority":    task.Priority,
-					"task_description": task.Description,
-					"project_id":       projectID,
-					"project_name":     projectNames[projectID],
-					"list_name":        listNames[task.ListID],
-					"comment":          comment.Content,
-					"author_id":        comment.AuthorID,
-					"author_name":      authorName,
-					"author_username":  author.Username,
-					"created_at":       comment.CreatedAt,
-					"read":             !isUnread,
-					"mention_me":       mentionMe,
-					"mention_others":   mentionOthers,
-				},
-			})
 		}
+	}
+	if len(clientIDs) > 0 {
+		clientRows, err := s.clientTaskInboxRows(c.Request.Context(), clientIDs, clientProjectNames, usersByID, teamUsernames, currentUsername, mentionFilter, userCtx.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load client task comments"})
+			return
+		}
+		rows = append(rows, clientRows...)
 	}
 	sort.Slice(rows, func(i, j int) bool {
 		return rows[i].createdAt.After(rows[j].createdAt)
@@ -292,6 +314,339 @@ func (s *Server) listInboxComments(c *gin.Context) {
 		out = append(out, row.data)
 	}
 	c.JSON(http.StatusOK, gin.H{"comments": out, "projects": projects, "unread_count": unreadCount})
+}
+
+func (s *Server) globalSearch(c *gin.Context) {
+	userCtx, _ := currentUser(c)
+	user, err := s.loadUser(c.Request.Context(), userCtx.ID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	s.ensureUserIdentity(c.Request.Context(), &user)
+	userCtx.Role = user.Role
+	userCtx.TeamID = user.TeamID
+
+	query := strings.TrimSpace(c.Query("q"))
+	if len([]rune(query)) < 2 {
+		c.JSON(http.StatusOK, gin.H{"results": []gin.H{}})
+		return
+	}
+	regex := bson.M{"$regex": regexp.QuoteMeta(query), "$options": "i"}
+
+	projects, listProjectIDs, listNames, listIDs, err := s.inboxProjectContext(c.Request.Context(), userCtx.TeamID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load search projects"})
+		return
+	}
+	clientProjects, clientProjectNames, clientIDs, err := s.inboxClientProjectContext(c.Request.Context(), userCtx.ID, userCtx.TeamID, userCtx.Role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load client projects"})
+		return
+	}
+	projects = append(projects, clientProjects...)
+	usersByID, teamUsernames := s.teamUserLookup(c.Request.Context(), userCtx.TeamID)
+	s.mergeClientProjectUsers(c.Request.Context(), clientIDs, usersByID, teamUsernames)
+
+	projectNames := map[primitive.ObjectID]string{}
+	for _, project := range projects {
+		id, _ := project["id"].(primitive.ObjectID)
+		name, _ := project["name"].(string)
+		projectNames[id] = name
+	}
+
+	type searchRow struct {
+		at   time.Time
+		data gin.H
+	}
+	rows := []searchRow{}
+	currentUsername := strings.ToLower(user.Username)
+
+	if len(listIDs) > 0 {
+		filter := bson.M{
+			"list_id": bson.M{"$in": listIDs},
+			"$or": []bson.M{
+				{"title": regex},
+				{"description": regex},
+				{"comments.content": regex},
+			},
+		}
+		cursor, err := s.store.C("tasks").Find(c.Request.Context(), filter, options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}}).SetLimit(150))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search tasks"})
+			return
+		}
+		defer cursor.Close(c.Request.Context())
+		for cursor.Next(c.Request.Context()) {
+			var task models.Task
+			if cursor.Decode(&task) != nil {
+				continue
+			}
+			projectID := listProjectIDs[task.ListID]
+			contextLabel := searchContextLabel(projectNames[projectID], listNames[task.ListID])
+			if searchTextMatches(query, task.Title, task.Description) {
+				rows = append(rows, searchRow{
+					at: task.UpdatedAt,
+					data: gin.H{
+						"type":        "task",
+						"source_type": "task",
+						"task_id":     task.ID,
+						"title":       firstNonEmpty(task.Title, "Untitled task"),
+						"snippet":     searchSnippet(query, firstNonEmpty(task.Description, task.Title)),
+						"context":     contextLabel,
+						"url":         "/dashboard?task_id=" + task.ID.Hex() + "&source_type=task",
+						"created_at":  task.UpdatedAt,
+					},
+				})
+			}
+			for _, comment := range task.Comments {
+				if !searchTextMatches(query, comment.Content) {
+					continue
+				}
+				author := usersByID[comment.AuthorID]
+				mentionMe, mentionOthers := commentMentionFlags(comment.Content, currentUsername, teamUsernames)
+				rows = append(rows, searchRow{
+					at: comment.CreatedAt,
+					data: gin.H{
+						"type":           searchCommentTypeLabel(mentionMe, mentionOthers),
+						"source_type":    "task",
+						"task_id":        task.ID,
+						"comment_id":     comment.ID,
+						"title":          firstNonEmpty(task.Title, "Untitled task"),
+						"snippet":        searchSnippet(query, comment.Content),
+						"context":        contextLabel,
+						"author_name":    firstNonEmpty(author.Name, author.Username, author.Email),
+						"mention_me":     mentionMe,
+						"mention_others": mentionOthers,
+						"url":            "/dashboard?task_id=" + task.ID.Hex() + "&comment_id=" + comment.ID.Hex() + "&source_type=task",
+						"created_at":     comment.CreatedAt,
+					},
+				})
+			}
+		}
+	}
+
+	if len(clientIDs) > 0 {
+		clientTaskAccessFilter := s.clientTaskAccessFilter(c.Request.Context(), userCtx, clientIDs)
+		clientTaskFilter := bson.M{
+			"$and": []bson.M{clientTaskAccessFilter, {"$or": []bson.M{
+				{"title": regex},
+				{"content": regex},
+				{"comment": regex},
+				{"annotations.title": regex},
+				{"annotations.comment": regex},
+			}}},
+		}
+		taskCursor, err := s.store.C("client_tasks").Find(c.Request.Context(), clientTaskAccessFilter, options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}}).SetLimit(1000))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search client tasks"})
+			return
+		}
+		defer taskCursor.Close(c.Request.Context())
+		clientTasksByID := map[primitive.ObjectID]models.ClientTask{}
+		clientTaskIDs := []primitive.ObjectID{}
+		websiteIDs := []primitive.ObjectID{}
+		for taskCursor.Next(c.Request.Context()) {
+			var task models.ClientTask
+			if taskCursor.Decode(&task) != nil {
+				continue
+			}
+			clientTasksByID[task.ID] = task
+			clientTaskIDs = append(clientTaskIDs, task.ID)
+			if !task.WebsiteID.IsZero() {
+				websiteIDs = append(websiteIDs, task.WebsiteID)
+			}
+		}
+
+		websiteNames := s.searchWebsiteNames(c.Request.Context(), uniqueObjectIDs(websiteIDs))
+		matchedTaskCursor, err := s.store.C("client_tasks").Find(c.Request.Context(), clientTaskFilter, options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}}).SetLimit(100))
+		if err == nil {
+			defer matchedTaskCursor.Close(c.Request.Context())
+			for matchedTaskCursor.Next(c.Request.Context()) {
+				var task models.ClientTask
+				if matchedTaskCursor.Decode(&task) != nil {
+					continue
+				}
+				contextLabel := searchContextLabel(clientProjectNames[task.ClientID], websiteNames[task.WebsiteID])
+				rows = append(rows, searchRow{
+					at: task.UpdatedAt,
+					data: gin.H{
+						"type":        searchTaskTypeLabel(task.Type),
+						"source_type": "client_task",
+						"task_id":     task.ID,
+						"title":       firstNonEmpty(task.Title, "Untitled task"),
+						"snippet":     searchSnippet(query, firstNonEmpty(task.Content, task.Comment, task.URL, task.Title)),
+						"context":     contextLabel,
+						"url":         "/tasks?task_id=" + task.ID.Hex(),
+						"created_at":  task.UpdatedAt,
+					},
+				})
+			}
+		}
+
+		if len(clientTaskIDs) > 0 {
+			commentCursor, err := s.store.C("client_task_comments").Find(c.Request.Context(), bson.M{"task_id": bson.M{"$in": clientTaskIDs}, "content": regex}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(150))
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search task comments"})
+				return
+			}
+			defer commentCursor.Close(c.Request.Context())
+			for commentCursor.Next(c.Request.Context()) {
+				var comment models.ClientTaskComment
+				if commentCursor.Decode(&comment) != nil {
+					continue
+				}
+				task := clientTasksByID[comment.TaskID]
+				author := usersByID[comment.AuthorID]
+				mentionMe, mentionOthers := commentMentionFlags(comment.Content, currentUsername, teamUsernames)
+				contextLabel := searchContextLabel(clientProjectNames[task.ClientID], websiteNames[task.WebsiteID])
+				rows = append(rows, searchRow{
+					at: comment.CreatedAt,
+					data: gin.H{
+						"type":           searchCommentTypeLabel(mentionMe, mentionOthers),
+						"source_type":    "client_task",
+						"task_id":        task.ID,
+						"comment_id":     comment.ID,
+						"title":          firstNonEmpty(task.Title, "Untitled task"),
+						"snippet":        searchSnippet(query, comment.Content),
+						"context":        contextLabel,
+						"author_name":    firstNonEmpty(author.Name, author.Username, author.Email),
+						"mention_me":     mentionMe,
+						"mention_others": mentionOthers,
+						"url":            "/tasks?task_id=" + task.ID.Hex() + "&comment_id=" + comment.ID.Hex(),
+						"created_at":     comment.CreatedAt,
+					},
+				})
+			}
+		}
+	}
+
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].at.After(rows[j].at)
+	})
+	results := []gin.H{}
+	seen := map[string]bool{}
+	for _, row := range rows {
+		key := searchResultKey(row.data)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		results = append(results, row.data)
+		if len(results) >= 30 {
+			break
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"results": results})
+}
+
+func (s *Server) searchWebsiteNames(ctx context.Context, websiteIDs []primitive.ObjectID) map[primitive.ObjectID]string {
+	names := map[primitive.ObjectID]string{}
+	if len(websiteIDs) == 0 {
+		return names
+	}
+	cursor, err := s.store.C("client_websites").Find(ctx, bson.M{"_id": bson.M{"$in": websiteIDs}}, options.Find().SetProjection(bson.M{"name": 1, "url": 1}))
+	if err != nil {
+		return names
+	}
+	defer cursor.Close(ctx)
+	for cursor.Next(ctx) {
+		var site models.ClientWebsite
+		if cursor.Decode(&site) == nil {
+			names[site.ID] = firstNonEmpty(site.Name, site.URL)
+		}
+	}
+	return names
+}
+
+func searchTextMatches(query string, values ...string) bool {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return false
+	}
+	for _, value := range values {
+		if strings.Contains(strings.ToLower(value), query) {
+			return true
+		}
+	}
+	return false
+}
+
+func searchSnippet(query string, values ...string) string {
+	text := strings.TrimSpace(firstNonEmpty(values...))
+	if text == "" {
+		return ""
+	}
+	space := regexp.MustCompile(`\s+`)
+	text = space.ReplaceAllString(text, " ")
+	lower := strings.ToLower(text)
+	index := strings.Index(lower, strings.ToLower(strings.TrimSpace(query)))
+	if index < 0 {
+		runes := []rune(text)
+		if len(runes) > 120 {
+			return strings.TrimSpace(string(runes[:120])) + "..."
+		}
+		return text
+	}
+	start := index - 42
+	if start < 0 {
+		start = 0
+	}
+	end := index + len(query) + 72
+	if end > len(text) {
+		end = len(text)
+	}
+	prefix := ""
+	if start > 0 {
+		prefix = "..."
+	}
+	suffix := ""
+	if end < len(text) {
+		suffix = "..."
+	}
+	return prefix + strings.TrimSpace(text[start:end]) + suffix
+}
+
+func searchContextLabel(parts ...string) string {
+	out := []string{}
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return strings.Join(out, " / ")
+}
+
+func searchTaskTypeLabel(taskType string) string {
+	if strings.EqualFold(taskType, "annotation") {
+		return "Annotation"
+	}
+	return "Task"
+}
+
+func searchCommentTypeLabel(mentionMe bool, mentionOthers bool) string {
+	if mentionMe {
+		return "Mention me"
+	}
+	if mentionOthers {
+		return "Mention"
+	}
+	return "Comment"
+}
+
+func searchResultKey(data gin.H) string {
+	source, _ := data["source_type"].(string)
+	taskID := ""
+	if id, ok := data["task_id"].(primitive.ObjectID); ok {
+		taskID = id.Hex()
+	}
+	commentID := ""
+	if id, ok := data["comment_id"].(primitive.ObjectID); ok {
+		commentID = id.Hex()
+	}
+	kind, _ := data["type"].(string)
+	return source + ":" + taskID + ":" + commentID + ":" + kind
 }
 
 func (s *Server) listTasks(c *gin.Context) {
@@ -457,8 +812,12 @@ func (s *Server) updateTask(c *gin.Context) {
 		return
 	}
 	set := bson.M{"updated_at": time.Now()}
+	var updatedAssigneeIDs []primitive.ObjectID
+	assigneesChanged := false
+	updatedTitle := task.Title
 	if req.Title != nil {
-		set["title"] = strings.TrimSpace(*req.Title)
+		updatedTitle = strings.TrimSpace(*req.Title)
+		set["title"] = updatedTitle
 	}
 	if req.Description != nil {
 		set["description"] = *req.Description
@@ -469,7 +828,7 @@ func (s *Server) updateTask(c *gin.Context) {
 	if req.Priority != nil {
 		set["priority"] = strings.TrimSpace(*req.Priority)
 	}
-	if len(req.AssigneeIDs) > 0 {
+	if req.AssigneeIDs != nil {
 		if isInvitedCompanyRole(userCtx.Role) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "members cannot change assignees"})
 			return
@@ -479,6 +838,8 @@ func (s *Server) updateTask(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid assignee id"})
 			return
 		}
+		updatedAssigneeIDs = ids
+		assigneesChanged = !sameObjectIDSet(task.AssigneeIDs, ids)
 		set["assignee_ids"] = ids
 	}
 	if req.DueDate != nil {
@@ -506,6 +867,26 @@ func (s *Server) updateTask(c *gin.Context) {
 	if _, err := s.store.C("tasks").UpdateByID(c.Request.Context(), id, bson.M{"$set": set}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update task"})
 		return
+	}
+	actor := s.notificationActorName(c.Request.Context(), userCtx.ID)
+	notifyAssigneeIDs := task.AssigneeIDs
+	if assigneesChanged {
+		notifyAssigneeIDs = updatedAssigneeIDs
+	}
+	recipients := uniqueObjectIDs(append(append([]primitive.ObjectID{}, notifyAssigneeIDs...), task.CreatedBy))
+	if assigneesChanged {
+		removedAssignees := removedObjectIDs(task.AssigneeIDs, updatedAssigneeIDs)
+		s.deleteNotificationsForUsers(c.Request.Context(), removedAssignees, id, "task_assigned")
+		newAssignees := []primitive.ObjectID{}
+		for _, assigneeID := range updatedAssigneeIDs {
+			if !containsObjectID(task.AssigneeIDs, assigneeID) {
+				newAssignees = append(newAssignees, assigneeID)
+			}
+		}
+		s.notifyUserIDs(c.Request.Context(), newAssignees, userCtx.ID, "task_assigned", actor+" assigned you: "+updatedTitle, id)
+	}
+	if req.Title != nil || req.Description != nil || req.Status != nil || req.Priority != nil || assigneesChanged || req.DueDate != nil || req.StartDate != nil || req.Tags != nil || req.EstimateMinutes != nil {
+		s.notifyUserIDs(c.Request.Context(), recipients, userCtx.ID, "task_updated", actor+" updated task: "+updatedTitle, id)
 	}
 	if req.Title != nil || req.Description != nil {
 		content := task.Title + " " + task.Description
@@ -536,6 +917,11 @@ func (s *Server) deleteTask(c *gin.Context) {
 	if err != nil || !s.canAccessTeam(c, teamID) || userCtx.TeamID != teamID {
 		return
 	}
+	relatedIDs := []primitive.ObjectID{id}
+	for _, comment := range task.Comments {
+		relatedIDs = append(relatedIDs, comment.ID)
+	}
+	s.deleteNotificationsByRelatedIDs(c.Request.Context(), relatedIDs, taskNotificationTypes...)
 	_, err = s.store.C("tasks").DeleteOne(c.Request.Context(), bson.M{"_id": id})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete task"})
@@ -582,7 +968,10 @@ func (s *Server) addTaskComment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not add comment"})
 		return
 	}
-	s.notifyMentions(c.Request.Context(), teamID, userCtx.ID, content, "comment", id)
+	s.notifyMentions(c.Request.Context(), teamID, userCtx.ID, content, "comment", comment.ID)
+	actor := s.notificationActorName(c.Request.Context(), userCtx.ID)
+	recipients := uniqueObjectIDs(append(append([]primitive.ObjectID{}, task.AssigneeIDs...), task.CreatedBy))
+	s.notifyUserIDs(c.Request.Context(), recipients, userCtx.ID, "task_comment", actor+" commented on task: "+task.Title, task.ID)
 	c.JSON(http.StatusCreated, gin.H{"comment": comment})
 }
 
@@ -671,7 +1060,7 @@ func (s *Server) buildTaskFromRequest(c *gin.Context, listIDRaw string, title st
 }
 
 func (s *Server) notifyAssignees(ctx context.Context, task models.Task, content string) {
-	for _, assigneeID := range task.AssigneeIDs {
+	for _, assigneeID := range s.userNotificationRecipients(ctx, task.AssigneeIDs, task.CreatedBy) {
 		_, _ = s.store.C("notifications").InsertOne(ctx, models.Notification{
 			ID:        primitive.NewObjectID(),
 			UserID:    assigneeID,
@@ -731,6 +1120,176 @@ func (s *Server) inboxProjectContext(ctx context.Context, teamID primitive.Objec
 	return projects, listProjectIDs, listNames, listIDs, nil
 }
 
+func (s *Server) inboxClientProjectContext(ctx context.Context, userID primitive.ObjectID, teamID primitive.ObjectID, role models.Role) ([]gin.H, map[primitive.ObjectID]string, []primitive.ObjectID, error) {
+	filter := bson.M{}
+	if role != models.RoleOwnerAdmin {
+		access := s.clientAccessSets(ctx, middleware.UserContext{ID: userID, TeamID: teamID, Role: role})
+		clientIDs := uniqueObjectIDs(append(append([]primitive.ObjectID{}, access.FullClientIDs...), access.DomainClientIDs...))
+		if len(clientIDs) == 0 {
+			return []gin.H{}, map[primitive.ObjectID]string{}, []primitive.ObjectID{}, nil
+		}
+		filter["_id"] = bson.M{"$in": clientIDs}
+	}
+	cursor, err := s.store.C("client_projects").Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}).SetLimit(500))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer cursor.Close(ctx)
+	projects := []gin.H{}
+	names := map[primitive.ObjectID]string{}
+	ids := []primitive.ObjectID{}
+	for cursor.Next(ctx) {
+		var client models.ClientProject
+		if cursor.Decode(&client) != nil {
+			continue
+		}
+		ids = append(ids, client.ID)
+		names[client.ID] = client.Name
+		projects = append(projects, gin.H{"id": client.ID, "name": client.Name, "kind": "client_project"})
+	}
+	return projects, names, ids, nil
+}
+
+func (s *Server) mergeClientProjectUsers(ctx context.Context, clientIDs []primitive.ObjectID, usersByID map[primitive.ObjectID]models.User, usernames map[string]bool) {
+	if len(clientIDs) == 0 {
+		return
+	}
+	cursor, err := s.store.C("client_projects").Find(ctx, bson.M{"_id": bson.M{"$in": clientIDs}}, options.Find().SetProjection(bson.M{"member_ids": 1, "client_admin_ids": 1}))
+	if err != nil {
+		return
+	}
+	defer cursor.Close(ctx)
+	userIDs := []primitive.ObjectID{}
+	for cursor.Next(ctx) {
+		var client models.ClientProject
+		if cursor.Decode(&client) == nil {
+			userIDs = append(userIDs, client.MemberIDs...)
+			userIDs = append(userIDs, client.ClientAdminIDs...)
+		}
+	}
+	for _, user := range s.usersForIDs(ctx, uniqueObjectIDs(userIDs)) {
+		s.ensureUserIdentity(ctx, &user)
+		usersByID[user.ID] = user
+		if user.Username != "" {
+			usernames[strings.ToLower(user.Username)] = true
+		}
+	}
+}
+
+func (s *Server) clientTaskInboxRows(ctx context.Context, clientIDs []primitive.ObjectID, clientProjectNames map[primitive.ObjectID]string, usersByID map[primitive.ObjectID]models.User, usernames map[string]bool, currentUsername string, mentionFilter string, userID primitive.ObjectID) ([]inboxCommentRow, error) {
+	role := models.RoleMember
+	teamID := primitive.NilObjectID
+	if user, err := s.loadUser(ctx, userID); err == nil {
+		role = user.Role
+		teamID = user.TeamID
+	}
+	taskFilter := s.clientTaskAccessFilter(ctx, middleware.UserContext{ID: userID, TeamID: teamID, Role: role}, clientIDs)
+	taskCursor, err := s.store.C("client_tasks").Find(ctx, taskFilter, options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}}).SetLimit(500))
+	if err != nil {
+		return nil, err
+	}
+	defer taskCursor.Close(ctx)
+	taskByID := map[primitive.ObjectID]models.ClientTask{}
+	taskIDs := []primitive.ObjectID{}
+	websiteIDs := []primitive.ObjectID{}
+	tabIDs := []primitive.ObjectID{}
+	for taskCursor.Next(ctx) {
+		var task models.ClientTask
+		if taskCursor.Decode(&task) != nil {
+			continue
+		}
+		taskByID[task.ID] = task
+		taskIDs = append(taskIDs, task.ID)
+		if !task.WebsiteID.IsZero() && !containsObjectID(websiteIDs, task.WebsiteID) {
+			websiteIDs = append(websiteIDs, task.WebsiteID)
+		}
+		if !task.TabID.IsZero() && !containsObjectID(tabIDs, task.TabID) {
+			tabIDs = append(tabIDs, task.TabID)
+		}
+	}
+	if len(taskIDs) == 0 {
+		return []inboxCommentRow{}, nil
+	}
+	websiteNames := map[primitive.ObjectID]string{}
+	if len(websiteIDs) > 0 {
+		cursor, err := s.store.C("client_websites").Find(ctx, bson.M{"_id": bson.M{"$in": websiteIDs}}, options.Find().SetProjection(bson.M{"name": 1, "url": 1}))
+		if err == nil {
+			defer cursor.Close(ctx)
+			for cursor.Next(ctx) {
+				var site models.ClientWebsite
+				if cursor.Decode(&site) == nil {
+					websiteNames[site.ID] = firstNonEmpty(site.Name, site.URL)
+				}
+			}
+		}
+	}
+	tabNames := map[primitive.ObjectID]string{}
+	if len(tabIDs) > 0 {
+		cursor, err := s.store.C("client_tabs").Find(ctx, bson.M{"_id": bson.M{"$in": tabIDs}}, options.Find().SetProjection(bson.M{"title": 1}))
+		if err == nil {
+			defer cursor.Close(ctx)
+			for cursor.Next(ctx) {
+				var tab models.ClientTab
+				if cursor.Decode(&tab) == nil {
+					tabNames[tab.ID] = tab.Title
+				}
+			}
+		}
+	}
+	commentCursor, err := s.store.C("client_task_comments").Find(ctx, bson.M{"task_id": bson.M{"$in": taskIDs}}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(1000))
+	if err != nil {
+		return nil, err
+	}
+	defer commentCursor.Close(ctx)
+	rows := []inboxCommentRow{}
+	for commentCursor.Next(ctx) {
+		var comment models.ClientTaskComment
+		if commentCursor.Decode(&comment) != nil {
+			continue
+		}
+		task, ok := taskByID[comment.TaskID]
+		if !ok {
+			continue
+		}
+		mentionMe, mentionOthers := commentMentionFlags(comment.Content, currentUsername, usernames)
+		if mentionFilter == "mention_me" && !mentionMe {
+			continue
+		}
+		if mentionFilter == "mention_others" && !mentionOthers {
+			continue
+		}
+		author := usersByID[comment.AuthorID]
+		authorName := strings.TrimSpace(author.Name)
+		if authorName == "" {
+			authorName = firstNonEmpty(author.Username, author.Email, "Unknown")
+		}
+		isUnread := !clientTaskCommentReadBy(comment, userID)
+		rows = append(rows, inboxCommentRow{
+			createdAt: comment.CreatedAt,
+			data: gin.H{
+				"id":              comment.ID,
+				"source_type":     "client_task",
+				"task_id":         task.ID,
+				"task_title":      task.Title,
+				"task_status":     task.Status,
+				"task_priority":   "Normal",
+				"project_id":      task.ClientID,
+				"project_name":    clientProjectNames[task.ClientID],
+				"list_name":       firstNonEmpty(websiteNames[task.WebsiteID], tabNames[task.TabID]),
+				"comment":         comment.Content,
+				"author_id":       comment.AuthorID,
+				"author_name":     authorName,
+				"author_username": author.Username,
+				"created_at":      comment.CreatedAt,
+				"read":            !isUnread,
+				"mention_me":      mentionMe,
+				"mention_others":  mentionOthers,
+			},
+		})
+	}
+	return rows, nil
+}
+
 func (s *Server) teamUserLookup(ctx context.Context, teamID primitive.ObjectID) (map[primitive.ObjectID]models.User, map[string]bool) {
 	cursor, err := s.store.C("users").Find(ctx, bson.M{"team_id": teamID, "status": models.StatusActive}, options.Find().SetProjection(bson.M{"password_hash": 0, "refresh_token_hash": 0, "two_factor_secret": 0}))
 	if err != nil {
@@ -777,6 +1336,13 @@ func commentReadBy(comment models.Comment, userID primitive.ObjectID) bool {
 	return containsObjectID(comment.ReadBy, userID)
 }
 
+func clientTaskCommentReadBy(comment models.ClientTaskComment, userID primitive.ObjectID) bool {
+	if comment.AuthorID == userID {
+		return true
+	}
+	return containsObjectID(comment.ReadBy, userID)
+}
+
 func commentMentionFlags(content string, currentUsername string, teamUsernames map[string]bool) (bool, bool) {
 	mentionMe := false
 	mentionOthers := false
@@ -794,28 +1360,65 @@ func commentMentionFlags(content string, currentUsername string, teamUsernames m
 }
 
 func (s *Server) unreadTaskCommentCount(ctx context.Context, userID primitive.ObjectID, teamID primitive.ObjectID) int {
-	if teamID.IsZero() {
+	count := 0
+	if !teamID.IsZero() {
+		listIDs, err := s.listIDsForTeam(ctx, teamID)
+		if err == nil && len(listIDs) > 0 {
+			cursor, err := s.store.C("tasks").Find(ctx, bson.M{"list_id": bson.M{"$in": listIDs}}, options.Find().SetProjection(bson.M{"comments": 1}).SetLimit(1000))
+			if err == nil {
+				defer cursor.Close(ctx)
+				for cursor.Next(ctx) {
+					var task models.Task
+					if cursor.Decode(&task) != nil {
+						continue
+					}
+					for _, comment := range task.Comments {
+						if !commentReadBy(comment, userID) {
+							count++
+						}
+					}
+				}
+			}
+		}
+	}
+	return count + s.unreadClientTaskCommentCount(ctx, userID, teamID)
+}
+
+func (s *Server) unreadClientTaskCommentCount(ctx context.Context, userID primitive.ObjectID, teamID primitive.ObjectID) int {
+	role := models.RoleMember
+	if user, err := s.loadUser(ctx, userID); err == nil {
+		role = user.Role
+		teamID = user.TeamID
+	}
+	_, _, clientIDs, err := s.inboxClientProjectContext(ctx, userID, teamID, role)
+	if err != nil || len(clientIDs) == 0 {
 		return 0
 	}
-	listIDs, err := s.listIDsForTeam(ctx, teamID)
-	if err != nil || len(listIDs) == 0 {
-		return 0
-	}
-	cursor, err := s.store.C("tasks").Find(ctx, bson.M{"list_id": bson.M{"$in": listIDs}}, options.Find().SetProjection(bson.M{"comments": 1}).SetLimit(1000))
+	taskCursor, err := s.store.C("client_tasks").Find(ctx, bson.M{"client_id": bson.M{"$in": clientIDs}}, options.Find().SetProjection(bson.M{"_id": 1}).SetLimit(1000))
 	if err != nil {
 		return 0
 	}
-	defer cursor.Close(ctx)
-	count := 0
-	for cursor.Next(ctx) {
-		var task models.Task
-		if cursor.Decode(&task) != nil {
-			continue
+	defer taskCursor.Close(ctx)
+	taskIDs := []primitive.ObjectID{}
+	for taskCursor.Next(ctx) {
+		var task models.ClientTask
+		if taskCursor.Decode(&task) == nil {
+			taskIDs = append(taskIDs, task.ID)
 		}
-		for _, comment := range task.Comments {
-			if !commentReadBy(comment, userID) {
-				count++
-			}
+	}
+	if len(taskIDs) == 0 {
+		return 0
+	}
+	commentCursor, err := s.store.C("client_task_comments").Find(ctx, bson.M{"task_id": bson.M{"$in": taskIDs}}, options.Find().SetProjection(bson.M{"author_id": 1, "read_by": 1}).SetLimit(5000))
+	if err != nil {
+		return 0
+	}
+	defer commentCursor.Close(ctx)
+	count := 0
+	for commentCursor.Next(ctx) {
+		var comment models.ClientTaskComment
+		if commentCursor.Decode(&comment) == nil && !clientTaskCommentReadBy(comment, userID) {
+			count++
 		}
 	}
 	return count

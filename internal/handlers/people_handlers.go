@@ -295,15 +295,7 @@ func (s *Server) createTeamInvitation(c *gin.Context) {
 		return
 	}
 	if !existingUserID.IsZero() {
-		_, _ = s.store.C("notifications").InsertOne(c.Request.Context(), models.Notification{
-			ID:        primitive.NewObjectID(),
-			UserID:    existingUserID,
-			Type:      "team_invitation",
-			Content:   "You were invited to join " + team.Name + " as " + staffRoleDisplayName(staffRole) + ".",
-			RelatedID: invitation.ID,
-			Read:      false,
-			CreatedAt: now,
-		})
+		s.notifyUserIDs(c.Request.Context(), []primitive.ObjectID{existingUserID}, userCtx.ID, "team_invitation", "You were invited to join "+team.Name+" as "+staffRoleDisplayName(staffRole)+".", invitation.ID)
 		s.enqueueInvitationEmail(c.Request.Context(), email, team.Name, staffRole, s.cfg.AppURL+"/dashboard")
 	} else {
 		s.enqueueInvitationEmail(c.Request.Context(), email, team.Name, staffRole, s.cfg.AppURL+"/register?invite="+token)
@@ -503,15 +495,7 @@ func (s *Server) leaveCompany(c *gin.Context) {
 		if companyName == "" {
 			companyName = "your company"
 		}
-		_, _ = s.store.C("notifications").InsertOne(c.Request.Context(), models.Notification{
-			ID:        primitive.NewObjectID(),
-			UserID:    company.OwnerAdminID,
-			Type:      "team_member_left",
-			Content:   memberName + " left " + companyName + ".",
-			RelatedID: user.ID,
-			Read:      false,
-			CreatedAt: now,
-		})
+		s.notifyUserIDs(c.Request.Context(), []primitive.ObjectID{company.OwnerAdminID}, user.ID, "team_member_left", memberName+" left "+companyName+".", user.ID)
 	}
 	access, refresh, err := s.issueTokens(c.Request.Context(), user)
 	if err != nil {
@@ -621,18 +605,28 @@ func (s *Server) respondInvitation(c *gin.Context) {
 func (s *Server) listMentionUsers(c *gin.Context) {
 	userCtx, _ := currentUser(c)
 	filter := bson.M{"status": models.StatusActive}
-	if !userCtx.TeamID.IsZero() {
-		filter["team_id"] = userCtx.TeamID
-	} else if userCtx.Role == models.RoleOwnerAdmin && strings.TrimSpace(c.Query("team_id")) != "" {
+	mentionTeamID := primitive.NilObjectID
+	if strings.TrimSpace(c.Query("team_id")) != "" {
 		teamID, err := objectIDFromString(c.Query("team_id"))
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid team_id"})
 			return
 		}
-		filter["team_id"] = teamID
+		if !s.canAccessTeam(c, teamID) {
+			return
+		}
+		mentionTeamID = teamID
+	} else if !userCtx.TeamID.IsZero() {
+		mentionTeamID = userCtx.TeamID
 	} else {
 		c.JSON(http.StatusOK, gin.H{"users": []models.User{}})
 		return
+	}
+	var team models.Team
+	if err := s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": mentionTeamID}).Decode(&team); err == nil && len(team.MemberIDs) > 0 {
+		filter["$or"] = []bson.M{{"team_id": mentionTeamID}, {"_id": bson.M{"$in": team.MemberIDs}}}
+	} else {
+		filter["team_id"] = mentionTeamID
 	}
 	if q := normalizeUsername(c.Query("q")); q != "" {
 		filter["username"] = bson.M{"$regex": "^" + regexp.QuoteMeta(q), "$options": "i"}
@@ -644,10 +638,45 @@ func (s *Server) listMentionUsers(c *gin.Context) {
 	}
 	defer cursor.Close(c.Request.Context())
 	var users []models.User
+	seen := map[primitive.ObjectID]bool{}
 	for cursor.Next(c.Request.Context()) {
 		var user models.User
 		if cursor.Decode(&user) == nil {
 			s.ensureUserIdentity(c.Request.Context(), &user)
+			seen[user.ID] = true
+			users = append(users, user)
+		}
+	}
+	projectRole := models.RoleMember
+	if userCtx.Role == models.RoleOwnerAdmin {
+		projectRole = models.RoleOwnerAdmin
+	} else if team.OwnerAdminID == userCtx.ID || (userCtx.Role == models.RoleTeamAdmin && userCtx.TeamID == mentionTeamID) {
+		projectRole = models.RoleTeamAdmin
+	} else if userCtx.Role == models.RoleClientAdmin {
+		projectRole = models.RoleClientAdmin
+	}
+	if _, _, clientIDs, err := s.inboxClientProjectContext(c.Request.Context(), userCtx.ID, mentionTeamID, projectRole); err == nil && len(clientIDs) > 0 {
+		memberIDs := []primitive.ObjectID{}
+		clientCursor, err := s.store.C("client_projects").Find(c.Request.Context(), bson.M{"_id": bson.M{"$in": clientIDs}}, options.Find().SetProjection(bson.M{"member_ids": 1, "client_admin_ids": 1}))
+		if err == nil {
+			defer clientCursor.Close(c.Request.Context())
+			for clientCursor.Next(c.Request.Context()) {
+				var client models.ClientProject
+				if clientCursor.Decode(&client) == nil {
+					memberIDs = append(memberIDs, client.MemberIDs...)
+					memberIDs = append(memberIDs, client.ClientAdminIDs...)
+				}
+			}
+		}
+		for _, user := range s.usersForIDs(c.Request.Context(), uniqueObjectIDs(memberIDs)) {
+			if seen[user.ID] || user.Status != models.StatusActive {
+				continue
+			}
+			s.ensureUserIdentity(c.Request.Context(), &user)
+			if q := normalizeUsername(c.Query("q")); q != "" && !strings.HasPrefix(strings.ToLower(user.Username), q) {
+				continue
+			}
+			seen[user.ID] = true
 			users = append(users, user)
 		}
 	}
@@ -659,7 +688,13 @@ func (s *Server) listMentionUsers(c *gin.Context) {
 
 func (s *Server) listNotifications(c *gin.Context) {
 	userCtx, _ := currentUser(c)
-	cursor, err := s.store.C("notifications").Find(c.Request.Context(), bson.M{"user_id": userCtx.ID, "read": false}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(50))
+	filter := bson.M{"user_id": userCtx.ID}
+	if strings.EqualFold(c.Query("bin"), "1") || strings.EqualFold(c.Query("bin"), "true") {
+		filter["deleted_at"] = bson.M{"$exists": true}
+	} else {
+		filter["deleted_at"] = bson.M{"$exists": false}
+	}
+	cursor, err := s.store.C("notifications").Find(c.Request.Context(), filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(100))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load notifications"})
 		return
@@ -676,6 +711,349 @@ func (s *Server) listNotifications(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"notifications": notifications})
 }
 
+func (s *Server) openMyNotification(c *gin.Context) {
+	userCtx, _ := currentUser(c)
+	id, ok := objectIDParam(c, "id")
+	if !ok {
+		return
+	}
+	var note models.Notification
+	filter := bson.M{"_id": id, "user_id": userCtx.ID, "type": bson.M{"$ne": "team_invitation"}, "deleted_at": bson.M{"$exists": false}}
+	if err := s.store.C("notifications").FindOne(c.Request.Context(), filter).Decode(&note); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
+		return
+	}
+	_, _ = s.store.C("notifications").UpdateByID(c.Request.Context(), id, bson.M{"$set": bson.M{"read": true}})
+	target := s.notificationTarget(c.Request.Context(), note)
+	target["opened"] = true
+	target["notification"] = gin.H{
+		"id":         note.ID.Hex(),
+		"type":       note.Type,
+		"content":    note.Content,
+		"related_id": note.RelatedID.Hex(),
+		"created_at": note.CreatedAt,
+	}
+	c.JSON(http.StatusOK, target)
+}
+
+func (s *Server) notificationTarget(ctx context.Context, note models.Notification) gin.H {
+	related := note.RelatedID
+	target := gin.H{"url": "/dashboard", "source_type": "notification"}
+	switch note.Type {
+	case "admin_message", "chat_message", "chat_ended", "support_chat_created":
+		if !related.IsZero() {
+			target["url"] = "/chat?id=" + related.Hex()
+			target["source_type"] = "chat"
+			target["chat_id"] = related.Hex()
+		}
+	case "chat_mention":
+		var msg models.Message
+		if !related.IsZero() && s.store.C("messages").FindOne(ctx, bson.M{"_id": related}).Decode(&msg) == nil {
+			target["url"] = "/chat?id=" + msg.ChatID.Hex()
+			target["source_type"] = "chat"
+			target["chat_id"] = msg.ChatID.Hex()
+			target["message_id"] = related.Hex()
+		}
+	case "task_assigned", "task_updated", "task_comment", "task_mention":
+		if !related.IsZero() {
+			target["url"] = "/dashboard?task_id=" + related.Hex() + "&source_type=task"
+			target["source_type"] = "task"
+			target["task_id"] = related.Hex()
+		}
+	case "comment_mention":
+		if taskTarget, ok := s.taskCommentNotificationTarget(ctx, related); ok {
+			return taskTarget
+		}
+		if feedbackTarget, ok := s.feedbackNotificationTarget(ctx, related); ok {
+			return feedbackTarget
+		}
+	case "client_task_assigned", "client_task_updated", "client_task_mention":
+		if !related.IsZero() {
+			target["url"] = "/tasks?task_id=" + related.Hex()
+			target["source_type"] = "client_task"
+			target["task_id"] = related.Hex()
+		}
+	case "client_task_comment", "client_task_comment_mention", "client_task_comment_reaction":
+		if !related.IsZero() {
+			var comment models.ClientTaskComment
+			if s.store.C("client_task_comments").FindOne(ctx, bson.M{"_id": related}).Decode(&comment) == nil {
+				target["url"] = "/tasks?task_id=" + comment.TaskID.Hex() + "&comment_id=" + related.Hex()
+				target["source_type"] = "client_task"
+				target["task_id"] = comment.TaskID.Hex()
+				target["comment_id"] = related.Hex()
+			} else {
+				target["url"] = "/tasks"
+				target["source_type"] = "client_task"
+			}
+		}
+	case "client_project_added", "client_project_role_updated":
+		if !related.IsZero() {
+			target["url"] = "/projects/" + related.Hex()
+			target["source_type"] = "client_project"
+			target["client_id"] = related.Hex()
+		}
+	case "bug_assigned", "feedback_mention":
+		if feedbackTarget, ok := s.feedbackNotificationTarget(ctx, related); ok {
+			return feedbackTarget
+		}
+	case "team_member_left":
+		target["url"] = "/team"
+		target["source_type"] = "team"
+	case "membership_updated":
+		target["url"] = "/settings/billing"
+		target["source_type"] = "billing"
+	case "subscription_purchase":
+		if !related.IsZero() {
+			target["url"] = "/admin/users?subscription_id=" + related.Hex()
+			target["source_type"] = "subscription"
+			target["subscription_id"] = related.Hex()
+		}
+	}
+	return target
+}
+
+func (s *Server) taskCommentNotificationTarget(ctx context.Context, related primitive.ObjectID) (gin.H, bool) {
+	if related.IsZero() {
+		return nil, false
+	}
+	var task models.Task
+	if s.store.C("tasks").FindOne(ctx, bson.M{"comments.id": related}).Decode(&task) == nil {
+		return gin.H{
+			"url":         "/dashboard?task_id=" + task.ID.Hex() + "&comment_id=" + related.Hex() + "&source_type=task",
+			"source_type": "task",
+			"task_id":     task.ID.Hex(),
+			"comment_id":  related.Hex(),
+		}, true
+	}
+	if s.store.C("tasks").FindOne(ctx, bson.M{"_id": related}).Decode(&task) == nil {
+		return gin.H{
+			"url":         "/dashboard?task_id=" + task.ID.Hex() + "&source_type=task",
+			"source_type": "task",
+			"task_id":     task.ID.Hex(),
+		}, true
+	}
+	return nil, false
+}
+
+func (s *Server) feedbackNotificationTarget(ctx context.Context, related primitive.ObjectID) (gin.H, bool) {
+	if related.IsZero() {
+		return nil, false
+	}
+	var bug models.Bug
+	if s.store.C("bugs").FindOne(ctx, bson.M{"comments.id": related}).Decode(&bug) == nil {
+		return gin.H{
+			"url":         "/websites/" + bug.WebsiteID.Hex() + "/annotate?bug_id=" + bug.ID.Hex() + "&comment_id=" + related.Hex(),
+			"source_type": "feedback",
+			"bug_id":      bug.ID.Hex(),
+			"comment_id":  related.Hex(),
+			"website_id":  bug.WebsiteID.Hex(),
+		}, true
+	}
+	if s.store.C("bugs").FindOne(ctx, bson.M{"_id": related}).Decode(&bug) == nil {
+		return gin.H{
+			"url":         "/websites/" + bug.WebsiteID.Hex() + "/annotate?bug_id=" + bug.ID.Hex(),
+			"source_type": "feedback",
+			"bug_id":      bug.ID.Hex(),
+			"website_id":  bug.WebsiteID.Hex(),
+		}, true
+	}
+	return nil, false
+}
+
+func (s *Server) notifyUserIDs(ctx context.Context, userIDs []primitive.ObjectID, actorID primitive.ObjectID, notificationType string, content string, relatedID primitive.ObjectID) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return
+	}
+	now := time.Now()
+	for _, userID := range s.userNotificationRecipients(ctx, userIDs, actorID) {
+		_, _ = s.store.C("notifications").InsertOne(ctx, models.Notification{
+			ID:        primitive.NewObjectID(),
+			UserID:    userID,
+			Type:      notificationType,
+			Content:   trimForNotification(content),
+			RelatedID: relatedID,
+			Read:      false,
+			CreatedAt: now,
+		})
+		s.broadcastLiveToUsers([]primitive.ObjectID{userID}, "notification_changed", gin.H{"notification_type": notificationType, "related_id": relatedID.Hex()})
+	}
+}
+
+func (s *Server) notifyOwnerAdmins(ctx context.Context, actorID primitive.ObjectID, notificationType string, content string, relatedID primitive.ObjectID) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return
+	}
+	cursor, err := s.store.C("users").Find(ctx, bson.M{"role": models.RoleOwnerAdmin, "status": models.StatusActive})
+	if err != nil {
+		return
+	}
+	defer cursor.Close(ctx)
+	now := time.Now()
+	ownerIDs := []primitive.ObjectID{}
+	for cursor.Next(ctx) {
+		var owner models.User
+		if cursor.Decode(&owner) != nil || owner.ID.IsZero() || owner.ID == actorID {
+			continue
+		}
+		ownerIDs = append(ownerIDs, owner.ID)
+		_, _ = s.store.C("notifications").InsertOne(ctx, models.Notification{
+			ID:        primitive.NewObjectID(),
+			UserID:    owner.ID,
+			Type:      notificationType,
+			Content:   trimForNotification(content),
+			RelatedID: relatedID,
+			Read:      false,
+			CreatedAt: now,
+		})
+	}
+	if len(ownerIDs) > 0 {
+		s.broadcastLiveToUsers(ownerIDs, "notification_changed", gin.H{"notification_type": notificationType, "related_id": relatedID.Hex()})
+	}
+}
+
+func (s *Server) userNotificationRecipients(ctx context.Context, userIDs []primitive.ObjectID, actorID primitive.ObjectID) []primitive.ObjectID {
+	candidates := []primitive.ObjectID{}
+	for _, userID := range uniqueObjectIDs(userIDs) {
+		if userID.IsZero() || userID == actorID {
+			continue
+		}
+		candidates = append(candidates, userID)
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	cursor, err := s.store.C("users").Find(ctx, bson.M{"_id": bson.M{"$in": candidates}, "role": bson.M{"$ne": models.RoleOwnerAdmin}})
+	if err != nil {
+		return nil
+	}
+	defer cursor.Close(ctx)
+	allowed := map[primitive.ObjectID]bool{}
+	for cursor.Next(ctx) {
+		var user models.User
+		if cursor.Decode(&user) == nil {
+			allowed[user.ID] = true
+		}
+	}
+	recipients := []primitive.ObjectID{}
+	for _, userID := range candidates {
+		if allowed[userID] {
+			recipients = append(recipients, userID)
+		}
+	}
+	return recipients
+}
+
+func (s *Server) notificationActorName(ctx context.Context, actorID primitive.ObjectID) string {
+	if user, err := s.loadUser(ctx, actorID); err == nil {
+		s.ensureUserIdentity(ctx, &user)
+		return firstNonEmpty(user.Name, user.Username, user.Email, "Someone")
+	}
+	return "Someone"
+}
+
+func (s *Server) notificationActorMention(ctx context.Context, actorID primitive.ObjectID) string {
+	if user, err := s.loadUser(ctx, actorID); err == nil {
+		s.ensureUserIdentity(ctx, &user)
+		if strings.TrimSpace(user.Username) != "" {
+			return "@" + user.Username
+		}
+		return firstNonEmpty(user.Name, user.Email, "Someone")
+	}
+	return "Someone"
+}
+
+func (s *Server) deleteMyNotifications(c *gin.Context) {
+	userCtx, _ := currentUser(c)
+	now := time.Now()
+	result, err := s.store.C("notifications").UpdateMany(
+		c.Request.Context(),
+		bson.M{"user_id": userCtx.ID, "type": bson.M{"$ne": "team_invitation"}, "deleted_at": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"deleted_at": now, "read": true}},
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not move notifications to bin"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": true, "count": result.ModifiedCount})
+}
+
+func (s *Server) deleteMyNotification(c *gin.Context) {
+	userCtx, _ := currentUser(c)
+	id, ok := objectIDParam(c, "id")
+	if !ok {
+		return
+	}
+	now := time.Now()
+	result, err := s.store.C("notifications").UpdateOne(
+		c.Request.Context(),
+		bson.M{"_id": id, "user_id": userCtx.ID, "type": bson.M{"$ne": "team_invitation"}, "deleted_at": bson.M{"$exists": false}},
+		bson.M{"$set": bson.M{"deleted_at": now, "read": true}},
+	)
+	if err != nil || result.MatchedCount == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": true})
+}
+
+func (s *Server) restoreMyNotification(c *gin.Context) {
+	userCtx, _ := currentUser(c)
+	id, ok := objectIDParam(c, "id")
+	if !ok {
+		return
+	}
+	result, err := s.store.C("notifications").UpdateOne(
+		c.Request.Context(),
+		bson.M{"_id": id, "user_id": userCtx.ID, "deleted_at": bson.M{"$exists": true}},
+		bson.M{"$unset": bson.M{"deleted_at": ""}, "$set": bson.M{"read": false}},
+	)
+	if err != nil || result.MatchedCount == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "notification not found in bin"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"restored": true})
+}
+
+func (s *Server) restoreAllMyNotifications(c *gin.Context) {
+	userCtx, _ := currentUser(c)
+	result, err := s.store.C("notifications").UpdateMany(
+		c.Request.Context(),
+		bson.M{"user_id": userCtx.ID, "type": bson.M{"$ne": "team_invitation"}, "deleted_at": bson.M{"$exists": true}},
+		bson.M{"$unset": bson.M{"deleted_at": ""}, "$set": bson.M{"read": false}},
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not restore notifications"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"restored": true, "count": result.ModifiedCount})
+}
+
+func (s *Server) permanentlyDeleteMyNotification(c *gin.Context) {
+	userCtx, _ := currentUser(c)
+	id, ok := objectIDParam(c, "id")
+	if !ok {
+		return
+	}
+	result, err := s.store.C("notifications").DeleteOne(c.Request.Context(), bson.M{"_id": id, "user_id": userCtx.ID, "deleted_at": bson.M{"$exists": true}})
+	if err != nil || result.DeletedCount == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "notification not found in bin"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"removed": true})
+}
+
+func (s *Server) permanentlyDeleteAllMyNotifications(c *gin.Context) {
+	userCtx, _ := currentUser(c)
+	result, err := s.store.C("notifications").DeleteMany(c.Request.Context(), bson.M{"user_id": userCtx.ID, "type": bson.M{"$ne": "team_invitation"}, "deleted_at": bson.M{"$exists": true}})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not empty notification bin"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"removed": true, "count": result.DeletedCount})
+}
+
 func (s *Server) notifyMentions(ctx context.Context, teamID primitive.ObjectID, actorID primitive.ObjectID, content string, sourceType string, relatedID primitive.ObjectID) {
 	names := mentionPattern.FindAllStringSubmatch(content, -1)
 	if len(names) == 0 {
@@ -690,7 +1068,7 @@ func (s *Server) notifyMentions(ctx context.Context, teamID primitive.ObjectID, 
 			usernames = append(usernames, username)
 		}
 	}
-	filter := bson.M{"username": bson.M{"$in": usernames}, "status": models.StatusActive}
+	filter := bson.M{"username": bson.M{"$in": usernames}, "status": models.StatusActive, "role": bson.M{"$ne": models.RoleOwnerAdmin}}
 	if !teamID.IsZero() {
 		filter["team_id"] = teamID
 	}

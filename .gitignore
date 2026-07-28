@@ -6,3 +6,5 @@ uploads/*
 tmp/
 dist/
 *.exe
+deploy/vps/deploy.env
+mobile/

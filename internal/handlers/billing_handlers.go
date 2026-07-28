@@ -40,16 +40,18 @@ func (s *Server) adminUpdatePlan(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name           *string `json:"name"`
-		Description    *string `json:"description"`
-		PricingModel   *string `json:"pricing_model"`
-		Price          *int64  `json:"price"`
-		PricePerSeat   *int64  `json:"price_per_seat"`
-		TrialDays      *int    `json:"trial_days"`
-		SeatLimit      *int    `json:"seat_limit"`
-		ProjectLimit   *int    `json:"project_limit"`
-		StorageLimitMB *int    `json:"storage_limit_mb"`
-		Featured       *bool   `json:"featured"`
+		Name               *string `json:"name"`
+		Description        *string `json:"description"`
+		PricingModel       *string `json:"pricing_model"`
+		Price              *int64  `json:"price"`
+		PriceYearly        *int64  `json:"price_yearly"`
+		PricePerSeat       *int64  `json:"price_per_seat"`
+		PricePerSeatYearly *int64  `json:"price_per_seat_yearly"`
+		TrialDays          *int    `json:"trial_days"`
+		SeatLimit          *int    `json:"seat_limit"`
+		ProjectLimit       *int    `json:"project_limit"`
+		StorageLimitMB     *int    `json:"storage_limit_mb"`
+		Featured           *bool   `json:"featured"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid plan update"})
@@ -93,6 +95,14 @@ func (s *Server) adminUpdatePlan(c *gin.Context) {
 		set["price"] = *req.Price
 		current.Price = *req.Price
 	}
+	if req.PriceYearly != nil {
+		if *req.PriceYearly < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "price_yearly cannot be negative"})
+			return
+		}
+		set["price_yearly"] = *req.PriceYearly
+		current.PriceYearly = *req.PriceYearly
+	}
 	if req.PricePerSeat != nil {
 		if *req.PricePerSeat < 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "price_per_seat cannot be negative"})
@@ -100,6 +110,14 @@ func (s *Server) adminUpdatePlan(c *gin.Context) {
 		}
 		set["price_per_seat"] = *req.PricePerSeat
 		current.PricePerSeat = *req.PricePerSeat
+	}
+	if req.PricePerSeatYearly != nil {
+		if *req.PricePerSeatYearly < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "price_per_seat_yearly cannot be negative"})
+			return
+		}
+		set["price_per_seat_yearly"] = *req.PricePerSeatYearly
+		current.PricePerSeatYearly = *req.PricePerSeatYearly
 	}
 	if req.TrialDays != nil {
 		if *req.TrialDays < 0 {
@@ -194,11 +212,74 @@ func (s *Server) subscriptionIDsForPlan(c *gin.Context, planID primitive.ObjectI
 	return ids, cursor.Err()
 }
 
+func normalizedBillingPeriod(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch value {
+	case "year", "yearly", "annual", "annually":
+		return "yearly"
+	default:
+		return "monthly"
+	}
+}
+
+func normalizedBillingQuantity(value int) int {
+	if value < 1 {
+		return 1
+	}
+	if value > 120 {
+		return 120
+	}
+	return value
+}
+
+func billingExpiry(start time.Time, period string, quantity int) time.Time {
+	if normalizedBillingPeriod(period) == "yearly" {
+		return start.AddDate(normalizedBillingQuantity(quantity), 0, 0)
+	}
+	return start.AddDate(0, normalizedBillingQuantity(quantity), 0)
+}
+
+func planBillingAmount(plan models.Plan, seatCount int64, period string, quantity int) int64 {
+	if seatCount < 1 {
+		seatCount = 1
+	}
+	quantity = normalizedBillingQuantity(quantity)
+	period = normalizedBillingPeriod(period)
+	unit := plan.Price
+	if plan.PricingModel == "per_seat" {
+		unit = plan.PricePerSeat
+		if period == "yearly" {
+			unit = plan.PricePerSeatYearly
+			if unit <= 0 {
+				unit = plan.PricePerSeat * 12
+			}
+		}
+		return unit * seatCount * int64(quantity)
+	}
+	if period == "yearly" {
+		unit = plan.PriceYearly
+		if unit <= 0 {
+			unit = plan.Price * 12
+		}
+	}
+	return unit * int64(quantity)
+}
+
+func teamSeatCount(team models.Team) int64 {
+	count := int64(len(team.MemberIDs))
+	if count < 1 {
+		return 1
+	}
+	return count
+}
+
 func (s *Server) purchaseSubscription(c *gin.Context) {
 	userCtx, _ := currentUser(c)
 	var req struct {
-		PlanID   string `json:"plan_id"`
-		Provider string `json:"provider"`
+		PlanID        string `json:"plan_id"`
+		Provider      string `json:"provider"`
+		BillingPeriod string `json:"billing_period"`
+		Quantity      int    `json:"quantity"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid subscription body"})
@@ -208,6 +289,10 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 	provider, ok := s.payments[providerName]
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "provider must be stripe or paypal; Google Pay is enabled inside those providers"})
+		return
+	}
+	if !s.paymentProviderEnabled(c.Request.Context(), providerName) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": providerName + " payments are disabled in platform settings"})
 		return
 	}
 	planID, err := objectIDFromString(req.PlanID)
@@ -220,6 +305,8 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "plan not found"})
 		return
 	}
+	period := normalizedBillingPeriod(req.BillingPeriod)
+	quantity := normalizedBillingQuantity(req.Quantity)
 	pending, err := s.store.C("subscriptions").CountDocuments(c.Request.Context(), bson.M{"team_id": userCtx.TeamID, "status": "pending_approval"})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check pending subscriptions"})
@@ -230,16 +317,9 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 		return
 	}
 
-	amount := plan.Price
-	if plan.PricingModel == "per_seat" {
-		var team models.Team
-		_ = s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": userCtx.TeamID}).Decode(&team)
-		seatCount := int64(len(team.MemberIDs))
-		if seatCount == 0 {
-			seatCount = 1
-		}
-		amount = plan.PricePerSeat * seatCount
-	}
+	var team models.Team
+	_ = s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": userCtx.TeamID}).Decode(&team)
+	amount := planBillingAmount(plan, teamSeatCount(team), period, quantity)
 	session, err := provider.CreateCheckout(c.Request.Context(), billing.CheckoutRequest{TeamID: userCtx.TeamID.Hex(), PlanID: plan.ID.Hex(), Amount: amount, Currency: "usd"})
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "could not create checkout"})
@@ -258,6 +338,8 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 		TeamID:                userCtx.TeamID,
 		PlanID:                plan.ID,
 		Status:                status,
+		BillingPeriod:         period,
+		BillingQuantity:       quantity,
 		PaymentProvider:       provider.Name(),
 		ExternalTransactionID: session.ExternalID,
 		TrialEndsAt:           trialEnds,
@@ -269,6 +351,8 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 		return
 	}
 	_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), userCtx.TeamID, bson.M{"$set": bson.M{"subscription_id": sub.ID, "seat_limit_cached": plan.SeatLimit}})
+	actor := s.notificationActorName(c.Request.Context(), userCtx.ID)
+	s.notifyOwnerAdmins(c.Request.Context(), userCtx.ID, "subscription_purchase", actor+" started a "+period+" purchase for "+plan.Name+".", sub.ID)
 	c.JSON(http.StatusCreated, gin.H{"subscription": sub, "checkout": session, "amount": amount})
 }
 
@@ -327,19 +411,14 @@ func (s *Server) approveSubscription(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "plan not found"})
 		return
 	}
-	amount := plan.Price
-	if plan.PricingModel == "per_seat" {
-		var team models.Team
-		_ = s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": sub.TeamID}).Decode(&team)
-		seatCount := int64(len(team.MemberIDs))
-		if seatCount == 0 {
-			seatCount = 1
-		}
-		amount = plan.PricePerSeat * seatCount
-	}
+	period := normalizedBillingPeriod(sub.BillingPeriod)
+	quantity := normalizedBillingQuantity(sub.BillingQuantity)
+	var team models.Team
+	_ = s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": sub.TeamID}).Decode(&team)
+	amount := planBillingAmount(plan, teamSeatCount(team), period, quantity)
 	now := time.Now()
-	expires := now.AddDate(0, 1, 0)
-	_, err := s.store.C("subscriptions").UpdateByID(c.Request.Context(), id, bson.M{"$set": bson.M{"status": "active", "approved_by": userCtx.ID, "started_at": now, "expires_at": expires}})
+	expires := billingExpiry(now, period, quantity)
+	_, err := s.store.C("subscriptions").UpdateByID(c.Request.Context(), id, bson.M{"$set": bson.M{"status": "active", "billing_period": period, "billing_quantity": quantity, "approved_by": userCtx.ID, "started_at": now, "expires_at": expires}})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not approve subscription"})
 		return

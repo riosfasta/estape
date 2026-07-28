@@ -7,6 +7,8 @@ function readStoredObject(key) {
   }
 }
 
+const WORKSPACE_CONTEXT_KEY = "pinflow_workspace_context";
+
 const state = {
   access: localStorage.getItem("pinflow_access") || "",
   refresh: localStorage.getItem("pinflow_refresh") || "",
@@ -14,9 +16,24 @@ const state = {
   team: null,
   personalTeam: null,
   companyAccess: null,
+  companyAccesses: [],
+  workspaceContext: localStorage.getItem(WORKSPACE_CONTEXT_KEY) || "personal",
+  platformSettings: null,
   unreadCommentCount: 0,
+  unreadNotificationCount: 0,
   activeTimer: null,
   timerTick: null,
+  notificationPoll: null,
+  notificationPollBusy: false,
+  livePoll: null,
+  livePollBusy: false,
+  liveSocket: null,
+  liveReconnectTimer: null,
+  liveRefreshTimer: null,
+  liveReconnectDelay: 1500,
+  liveTaskSignature: "",
+  liveWebsiteSignature: "",
+  liveInboxSignature: "",
   chatSocket: null,
   supportSocket: null,
   chatReply: null,
@@ -30,6 +47,10 @@ const state = {
   projectSidebarOpen: readStoredObject("pinflow_project_sidebar_open"),
   sidebarCollapsed: localStorage.getItem("pinflow_sidebar_collapsed") === "1",
   dropdownDismissBound: false,
+  commandSearchDismissBound: false,
+  commandSearchTimer: null,
+  commandSearchAbort: null,
+  commandSearchResults: [],
   clientTaskReply: null,
   clientTaskCommentEdit: null,
 };
@@ -37,6 +58,7 @@ const state = {
 const app = document.getElementById("app");
 const path = () => window.location.pathname;
 const $ = (selector) => document.querySelector(selector);
+const selectorEscape = (value) => (window.CSS?.escape ? CSS.escape(String(value)) : String(value).replace(/"/g, '\\"'));
 
 function icon(name) {
   return `<i data-lucide="${name}"></i>`;
@@ -48,6 +70,332 @@ function icons() {
 
 window.addEventListener("load", icons);
 
+const QR_VERSION = 10;
+const QR_SIZE = QR_VERSION * 4 + 17;
+const QR_QUIET_ZONE = 4;
+const QR_DATA_BLOCKS = [68, 68, 69, 69];
+const QR_ECC_CODEWORDS = 18;
+
+function qrGFMultiply(x, y) {
+  let product = 0;
+  for (let i = 7; i >= 0; i--) {
+    product = (product << 1) ^ ((product >>> 7) * 0x11d);
+    if (((y >>> i) & 1) !== 0) product ^= x;
+  }
+  return product & 0xff;
+}
+
+function qrGFPower(value) {
+  let result = 1;
+  for (let i = 0; i < value; i++) result = qrGFMultiply(result, 2);
+  return result;
+}
+
+function qrGeneratorPolynomial(degree) {
+  let poly = [1];
+  for (let i = 0; i < degree; i++) {
+    const next = Array(poly.length + 1).fill(0);
+    poly.forEach((coefficient, index) => {
+      next[index] ^= qrGFMultiply(coefficient, qrGFPower(i));
+      next[index + 1] ^= coefficient;
+    });
+    poly = next;
+  }
+  return poly.slice(0, degree).reverse();
+}
+
+function qrReedSolomonRemainder(data, degree) {
+  const divisor = qrGeneratorPolynomial(degree);
+  const result = Array(degree).fill(0);
+  data.forEach((byte) => {
+    const factor = byte ^ result.shift();
+    result.push(0);
+    divisor.forEach((coefficient, index) => {
+      result[index] ^= qrGFMultiply(coefficient, factor);
+    });
+  });
+  return result;
+}
+
+function qrAppendBits(bits, value, length) {
+  for (let i = length - 1; i >= 0; i--) bits.push((value >>> i) & 1);
+}
+
+function qrDataCodewords(text) {
+  const bytes = Array.from(new TextEncoder().encode(text));
+  const capacity = QR_DATA_BLOCKS.reduce((sum, value) => sum + value, 0);
+  if (bytes.length > capacity - 3) throw new Error("Authenticator URL is too long for the local QR renderer.");
+  const bits = [];
+  qrAppendBits(bits, 0x4, 4);
+  qrAppendBits(bits, bytes.length, 16);
+  bytes.forEach((byte) => qrAppendBits(bits, byte, 8));
+  const maxBits = capacity * 8;
+  qrAppendBits(bits, 0, Math.min(4, maxBits - bits.length));
+  while (bits.length % 8) bits.push(0);
+  const data = [];
+  for (let i = 0; i < bits.length; i += 8) {
+    data.push(bits.slice(i, i + 8).reduce((value, bit) => (value << 1) | bit, 0));
+  }
+  for (let pad = 0xec; data.length < capacity; pad ^= 0xec ^ 0x11) data.push(pad);
+  return data;
+}
+
+function qrCodewords(text) {
+  const data = qrDataCodewords(text);
+  const blocks = [];
+  let offset = 0;
+  QR_DATA_BLOCKS.forEach((length) => {
+    const block = data.slice(offset, offset + length);
+    blocks.push({ data: block, ecc: qrReedSolomonRemainder(block, QR_ECC_CODEWORDS) });
+    offset += length;
+  });
+  const codewords = [];
+  const maxDataLength = Math.max(...blocks.map((block) => block.data.length));
+  for (let index = 0; index < maxDataLength; index++) {
+    blocks.forEach((block) => {
+      if (index < block.data.length) codewords.push(block.data[index]);
+    });
+  }
+  for (let index = 0; index < QR_ECC_CODEWORDS; index++) {
+    blocks.forEach((block) => codewords.push(block.ecc[index]));
+  }
+  return codewords;
+}
+
+function qrBlankMatrix() {
+  return {
+    modules: Array.from({ length: QR_SIZE }, () => Array(QR_SIZE).fill(false)),
+    reserved: Array.from({ length: QR_SIZE }, () => Array(QR_SIZE).fill(false)),
+  };
+}
+
+function qrSet(matrix, x, y, value, reserve = true) {
+  if (x < 0 || y < 0 || x >= QR_SIZE || y >= QR_SIZE) return;
+  matrix.modules[y][x] = Boolean(value);
+  if (reserve) matrix.reserved[y][x] = true;
+}
+
+function qrDrawFinder(matrix, x, y) {
+  for (let dy = -1; dy <= 7; dy++) {
+    for (let dx = -1; dx <= 7; dx++) {
+      const xx = x + dx;
+      const yy = y + dy;
+      const inPattern = dx >= 0 && dx <= 6 && dy >= 0 && dy <= 6;
+      const black = inPattern && (dx === 0 || dx === 6 || dy === 0 || dy === 6 || (dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4));
+      qrSet(matrix, xx, yy, black);
+    }
+  }
+}
+
+function qrDrawAlignment(matrix, cx, cy) {
+  if (matrix.reserved[cy]?.[cx]) return;
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      qrSet(matrix, cx + dx, cy + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1);
+    }
+  }
+}
+
+function qrDrawFunctionPatterns(matrix) {
+  qrDrawFinder(matrix, 0, 0);
+  qrDrawFinder(matrix, QR_SIZE - 7, 0);
+  qrDrawFinder(matrix, 0, QR_SIZE - 7);
+  for (let i = 8; i < QR_SIZE - 8; i++) {
+    qrSet(matrix, i, 6, i % 2 === 0);
+    qrSet(matrix, 6, i, i % 2 === 0);
+  }
+  [6, 28, 50].forEach((x) => [6, 28, 50].forEach((y) => qrDrawAlignment(matrix, x, y)));
+  qrSet(matrix, 8, QR_VERSION * 4 + 9, true);
+  qrReserveFormat(matrix);
+  qrDrawVersion(matrix);
+}
+
+function qrReserveFormat(matrix) {
+  for (let i = 0; i <= 8; i++) {
+    if (i !== 6) {
+      qrSet(matrix, 8, i, false);
+      qrSet(matrix, i, 8, false);
+    }
+  }
+  for (let i = 0; i < 8; i++) qrSet(matrix, QR_SIZE - 1 - i, 8, false);
+  for (let i = 8; i < 15; i++) qrSet(matrix, 8, QR_SIZE - 15 + i, false);
+}
+
+function qrBCH(value, poly, degree) {
+  let result = value;
+  for (let i = 0; i < degree; i++) {
+    result = (result << 1) ^ (((result >>> (degree - 1)) & 1) * poly);
+  }
+  return result;
+}
+
+function qrDrawVersion(matrix) {
+  const bits = (QR_VERSION << 12) | qrBCH(QR_VERSION, 0x1f25, 12);
+  for (let i = 0; i < 18; i++) {
+    const bit = ((bits >>> i) & 1) !== 0;
+    const a = QR_SIZE - 11 + (i % 3);
+    const b = Math.floor(i / 3);
+    qrSet(matrix, a, b, bit);
+    qrSet(matrix, b, a, bit);
+  }
+}
+
+function qrMaskBit(mask, x, y) {
+  if (mask === 0) return (x + y) % 2 === 0;
+  if (mask === 1) return y % 2 === 0;
+  if (mask === 2) return x % 3 === 0;
+  if (mask === 3) return (x + y) % 3 === 0;
+  if (mask === 4) return (Math.floor(y / 2) + Math.floor(x / 3)) % 2 === 0;
+  if (mask === 5) return ((x * y) % 2) + ((x * y) % 3) === 0;
+  if (mask === 6) return (((x * y) % 2) + ((x * y) % 3)) % 2 === 0;
+  return (((x + y) % 2) + ((x * y) % 3)) % 2 === 0;
+}
+
+function qrPlaceData(matrix, codewords, mask) {
+  let bitIndex = 0;
+  let upward = true;
+  for (let right = QR_SIZE - 1; right >= 1; right -= 2) {
+    if (right === 6) right--;
+    for (let vert = 0; vert < QR_SIZE; vert++) {
+      const y = upward ? QR_SIZE - 1 - vert : vert;
+      for (let j = 0; j < 2; j++) {
+        const x = right - j;
+        if (matrix.reserved[y][x]) continue;
+        const bit = ((codewords[Math.floor(bitIndex / 8)] >>> (7 - (bitIndex % 8))) & 1) !== 0;
+        qrSet(matrix, x, y, bit !== qrMaskBit(mask, x, y), false);
+        bitIndex++;
+      }
+    }
+    upward = !upward;
+  }
+}
+
+function qrDrawFormat(matrix, mask) {
+  const data = (1 << 3) | mask;
+  const bits = ((data << 10) | qrBCH(data, 0x537, 10)) ^ 0x5412;
+  const get = (index) => ((bits >>> index) & 1) !== 0;
+  for (let i = 0; i <= 5; i++) qrSet(matrix, 8, i, get(i));
+  qrSet(matrix, 8, 7, get(6));
+  qrSet(matrix, 8, 8, get(7));
+  qrSet(matrix, 7, 8, get(8));
+  for (let i = 9; i < 15; i++) qrSet(matrix, 14 - i, 8, get(i));
+  for (let i = 0; i < 8; i++) qrSet(matrix, QR_SIZE - 1 - i, 8, get(i));
+  for (let i = 8; i < 15; i++) qrSet(matrix, 8, QR_SIZE - 15 + i, get(i));
+}
+
+function qrPenalty(modules) {
+  let penalty = 0;
+  for (let y = 0; y < QR_SIZE; y++) {
+    let runColor = modules[y][0];
+    let runLength = 1;
+    for (let x = 1; x < QR_SIZE; x++) {
+      if (modules[y][x] === runColor) runLength++;
+      else {
+        if (runLength >= 5) penalty += 3 + runLength - 5;
+        runColor = modules[y][x];
+        runLength = 1;
+      }
+    }
+    if (runLength >= 5) penalty += 3 + runLength - 5;
+  }
+  for (let x = 0; x < QR_SIZE; x++) {
+    let runColor = modules[0][x];
+    let runLength = 1;
+    for (let y = 1; y < QR_SIZE; y++) {
+      if (modules[y][x] === runColor) runLength++;
+      else {
+        if (runLength >= 5) penalty += 3 + runLength - 5;
+        runColor = modules[y][x];
+        runLength = 1;
+      }
+    }
+    if (runLength >= 5) penalty += 3 + runLength - 5;
+  }
+  for (let y = 0; y < QR_SIZE - 1; y++) {
+    for (let x = 0; x < QR_SIZE - 1; x++) {
+      const color = modules[y][x];
+      if (modules[y][x + 1] === color && modules[y + 1][x] === color && modules[y + 1][x + 1] === color) penalty += 3;
+    }
+  }
+  const pattern = [true, false, true, true, true, false, true, false, false, false, false];
+  const reverse = [...pattern].reverse();
+  const matches = (line, start, source) => source.every((value, index) => line[start + index] === value);
+  for (let y = 0; y < QR_SIZE; y++) {
+    for (let x = 0; x <= QR_SIZE - 11; x++) {
+      if (matches(modules[y], x, pattern) || matches(modules[y], x, reverse)) penalty += 40;
+    }
+  }
+  for (let x = 0; x < QR_SIZE; x++) {
+    const column = modules.map((row) => row[x]);
+    for (let y = 0; y <= QR_SIZE - 11; y++) {
+      if (matches(column, y, pattern) || matches(column, y, reverse)) penalty += 40;
+    }
+  }
+  const dark = modules.flat().filter(Boolean).length;
+  penalty += Math.floor(Math.abs((dark * 20) / (QR_SIZE * QR_SIZE) - 10)) * 10;
+  return penalty;
+}
+
+function qrModules(text) {
+  const codewords = qrCodewords(text);
+  let best = null;
+  let bestPenalty = Infinity;
+  for (let mask = 0; mask < 8; mask++) {
+    const matrix = qrBlankMatrix();
+    qrDrawFunctionPatterns(matrix);
+    qrPlaceData(matrix, codewords, mask);
+    qrDrawFormat(matrix, mask);
+    const penalty = qrPenalty(matrix.modules);
+    if (penalty < bestPenalty) {
+      bestPenalty = penalty;
+      best = matrix.modules;
+    }
+  }
+  return best;
+}
+
+function drawLocalQRCode(canvas, text) {
+  const modules = qrModules(text);
+  const moduleCount = QR_SIZE + QR_QUIET_ZONE * 2;
+  const size = Math.max(canvas.width || 180, canvas.height || 180);
+  canvas.width = size;
+  canvas.height = size;
+  const scale = size / moduleCount;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = "#09231e";
+  modules.forEach((row, y) => row.forEach((black, x) => {
+    if (black) ctx.fillRect((x + QR_QUIET_ZONE) * scale, (y + QR_QUIET_ZONE) * scale, Math.ceil(scale), Math.ceil(scale));
+  }));
+}
+
+function renderTwoFactorQRCode(otpauthURL) {
+  const canvas = $("#twoFactorQRCode");
+  const placeholder = $("#twoFactorQRPlaceholder");
+  const status = $("#twoFactorQRStatus");
+  if (!canvas || !otpauthURL) return;
+  canvas.hidden = true;
+  if (placeholder) {
+    placeholder.hidden = false;
+    placeholder.textContent = "QR";
+  }
+  if (status) status.textContent = "Generating scan code...";
+  try {
+    drawLocalQRCode(canvas, otpauthURL);
+    canvas.hidden = false;
+    if (placeholder) placeholder.hidden = true;
+    if (status) status.textContent = "Scan this QR code with Google Authenticator or another authenticator app.";
+  } catch {
+    canvas.hidden = true;
+    if (placeholder) {
+      placeholder.hidden = false;
+      placeholder.textContent = "Use setup key";
+    }
+    if (status) status.textContent = "Could not draw the QR code. Use the setup key or authenticator URL below.";
+  }
+}
+
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 }
@@ -58,6 +406,246 @@ function mentionText(value) {
 
 function chatText(value) {
   return mentionText(value).replace(/(https?:\/\/[^\s<]+)/g, (url) => `<a class="text-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>`);
+}
+
+function websiteOrigin(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    return parsed.origin;
+  } catch {
+    return raw.replace(/\/+$/, "");
+  }
+}
+
+function annotationPageURL(baseURL, pagePath = "") {
+  const pathValue = String(pagePath || "").trim();
+  if (/^https?:\/\//i.test(pathValue)) return pathValue;
+  const base = websiteOrigin(baseURL);
+  if (!base) return "";
+  if (!pathValue || pathValue === "/") return base;
+  return `${base}${pathValue.startsWith("/") ? "" : "/"}${pathValue}`;
+}
+
+const ANNOTATION_VIEWPORT = { width: 1440, height: 6000, maxHeight: 50000 };
+const ANNOTATION_TALL_FALLBACK_HEIGHT = 18000;
+const ANNOTATION_DEVICE_VIEWPORTS = [
+  { value: "desktop", label: "Desktop", icon: "monitor", width: 1440 },
+  { value: "tablet", label: "Tablet", icon: "tablet", width: 768 },
+  { value: "mobile", label: "Mobile", icon: "smartphone", width: 390 },
+];
+const ANNOTATION_DEFAULT_DEVICE = "desktop";
+const COMMENT_REACTION_EMOJIS = ["\u{1F44D}", "\u{2705}", "\u{2764}\u{FE0F}", "\u{1F602}", "\u{1F440}"];
+let annotationViewportResizeBound = false;
+
+function clampAnnotationPercent(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(0, Math.min(100, number));
+}
+
+function annotationPinHTML(pin = {}, index = 0) {
+  const rawX = clampAnnotationPercent(pin.x ?? pin.pin_x);
+  const rawY = clampAnnotationPercent(pin.y ?? pin.pin_y);
+  const targetWidth = annotationViewportDimension(pin.target_page_width || pin.target_width || pin.page_width || ANNOTATION_VIEWPORT.width, ANNOTATION_VIEWPORT.width, 320, 8000);
+  const targetHeight = annotationViewportDimension(pin.target_page_height || pin.target_height || pin.page_height || ANNOTATION_VIEWPORT.height, ANNOTATION_VIEWPORT.height, 900, ANNOTATION_VIEWPORT.maxHeight);
+  const sourceWidth = annotationViewportDimension(pin.page_width || pin.viewport_width || targetWidth, targetWidth, 320, 8000);
+  const sourceHeight = annotationViewportDimension(pin.page_height || pin.viewport_height || targetHeight, targetHeight, 900, ANNOTATION_VIEWPORT.maxHeight);
+  const x = clampAnnotationPercent(((rawX / 100) * sourceWidth / targetWidth) * 100);
+  const y = clampAnnotationPercent(((rawY / 100) * sourceHeight / targetHeight) * 100);
+  const label = pin.label || String(index + 1);
+  const title = pin.title || pin.description || "Annotation pin";
+  const attrs = pin.id ? ` data-feedback-pin="${esc(pin.id)}"` : "";
+  return `<button class="pin" type="button" style="left:${x}%;top:${y}%;" title="${esc(title)}"${attrs}>${esc(label)}</button>`;
+}
+
+function annotationViewportDimension(value, fallback, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return fallback;
+  return Math.max(min, Math.min(max, Math.round(number)));
+}
+
+function annotationViewportForDevice(device = ANNOTATION_DEFAULT_DEVICE) {
+  return ANNOTATION_DEVICE_VIEWPORTS.find((item) => item.value === device) || ANNOTATION_DEVICE_VIEWPORTS[0];
+}
+
+function annotationDeviceForWidth(width = ANNOTATION_VIEWPORT.width) {
+  const viewportWidth = annotationViewportDimension(width, ANNOTATION_VIEWPORT.width, 320, 8000);
+  if (viewportWidth <= 480) return "mobile";
+  if (viewportWidth <= 900) return "tablet";
+  return "desktop";
+}
+
+function annotationDeviceControlsHTML(activeDevice = ANNOTATION_DEFAULT_DEVICE) {
+  const active = annotationViewportForDevice(activeDevice).value;
+  return `<div class="annotation-device-toolbar" data-annotation-device-toolbar aria-label="Annotation viewport">
+    ${ANNOTATION_DEVICE_VIEWPORTS.map((device) => `<button class="annotation-device-button${device.value === active ? " active" : ""}" type="button" data-annotation-device="${esc(device.value)}" aria-pressed="${device.value === active ? "true" : "false"}" title="${esc(device.label)} view (${device.width}px)">${icon(device.icon)}</button>`).join("")}
+  </div>`;
+}
+
+function setAnnotationDeviceToolbarState(root = document, activeDevice = ANNOTATION_DEFAULT_DEVICE) {
+  const active = annotationViewportForDevice(activeDevice).value;
+  root.querySelectorAll("[data-annotation-device]").forEach((button) => {
+    const isActive = button.dataset.annotationDevice === active;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
+function setAnnotationViewportWidth(viewport, width) {
+  if (!viewport) return ANNOTATION_VIEWPORT.width;
+  const nextWidth = annotationViewportDimension(width, ANNOTATION_VIEWPORT.width, 320, 8000);
+  viewport.dataset.annotationWidth = String(nextWidth);
+  viewport.style.setProperty("--annotation-width", `${nextWidth}px`);
+  const frame = viewport.querySelector("[data-annotation-frame]");
+  if (frame) frame.width = String(nextWidth);
+  syncAnnotationViewports(viewport.closest(".annotation-stage") || document);
+  return nextWidth;
+}
+
+function refreshAnnotationViewportMeasurement(viewport, fallbackHeight) {
+  if (!viewport) return { width: ANNOTATION_VIEWPORT.width, height: ANNOTATION_VIEWPORT.height, measured: false };
+  const width = Number(viewport.dataset.annotationWidth || ANNOTATION_VIEWPORT.width);
+  const fallback = annotationViewportDimension(fallbackHeight || viewport.dataset.annotationFallbackHeight || viewport.dataset.annotationHeight, ANNOTATION_VIEWPORT.height, 900, ANNOTATION_VIEWPORT.maxHeight);
+  const frame = viewport.querySelector("[data-annotation-frame]");
+  const measured = frame ? measureAnnotationFrameHeight(frame) : 0;
+  const height = setAnnotationViewportHeight(viewport, measured || fallback);
+  return { width, height, measured: Boolean(measured) };
+}
+
+function bindAnnotationDeviceControls(root = document, options = {}) {
+  if (!root?.querySelectorAll) return;
+  root.querySelectorAll("[data-annotation-device]").forEach((button) => {
+    if (button.dataset.annotationDeviceBound === "1") return;
+    button.dataset.annotationDeviceBound = "1";
+    button.addEventListener("click", () => {
+      const device = annotationViewportForDevice(button.dataset.annotationDevice);
+      const stage = button.closest(".annotation-stage") || root.querySelector?.(".annotation-stage") || root;
+      const viewport = stage.querySelector?.("[data-annotation-viewport]") || root.querySelector?.("[data-annotation-viewport]");
+      if (!viewport) return;
+      const width = setAnnotationViewportWidth(viewport, device.width);
+      setAnnotationDeviceToolbarState(stage, device.value);
+      const measurement = refreshAnnotationViewportMeasurement(viewport, options.fallbackHeight);
+      options.onChange?.({ device: device.value, width, height: measurement.height, measured: measurement.measured, viewport });
+    });
+  });
+}
+
+function annotationFrameHTML(options = {}) {
+  const title = options.title || "Annotation page";
+  const width = annotationViewportDimension(options.width, ANNOTATION_VIEWPORT.width, 320, 8000);
+  const height = annotationViewportDimension(options.height, ANNOTATION_VIEWPORT.height, 900, ANNOTATION_VIEWPORT.maxHeight);
+  const fallbackHeight = annotationViewportDimension(options.fallbackHeight || height, height, 900, ANNOTATION_VIEWPORT.maxHeight);
+  const device = options.device || annotationDeviceForWidth(width);
+  const media = options.imageURL
+    ? `<img src="${esc(options.imageURL)}" alt="${esc(title)} screenshot">`
+    : `<iframe src="${esc(options.url || "")}" title="${esc(title)}" width="${width}" height="${height}" data-annotation-frame></iframe>`;
+  const pins = (options.pins || []).map((pin, index) => annotationPinHTML({ ...pin, target_page_width: width, target_page_height: height }, index)).join("");
+  return `${options.deviceControls === false ? "" : annotationDeviceControlsHTML(device)}<div class="annotation-viewport-shell" data-annotation-shell>
+    <div class="annotation-viewport" data-annotation-viewport data-annotation-width="${width}" data-annotation-height="${height}" data-annotation-fallback-height="${fallbackHeight}" style="--annotation-width:${width}px;--annotation-height:${height}px;">
+      ${media}
+      <div class="click-catcher" id="${esc(options.catcherID || "clickCatcher")}"></div>
+      <div class="pin-layer" id="${esc(options.pinLayerID || "pinLayer")}">${pins}</div>
+    </div>
+  </div>`;
+}
+
+function setAnnotationViewportHeight(viewport, height) {
+  if (!viewport) return ANNOTATION_VIEWPORT.height;
+  const nextHeight = annotationViewportDimension(height, ANNOTATION_VIEWPORT.height, 900, ANNOTATION_VIEWPORT.maxHeight);
+  viewport.dataset.annotationHeight = String(nextHeight);
+  viewport.style.setProperty("--annotation-height", `${nextHeight}px`);
+  const frame = viewport.querySelector("[data-annotation-frame]");
+  if (frame) frame.height = String(nextHeight);
+  syncAnnotationViewports(viewport.closest(".annotation-stage") || document);
+  return nextHeight;
+}
+
+function measureAnnotationFrameHeight(frame) {
+  try {
+    const doc = frame.contentDocument || frame.contentWindow?.document;
+    if (!doc) return 0;
+    const body = doc.body;
+    const html = doc.documentElement;
+    return Math.max(
+      body?.scrollHeight || 0,
+      body?.offsetHeight || 0,
+      html?.clientHeight || 0,
+      html?.scrollHeight || 0,
+      html?.offsetHeight || 0,
+    );
+  } catch {
+    return 0;
+  }
+}
+
+function bindAnnotationFrameAutoHeight(root = document, options = {}) {
+  root.querySelectorAll("[data-annotation-frame]").forEach((frame) => {
+    if (frame.dataset.autoHeightBound === "1") return;
+    frame.dataset.autoHeightBound = "1";
+    const viewport = frame.closest("[data-annotation-viewport]");
+    const fallbackHeight = annotationViewportDimension(options.fallbackHeight || viewport?.dataset.annotationFallbackHeight || viewport?.dataset.annotationHeight, ANNOTATION_VIEWPORT.height, 900, ANNOTATION_VIEWPORT.maxHeight);
+    const applyHeight = () => {
+      const measured = measureAnnotationFrameHeight(frame);
+      const height = setAnnotationViewportHeight(viewport, measured || fallbackHeight);
+      options.onHeight?.(height, Number(viewport?.dataset.annotationWidth || ANNOTATION_VIEWPORT.width), Boolean(measured));
+    };
+    setAnnotationViewportHeight(viewport, fallbackHeight);
+    frame.addEventListener("load", applyHeight);
+    window.setTimeout(applyHeight, 400);
+    window.setTimeout(applyHeight, 1400);
+  });
+}
+
+function bindAnnotationSidebarToggles(root = document) {
+  root.querySelectorAll("[data-toggle-annotation-sidebar]").forEach((btn) => {
+    if (btn.dataset.annotationSidebarBound === "1") return;
+    btn.dataset.annotationSidebarBound = "1";
+    btn.addEventListener("click", () => {
+      const panel = btn.closest(".annotation-task-viewer") || btn.closest(".annotation-task-body") || btn.closest(".annotation-task-form")?.querySelector(".annotation-task-body");
+      const body = panel?.classList.contains("annotation-task-body") ? panel : panel?.querySelector?.(".annotation-task-body") || panel;
+      if (!body) return;
+      const collapsed = !body.classList.contains("annotation-sidebar-collapsed");
+      body.classList.toggle("annotation-sidebar-collapsed", collapsed);
+      body.querySelectorAll(".annotation-sidebar-expand").forEach((expand) => {
+        expand.hidden = !collapsed;
+      });
+    });
+  });
+}
+
+function syncAnnotationViewports(root = document) {
+  root.querySelectorAll("[data-annotation-viewport]").forEach((viewport) => {
+    const shell = viewport.closest("[data-annotation-shell]");
+    const stage = viewport.closest(".annotation-stage");
+    if (!shell || !stage) return;
+    const width = Number(viewport.dataset.annotationWidth || ANNOTATION_VIEWPORT.width);
+    const height = Number(viewport.dataset.annotationHeight || ANNOTATION_VIEWPORT.height);
+    const availableWidth = Math.max(320, stage.clientWidth - 16);
+    const scale = Math.min(1, availableWidth / width);
+    viewport.style.setProperty("--annotation-scale", scale.toFixed(4));
+    shell.style.width = `${Math.round(width * scale)}px`;
+    shell.style.height = `${Math.round(height * scale)}px`;
+  });
+}
+
+function bindAnnotationViewportResize(root = document) {
+  syncAnnotationViewports(root);
+  requestAnimationFrame(() => syncAnnotationViewports(root));
+  if (annotationViewportResizeBound) return;
+  annotationViewportResizeBound = true;
+  window.addEventListener("resize", () => syncAnnotationViewports());
+}
+
+function annotationPointFromEvent(event, viewport) {
+  if (!viewport) return { x: 0, y: 0 };
+  const rect = viewport.getBoundingClientRect();
+  if (!rect.width || !rect.height) return { x: 0, y: 0 };
+  return {
+    x: clampAnnotationPercent(((event.clientX - rect.left) / rect.width) * 100),
+    y: clampAnnotationPercent(((event.clientY - rect.top) / rect.height) * 100),
+  };
 }
 
 const NIL_OBJECT_ID = "000000000000000000000000";
@@ -168,21 +756,36 @@ const STAFF_ROLES = [
 ];
 
 function staffRoleOptions(selected = "") {
+  const selectedRole = normalizedStaffRole(selected);
   return STAFF_ROLES
-    .map((role) => `<option value="${esc(role.value)}" ${selected === role.value ? "selected" : ""}>${esc(role.label)}</option>`)
+    .map((role) => `<option value="${esc(role.value)}" ${selectedRole === role.value ? "selected" : ""}>${esc(role.label)}</option>`)
     .join("");
+}
+
+function normalizedStaffRole(value) {
+  if (value === "marketing it") return "marketing";
+  if (value === "client admin" || value === "client-admin") return "client_admin";
+  return STAFF_ROLES.find((role) => role.value === value)?.value || "";
 }
 
 function staffRoleLabel(value) {
   if (value === "marketing it") return "Marketing / IT";
   if (value === "client admin") return "Client Admin";
-  return STAFF_ROLES.find((role) => role.value === value)?.label || value || "";
+  return STAFF_ROLES.find((role) => role.value === normalizedStaffRole(value))?.label || value || "";
 }
 
 function accountRoleLabel(user = state.me) {
   if (user?.role === "owner_adm") return "Owner admin";
   if (user?.role === "client_admin") return "Client Admin";
   return "User admin";
+}
+
+function roleLabel(value) {
+  if (value === "owner_adm") return "Owner admin";
+  if (value === "users_admin") return "User admin";
+  if (value === "users_member") return "Staff member";
+  if (value === "client_admin") return "Client Admin";
+  return String(value || "").replaceAll("_", " ");
 }
 
 function companyRoleLabel(value) {
@@ -207,9 +810,116 @@ function userChip(user = state.me) {
   return `<span class="user-chip">${user?.avatar_url ? `<img src="${esc(user.avatar_url)}" alt="">` : `<span>${userInitial(user)}</span>`}</span>`;
 }
 
+function workspaceInitial(name = "W") {
+  return esc(String(name || "W").trim().slice(0, 1).toUpperCase() || "W");
+}
+
+function workspaceAvatar(option = {}) {
+  if (option.kind === "personal" || option.kind === "owner") return userChip();
+  return `<span class="user-chip">${option.logo_url ? `<img src="${esc(option.logo_url)}" alt="">` : `<span>${workspaceInitial(option.name)}</span>`}</span>`;
+}
+
+function normalizeCompanyAccess(access = {}) {
+  const teamID = String(access.team_id || access.id || "");
+  if (!teamID) return null;
+  return {
+    team_id: teamID,
+    name: access.company_name || access.name || "Company workspace",
+    logo_url: access.company_logo_url || access.logo_url || "",
+    staff_role: access.staff_role || "",
+    company_role: access.company_role || "",
+    status: access.status || "active",
+    joined_at: access.joined_at || "",
+    current: Boolean(access.current),
+  };
+}
+
+function joinedCompanyAccesses() {
+  const seen = new Set();
+  return (state.companyAccesses || [])
+    .map(normalizeCompanyAccess)
+    .filter((access) => {
+      if (!access || seen.has(access.team_id) || access.status === "suspended" || access.status === "left") return false;
+      seen.add(access.team_id);
+      return true;
+    });
+}
+
+function personalWorkspaceTeam() {
+  if (state.me?.role === "owner_adm") return state.team || state.personalTeam || null;
+  return state.personalTeam || null;
+}
+
+function workspaceOptions() {
+  const userDisplayName = state.me?.name || state.me?.username || state.me?.email || "User";
+  const personalTeam = personalWorkspaceTeam();
+  const options = [{
+    value: "personal",
+    kind: state.me?.role === "owner_adm" ? "owner" : "personal",
+    team_id: personalTeam?.id || "",
+    name: state.me?.role === "owner_adm" ? "Owner Admin" : (personalTeam?.name || `${userDisplayName}'s Company`),
+    subtitle: state.me?.role === "owner_adm" ? "Platform Owner" : userDisplayName,
+    logo_url: personalTeam?.logo_url || "",
+  }];
+  joinedCompanyAccesses().forEach((access) => {
+    options.push({
+      value: `company:${access.team_id}`,
+      kind: "company",
+      team_id: access.team_id,
+      name: access.name,
+      subtitle: staffRoleLabel(access.staff_role) || companyRoleLabel(access.company_role) || "Member",
+      logo_url: access.logo_url,
+    });
+  });
+  return options;
+}
+
+function ensureWorkspaceContext() {
+  const options = workspaceOptions();
+  if (!options.some((option) => option.value === state.workspaceContext)) {
+    state.workspaceContext = "personal";
+    localStorage.setItem(WORKSPACE_CONTEXT_KEY, state.workspaceContext);
+  }
+}
+
+function activeWorkspaceOption() {
+  const options = workspaceOptions();
+  return options.find((option) => option.value === state.workspaceContext) || options[0];
+}
+
+function activeWorkspaceTeamID() {
+  return activeWorkspaceOption()?.team_id || "";
+}
+
+function isPersonalWorkspaceContext() {
+  return activeWorkspaceOption()?.kind !== "company";
+}
+
+function workspaceContextPickerHTML(options = workspaceOptions()) {
+  if (options.length < 2) return "";
+  return `<label class="workspace-context-picker">
+    <span>View workspace</span>
+    <select id="workspaceContextSelect" aria-label="Switch workspace view">
+      ${options.map((option) => `<option value="${esc(option.value)}" ${option.value === state.workspaceContext ? "selected" : ""}>${esc(option.kind === "company" ? `${option.name} - ${option.subtitle}` : option.name)}</option>`).join("")}
+    </select>
+  </label>`;
+}
+
+function bindWorkspaceContextSwitcher() {
+  const select = $("#workspaceContextSelect");
+  select?.addEventListener("change", () => {
+    state.workspaceContext = select.value;
+    localStorage.setItem(WORKSPACE_CONTEXT_KEY, state.workspaceContext);
+    state.mentionUsers = null;
+    route();
+  });
+}
+
 async function loadMentionUsers() {
   if (state.mentionUsers) return state.mentionUsers;
-  const data = await api("/api/users/mentions").catch(() => ({ users: [] }));
+  const teamID = activeWorkspaceTeamID();
+  const url = teamID ? `/api/users/mentions?team_id=${encodeURIComponent(teamID)}` : "/api/users/mentions";
+  const data = await api(url).catch(() => ({ users: [] }));
   state.mentionUsers = (data.users || []).filter((user) => user.username);
   return state.mentionUsers;
 }
@@ -343,6 +1053,39 @@ function cents(value) {
   return Math.round(parsed * 100);
 }
 
+function billingPeriodLabel(value = "monthly") {
+  return value === "yearly" ? "Yearly" : "Monthly";
+}
+
+function billingUnitLabel(value = "monthly") {
+  return value === "yearly" ? "year" : "month";
+}
+
+function planUnitAmount(plan = {}, period = "monthly") {
+  const yearly = period === "yearly";
+  if (plan.pricing_model === "per_seat") {
+    if (yearly) return plan.price_per_seat_yearly || ((plan.price_per_seat || 0) * 12);
+    return plan.price_per_seat || 0;
+  }
+  if (yearly) return plan.price_yearly || ((plan.price || 0) * 12);
+  return plan.price || 0;
+}
+
+function planPriceSummary(plan = {}) {
+  const suffix = plan.pricing_model === "per_seat" ? "/seat" : "";
+  return `${money(planUnitAmount(plan, "monthly"))}${suffix}/month · ${money(planUnitAmount(plan, "yearly"))}${suffix}/year`;
+}
+
+function planOptionsHTML(plans = [], selected = "") {
+  return plans.map((plan) => `<option value="${esc(plan.id)}" ${selected === plan.id ? "selected" : ""}>${esc(plan.name)} - ${esc(planPriceSummary(plan))}</option>`).join("");
+}
+
+function subscriptionDurationText(subscription = {}) {
+  const quantity = Number(subscription.billing_quantity || 1);
+  const unit = billingUnitLabel(subscription.billing_period || "monthly");
+  return `${quantity} ${unit}${quantity === 1 ? "" : "s"}`;
+}
+
 function fmtDate(value) {
   if (!value) return "";
   return new Date(value).toLocaleDateString();
@@ -355,16 +1098,169 @@ function fmtDayMonthYear(value) {
   return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
 }
 
+function minutesLabel(minutes = 0) {
+  const total = Math.max(0, Number(minutes) || 0);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (h && m) return `${h}h ${m}m`;
+  if (h) return `${h}h`;
+  return `${m}m`;
+}
+
+function dateInputValue(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function activeDurationLabel(startTime) {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(startTime).getTime()) / 1000));
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function taskTimeTrackerHTML(taskID, entries = [], activeEntry = null) {
+  const taskEntries = (entries || []).filter((entry) => String(entry.task_id) === String(taskID));
+  const activeForTask = activeEntry && String(activeEntry.task_id) === String(taskID) ? activeEntry : null;
+  const totalMinutes = taskEntries.reduce((sum, entry) => sum + (Number(entry.duration_minutes) || 0), 0);
+  return `<section class="task-time-tracker" data-time-tracker="${esc(taskID)}">
+    <div class="task-time-head">
+      <div><h3>Time tracker</h3><span class="muted">${esc(minutesLabel(totalMinutes))} logged${activeForTask ? " plus active timer" : ""}</span></div>
+      <div class="toolbar compact-toolbar">
+        ${activeForTask ? `<button class="btn danger compact" type="button" data-stop-task-timer="${esc(activeForTask.id)}">${icon("square")}Stop</button>` : `<button class="btn primary compact" type="button" data-start-task-timer="${esc(taskID)}">${icon("play")}Start</button>`}
+      </div>
+    </div>
+    ${activeForTask ? `<p class="pill active-time-pill">${icon("timer")}<span data-active-task-time="${esc(activeForTask.start_time)}">${esc(activeDurationLabel(activeForTask.start_time))}</span></p>` : ""}
+    <details class="manual-time-box">
+      <summary>${icon("chevron-right")}Manual Time</summary>
+      <form class="manual-time-form" data-manual-time-form="${esc(taskID)}">
+        <div class="grid-3">
+          <div class="field"><label>Date</label><input type="date" name="date" value="${esc(dateInputValue(new Date()))}"></div>
+          <div class="field"><label>Minutes</label><input type="number" name="duration_minutes" min="1" step="1" value="30"></div>
+          <div class="field"><label>Billable</label><select name="billable"><option value="true">Billable</option><option value="false">Non-billable</option></select></div>
+        </div>
+        <div class="field"><label>Note</label><input name="note" placeholder="What was worked on?"></div>
+        <button class="btn compact" type="submit">${icon("plus")}Insert manual time</button>
+        <p class="status-line"></p>
+      </form>
+    </details>
+    <details class="time-history-box">
+      <summary>${icon("history")}Time history (${taskEntries.length})</summary>
+      <div class="time-history-list">
+        ${taskEntries.map((entry) => timeEntryRowHTML(entry)).join("") || `<p class="muted">No time entries yet.</p>`}
+      </div>
+    </details>
+  </section>`;
+}
+
+function timeEntryRowHTML(entry = {}) {
+  const isRunning = !entry.end_time;
+  return `<form class="time-entry-row" data-time-entry-form="${esc(entry.id)}">
+    <div>
+      <strong>${esc(isRunning ? "Running" : minutesLabel(entry.duration_minutes))}</strong>
+      <span class="muted">${esc(fmtDate(entry.start_time))} ${entry.is_manual ? "manual" : "timer"}</span>
+    </div>
+    <input type="number" name="duration_minutes" min="1" step="1" value="${esc(entry.duration_minutes || 1)}" ${isRunning ? "disabled" : ""} title="Minutes">
+    <input name="note" value="${esc(entry.note || "")}" placeholder="Note">
+    <select name="billable"><option value="true" ${entry.billable ? "selected" : ""}>Billable</option><option value="false" ${!entry.billable ? "selected" : ""}>Non-billable</option></select>
+    <button class="btn compact" type="submit" ${isRunning ? "disabled" : ""}>${icon("save")}Save</button>
+    <button class="btn icon quiet danger-text" type="button" data-delete-time-entry="${esc(entry.id)}" title="Delete entry">${icon("trash-2")}</button>
+    <p class="status-line"></p>
+  </form>`;
+}
+
+function bindTaskTimeTracker(root, taskID, refresh = async () => {}) {
+  const tracker = root.querySelector(`[data-time-tracker="${selectorEscape(taskID)}"]`);
+  if (!tracker || tracker.dataset.timeTrackerBound === "1") return;
+  tracker.dataset.timeTrackerBound = "1";
+  let tick = null;
+  const drawActiveTimes = () => {
+    tracker.querySelectorAll("[data-active-task-time]").forEach((node) => {
+      node.textContent = activeDurationLabel(node.dataset.activeTaskTime);
+    });
+  };
+  if (tracker.querySelector("[data-active-task-time]")) {
+    drawActiveTimes();
+    tick = setInterval(drawActiveTimes, 1000);
+    tracker.dataset.timerInterval = String(tick);
+  }
+  tracker.querySelector("[data-start-task-timer]")?.addEventListener("click", async (event) => {
+    event.currentTarget.disabled = true;
+    try {
+      await api("/api/time-entries/start", { method: "POST", body: JSON.stringify({ task_id: taskID }) });
+      await refreshTimerWidget();
+      await refresh();
+    } catch (error) {
+      setStatus(error.message, true);
+      event.currentTarget.disabled = false;
+    }
+  });
+  tracker.querySelector("[data-stop-task-timer]")?.addEventListener("click", async (event) => {
+    event.currentTarget.disabled = true;
+    try {
+      await api(`/api/time-entries/${event.currentTarget.dataset.stopTaskTimer}/stop`, { method: "POST" });
+      await refreshTimerWidget();
+      await refresh();
+    } catch (error) {
+      setStatus(error.message, true);
+      event.currentTarget.disabled = false;
+    }
+  });
+  tracker.querySelector("[data-manual-time-form]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const body = Object.fromEntries(new FormData(form).entries());
+    body.task_id = taskID;
+    body.duration_minutes = Number(body.duration_minutes || 0);
+    body.billable = body.billable !== "false";
+    try {
+      await api("/api/time-entries", { method: "POST", body: JSON.stringify(body) });
+      await refresh();
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
+  tracker.querySelectorAll("[data-time-entry-form]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const body = Object.fromEntries(new FormData(form).entries());
+      body.duration_minutes = Number(body.duration_minutes || 0);
+      body.billable = body.billable !== "false";
+      try {
+        await api(`/api/time-entries/${form.dataset.timeEntryForm}`, { method: "PATCH", body: JSON.stringify(body) });
+        await refresh();
+      } catch (error) {
+        setFormStatus(form, error.message, true);
+      }
+    });
+  });
+  tracker.querySelectorAll("[data-delete-time-entry]").forEach((btn) => btn.addEventListener("click", async () => {
+    if (!typedConfirm("Delete this time entry?")) return;
+    await api(`/api/time-entries/${btn.dataset.deleteTimeEntry}`, { method: "DELETE" });
+    await refresh();
+  }));
+}
+
 function badgeCount(value) {
   const count = Number(value) || 0;
   return count > 99 ? "99+" : String(count);
+}
+
+function inboxUnreadTotal() {
+  return (Number(state.unreadCommentCount) || 0) + (Number(state.unreadNotificationCount) || 0);
+}
+
+function unreadNotificationCount(notifications = []) {
+  return (notifications || []).filter((note) => !note.read && note.type !== "team_invitation").length;
 }
 
 function resizeProfilePhotoFile(file, maxSize = 500) {
   const supportedSmallTypes = ["image/jpeg", "image/png", "image/gif"];
   return new Promise((resolve, reject) => {
     if (!file?.type?.startsWith("image/")) {
-      reject(new Error("Profile photo must be an image"));
+      reject(new Error("Image file is required"));
       return;
     }
     const image = new Image();
@@ -374,7 +1270,7 @@ function resizeProfilePhotoFile(file, maxSize = 500) {
       const height = image.naturalHeight || image.height;
       if (!width || !height) {
         URL.revokeObjectURL(url);
-        reject(new Error("Profile photo has invalid dimensions"));
+        reject(new Error("Image has invalid dimensions"));
         return;
       }
       if (width <= maxSize && height <= maxSize && supportedSmallTypes.includes(file.type)) {
@@ -395,7 +1291,7 @@ function resizeProfilePhotoFile(file, maxSize = 500) {
       const base = (file.name || "profile").replace(/\.[^.]+$/, "") || "profile";
       canvas.toBlob((blob) => {
         if (!blob) {
-          reject(new Error("Could not resize profile photo"));
+          reject(new Error("Could not resize image"));
           return;
         }
         resolve(new File([blob], `${base}-500.${ext}`, { type, lastModified: Date.now() }));
@@ -403,7 +1299,7 @@ function resizeProfilePhotoFile(file, maxSize = 500) {
     };
     image.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error("Profile photo must be a valid image"));
+      reject(new Error("Image must be a valid JPG, PNG, GIF, or WebP file"));
     };
     image.src = url;
   });
@@ -457,6 +1353,8 @@ function storeTokens(access, refresh) {
 }
 
 function logout() {
+  stopNotificationPolling();
+  stopLivePolling();
   localStorage.removeItem("pinflow_access");
   localStorage.removeItem("pinflow_refresh");
   state.access = "";
@@ -471,29 +1369,102 @@ async function loadMe() {
   state.team = data.team;
   state.personalTeam = data.personal_team || null;
   state.companyAccess = data.company_access || null;
+  state.companyAccesses = Array.isArray(data.company_accesses)
+    ? data.company_accesses
+    : (data.company_access ? [data.company_access] : []);
+  state.platformSettings = data.platform_settings || null;
   state.unreadCommentCount = Number(data.unread_comment_count || 0);
   const clientData = await api("/api/client-projects").catch(() => ({ clients: [], websites: [] }));
   state.clientProjects = clientData.clients || [];
   state.clientWebsites = clientData.websites || [];
+  ensureWorkspaceContext();
   if ((state.team?.id || "") !== previousTeamID) state.mentionUsers = null;
   const preference = state.me.theme_preference || "system";
   localStorage.setItem("pinflow_theme", preference);
   applyTheme(preference);
+  applyPlatformTheme(state.platformSettings || {});
+  applyPlatformFavicon(state.platformSettings || {});
 }
 
 function applyTheme(preference) {
   const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
   document.documentElement.dataset.theme = preference === "system" ? (prefersDark ? "dark" : "light") : preference;
+  if (state.platformSettings) applyPlatformTheme(state.platformSettings);
 }
 
-function renderAuth(mode) {
+function applyPlatformTheme(settings = {}) {
+  const root = document.documentElement;
+  const sharedVars = {
+    theme_primary_color: "--accent",
+    theme_primary_strong_color: "--accent-strong",
+    theme_button_color: "--button-primary-color",
+    theme_button_text_color: "--button-primary-text-color",
+  };
+  const lightOnlyVars = {
+    theme_font_color: "--text-primary",
+    theme_heading_color: "--heading-color",
+    theme_background_color: "--bg-primary",
+  };
+  Object.entries(sharedVars).forEach(([key, variable]) => {
+    const value = String(settings?.[key] || "").trim();
+    if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)) root.style.setProperty(variable, value);
+    else root.style.removeProperty(variable);
+  });
+  const isDark = root.dataset.theme === "dark";
+  Object.entries(lightOnlyVars).forEach(([key, variable]) => {
+    const value = String(settings?.[key] || "").trim();
+    if (!isDark && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)) root.style.setProperty(variable, value);
+    else root.style.removeProperty(variable);
+  });
+}
+
+async function uploadResizedImage(file, purpose = "profile", maxSize = 500) {
+  const uploadFile = await resizeProfilePhotoFile(file, maxSize);
+  const body = new FormData();
+  body.append("purpose", purpose);
+  body.append("file", uploadFile);
+  return api("/api/uploads", { method: "POST", body });
+}
+
+function applyPlatformFavicon(settings = {}) {
+  const url = String(settings?.favicon_url || "").trim();
+  let link = document.querySelector("link[rel='icon']");
+  if (!url) {
+    link?.remove();
+    return;
+  }
+  if (!link) {
+    link = document.createElement("link");
+    link.rel = "icon";
+    document.head.appendChild(link);
+  }
+  link.href = url;
+}
+
+function googleAuthStartURL(mode, inviteToken = "") {
+  const params = new URLSearchParams({ mode });
+  if (inviteToken) params.set("invite", inviteToken);
+  return `/api/auth/google/start?${params.toString()}`;
+}
+
+async function renderAuth(mode) {
+  if (!state.platformSettings) {
+    const platform = await api("/api/platform-settings").catch(() => ({ settings: {} }));
+    state.platformSettings = platform.settings || {};
+    applyPlatformTheme(state.platformSettings);
+    applyPlatformFavicon(state.platformSettings);
+  }
   const isRegister = mode === "register";
   const inviteToken = new URLSearchParams(location.search).get("invite") || "";
+  const platformName = state.platformSettings?.site_name || "PinFlow";
+  const googleEnabled = state.platformSettings?.google_signin_enabled === true;
   app.innerHTML = `
     <div class="auth-wrap">
       <section class="auth-box">
-        <a class="brand" href="/"><span class="brand-mark">P</span>PinFlow</a>
+        <a class="brand" href="/"><span class="brand-mark">${esc(platformName.slice(0, 1) || "P")}</span>${esc(platformName)}</a>
         <h1>${isRegister ? (inviteToken ? "Create invited account" : "Create workspace") : "Welcome back"}</h1>
+        ${googleEnabled ? `<a class="btn google-auth-btn" href="${esc(googleAuthStartURL(isRegister ? "register" : "login", inviteToken))}"><span class="google-mark">G</span>${isRegister ? "Sign up with Google" : "Continue with Google"}</a>
+        <div class="auth-divider"><span>or</span></div>` : ""}
         <form id="authForm" class="form-grid">
           ${isRegister ? `<div class="field"><label>Name</label><input name="name" required></div>` : ""}
           ${isRegister ? `<div class="field"><label>Username</label><input name="username" required pattern="[a-zA-Z0-9_]{3,24}" placeholder="jane_writer"></div>` : ""}
@@ -502,7 +1473,7 @@ function renderAuth(mode) {
           <div class="field"><label>Email</label><input type="email" name="email" required></div>
           <div class="field"><label>Password</label><input type="password" name="password" required minlength="8"></div>
           ${!isRegister ? `<div class="field two-factor-field" hidden><label>Authenticator code</label><input id="twoFactorCode" name="two_factor_code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>` : ""}
-          <button class="btn primary" type="submit">${icon(isRegister ? "user-plus" : "log-in")}${isRegister ? "Create account" : "Login"}</button>
+          <button class="btn primary" type="submit" id="authSubmitBtn">${icon(isRegister ? "user-plus" : "log-in")}${isRegister ? "Create account" : "Login"}</button>
           <p class="status-line"></p>
         </form>
         <p class="muted">${isRegister ? `Already have an account? <a class="text-link" href="/login">Login</a>` : `New team? <a class="text-link" href="/register">Create a workspace</a>`}</p>
@@ -516,8 +1487,15 @@ function renderAuth(mode) {
     try {
       const data = await api(isRegister ? "/api/auth/register" : "/api/auth/login", { method: "POST", body: JSON.stringify(form) });
       if (data.two_factor_required) {
+        event.currentTarget.dataset.twoFactorPending = "1";
         $(".two-factor-field")?.removeAttribute("hidden");
-        $("#twoFactorCode")?.focus();
+        const codeInput = $("#twoFactorCode");
+        if (codeInput) {
+          codeInput.required = true;
+          codeInput.focus();
+        }
+        $("#authSubmitBtn").innerHTML = `${icon("shield-check")}Verify code`;
+        icons();
         setStatus("Enter your authenticator code");
         return;
       }
@@ -572,15 +1550,17 @@ function canManageSidebarClient(client) {
   if (state.me?.role === "owner_adm") return true;
   if ((client.client_admin_ids || []).includes(userID)) return true;
   if (client.created_by === userID) return true;
-  return state.me?.role === "users_admin" && [state.me?.team_id, state.personalTeam?.id].filter(Boolean).includes(client.team_id);
+  return isPersonalWorkspaceContext() && state.me?.role === "users_admin" && [state.me?.team_id, state.personalTeam?.id].filter(Boolean).includes(client.team_id);
 }
 
 function sidebarProjectsHTML() {
+  const workspaceTeamID = activeWorkspaceTeamID();
   const sitesByClient = (state.clientWebsites || []).reduce((acc, site) => {
     (acc[site.client_id] ||= []).push(site);
     return acc;
   }, {});
-  const rows = (state.clientProjects || []).map((client) => {
+  const visibleClients = (state.clientProjects || []).filter((client) => !workspaceTeamID || client.team_id === workspaceTeamID);
+  const rows = visibleClients.map((client) => {
     const sites = sitesByClient[client.id] || [];
     const isOpen = isProjectSidebarOpen(client);
     const canManage = canManageSidebarClient(client);
@@ -597,7 +1577,7 @@ function sidebarProjectsHTML() {
         </div>
       </div>`;
   }).join("");
-  return rows || workspaceChild("/projects", "Add client folder", "folder-plus");
+  return rows || workspaceChild("/projects", isPersonalWorkspaceContext() ? "Add client folder" : "No shared projects", isPersonalWorkspaceContext() ? "folder-plus" : "folder-lock");
 }
 
 function sidebarWebsiteDialogHTML() {
@@ -682,11 +1662,145 @@ function bindSidebarProjectControls() {
   bindDialogCloseButtons(dialog || document);
 }
 
+function commandSearchResultIcon(result = {}) {
+  const type = String(result.type || "").toLowerCase();
+  if (type.includes("mention")) return "at-sign";
+  if (type.includes("comment")) return "message-square";
+  if (type.includes("annotation")) return "map-pin";
+  return "circle-check-big";
+}
+
+function commandSearchResultHTML(result, index) {
+  const type = result.type || "Result";
+  const title = result.title || "Untitled";
+  const snippet = result.snippet || result.context || "";
+  const context = result.context || "";
+  const author = result.author_name ? ` by ${result.author_name}` : "";
+  return `<button class="command-search-result" type="button" data-command-result="${esc(index)}">
+    <span class="command-search-icon">${icon(commandSearchResultIcon(result))}</span>
+    <span class="command-search-copy">
+      <strong><small>${esc(type)}</small>${esc(title)}</strong>
+      ${snippet ? `<span>${esc(snippet)}</span>` : ""}
+      ${context || author ? `<em>${esc([context, author.trim()].filter(Boolean).join(" - "))}</em>` : ""}
+    </span>
+  </button>`;
+}
+
+function renderCommandSearchResults(results = [], query = "") {
+  const panel = $("#commandSearchResults");
+  if (!panel) return;
+  state.commandSearchResults = results;
+  if (!query.trim()) {
+    panel.hidden = true;
+    panel.innerHTML = "";
+    return;
+  }
+  panel.hidden = false;
+  if (!results.length) {
+    panel.innerHTML = `<div class="command-search-empty">No results for "${esc(query)}"</div>`;
+    return;
+  }
+  panel.innerHTML = results.map((result, index) => commandSearchResultHTML(result, index)).join("");
+  panel.querySelectorAll("[data-command-result]").forEach((btn) => btn.addEventListener("click", async () => {
+    const result = state.commandSearchResults[Number(btn.dataset.commandResult)];
+    await openCommandSearchResult(result);
+  }));
+  icons();
+}
+
+async function openCommandSearchResult(result = {}) {
+  const panel = $("#commandSearchResults");
+  if (panel) panel.hidden = true;
+  const taskID = result.task_id;
+  const commentID = result.comment_id || "";
+  if (!taskID) return;
+  if (result.source_type === "client_task") {
+    const target = result.url || `/tasks?task_id=${encodeURIComponent(taskID)}${commentID ? `&comment_id=${encodeURIComponent(commentID)}` : ""}`;
+    if (path() !== "/tasks") {
+      window.location.href = target;
+      return;
+    }
+    history.replaceState(null, "", target);
+    if (commentID) {
+      await api(`/api/client-task-comments/${commentID}/read`, { method: "POST", body: JSON.stringify({}) }).catch(() => null);
+    }
+    await openClientTaskPanel(taskID, commentID);
+    return;
+  }
+  const target = result.url || `/dashboard?task_id=${encodeURIComponent(taskID)}${commentID ? `&comment_id=${encodeURIComponent(commentID)}` : ""}&source_type=task`;
+  if (path() !== "/dashboard") {
+    window.location.href = target;
+    return;
+  }
+  history.replaceState(null, "", target);
+  if (commentID) {
+    await api(`/api/tasks/${taskID}/comments/${commentID}/read`, { method: "POST", body: JSON.stringify({}) }).catch(() => null);
+  }
+  const data = await api(`/api/tasks/${taskID}`);
+  showTaskDetailDialog(data, commentID);
+}
+
+function bindCommandSearch() {
+  const input = $("#commandSearch");
+  const panel = $("#commandSearchResults");
+  if (!input || !panel) return;
+  input.addEventListener("input", () => {
+    const query = input.value.trim();
+    clearTimeout(state.commandSearchTimer);
+    state.commandSearchAbort?.abort();
+    if (query.length < 2) {
+      renderCommandSearchResults([], "");
+      return;
+    }
+    panel.hidden = false;
+    panel.innerHTML = `<div class="command-search-empty">Searching...</div>`;
+    state.commandSearchTimer = setTimeout(async () => {
+      try {
+        state.commandSearchAbort = new AbortController();
+        const data = await api(`/api/search?q=${encodeURIComponent(query)}`, { signal: state.commandSearchAbort.signal });
+        renderCommandSearchResults(data.results || [], query);
+      } catch (error) {
+        if (error.name === "AbortError") return;
+        panel.innerHTML = `<div class="command-search-empty danger-text">${esc(error.message)}</div>`;
+      }
+    }, 180);
+  });
+  input.addEventListener("focus", () => {
+    if (state.commandSearchResults.length) panel.hidden = false;
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      panel.hidden = true;
+      return;
+    }
+    if (event.key !== "Enter") return;
+    const first = state.commandSearchResults[0];
+    if (first) {
+      event.preventDefault();
+      openCommandSearchResult(first);
+      return;
+    }
+    const query = input.value.trim();
+    if (query) window.location.href = `/tasks?search=${encodeURIComponent(query)}`;
+  });
+  if (!state.commandSearchDismissBound) {
+    state.commandSearchDismissBound = true;
+    document.addEventListener("click", (event) => {
+      if (event.target.closest(".command-search-wrap")) return;
+      document.querySelectorAll(".command-search-results").forEach((node) => {
+        node.hidden = true;
+      });
+    });
+  }
+}
+
 function shell(title, html) {
-  const displayTeam = state.personalTeam || (state.me?.role === "users_member" ? null : state.team);
-  const userDisplayName = state.me?.name || state.me?.username || state.me?.email || "User";
-  const workspaceName = displayTeam?.name || (state.me?.role === "owner_adm" ? "Owner Admin" : `${userDisplayName}'s Company`);
-  const workspaceLogo = userChip();
+  const workspaceOptionList = workspaceOptions();
+  const activeWorkspace = activeWorkspaceOption();
+  const workspaceName = activeWorkspace?.name || "Workspace";
+  const workspaceSubtitle = activeWorkspace?.subtitle || (state.me?.name || state.me?.username || state.me?.email || "User");
+  const workspaceLogo = workspaceAvatar(activeWorkspace);
+  const personalWorkspace = isPersonalWorkspaceContext();
   document.body.classList.toggle("sidebar-collapsed", Boolean(state.sidebarCollapsed));
   app.innerHTML = `
     <div class="workspace-shell clickup-shell ${state.sidebarCollapsed ? "sidebar-collapsed" : ""}">
@@ -695,31 +1809,30 @@ function shell(title, html) {
           ${workspaceLogo}
           <div>
             <strong>${esc(workspaceName)}</strong>
-            <span>${esc(userDisplayName)}</span>
+            <span>${esc(workspaceSubtitle)}</span>
           </div>
-          <button class="btn icon quiet sidebar-toggle" id="sidebarToggle" type="button" title="${state.sidebarCollapsed ? "Expand menu" : "Collapse menu"}">${icon(state.sidebarCollapsed ? "panel-left-open" : "panel-left-close")}</button>
         </div>
+        ${workspaceContextPickerHTML(workspaceOptionList)}
         <nav class="workspace-menu">
           <p class="nav-kicker">Home</p>
-          ${workspaceLink("/dashboard", "Inbox", "inbox", badgeCount(state.unreadCommentCount))}
+          ${workspaceLink("/dashboard", "Inbox", "inbox", badgeCount(inboxUnreadTotal()))}
           ${workspaceLink("/chat", "Chat", "messages-square")}
           ${workspaceLink("/team", "Team", "users")}
           <div class="nav-group">
-            <span class="nav-item muted-item">${icon("user-round")}<span>My Tasks</span></span>
-            ${workspaceChild("/tasks", "Assigned to me", "user-check")}
+            ${workspaceLink("/tasks", "Tasks", "circle-check-big")}
+            ${workspaceChild("/tasks?view=assigned", "Assigned to me", "user-check")}
             ${workspaceChild("/tasks?view=calendar", "Today & Upcoming", "calendar-days", "4")}
           </div>
           <p class="nav-kicker">Projects</p>
           ${sidebarProjectsHTML()}
           <p class="nav-kicker">Tools</p>
           ${workspaceChild("/projects", "All projects", "folder-open")}
-          ${workspaceChild("/tasks", "Task workspace", "circle-check-big")}
-          ${workspaceChild("/websites", "Website feedback", "messages-square")}
+          ${workspaceChild("/team/performance", "Team Performance", "bar-chart-3")}
           ${workspaceChild("/reports/time", "Time reports", "timer")}
-          ${state.me?.role === "users_admin" ? workspaceChild("/team/integrations", "Integrations", "plug") : ""}
+          ${personalWorkspace && state.me?.role === "users_admin" ? workspaceChild("/team/integrations", "Integrations", "plug") : ""}
           ${state.me?.role === "owner_adm" ? `
             <p class="nav-kicker">Owner</p>
-            ${workspaceLink("/admin", "Manage users", "users")}
+            ${workspaceLink("/admin/users", "Manage users", "users")}
             ${workspaceChild("/admin/plans", "Pricing plans", "badge-dollar-sign")}
             ${workspaceChild("/admin/pages", "Pages", "file-pen")}
             ${workspaceChild("/admin/settings", "Settings", "settings")}
@@ -727,12 +1840,16 @@ function shell(title, html) {
         </nav>
         <a class="mention-pill" href="/settings/company">${icon("settings")}Settings</a>
       </aside>
+      <button class="sidebar-toggle" id="sidebarToggle" type="button" title="${state.sidebarCollapsed ? "Expand menu" : "Collapse menu"}">${icon(state.sidebarCollapsed ? "panel-left-open" : "panel-left-close")}</button>
       <main class="main-area">
         <header class="topbar command-topbar">
-          <label class="command-bar" for="commandSearch">
-            ${icon("search")}
-            <input id="commandSearch" autocomplete="off" placeholder="Search Ctrl K">
-          </label>
+          <div class="command-search-wrap">
+            <label class="command-bar" for="commandSearch">
+              ${icon("search")}
+              <input id="commandSearch" autocomplete="off" placeholder="Search tasks, comments, mentions">
+            </label>
+            <div class="command-search-results" id="commandSearchResults" hidden></div>
+          </div>
           <div class="topbar-actions">
             <div class="profile-menu">
               <button class="profile-menu-button" id="profileMenuBtn" type="button" aria-haspopup="true" aria-expanded="false" title="More options">
@@ -784,6 +1901,7 @@ function shell(title, html) {
   });
   bindMentionSuggestions(app);
   bindDialogCloseButtons(app);
+  bindWorkspaceContextSwitcher();
   bindSidebarProjectControls();
   $("#sidebarToggle")?.addEventListener("click", () => {
     state.sidebarCollapsed = !state.sidebarCollapsed;
@@ -798,11 +1916,7 @@ function shell(title, html) {
       icons();
     }
   });
-  $("#commandSearch")?.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    const query = event.currentTarget.value.trim();
-    if (query) window.location.href = `/tasks?search=${encodeURIComponent(query)}`;
-  });
+  bindCommandSearch();
   const profileMenuBtn = $("#profileMenuBtn");
   const profileDropdown = $("#profileDropdown");
   const closeProfileMenu = () => {
@@ -855,6 +1969,9 @@ async function renderDashboard() {
   const invitations = invitationData.invitations || [];
   const notificationData = await api("/api/users/me/notifications").catch(() => ({ notifications: [] }));
   const notifications = (notificationData.notifications || []).filter((note) => note.type !== "team_invitation");
+  const notificationBinData = await api("/api/users/me/notifications?bin=1").catch(() => ({ notifications: [] }));
+  const deletedNotifications = (notificationBinData.notifications || []).filter((note) => note.type !== "team_invitation");
+  state.unreadNotificationCount = unreadNotificationCount(notifications);
   shell("Inbox", `
     <div class="inbox-page">
       <div class="inbox-head">
@@ -862,10 +1979,10 @@ async function renderDashboard() {
           <h1>Inbox</h1>
           <p class="muted">${esc(state.team?.name || "PinFlow")} task comments</p>
         </div>
-        <span class="pill ${state.unreadCommentCount ? "warn" : ""}">${esc(badgeCount(state.unreadCommentCount))} unread</span>
+        <span id="inboxUnreadSummary" class="pill ${inboxUnreadTotal() ? "warn" : ""}">${esc(badgeCount(inboxUnreadTotal()))} unread</span>
       </div>
       ${invitationCards(invitations)}
-      ${notificationCards(notifications)}
+      <div id="notificationCenterMount">${notificationCards(notifications, deletedNotifications)}</div>
       <section class="panel inbox-filter-panel">
         <div class="inbox-filter-row">
           <div class="tabs">
@@ -882,8 +1999,9 @@ async function renderDashboard() {
           </div>
         </div>
       </section>
-      ${inboxSection("Comments", inboxCommentRows(inboxComments))}
+      <div id="inboxCommentsMount">${inboxSection("Comments", inboxCommentRows(inboxComments))}</div>
     </div>`);
+  state.liveInboxSignature = inboxCommentsLiveSignature(inboxData);
   document.querySelectorAll("[data-invite-action]").forEach((btn) => btn.addEventListener("click", async () => {
     try {
       await api(`/api/invitations/${btn.dataset.inviteId}/${btn.dataset.inviteAction}`, { method: "POST", body: JSON.stringify({}) });
@@ -900,6 +2018,23 @@ async function renderDashboard() {
     setInboxFilters(mentionFilter, event.currentTarget.value);
   });
   bindInboxCommentRows();
+  bindNotificationActions();
+  const focusTaskID = params.get("task_id") || "";
+  const focusCommentID = params.get("comment_id") || "";
+  if (focusTaskID && (params.get("source_type") || "task") === "task") {
+    setTimeout(async () => {
+      try {
+        if (focusCommentID) {
+          const readData = await api(`/api/tasks/${focusTaskID}/comments/${focusCommentID}/read`, { method: "POST", body: JSON.stringify({}) }).catch(() => ({}));
+          if (readData.unread_count !== undefined) updateInboxBadge(readData.unread_count);
+        }
+        const data = await api(`/api/tasks/${focusTaskID}`);
+        showTaskDetailDialog(data, focusCommentID);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }, 0);
+  }
 }
 
 function invitationCards(invitations) {
@@ -950,15 +2085,311 @@ function bindInvitationCancels(refresh, teamID = state.team?.id) {
   }));
 }
 
-function notificationCards(notifications) {
-  if (!notifications.length) return "";
-  return `<section class="invite-strip">${notifications.slice(0, 4).map((note) => `
-    <article class="invite-card notice-card">
-      <div>
-        <strong>${icon("bell")} ${esc(note.type.replaceAll("_", " "))}</strong>
-        <span class="muted">${mentionText(note.content)}</span>
+function notificationRow(note, deleted = false) {
+  const id = esc(note.id || "");
+  const label = notificationTypeLabel(note.type);
+  const title = note.content ? mentionText(note.content) : esc(label);
+  const isRead = Boolean(note.read);
+  const statusText = deleted ? "bin" : isRead ? "read" : "new";
+  const statusTitle = deleted ? "Notification in bin" : isRead ? "Read notification" : "Unread notification";
+  const openAttrs = deleted ? "" : ` type="button" data-open-notification="${id}"`;
+  const openTag = deleted ? "div" : "button";
+  return `
+    <article class="inbox-row notification-row ${deleted ? "is-deleted" : isRead ? "is-read" : "is-unread"}" data-notification-row="${id}">
+      <${openTag} class="notification-open"${openAttrs}>
+        <span class="inbox-row-icon">${icon(deleted ? "trash-2" : "bell")}</span>
+        <div class="inbox-row-title notification-title"><strong>${title}</strong></div>
+        <span class="priority-flag">${icon(deleted ? "archive-restore" : "bell")} ${esc(label)}</span>
+        <span class="mention-filter-pill">Notification</span>
+        <span class="mini-count ${deleted || isRead ? "is-read" : "is-new"}" title="${esc(statusTitle)}" aria-label="${esc(statusTitle)}">${esc(statusText)}</span>
+        <time>${deleted ? "Moved to bin" : inboxTime(note.created_at)}</time>
+      </${openTag}>
+      <div class="toolbar notification-actions">
+        ${deleted ? `
+          <button class="btn compact" type="button" data-notification-restore="${id}">${icon("rotate-ccw")}Restore</button>
+          <button class="btn compact danger" type="button" data-notification-permanent="${id}">${icon("trash")}Remove forever</button>
+        ` : `<button class="btn icon quiet danger notification-remove-btn" type="button" data-notification-delete="${id}" title="Remove notification" aria-label="Remove notification">${icon("trash-2")}</button>`}
       </div>
-    </article>`).join("")}</section>`;
+    </article>`;
+}
+
+function notificationTypeLabel(type) {
+  return String(type || "notification").replaceAll("_", " ");
+}
+
+function notificationCards(notifications, deletedNotifications = []) {
+  if (!notifications.length && !deletedNotifications.length) return "";
+  return `<section class="panel notification-center">
+    <div class="panel-head">
+      <div>
+        <h2>Notifications</h2>
+        <p class="muted">${esc(notifications.length)} active, ${esc(deletedNotifications.length)} in bin</p>
+      </div>
+      <div class="toolbar">
+        ${notifications.length ? `<button class="btn compact danger" type="button" data-notification-delete-all>${icon("trash-2")}Remove all</button>` : ""}
+        ${deletedNotifications.length ? `<button class="btn compact" type="button" data-notification-restore-all>${icon("rotate-ccw")}Restore all</button><button class="btn compact danger" type="button" data-notification-empty-bin>${icon("trash")}Empty bin</button>` : ""}
+      </div>
+    </div>
+    ${notifications.length ? `<div class="notification-list">${notifications.map((note) => notificationRow(note)).join("")}</div>` : `<p class="muted">No active notifications.</p>`}
+    <details class="notification-bin" ${deletedNotifications.length ? "open" : ""}>
+      <summary>${icon("archive-restore")} Notification bin (${esc(deletedNotifications.length)})</summary>
+      ${deletedNotifications.length ? `<div class="notification-list">${deletedNotifications.map((note) => notificationRow(note, true)).join("")}</div>` : `<p class="muted">The bin is empty.</p>`}
+    </details>
+  </section>`;
+}
+
+function markNotificationRowRead(row) {
+  if (!row) return;
+  row.classList.remove("is-unread");
+  row.classList.add("is-read");
+  const marker = row.querySelector(".mini-count");
+  if (marker) {
+    marker.textContent = "read";
+    marker.classList.remove("is-new");
+    marker.classList.add("is-read");
+    marker.title = "Read notification";
+    marker.setAttribute("aria-label", "Read notification");
+  }
+}
+
+async function openNotificationTarget(data = {}) {
+  const target = normalizeNotificationTarget(data);
+  if (target.source_type === "task" && target.task_id) {
+    try {
+      const taskData = await api(`/api/tasks/${target.task_id}`);
+      showTaskDetailDialog(taskData, target.comment_id || "");
+      return;
+    } catch (error) {
+      openNotificationDetailDialog(target, `Could not open the related task: ${error.message}`);
+      return;
+    }
+  }
+  if (target.source_type === "client_task" && target.task_id) {
+    try {
+      await openClientTaskPanel(target.task_id, target.comment_id || "");
+    } catch (error) {
+      openNotificationDetailDialog(target, `Could not open the related project task: ${error.message}`);
+    }
+    return;
+  }
+  if (target.source_type === "chat" && target.chat_id) {
+    try {
+      await openNotificationChatDialog(target.chat_id);
+    } catch (error) {
+      openNotificationDetailDialog(target, `Could not open the related chat: ${error.message}`);
+    }
+    return;
+  }
+  openNotificationDetailDialog(target);
+}
+
+function normalizeNotificationTarget(data = {}) {
+  const taskTarget = notificationTaskTargetFromURL(data.url);
+  return taskTarget ? { ...data, ...taskTarget } : data;
+}
+
+function notificationTaskTargetFromURL(url) {
+  if (!url) return null;
+  try {
+    const parsed = new URL(String(url), window.location.origin);
+    const taskID = parsed.searchParams.get("task_id") || "";
+    if (!taskID) return null;
+    const commentID = parsed.searchParams.get("comment_id") || "";
+    if (parsed.pathname === "/tasks") {
+      return { source_type: "client_task", task_id: taskID, comment_id: commentID, url: parsed.pathname + parsed.search };
+    }
+    if (parsed.pathname === "/dashboard") {
+      return { source_type: "task", task_id: taskID, comment_id: commentID, url: parsed.pathname + parsed.search };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function notificationTargetTitle(sourceType) {
+  switch (sourceType) {
+  case "client_project":
+    return "Project access";
+  case "feedback":
+    return "Website feedback";
+  case "billing":
+    return "Billing";
+  case "team":
+    return "Team";
+  default:
+    return "Notification";
+  }
+}
+
+function openNotificationFrame(url, title = "Notification") {
+  let dialog = $("#notificationTargetDialog");
+  if (!dialog) {
+    dialog = document.createElement("dialog");
+    dialog.id = "notificationTargetDialog";
+    dialog.className = "modal notification-target-dialog";
+    document.body.appendChild(dialog);
+  }
+  dialog.innerHTML = `
+    <div class="modal-head">
+      <h2>${esc(title)}</h2>
+      <button class="btn icon quiet" type="button" data-close-dialog="notificationTargetDialog" title="Close">${icon("x")}</button>
+    </div>
+    <iframe class="notification-target-frame" src="${esc(url)}" title="${esc(title)}"></iframe>`;
+  bindDialogCloseButtons(dialog);
+  icons();
+  if (!dialog.open) dialog.showModal();
+}
+
+function openNotificationDetailDialog(data = {}, message = "") {
+  const note = data.notification || {};
+  const label = notificationTypeLabel(note.type || data.source_type || "notification");
+  const isTaskURL = Boolean(notificationTaskTargetFromURL(data.url));
+  let dialog = $("#notificationDetailDialog");
+  if (!dialog) {
+    dialog = document.createElement("dialog");
+    dialog.id = "notificationDetailDialog";
+    dialog.className = "modal notification-detail-dialog";
+    document.body.appendChild(dialog);
+  }
+  dialog.innerHTML = `
+    <div class="modal-head">
+      <div>
+        <h2>Notification detail</h2>
+        <p class="muted">${esc(label)}${note.created_at ? " - " + esc(inboxTime(note.created_at)) : ""}</p>
+      </div>
+      <button class="btn icon quiet" type="button" data-close-dialog="notificationDetailDialog" title="Close">${icon("x")}</button>
+    </div>
+    <div class="notification-detail-body">
+      <p>${mentionText(note.content || "This notification has no extra message.")}</p>
+      ${message ? `<p class="status-line danger-text">${esc(message)}</p>` : ""}
+      ${data.url && !isTaskURL ? `<button class="btn compact" type="button" data-notification-frame-open="${esc(data.url)}">${icon("external-link")}Open related page</button>` : ""}
+    </div>`;
+  dialog.querySelector("[data-notification-frame-open]")?.addEventListener("click", (event) => {
+    openNotificationFrame(event.currentTarget.dataset.notificationFrameOpen, notificationTargetTitle(data.source_type));
+  });
+  bindDialogCloseButtons(dialog);
+  icons();
+  if (!dialog.open) dialog.showModal();
+}
+
+async function openNotificationChatDialog(chatID) {
+  const chats = (await api("/api/chats")).chats || [];
+  const chat = chats.find((item) => item.id === chatID);
+  if (!chat) {
+    openNotificationFrame(`/chat?id=${encodeURIComponent(chatID)}`, "Chat");
+    return;
+  }
+  const messages = ((await api(`/api/chats/${chatID}/messages`)).messages || []);
+  const mentionUsers = await loadMentionUsers().catch(() => []);
+  const usersByID = Object.fromEntries([...mentionUsers, state.me].filter(Boolean).map((user) => [user.id, user]));
+  const canWrite = chat.status !== "ended" && !chat.deleted_at;
+  let dialog = $("#notificationChatDialog");
+  if (!dialog) {
+    dialog = document.createElement("dialog");
+    dialog.id = "notificationChatDialog";
+    dialog.className = "modal chat-room-dialog notification-chat-dialog";
+    document.body.appendChild(dialog);
+  }
+  dialog.innerHTML = `
+    <section class="chat-window chat-room-window">
+      <div class="chat-window-head">
+        <div><h2>${esc(chatTitle(chat, usersByID))}</h2><span class="muted">${esc(chat.status === "ended" ? "Conversation ended" : "Conversation open")}</span></div>
+        <div class="chat-window-actions">
+          ${chatActionsHTML(chat)}
+          <button class="btn icon quiet" type="button" data-close-dialog="notificationChatDialog" title="Close">${icon("x")}</button>
+        </div>
+      </div>
+      <div id="notificationMessages" class="messages">${messages.map((m) => chatMessageHTML(m, usersByID, "notification")).join("")}</div>
+      ${chatComposerHTML("notificationChatForm", "notification", canWrite, "Message @username")}
+    </section>`;
+  bindDialogCloseButtons(dialog);
+  bindChatManagementActions(() => openNotificationChatDialog(chatID));
+  if (canWrite) openChatSocket(chatID, usersByID, "notification");
+  bindRichChatComposer("notificationChatForm", "notification");
+  bindChatReplyButtons("notification");
+  dialog.addEventListener("close", () => {
+    if (state.chatSocket) {
+      state.chatSocket.close();
+      state.chatSocket = null;
+    }
+    setChatReply("notification", null);
+  }, { once: true });
+  icons();
+  if (!dialog.open) dialog.showModal();
+  $("#notificationMessages").scrollTop = $("#notificationMessages").scrollHeight;
+}
+
+function bindNotificationActions() {
+  document.querySelectorAll("[data-open-notification]").forEach((btn) => btn.addEventListener("click", async () => {
+    try {
+      btn.disabled = true;
+      const data = await api(`/api/users/me/notifications/${btn.dataset.openNotification}/open`, { method: "POST", body: JSON.stringify({}) });
+      const row = btn.closest("[data-notification-row]");
+      const wasUnread = row?.classList.contains("is-unread");
+      markNotificationRowRead(row);
+      if (wasUnread) {
+        state.unreadNotificationCount = Math.max(0, Number(state.unreadNotificationCount || 0) - 1);
+        updateInboxUnreadUI();
+      }
+      await openNotificationTarget(data);
+    } catch (error) {
+      setStatus(error.message, true);
+    } finally {
+      btn.disabled = false;
+    }
+  }));
+  document.querySelectorAll("[data-notification-delete-all]").forEach((btn) => btn.addEventListener("click", async () => {
+    if (!confirm("Move all notifications to the bin?")) return;
+    try {
+      await api("/api/users/me/notifications", { method: "DELETE" });
+      await refreshNotificationsLive();
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  }));
+  document.querySelectorAll("[data-notification-delete]").forEach((btn) => btn.addEventListener("click", async () => {
+    try {
+      await api(`/api/users/me/notifications/${btn.dataset.notificationDelete}`, { method: "DELETE" });
+      await refreshNotificationsLive();
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  }));
+  document.querySelectorAll("[data-notification-restore]").forEach((btn) => btn.addEventListener("click", async () => {
+    try {
+      await api(`/api/users/me/notifications/${btn.dataset.notificationRestore}/restore`, { method: "POST", body: JSON.stringify({}) });
+      await refreshNotificationsLive();
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  }));
+  document.querySelectorAll("[data-notification-restore-all]").forEach((btn) => btn.addEventListener("click", async () => {
+    try {
+      await api("/api/users/me/notifications/bin/restore", { method: "POST", body: JSON.stringify({}) });
+      await refreshNotificationsLive();
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  }));
+  document.querySelectorAll("[data-notification-permanent]").forEach((btn) => btn.addEventListener("click", async () => {
+    if (!typedConfirm("Remove this notification forever?")) return;
+    try {
+      await api(`/api/users/me/notifications/${btn.dataset.notificationPermanent}/permanent`, { method: "DELETE" });
+      await refreshNotificationsLive();
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  }));
+  document.querySelectorAll("[data-notification-empty-bin]").forEach((btn) => btn.addEventListener("click", async () => {
+    if (!typedConfirm("Empty the notification bin forever?")) return;
+    try {
+      await api("/api/users/me/notifications/bin/permanent", { method: "DELETE" });
+      await refreshNotificationsLive();
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  }));
 }
 
 function inboxSection(title, rows) {
@@ -974,8 +2405,380 @@ function setInboxFilters(mention, projectID) {
 
 function updateInboxBadge(count) {
   state.unreadCommentCount = Number(count) || 0;
-  const badge = document.querySelector('.workspace-menu a[href="/dashboard"] .unread-badge');
-  if (badge) badge.textContent = badgeCount(state.unreadCommentCount);
+  updateInboxUnreadUI();
+}
+
+function updateInboxUnreadUI() {
+  const total = inboxUnreadTotal();
+  const link = document.querySelector('.workspace-menu a[href="/dashboard"]');
+  let badge = link?.querySelector(".unread-badge");
+  if (total > 0 && !badge && link) {
+    badge = document.createElement("strong");
+    badge.className = "unread-badge";
+    link.appendChild(badge);
+  }
+  if (badge) {
+    if (total > 0) badge.textContent = badgeCount(total);
+    else badge.remove();
+  }
+  const summary = $("#inboxUnreadSummary");
+  if (summary) {
+    summary.textContent = `${badgeCount(total)} unread`;
+    summary.classList.toggle("warn", total > 0);
+  }
+}
+
+async function loadNotificationSets() {
+  const [activeData, binData] = await Promise.all([
+    api("/api/users/me/notifications").catch(() => ({ notifications: [] })),
+    api("/api/users/me/notifications?bin=1").catch(() => ({ notifications: [] })),
+  ]);
+  return {
+    notifications: (activeData.notifications || []).filter((note) => note.type !== "team_invitation"),
+    deletedNotifications: (binData.notifications || []).filter((note) => note.type !== "team_invitation"),
+  };
+}
+
+async function refreshNotificationsLive() {
+  if (!state.access || state.notificationPollBusy) return;
+  state.notificationPollBusy = true;
+  try {
+    const { notifications, deletedNotifications } = await loadNotificationSets();
+    state.unreadNotificationCount = unreadNotificationCount(notifications);
+    updateInboxUnreadUI();
+    const mount = $("#notificationCenterMount");
+    if (path() === "/dashboard" && mount) {
+      mount.innerHTML = notificationCards(notifications, deletedNotifications);
+      bindNotificationActions();
+      icons();
+    }
+  } catch {
+    // Keep polling quiet; route-level auth handling will surface real session issues.
+  } finally {
+    state.notificationPollBusy = false;
+  }
+}
+
+function startNotificationPolling() {
+  if (!state.access || state.notificationPollBusy) return;
+  refreshNotificationsLive();
+}
+
+function stopNotificationPolling() {
+  if (state.notificationPoll) clearInterval(state.notificationPoll);
+  state.notificationPoll = null;
+  state.notificationPollBusy = false;
+}
+
+function liveStableString(value) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "";
+  }
+}
+
+function liveTaskShape(task = {}) {
+  return {
+    id: task.id,
+    client_id: task.client_id,
+    website_id: task.website_id,
+    tab_id: task.tab_id,
+    type: task.type,
+    title: task.title,
+    content: task.content,
+    comment: task.comment,
+    url: task.url,
+    status: task.status,
+    completion_count: Number(task.completion_count || 0),
+    last_completed_at: task.last_completed_at || "",
+    assignee_ids: task.assignee_ids || [],
+    due_date: task.due_date || "",
+    recurrence: task.recurrence || {},
+    attachments: task.attachments || [],
+    checklist: task.checklist || [],
+    blocks: task.blocks || [],
+    annotations: task.annotations || [],
+    updated_at: task.updated_at || "",
+  };
+}
+
+function liveCommentShape(comment = {}) {
+  return {
+    id: comment.id,
+    task_id: comment.task_id,
+    author_id: comment.author_id,
+    content: comment.content,
+    reply_to_id: comment.reply_to_id || "",
+    reply_text: comment.reply_text || "",
+    attachment_url: comment.attachment_url || "",
+    attachment_name: comment.attachment_name || "",
+    reactions: comment.reactions || [],
+    read_by: comment.read_by || [],
+    created_at: comment.created_at || "",
+  };
+}
+
+function taskListLiveSignature(data = {}) {
+  return liveStableString({
+    scope: data.scope || "",
+    tasks: (data.tasks || []).map(liveTaskShape),
+    clients: (data.clients || []).map((client) => ({ id: client.id, name: client.name, updated_at: client.updated_at || "" })),
+    websites: (data.websites || []).map((site) => ({ id: site.id, client_id: site.client_id, name: site.name, url: site.url || "", updated_at: site.updated_at || "" })),
+    tabs: (data.tabs || []).map((tab) => ({ id: tab.id, website_id: tab.website_id, title: tab.title, type: tab.type, statuses: tab.statuses || [], status_styles: tab.status_styles || {}, updated_at: tab.updated_at || "" })),
+  });
+}
+
+function clientWebsiteLiveSignature(data = {}) {
+  return liveStableString({
+    website: data.website ? { id: data.website.id, name: data.website.name, url: data.website.url || "", details: data.website.details || "", updated_at: data.website.updated_at || "" } : null,
+    tabs: (data.tabs || []).map((tab) => ({ id: tab.id, title: tab.title, type: tab.type, content: tab.content || "", statuses: tab.statuses || [], status_styles: tab.status_styles || {}, updated_at: tab.updated_at || "" })),
+    documents: (data.documents || []).map((doc) => ({ id: doc.id, title: doc.title, kind: doc.kind, url: doc.url || "", file_url: doc.file_url || "", updated_at: doc.updated_at || "" })),
+    tasks: (data.tasks || []).map(liveTaskShape),
+    members: (data.members || []).map((entry) => ({ role: entry.role || "", user_id: entry.user?.id || "", name: entry.user?.name || "", username: entry.user?.username || "", avatar_url: entry.user?.avatar_url || "" })),
+  });
+}
+
+function clientTaskDetailLiveSignature(data = {}) {
+  return liveStableString({
+    task: liveTaskShape(data.task || {}),
+    comments: (data.comments || []).map(liveCommentShape),
+    logs: (data.logs || []).map((log) => ({ id: log.id, action: log.action, detail: log.detail, actor_id: log.actor_id, created_at: log.created_at })),
+    tab: data.tab ? { id: data.tab.id, statuses: data.tab.statuses || [], status_styles: data.tab.status_styles || {}, updated_at: data.tab.updated_at || "" } : null,
+    members: (data.members || []).map((entry) => ({ role: entry.role || "", user_id: entry.user?.id || "", name: entry.user?.name || "", username: entry.user?.username || "", avatar_url: entry.user?.avatar_url || "" })),
+  });
+}
+
+function inboxCommentsLiveSignature(data = {}) {
+  return liveStableString({
+    unread_count: Number(data.unread_count || 0),
+    comments: (data.comments || []).map((item) => ({
+      id: item.id,
+      task_id: item.task_id,
+      read: Boolean(item.read),
+      comment: item.comment || "",
+      author_name: item.author_name || "",
+      author_username: item.author_username || "",
+      task_title: item.task_title || "",
+      project_name: item.project_name || "",
+      list_name: item.list_name || "",
+      source_type: item.source_type || "",
+      created_at: item.created_at || "",
+    })),
+  });
+}
+
+function activeElementIsEditable(root = document) {
+  const active = document.activeElement;
+  if (!active || active === document.body || !root.contains(active)) return false;
+  const tag = active.tagName;
+  return active.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(tag);
+}
+
+function liveDraftIn(root = document) {
+  return Array.from(root.querySelectorAll("textarea, input[type='text'], input[type='search'], input[type='file'], [contenteditable='true']")).some((field) => {
+    if (field.closest("[hidden]")) return false;
+    if (field.closest("dialog:not([open])")) return false;
+    if (field.type === "file") return Boolean(field.files?.length);
+    return String(field.value ?? field.textContent ?? "").trim().length > 0;
+  });
+}
+
+function liveDropdownOpen(root = document) {
+  return Boolean(root.querySelector(".assignee-menu:not([hidden]), .status-menu:not([hidden]), .context-menu:not([hidden]), .client-tab-menu:not([hidden]), #commandSearchResults:not([hidden])"));
+}
+
+function livePageRefreshBlocked() {
+  if ($("#clientTaskPanel")) return true;
+  if (document.querySelector(".assigned-inline-task-form:not([hidden])")) return true;
+  if (Array.from(document.querySelectorAll("dialog[open]")).some((dialog) => dialog.id !== "taskDetailDialog")) return true;
+  return activeElementIsEditable(document) || liveDropdownOpen(document);
+}
+
+function livePanelRefreshBlocked(panel) {
+  if (!panel) return false;
+  if (state.clientTaskReply || state.clientTaskCommentEdit) return true;
+  if (Array.from(panel.querySelectorAll("dialog[open]")).length) return true;
+  return activeElementIsEditable(panel) || liveDraftIn(panel) || liveDropdownOpen(panel);
+}
+
+async function refreshInboxCommentsLive() {
+  const params = new URLSearchParams(location.search);
+  const mentionFilter = path() === "/dashboard" ? (params.get("mention") || "all") : "all";
+  const projectFilter = path() === "/dashboard" ? (params.get("project_id") || "") : "";
+  const inboxParams = new URLSearchParams({ mention: mentionFilter });
+  if (projectFilter) inboxParams.set("project_id", projectFilter);
+  const data = await api(`/api/inbox/comments?${inboxParams.toString()}`).catch(() => null);
+  if (!data) return;
+  state.unreadCommentCount = Number(data.unread_count || 0);
+  updateInboxUnreadUI();
+  const signature = inboxCommentsLiveSignature(data);
+  if (path() === "/dashboard") {
+    const mount = $("#inboxCommentsMount");
+    if (mount && signature !== state.liveInboxSignature) {
+      mount.innerHTML = inboxSection("Comments", inboxCommentRows(data.comments || []));
+      bindInboxCommentRows();
+      icons();
+    }
+  }
+  state.liveInboxSignature = signature;
+}
+
+async function refreshOpenClientTaskPanelLive() {
+  const panel = $("#clientTaskPanel");
+  const taskID = panel?.dataset.liveTaskId || "";
+  if (!panel || !taskID || livePanelRefreshBlocked(panel)) return;
+  try {
+    const data = await api(`/api/client-tasks/${taskID}`);
+    const signature = clientTaskDetailLiveSignature(data);
+    if (signature && signature !== panel.dataset.liveSignature) {
+      const annotationID = panel.dataset.liveAnnotationId || "";
+      if ((data.task || {}).type === "annotation" || panel.classList.contains("annotation-task-viewer")) {
+        await openClientAnnotationTaskViewer(taskID, data, annotationID);
+      } else {
+        await openClientTaskPanel(taskID);
+      }
+      const nextPanel = $("#clientTaskPanel");
+      if (nextPanel) nextPanel.dataset.liveSignature = signature;
+    }
+  } catch {
+    panel.remove();
+    document.body.classList.remove("annotation-viewer-open");
+    if (!livePageRefreshBlocked()) route();
+  }
+}
+
+async function refreshLegacyTaskDialogLive() {
+  const dialog = $("#taskDetailDialog");
+  const taskID = dialog?.dataset.liveTaskId || "";
+  if (!dialog?.open || !taskID || activeElementIsEditable(dialog) || liveDraftIn(dialog)) return;
+  try {
+    const data = await api(`/api/tasks/${taskID}`);
+    const signature = liveStableString({ task: data.task || {} });
+    if (signature && signature !== dialog.dataset.liveSignature) {
+      showTaskDetailDialog(data, dialog.dataset.liveCommentId || "");
+      const nextDialog = $("#taskDetailDialog");
+      if (nextDialog) nextDialog.dataset.liveSignature = signature;
+    }
+  } catch {
+    dialog.close();
+  }
+}
+
+async function refreshTaskPageLive() {
+  if (path() !== "/tasks" || livePageRefreshBlocked()) return;
+  const params = new URLSearchParams(location.search);
+  const assignedOnly = (params.get("view") || "all") === "assigned";
+  const data = await api(`/api/client-tasks/assigned${assignedOnly ? "?scope=assigned" : ""}`).catch(() => null);
+  if (!data) return;
+  const signature = taskListLiveSignature(data);
+  if (signature && signature !== state.liveTaskSignature) {
+    const scroll = { x: window.scrollX, y: window.scrollY };
+    const filters = Object.fromEntries(Array.from(document.querySelectorAll("[data-assigned-filter]")).map((field) => [field.dataset.assignedFilter, field.value]));
+    const searchValue = document.querySelector("[data-assigned-search]")?.value || "";
+    await renderTasks();
+    Object.entries(filters).forEach(([key, value]) => {
+      const field = document.querySelector(`[data-assigned-filter="${selectorEscape(key)}"]`);
+      if (field) field.value = value;
+    });
+    const search = document.querySelector("[data-assigned-search]");
+    if (search) search.value = searchValue;
+    document.querySelector("[data-assigned-filter]")?.dispatchEvent(new Event("change"));
+    search?.dispatchEvent(new Event("input"));
+    window.scrollTo(scroll.x, scroll.y);
+  }
+}
+
+async function refreshClientWebsiteLive() {
+  const match = path().match(/^\/projects\/([^/]+)\/sites\/([^/]+)/);
+  if (!match || livePageRefreshBlocked()) return;
+  const data = await api(`/api/client-websites/${match[2]}`).catch(() => null);
+  if (!data) return;
+  const signature = clientWebsiteLiveSignature(data);
+  if (signature && signature !== state.liveWebsiteSignature) {
+    const scroll = { x: window.scrollX, y: window.scrollY };
+    await renderClientWebsite(match[1], match[2]);
+    window.scrollTo(scroll.x, scroll.y);
+  }
+}
+
+async function refreshWorkspaceLive() {
+  if (!state.access || state.livePollBusy) return;
+  state.livePollBusy = true;
+  try {
+    await refreshNotificationsLive();
+    await refreshInboxCommentsLive();
+    await refreshOpenClientTaskPanelLive();
+    await refreshLegacyTaskDialogLive();
+    await refreshTaskPageLive();
+    await refreshClientWebsiteLive();
+  } catch {
+    // Keep live updates quiet; normal route/api handling will report actionable errors.
+  } finally {
+    state.livePollBusy = false;
+  }
+}
+
+function scheduleWorkspaceLiveRefresh(delay = 180) {
+  if (!state.access) return;
+  if (state.liveRefreshTimer) clearTimeout(state.liveRefreshTimer);
+  state.liveRefreshTimer = setTimeout(() => {
+    state.liveRefreshTimer = null;
+    refreshWorkspaceLive();
+  }, delay);
+}
+
+function startLivePolling() {
+  if (!state.access || state.liveSocket || state.liveReconnectTimer) return;
+  if (!window.WebSocket) {
+    if (!state.livePoll) state.livePoll = setInterval(refreshWorkspaceLive, 60000);
+    return;
+  }
+  const protocol = location.protocol === "https:" ? "wss" : "ws";
+  const socket = new WebSocket(`${protocol}://${location.host}/ws/live?token=${encodeURIComponent(state.access)}`);
+  state.liveSocket = socket;
+  socket.onopen = () => {
+    state.liveReconnectDelay = 1500;
+    scheduleWorkspaceLiveRefresh(0);
+  };
+  socket.onmessage = (event) => {
+    let payload = {};
+    try {
+      payload = JSON.parse(event.data || "{}");
+    } catch {
+      payload = {};
+    }
+    if (payload.type === "live_connected") return;
+    scheduleWorkspaceLiveRefresh();
+  };
+  socket.onclose = () => {
+    if (state.liveSocket === socket) state.liveSocket = null;
+    if (!state.access) return;
+    const delay = Math.min(state.liveReconnectDelay || 1500, 30000);
+    state.liveReconnectDelay = Math.min(delay * 1.6, 30000);
+    state.liveReconnectTimer = setTimeout(() => {
+      state.liveReconnectTimer = null;
+      startLivePolling();
+    }, delay);
+  };
+  socket.onerror = () => {
+    socket.close();
+  };
+}
+
+function stopLivePolling() {
+  if (state.livePoll) clearInterval(state.livePoll);
+  state.livePoll = null;
+  state.livePollBusy = false;
+  if (state.liveRefreshTimer) clearTimeout(state.liveRefreshTimer);
+  state.liveRefreshTimer = null;
+  if (state.liveReconnectTimer) clearTimeout(state.liveReconnectTimer);
+  state.liveReconnectTimer = null;
+  if (state.liveSocket) {
+    state.liveSocket.onclose = null;
+    state.liveSocket.close();
+  }
+  state.liveSocket = null;
 }
 
 function inboxCommentRows(comments) {
@@ -986,11 +2789,11 @@ function inboxCommentRows(comments) {
         <div class="inbox-row-title"><strong>No comments found</strong><span>Try a different mention or project filter.</span></div>
         <span></span>
         <div class="inbox-row-message"><strong>Clear</strong><span>No matching task comments.</span></div>
-        <span></span><span></span><span class="mini-count">0</span><time>Now</time>
+        <span></span><span></span><span class="mini-count is-read" title="No unread comments" aria-label="No unread comments">0</span><time>Now</time>
       </article>`;
   }
   return comments.map((item) => `
-    <button class="inbox-row comment-inbox-row ${item.read ? "is-quiet" : "is-unread"}" type="button" data-open-task-comment="${esc(item.task_id)}" data-comment-id="${esc(item.id)}">
+    <button class="inbox-row comment-inbox-row ${item.read ? "is-quiet" : "is-unread"}" type="button" data-open-task-comment="${esc(item.task_id)}" data-comment-id="${esc(item.id)}" data-source-type="${esc(item.source_type || "task")}">
       <span class="inbox-row-icon">${icon(item.read ? "message-square" : "message-square-dot")}</span>
       <div class="inbox-row-title">
         <strong>${esc(item.task_title || "Untitled task")}</strong>
@@ -1003,7 +2806,7 @@ function inboxCommentRows(comments) {
       </div>
       <span class="priority-flag ${String(item.task_priority || "normal").toLowerCase()}">${icon("flag")}${esc(item.task_priority || "Normal")}</span>
       <span class="mention-filter-pill">${item.mention_me ? "Mention me" : item.mention_others ? "Mention team" : "Comment"}</span>
-      <span class="mini-count">${item.read ? "" : "new"}</span>
+      <span class="mini-count ${item.read ? "is-read" : "is-new"}" title="${item.read ? "Read comment" : "Unread comment"}" aria-label="${item.read ? "Read comment" : "Unread comment"}">${item.read ? "read" : "new"}</span>
       <time>${inboxTime(item.created_at)}</time>
     </button>`).join("");
 }
@@ -1012,15 +2815,27 @@ function bindInboxCommentRows() {
   document.querySelectorAll("[data-open-task-comment]").forEach((row) => row.addEventListener("click", async () => {
     const taskID = row.dataset.openTaskComment;
     const commentID = row.dataset.commentId;
+    const sourceType = row.dataset.sourceType || "task";
     try {
-      const readData = await api(`/api/tasks/${taskID}/comments/${commentID}/read`, { method: "POST", body: JSON.stringify({}) });
+      const readURL = sourceType === "client_task" ? `/api/client-task-comments/${commentID}/read` : `/api/tasks/${taskID}/comments/${commentID}/read`;
+      const readData = await api(readURL, { method: "POST", body: JSON.stringify({}) });
       if (readData.unread_count !== undefined) updateInboxBadge(readData.unread_count);
       row.classList.remove("is-unread");
       row.classList.add("is-quiet");
       const marker = row.querySelector(".mini-count");
-      if (marker) marker.textContent = "";
-      const data = await api(`/api/tasks/${taskID}`);
-      showTaskDetailDialog(data, commentID);
+      if (marker) {
+        marker.textContent = "read";
+        marker.classList.remove("is-new");
+        marker.classList.add("is-read");
+        marker.title = "Read comment";
+        marker.setAttribute("aria-label", "Read comment");
+      }
+      if (sourceType === "client_task") {
+        await openClientTaskPanel(taskID, commentID);
+      } else {
+        const data = await api(`/api/tasks/${taskID}`);
+        showTaskDetailDialog(data, commentID);
+      }
     } catch (error) {
       setStatus(error.message, true);
     }
@@ -1139,19 +2954,18 @@ function teamMemberRows(members, canManageTeam) {
 }
 
 async function renderTeam() {
-  const teamPageTeam = state.personalTeam || state.team;
-  if (!teamPageTeam) return renderDashboard();
-  const teamID = teamPageTeam.id;
+  const teamID = activeWorkspaceTeamID() || state.personalTeam?.id || state.team?.id;
+  if (!teamID) return renderDashboard();
   const data = await api(`/api/teams/${teamID}`);
   const members = data.members || [];
-  const canManageTeam = state.me?.role === "owner_adm" || state.me?.role === "users_admin" || teamPageTeam.owner_admin_id === state.me?.id;
+  const canManageTeam = state.me?.role === "owner_adm" || data.team?.owner_admin_id === state.me?.id || (isPersonalWorkspaceContext() && state.me?.role === "users_admin" && [state.me?.team_id, state.personalTeam?.id].filter(Boolean).includes(teamID));
   const invitationData = canManageTeam ? await api(`/api/teams/${teamID}/invitations`).catch(() => ({ invitations: [] })) : { invitations: [] };
   const invitations = invitationData.invitations || [];
   shell("Team", `
     <div class="page-title"><div><h1>Team</h1><p class="muted">${esc(data.team.name)}</p></div></div>
     <div class="grid-2">
       <section class="panel"><h2>Listed Members</h2><div class="task-list">${teamMemberRows(members, canManageTeam)}</div></section>
-      <section class="panel">
+      ${canManageTeam ? `<section class="panel">
         <h2>Invite Staff</h2>
         <form id="inviteForm" class="form-grid">
           <div class="field"><label>Email</label><input type="email" name="email" required></div>
@@ -1161,7 +2975,7 @@ async function renderTeam() {
           <p class="status-line"></p>
         </form>
         ${canManageTeam ? `<div class="inline-section"><h3>Invitation Status</h3><div class="task-list invite-history">${invitationStatusRows(invitations)}</div></div>` : ""}
-      </section>
+      </section>` : `<section class="panel"><h2>Company view</h2><p class="muted">You are viewing the members shared by this company. Management controls are available only to the company admin.</p></section>`}
     </div>
     <dialog id="memberEditDialog" class="modal">
       <form id="memberEditForm" class="form-grid" method="dialog">
@@ -1244,15 +3058,45 @@ async function renderTeam() {
 
 function clientRoleLabel(value) {
   if (value === "client_admin") return "Client Admin";
+  if (normalizedStaffRole(value)) return staffRoleLabel(value);
+  if (value === "domain_admin") return "Client Admin";
+  if (value === "domain_member") return "Member";
   return "Member";
 }
 
-function clientWebsiteRows(websites) {
+function clientWebsiteAccessRows(site = {}, members = []) {
+  const memberIDs = site.member_ids || [];
+  const adminIDs = site.client_admin_ids || [];
+  const accessIDs = [...new Set([...memberIDs, ...adminIDs])];
+  if (!accessIDs.length) return `<p class="muted">No domain-only access yet.</p>`;
+  const membersByID = Object.fromEntries((members || []).map((member) => [member.id, member]));
+  return accessIDs.map((id) => {
+    const member = membersByID[id] || {};
+    const role = adminIDs.includes(id) ? "Client Admin" : (staffRoleLabel(member.staff_role) || "Member");
+    return `<article class="task-row">
+      <div><h3>${esc(member.name || member.username || member.email || "Member")}</h3><span class="muted">@${esc(member.username || "member")} - ${esc(member.email || "")}</span></div>
+      <span class="pill">${esc(role)}</span>
+      <button class="btn compact danger" type="button" data-remove-domain-member="${esc(id)}">${icon("user-minus")}Remove</button>
+    </article>`;
+  }).join("");
+}
+
+function clientWebsiteRows(websites, canManage = false, canManageMembers = false) {
   if (!websites.length) return `<p class="muted">No websites yet.</p>`;
-  return websites.map((site) => `<article class="task-row">
+  return websites.map((site) => `<article class="task-row website-row">
     <div><h3>${esc(site.name)}</h3><span class="muted">${esc(site.url || "No URL yet")}</span></div>
     <span class="pill">${icon("globe-2")}website</span>
-    <a class="btn compact" href="/projects/${esc(site.client_id)}/sites/${esc(site.id)}">${icon("external-link")}Open</a>
+    <div class="invite-actions">
+      <a class="btn compact" href="/projects/${esc(site.client_id)}/sites/${esc(site.id)}">${icon("external-link")}Open</a>
+      ${canManageMembers ? `<button class="btn compact" type="button" data-share-client-website="${esc(site.id)}">${icon("users")}Access</button>` : ""}
+      ${canManage ? `<div class="context-actions" data-action-menu-wrap>
+        <button class="context-menu-trigger" type="button" data-action-menu-trigger aria-label="Website options"></button>
+        <div class="context-menu" data-action-menu hidden>
+          <button type="button" data-edit-client-website="${esc(site.id)}">${icon("pencil")}Edit website</button>
+          <button class="danger-text" type="button" data-delete-client-website="${esc(site.id)}" data-website-name="${esc(site.name)}">${icon("trash-2")}Delete website</button>
+        </div>
+      </div>` : ""}
+    </div>
   </article>`).join("");
 }
 
@@ -1275,16 +3119,153 @@ function clientDocumentRows(documents, canManage) {
   }).join("");
 }
 
+function deleteClientWebsiteDialogHTML() {
+  return `<dialog id="deleteClientWebsiteDialog" class="modal client-dialog">
+    <form id="deleteClientWebsiteForm" class="form-grid" method="dialog">
+      <div class="modal-head"><h2>Delete website</h2><button class="btn icon quiet" type="button" data-close-dialog="deleteClientWebsiteDialog" title="Close">${icon("x")}</button></div>
+      <input type="hidden" name="website_id">
+      <p class="muted" id="deleteClientWebsiteText">This will delete the website and its tabs, task boards, documents, comments, and logs.</p>
+      <div class="field"><label>Type Confirm to delete</label><input name="confirm_text" autocomplete="off" required></div>
+      <div class="toolbar"><button class="btn danger" type="submit">${icon("trash-2")}Delete website</button><button class="btn" type="button" data-close-dialog="deleteClientWebsiteDialog">Cancel</button></div>
+      <p class="status-line"></p>
+    </form>
+  </dialog>`;
+}
+
+function editClientWebsiteDialogHTML() {
+  return `<dialog id="editClientWebsiteDialog" class="modal client-dialog">
+    <form id="editClientWebsiteForm" class="form-grid" method="dialog">
+      <div class="modal-head"><h2>Edit website</h2><button class="btn icon quiet" type="button" data-close-dialog="editClientWebsiteDialog" title="Close">${icon("x")}</button></div>
+      <input type="hidden" name="website_id">
+      <div class="field"><label>Website name</label><input name="name" required></div>
+      <div class="field"><label>Website URL</label><input name="url" placeholder="https://example.com"></div>
+      <div class="field"><label>Website details</label><textarea name="details" data-mentionable></textarea></div>
+      <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="editClientWebsiteDialog">Cancel</button></div>
+      <p class="status-line"></p>
+    </form>
+  </dialog>`;
+}
+
+function bindContextActionMenus(root = document) {
+  bindFloatingDropdownDismissal();
+  root.querySelectorAll("[data-action-menu], [data-client-tab-menu]").forEach((menu) => {
+    if (menu.dataset.actionMenuBound === "1") return;
+    menu.dataset.actionMenuBound = "1";
+    menu.addEventListener("click", (event) => event.stopPropagation());
+  });
+  root.querySelectorAll("[data-action-menu-trigger], [data-client-tab-menu-trigger]").forEach((trigger) => {
+    if (trigger.dataset.actionTriggerBound === "1") return;
+    trigger.dataset.actionTriggerBound = "1";
+    trigger.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const wrap = trigger.closest("[data-action-menu-wrap], [data-client-tab-item]");
+      const menu = wrap?.querySelector("[data-action-menu], [data-client-tab-menu]");
+      if (!menu) return;
+      document.querySelectorAll("[data-action-menu], [data-client-tab-menu]").forEach((other) => {
+        if (other !== menu) other.hidden = true;
+      });
+      menu.hidden = !menu.hidden;
+    });
+  });
+}
+
+function bindClientWebsiteEdit(websites = [], onSaved) {
+  const sitesByID = Object.fromEntries(websites.map((site) => [site.id, site]));
+  document.querySelectorAll("[data-edit-client-website]").forEach((btn) => {
+    if (btn.dataset.editBound === "1") return;
+    btn.dataset.editBound = "1";
+    btn.addEventListener("click", () => {
+      const site = sitesByID[btn.dataset.editClientWebsite];
+      const form = $("#editClientWebsiteForm");
+      if (!site || !form) return;
+      form.reset();
+      form.elements.website_id.value = site.id || "";
+      form.elements.name.value = site.name || "";
+      form.elements.url.value = site.url || "";
+      form.elements.details.value = site.details || "";
+      $("#editClientWebsiteDialog")?.showModal();
+    });
+  });
+  $("#editClientWebsiteForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const websiteID = form.elements.website_id.value;
+    try {
+      await api(`/api/client-websites/${websiteID}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: form.elements.name.value,
+          url: form.elements.url.value,
+          details: form.elements.details.value,
+        }),
+      });
+      $("#editClientWebsiteDialog")?.close();
+      await refreshClientSidebarCache();
+      await onSaved?.(websiteID);
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
+}
+
+function bindClientWebsiteDelete(onDeleted) {
+  document.querySelectorAll("[data-delete-client-website]").forEach((btn) => {
+    if (btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => {
+      const form = $("#deleteClientWebsiteForm");
+      if (!form) return;
+      form.reset();
+      form.elements.website_id.value = btn.dataset.deleteClientWebsite || "";
+      $("#deleteClientWebsiteText").textContent = `This will delete ${btn.dataset.websiteName || "this website"} and its tabs, task boards, documents, comments, and logs.`;
+      $("#deleteClientWebsiteDialog")?.showModal();
+    });
+  });
+  $("#deleteClientWebsiteForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const websiteID = form.elements.website_id.value;
+    if (String(form.elements.confirm_text.value || "").trim() !== "Confirm") {
+      setFormStatus(form, "Type Confirm exactly to delete this website.", true);
+      return;
+    }
+    try {
+      await api(`/api/client-websites/${websiteID}`, { method: "DELETE" });
+      $("#deleteClientWebsiteDialog")?.close();
+      await refreshClientSidebarCache();
+      await onDeleted?.(websiteID);
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
+}
+
 function clientMemberRows(members, canManageMembers) {
   if (!members.length) return `<p class="muted">No members listed yet.</p>`;
   return members.map((entry) => {
     const user = entry.user || {};
+    const role = entry.client_role === "client_admin" ? "Client Admin" : (staffRoleLabel(user.staff_role) || clientRoleLabel(entry.client_role));
     return `<article class="task-row">
       <div><h3>${esc(user.name || user.username || user.email)}</h3><span class="muted">@${esc(user.username || "member")} - ${esc(user.email || "")}</span></div>
-      <span class="pill">${esc(clientRoleLabel(entry.client_role))}</span>
+      <span class="pill">${esc(role)}</span>
       ${canManageMembers && user.id !== state.me?.id ? `<button class="btn compact danger" type="button" data-remove-client-member="${esc(user.id)}">${icon("user-minus")}Remove</button>` : ""}
     </article>`;
   }).join("");
+}
+
+function memberStaffRole(member) {
+  return normalizedStaffRole(member?.staff_role) || "internal";
+}
+
+function bindAccessRoleSelect(form, members = []) {
+  if (!form || !form.elements?.user_id || !form.elements?.role) return;
+  const membersByID = Object.fromEntries((members || []).map((member) => [member.id, member]));
+  const sync = () => {
+    form.elements.role.value = memberStaffRole(membersByID[form.elements.user_id.value]);
+  };
+  form.elements.user_id.addEventListener("change", sync);
+  sync();
 }
 
 function compactClientTaskTitle(value) {
@@ -1313,13 +3294,39 @@ function normalizeClientTaskStatusValue(value) {
 }
 
 function clientTaskStatusLabel(value) {
-  const labels = { todo: "To do", in_progress: "In progress", done: "Done" };
+  const labels = { todo: "To do", in_progress: "In progress", revision: "Revision", completed: "Completed", ready_for_review: "Ready for review", done: "Done" };
   return labels[value] || String(value || "").replaceAll("_", " ").replace(/\b\w/g, (ch) => ch.toUpperCase());
 }
 
 function normalizeStatusColor(value, fallback) {
   const color = String(value || "").trim();
   return /^#[0-9a-fA-F]{6}$/.test(color) ? color : fallback;
+}
+
+function hexRGB(color) {
+  const normalized = normalizeStatusColor(color, "#000000").slice(1);
+  return [0, 2, 4].map((index) => parseInt(normalized.slice(index, index + 2), 16) / 255);
+}
+
+function relativeLuminance(color) {
+  const channels = hexRGB(color).map((channel) => (channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4));
+  return (0.2126 * channels[0]) + (0.7152 * channels[1]) + (0.0722 * channels[2]);
+}
+
+function contrastRatio(foreground, background) {
+  const light = Math.max(relativeLuminance(foreground), relativeLuminance(background));
+  const dark = Math.min(relativeLuminance(foreground), relativeLuminance(background));
+  return (light + 0.05) / (dark + 0.05);
+}
+
+function isDarkThemeActive() {
+  return document.documentElement.dataset.theme === "dark";
+}
+
+function readableStatusTextColor(value, fallback = "#e5e7eb") {
+  const color = normalizeStatusColor(value, fallback);
+  if (!isDarkThemeActive()) return color;
+  return contrastRatio(color, "#101613") < 4.5 ? "#78dccb" : color;
 }
 
 function clientTaskStatuses(tab, tasks = []) {
@@ -1344,7 +3351,7 @@ function clientTaskStatuses(tab, tasks = []) {
 }
 
 function statusStyleVars(status) {
-  return `style="--status-icon-color:${esc(status?.icon_color || "#8b5cf6")}; --status-text-color:${esc(status?.text_color || "#e5e7eb")}"`;
+  return `style="--status-icon-color:${esc(normalizeStatusColor(status?.icon_color, "#8b5cf6"))}; --status-text-color:${esc(readableStatusTextColor(status?.text_color, "#e5e7eb"))}"`;
 }
 
 function statusBadgeHTML(status, className = "status-badge") {
@@ -1367,6 +3374,37 @@ function statusStylesPayload(tab, tasks, statusValue, iconColor, textColor) {
     };
   }
   return { statuses: values, status_styles: styles };
+}
+
+function statusOrderPayload(tab, tasks, orderedValues = []) {
+  const knownStatuses = clientTaskStatuses(tab, tasks);
+  const knownByValue = Object.fromEntries(knownStatuses.map((item) => [item.value, item]));
+  const values = [];
+  orderedValues.map(normalizeClientTaskStatusValue).forEach((value) => {
+    if (value && !values.includes(value)) values.push(value);
+  });
+  knownStatuses.forEach((item) => {
+    if (item.value && !values.includes(item.value)) values.push(item.value);
+  });
+  const styles = {};
+  values.forEach((value) => {
+    const fallback = DEFAULT_CLIENT_TASK_STATUS_STYLES[value] || { icon_color: "#8b5cf6", text_color: "#e5e7eb" };
+    const item = knownByValue[value] || fallback;
+    styles[value] = {
+      icon_color: normalizeStatusColor(item.icon_color, fallback.icon_color),
+      text_color: normalizeStatusColor(item.text_color, fallback.text_color),
+    };
+  });
+  return { statuses: values, status_styles: styles };
+}
+
+async function saveClientStatusOrder(tab, tasks = [], orderedValues = [], onSaved = () => {}) {
+  if (!tab?.id) return;
+  await api(`/api/client-tabs/${tab.id}`, {
+    method: "PATCH",
+    body: JSON.stringify(statusOrderPayload(tab, tasks, orderedValues)),
+  });
+  await onSaved();
 }
 
 function dueDateDeltaLabel(value) {
@@ -1491,6 +3529,15 @@ function recurrenceLabel(recurrence = {}, dueValue = "") {
   return dates.length ? `Monthly on ${dates.join(", ")}` : "Monthly";
 }
 
+function taskCompletionCount(task = {}) {
+  return Math.max(0, Number(task.completion_count || 0));
+}
+
+function taskCompletionBadgeHTML(task = {}) {
+  const count = taskCompletionCount(task);
+  return count ? `<span class="pill completion-pill">${icon("check-check")}Completed ${esc(count)}x</span>` : "";
+}
+
 function taskDueInfo(task = {}) {
   const nextDue = nextRecurringDueDate(task.due_date, task.recurrence || {});
   const label = dueDateDeltaLabelFromDate(nextDue);
@@ -1531,7 +3578,8 @@ function assigneePickerHTML(members = [], selected = []) {
   const rows = (members || []).map((entry) => {
     const user = entry.user || {};
     const name = user.name || user.username || user.email || "Member";
-    const searchable = [name, user.username, user.email, entry.staff_role, entry.role].filter(Boolean).join(" ");
+    const roleText = staffRoleLabel(entry.client_role || entry.staff_role || user.staff_role) || roleLabel(entry.role || user.role || "");
+    const searchable = [name, user.username, user.email, entry.client_role, entry.staff_role, user.staff_role, entry.role, user.role, roleText].filter(Boolean).join(" ");
     return `<label class="assignee-choice ${selectedSet.has(user.id) ? "selected" : ""}" data-assignee-search="${esc(searchable)}">
       <input type="checkbox" name="assignee_ids" value="${esc(user.id || "")}" ${selectedSet.has(user.id) ? "checked" : ""}>
       ${userChip(user)}
@@ -1878,17 +3926,76 @@ function bindClientBoardDrag(root, onMoved = () => {}) {
   setup();
 }
 
+function statusValuesFromBoard(board) {
+  return Array.from(board?.querySelectorAll(".kanban-column[data-client-status]") || [])
+    .map((column) => column.dataset.clientStatus || "")
+    .filter(Boolean);
+}
+
+function bindClientStatusColumnSort(root, tab, tasks = [], canManageStatuses = false, onSaved = () => {}) {
+  if (!canManageStatuses || !tab?.id) return;
+  const boards = Array.from(root.querySelectorAll(`[data-status-board-sort="${selectorEscape(tab.id)}"]`));
+  const saveBoard = async (board) => {
+    board.classList.add("status-order-saving");
+    try {
+      await saveClientStatusOrder(tab, tasks, statusValuesFromBoard(board), onSaved);
+    } catch (error) {
+      setStatus(error.message, true);
+      board.classList.remove("status-order-saving");
+    }
+  };
+  boards.forEach((board) => {
+    board.querySelectorAll("[data-status-column-move]").forEach((btn) => btn.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const column = btn.closest(".kanban-column");
+      if (!column) return;
+      const direction = Number(btn.dataset.statusColumnDir || 0);
+      if (direction < 0 && column.previousElementSibling) {
+        board.insertBefore(column, column.previousElementSibling);
+      } else if (direction > 0 && column.nextElementSibling) {
+        board.insertBefore(column.nextElementSibling, column);
+      } else {
+        return;
+      }
+      await saveBoard(board);
+    }));
+  });
+  const setupSortable = () => {
+    if (!window.Sortable) {
+      setTimeout(setupSortable, 120);
+      return;
+    }
+    boards.forEach((board) => {
+      Sortable.create(board, {
+        animation: 150,
+        draggable: ".kanban-column",
+        handle: "[data-status-column-handle]",
+        filter: "button:not([data-status-column-handle]), input, textarea, a, .client-task-card",
+        preventOnFilter: false,
+        ghostClass: "task-card-ghost",
+        dragClass: "task-card-dragging",
+        onEnd: async (event) => {
+          if (event.oldIndex === event.newIndex) return;
+          await saveBoard(board);
+        },
+      });
+    });
+  };
+  setupSortable();
+}
+
 function bindFloatingDropdownDismissal() {
   if (state.dropdownDismissBound) return;
   state.dropdownDismissBound = true;
   document.addEventListener("click", () => {
-    document.querySelectorAll(".assignee-menu, .status-menu").forEach((menu) => {
+    document.querySelectorAll(".assignee-menu, .status-menu, .context-menu, .client-tab-menu").forEach((menu) => {
       menu.hidden = true;
     });
   });
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
-    document.querySelectorAll(".assignee-menu, .status-menu").forEach((menu) => {
+    document.querySelectorAll(".assignee-menu, .status-menu, .context-menu, .client-tab-menu").forEach((menu) => {
       menu.hidden = true;
     });
   });
@@ -1896,6 +4003,32 @@ function bindFloatingDropdownDismissal() {
 
 function richEditorHTML(name, value = "", placeholder = "") {
   return `<div class="rich-editor" contenteditable="true" data-rich-editor="${esc(name)}" data-placeholder="${esc(placeholder)}">${esc(value)}</div><input type="hidden" name="${esc(name)}" value="${esc(value)}">`;
+}
+
+function pageRichEditorHTML(name, value = "", placeholder = "") {
+  const id = `pageRichEditor_${name}_${Math.random().toString(36).slice(2)}`;
+  return `<div class="page-rich-editor-wrap" data-page-rich-wrap>
+    <div class="page-rich-toolbar" role="toolbar" aria-label="Rich text formatting">
+      <select data-rich-format title="Heading style">
+        <option value="p">Paragraph</option>
+        <option value="h1">Heading 1</option>
+        <option value="h2">Heading 2</option>
+        <option value="h3">Heading 3</option>
+        <option value="h4">Heading 4</option>
+      </select>
+      <button class="btn icon quiet" type="button" data-rich-command="bold" title="Bold"><strong>B</strong></button>
+      <button class="btn icon quiet" type="button" data-rich-command="italic" title="Italic"><em>I</em></button>
+      <button class="btn icon quiet" type="button" data-rich-command="insertUnorderedList" title="Bullet list">${icon("list")}</button>
+      <button class="btn icon quiet" type="button" data-rich-command="insertOrderedList" title="Numbered list">${icon("list-ordered")}</button>
+      <label class="page-rich-color" title="Font color">
+        ${icon("palette")}
+        <input type="color" data-rich-color value="#0b8f7a" aria-label="Font color">
+      </label>
+      <button class="btn icon quiet" type="button" data-rich-table title="Insert table">${icon("table-2")}</button>
+    </div>
+    <div id="${esc(id)}" class="rich-editor page-rich-editor" contenteditable="true" data-page-rich-editor="${esc(name)}" data-placeholder="${esc(placeholder)}">${pageRichSafeHTML(value || "")}</div>
+    <input type="hidden" name="${esc(name)}" value="${esc(pageRichSafeHTML(value || ""))}">
+  </div>`;
 }
 
 function bindRichEditors(root = document) {
@@ -1914,6 +4047,90 @@ function syncRichEditors(root = document) {
     const input = root.querySelector(`input[name="${editor.dataset.richEditor}"]`);
     if (input) input.value = editor.innerText.trim();
   });
+}
+
+function bindPageRichEditors(root = document) {
+  root.querySelectorAll("[data-page-rich-wrap]").forEach((wrap) => {
+    if (wrap.dataset.pageRichBound === "1") return;
+    wrap.dataset.pageRichBound = "1";
+    const editor = wrap.querySelector("[data-page-rich-editor]");
+    if (!editor) return;
+    const input = wrap.querySelector(`input[name="${selectorEscape(editor.dataset.pageRichEditor)}"]`);
+    const sync = () => {
+      if (input) input.value = editor.innerHTML.trim();
+    };
+    const focusEditor = () => {
+      editor.focus();
+      sync();
+    };
+    wrap.querySelectorAll("[data-rich-command]").forEach((btn) => btn.addEventListener("click", () => {
+      focusEditor();
+      document.execCommand(btn.dataset.richCommand, false, null);
+      sync();
+    }));
+    wrap.querySelector("[data-rich-format]")?.addEventListener("change", (event) => {
+      focusEditor();
+      document.execCommand("formatBlock", false, event.currentTarget.value || "p");
+      sync();
+    });
+    wrap.querySelector("[data-rich-color]")?.addEventListener("input", (event) => {
+      focusEditor();
+      document.execCommand("foreColor", false, event.currentTarget.value || "#0b8f7a");
+      sync();
+    });
+    wrap.querySelector("[data-rich-table]")?.addEventListener("click", () => {
+      focusEditor();
+      document.execCommand("insertHTML", false, `<table><tbody><tr><td>Cell</td><td>Cell</td></tr><tr><td>Cell</td><td>Cell</td></tr></tbody></table><p><br></p>`);
+      sync();
+    });
+    editor.addEventListener("input", sync);
+    editor.addEventListener("blur", sync);
+    sync();
+  });
+}
+
+function syncPageRichEditors(root = document) {
+  root.querySelectorAll("[data-page-rich-editor]").forEach((editor) => {
+    const wrap = editor.closest("[data-page-rich-wrap]") || root;
+    const input = wrap.querySelector(`input[name="${selectorEscape(editor.dataset.pageRichEditor)}"]`);
+    if (input) input.value = editor.innerHTML.trim();
+  });
+}
+
+function pageRichSafeHTML(value = "") {
+  const allowedTags = new Set(["DIV", "P", "BR", "STRONG", "B", "EM", "I", "U", "UL", "OL", "LI", "H1", "H2", "H3", "H4", "BLOCKQUOTE", "CODE", "PRE", "A", "SPAN", "FONT", "TABLE", "THEAD", "TBODY", "TR", "TH", "TD"]);
+  const template = document.createElement("template");
+  template.innerHTML = String(value || "");
+  const clean = (node) => {
+    Array.from(node.childNodes).forEach((child) => {
+      if (child.nodeType === Node.TEXT_NODE) return;
+      if (child.nodeType !== Node.ELEMENT_NODE || !allowedTags.has(child.tagName)) {
+        child.replaceWith(document.createTextNode(child.textContent || ""));
+        return;
+      }
+      const href = child.getAttribute("href") || "";
+      const colorStyle = child.getAttribute("style") || "";
+      const fontColor = child.getAttribute("color") || "";
+      Array.from(child.attributes).forEach((attr) => child.removeAttribute(attr.name));
+      if (child.tagName === "A") {
+        if (/^(https?:|mailto:|tel:|\/|#)/i.test(href)) {
+          child.setAttribute("href", href);
+          child.setAttribute("rel", "noopener");
+          if (/^https?:/i.test(href)) child.setAttribute("target", "_blank");
+        }
+      }
+      if (child.tagName === "SPAN" || child.tagName === "FONT") {
+        const color = colorStyle.match(/color:\s*(#[0-9a-f]{3,6}|rgb\([^)]+\))/i)?.[1] || fontColor;
+        if (color && (/^#[0-9a-f]{3,6}$/i.test(color) || /^rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)$/i.test(color))) {
+          if (child.tagName === "FONT") child.setAttribute("color", color);
+          else child.setAttribute("style", `color:${color}`);
+        }
+      }
+      clean(child);
+    });
+  };
+  clean(template.content);
+  return template.innerHTML;
 }
 
 function recurrenceControlsHTML(recurrence = {}, dueValue = "") {
@@ -2041,6 +4258,421 @@ function readChecklistItems(root = document) {
   })).filter((item) => item.text);
 }
 
+function normalizeTaskBlocks(blocks = []) {
+  return (Array.isArray(blocks) ? blocks : []).map((block) => {
+    const type = block.type === "checklist" ? "checklist" : "content";
+    if (type === "checklist") {
+      return { type, checklist: (block.checklist || []).filter((item) => String(item.text || "").trim()) };
+    }
+    return { type, content: String(block.content || "").trim() };
+  }).filter((block) => block.type === "checklist" ? block.checklist.length : block.content);
+}
+
+function taskContentBlocks(task = {}) {
+  const saved = normalizeTaskBlocks(task.blocks || []);
+  if (saved.length) return saved;
+  const content = task.type === "annotation" ? task.comment || task.content : task.content;
+  const blocks = [];
+  if (String(content || "").trim()) blocks.push({ type: "content", content: String(content).trim() });
+  const checklist = Array.isArray(task.checklist) ? task.checklist.filter((item) => String(item.text || "").trim()) : [];
+  if (task.type !== "annotation" && checklist.length) blocks.push({ type: "checklist", checklist });
+  return blocks;
+}
+
+function taskPreviewText(task = {}) {
+  if (task.type === "annotation") return compactClientTaskContent(task.comment || task.content || "");
+  const firstContent = taskContentBlocks(task).find((block) => block.type === "content")?.content || "";
+  return compactClientTaskContent(firstContent || task.content || "");
+}
+
+const FEEDBACK_TASK_STATUS_VALUES = ["todo", "in_progress", "revision", "completed", "ready_for_review"];
+const FEEDBACK_TASK_STATUS_STYLES = {
+  todo: { icon_color: "#9ca3af", text_color: "#d1d5db" },
+  in_progress: { icon_color: "#f59e0b", text_color: "#fbbf24" },
+  revision: { icon_color: "#ef4444", text_color: "#fca5a5" },
+  completed: { icon_color: "#10b981", text_color: "#6ee7b7" },
+  ready_for_review: { icon_color: "#38bdf8", text_color: "#bae6fd" },
+};
+
+function feedbackStatusValue(value) {
+  const normalized = normalizeClientTaskStatusValue(value);
+  if (!normalized || ["open", "normal", "low", "high", "urgent"].includes(normalized)) return "todo";
+  if (normalized === "to_do") return "todo";
+  if (normalized === "inprogress" || normalized === "progress") return "in_progress";
+  if (["needs_revision", "needs_revisions", "revisions"].includes(normalized)) return "revision";
+  if (["review", "ready_review"].includes(normalized)) return "ready_for_review";
+  if (["done", "complete", "completed", "closed"].includes(normalized)) return "completed";
+  return normalized;
+}
+
+function feedbackBugTitle(bug = {}) {
+  return String(bug.title || bug.description || "Pinned feedback").trim();
+}
+
+function feedbackBugAssigneeIDs(bug = {}) {
+  return [...new Set([...(bug.assignee_ids || []), bug.assignee_id].filter(Boolean))];
+}
+
+function feedbackStatusObject(statuses = [], value = "todo") {
+  const statusValue = feedbackStatusValue(value);
+  return statuses.find((item) => item.value === statusValue) || {
+    value: statusValue,
+    label: clientTaskStatusLabel(statusValue),
+    icon_color: FEEDBACK_TASK_STATUS_STYLES[statusValue]?.icon_color || DEFAULT_CLIENT_TASK_STATUS_STYLES[statusValue]?.icon_color || "#8b5cf6",
+    text_color: FEEDBACK_TASK_STATUS_STYLES[statusValue]?.text_color || DEFAULT_CLIENT_TASK_STATUS_STYLES[statusValue]?.text_color || "#e5e7eb",
+  };
+}
+
+function feedbackTaskStatuses(bugs = []) {
+  return clientTaskStatuses(
+    { statuses: FEEDBACK_TASK_STATUS_VALUES, status_styles: FEEDBACK_TASK_STATUS_STYLES },
+    bugs.map((bug) => ({ status: feedbackStatusValue(bug.status || bug.severity) })),
+  );
+}
+
+function feedbackMemberEntries(users = []) {
+  return (users || []).filter((user) => user?.id).map((user) => ({ user, staff_role: user.staff_role, role: user.role }));
+}
+
+function feedbackBugRowsHTML(bugs = [], statuses = [], usersByID = {}) {
+  if (!bugs.length) return `<p class="muted">No annotation feedback yet.</p>`;
+  return bugs.map((bug, index) => {
+    const statusValue = feedbackStatusValue(bug.status || bug.severity);
+    return `<article class="feedback-row" data-feedback-row="${esc(bug.id)}">
+      <div class="feedback-row-main">
+        <strong>${esc(feedbackBugTitle(bug))}</strong>
+        <span>${icon("map-pin")}Position ${Number(bug.pin_x || 0).toFixed(1)}%, ${Number(bug.pin_y || 0).toFixed(1)}%</span>
+      </div>
+      <div class="feedback-row-meta">
+        ${assigneeAvatarsHTML(feedbackBugAssigneeIDs(bug), usersByID)}
+        <form class="feedback-status-form" data-feedback-status-form="${esc(bug.id)}">${statusPickerHTML(statuses, statusValue, "status")}</form>
+        <button class="btn compact" type="button" data-open-feedback-bug="${esc(bug.id)}">${icon("panel-top-open")}Task</button>
+      </div>
+    </article>`;
+  }).join("");
+}
+
+function feedbackBugDetailHTML(bug = {}, statuses = [], usersByID = {}) {
+  const statusValue = feedbackStatusValue(bug.status || bug.severity);
+  const assignees = feedbackBugAssigneeIDs(bug).map((id) => usersByID[id]).filter(Boolean);
+  return `<div class="feedback-detail">
+    <div class="feedback-detail-head">
+      <span class="muted">Annotation detail</span>
+      <h2>${esc(feedbackBugTitle(bug))}</h2>
+      <form class="feedback-status-form" data-feedback-status-form="${esc(bug.id)}">${statusPickerHTML(statuses, statusValue, "status")}</form>
+    </div>
+    <label class="feedback-url-field"><span>Page URL</span><input value="${esc(bug.page_url || "No page URL")}" readonly></label>
+    <div class="feedback-detail-grid">
+      <div><span class="muted">Assignee</span>${assignees.length ? `<div class="assignee-avatars">${assignees.map((user) => userChip(user)).join("")}</div>` : `<strong>Unassigned</strong>`}</div>
+      <div><span class="muted">Created</span><strong>${esc(fmtDate(bug.created_at))}</strong></div>
+    </div>
+    ${bug.description ? `<h3>Details</h3><p>${chatText(bug.description)}</p>` : ""}
+    ${bug.attachments?.length ? `<h3>Attachments</h3><div class="task-attachment-gallery">${bug.attachments.map((url) => attachmentPreviewHTML(url, "", { source: "Feedback" })).join("")}</div>` : ""}
+    <section class="feedback-comments">
+      <h3>Comments</h3>
+      <div class="feedback-comment-list" data-feedback-comment-list>${feedbackCommentsHTML(bug.comments || [], usersByID)}</div>
+      <form class="feedback-comment-form" data-feedback-comment-form="${esc(bug.id)}">
+        <div class="attachment-preview" data-feedback-attachment-preview hidden></div>
+        <textarea name="comment" data-mentionable placeholder="Leave a comment"></textarea>
+        <input type="file" name="attachment" hidden>
+        <div class="toolbar compact-toolbar">
+          <button class="btn icon quiet" type="button" data-feedback-comment-emoji title="Add emoji">${icon("smile")}</button>
+          <button class="btn icon quiet" type="button" data-feedback-comment-attach title="Attach file">${icon("paperclip")}</button>
+          <button class="btn primary compact" type="submit">${icon("send")}Send</button>
+        </div>
+        <p class="status-line"></p>
+      </form>
+    </section>
+  </div>`;
+}
+
+function feedbackCommentHTML(comment = {}, usersByID = {}) {
+  const author = usersByID[comment.author_id] || {};
+  const authorName = author.name || author.username || "Someone";
+  return `<article class="feedback-comment">
+    <div class="message-head"><strong>${esc(authorName)}</strong><time>${inboxTime(comment.created_at)}</time></div>
+    ${comment.content ? `<p>${chatText(comment.content)}</p>` : ""}
+    ${comment.attachment_url ? `<div class="comment-attachment">${attachmentPreviewHTML(comment.attachment_url, comment.attachment_name || "Attachment", { compact: true })}</div>` : ""}
+  </article>`;
+}
+
+function feedbackCommentsHTML(comments = [], usersByID = {}) {
+  if (!comments.length) return `<p class="muted">No comments yet.</p>`;
+  return comments.map((comment) => feedbackCommentHTML(comment, usersByID)).join("");
+}
+
+function clientAnnotationTaskRowsHTML(tasks = [], statuses = [], usersByID = {}) {
+  if (!tasks.length) return `<p class="muted">No annotation tasks on this page yet.</p>`;
+  return tasks.map((task) => {
+    const statusValue = task.status || "todo";
+    return `<article class="feedback-row" data-client-annotation-row="${esc(task.id)}">
+      <div class="feedback-row-main">
+        <strong>${esc(task.title || "Annotation")}</strong>
+        <span>${icon("map-pin")}Position ${Number(task.pin_x || 0).toFixed(1)}%, ${Number(task.pin_y || 0).toFixed(1)}%</span>
+      </div>
+      <div class="feedback-row-meta">
+        ${assigneeAvatarsHTML(task.assignee_ids || [], usersByID)}
+        <div class="feedback-status-form" data-client-annotation-status-form="${esc(task.id)}">${statusPickerHTML(statuses, statusValue, "status")}</div>
+        <button class="btn compact" type="button" data-open-client-annotation="${esc(task.id)}">${icon("panel-top-open")}Task</button>
+      </div>
+    </article>`;
+  }).join("");
+}
+
+function clientAnnotationItemStatusPickerHTML(taskID = "", annotationID = "", statusValue = "todo", statuses = []) {
+  if (!taskID || !annotationID) return statusBadgeHTML(feedbackStatusObject(statuses, statusValue || "todo"), "status-badge status-pill");
+  return `<div class="feedback-status-form" data-client-annotation-item-status-form="${esc(taskID)}" data-annotation-id="${esc(annotationID)}">${statusPickerHTML(statuses, statusValue || "todo", "status")}</div>`;
+}
+
+function syncClientAnnotationItemStatusControls(root = document, annotationID = "", statuses = [], value = "todo") {
+  const status = feedbackStatusObject(statuses, value || "todo");
+  root.querySelectorAll(`[data-client-annotation-item-status-form][data-annotation-id="${selectorEscape(annotationID)}"]`).forEach((box) => {
+    const input = box.querySelector("input[name='status']");
+    const trigger = box.querySelector("[data-status-trigger]");
+    const label = box.querySelector("[data-status-trigger-label]");
+    if (input) input.value = status.value;
+    if (label) label.textContent = status.label;
+    trigger?.style.setProperty("--status-icon-color", status.icon_color);
+    trigger?.style.setProperty("--status-text-color", status.text_color);
+  });
+}
+
+function bindClientAnnotationItemStatusForms(root = document, statuses = [], onSaved = async () => {}) {
+  root.querySelectorAll("[data-client-annotation-item-status-form]").forEach((box) => {
+    if (box.dataset.clientAnnotationItemStatusBound === "1") return;
+    box.dataset.clientAnnotationItemStatusBound = "1";
+    box.addEventListener("change", async (event) => {
+      if (!event.target.matches("input[name='status']")) return;
+      const taskID = box.dataset.clientAnnotationItemStatusForm;
+      const annotationID = box.dataset.annotationId;
+      const status = event.target.value || "todo";
+      if (!taskID || !annotationID) return;
+      try {
+        const result = await api(`/api/client-tasks/${taskID}/annotations/${annotationID}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
+        syncClientAnnotationItemStatusControls(root, annotationID, statuses, result.status || status);
+        await onSaved(result, annotationID, result.status || status);
+      } catch (error) {
+        console.error(error);
+      }
+    });
+  });
+}
+
+function clientAnnotationTaskDetailHTML(task = {}, statuses = [], usersByID = {}, comments = [], canManageFolder = false, options = {}) {
+  const assignees = (task.assignee_ids || []).map((id) => usersByID[id]).filter(Boolean);
+  const showStatus = options.showStatus !== false;
+  const commentTaskID = options.commentTaskID || task.id;
+  const annotationStatusTaskID = options.annotationStatusTaskID || "";
+  return `<div class="feedback-detail">
+    <div class="feedback-detail-head">
+      <span class="muted">Annotation detail</span>
+      <h2>${esc(task.title || "Annotation")}</h2>
+      ${showStatus ? `<div class="feedback-status-form" data-client-annotation-status-form="${esc(task.id)}">${statusPickerHTML(statuses, task.status || "todo", "status")}</div>` : clientAnnotationItemStatusPickerHTML(annotationStatusTaskID, task.id, task.status || "todo", statuses)}
+    </div>
+    <label class="feedback-url-field"><span>Page URL</span><input value="${esc(task.url || "No page URL")}" readonly></label>
+    <div class="feedback-detail-grid">
+      <div><span class="muted">Assignee</span>${assignees.length ? `<div class="assignee-avatars">${assignees.map((user) => userChip(user)).join("")}</div>` : `<strong>Unassigned</strong>`}</div>
+      <div><span class="muted">Created</span><strong>${esc(fmtDate(task.created_at))}</strong></div>
+    </div>
+    ${task.comment ? `<h3>Details</h3><p>${chatText(task.comment)}</p>` : ""}
+    ${taskAttachmentGalleryHTML(task, comments)}
+    <section class="feedback-comments">
+      <h3>Comments</h3>
+      <div class="client-task-comment-list feedback-comment-list">${clientTaskCommentsHTML(comments || [], usersByID, canManageFolder)}</div>
+      <div class="client-comment-composer-slot" data-client-comment-composer-default>
+        <form id="clientTaskCommentForm" class="feedback-comment-form client-comment-form" data-client-annotation-comment-form="${esc(commentTaskID)}">
+          <div class="reply-preview" data-client-task-reply-preview hidden></div>
+          <div class="attachment-preview" data-client-task-attachment-preview hidden></div>
+          <textarea name="content" data-mentionable placeholder="Comment @username"></textarea>
+          <input type="file" name="attachment" hidden>
+          <div class="toolbar compact-toolbar">
+            <button class="btn icon quiet" type="button" data-client-comment-emoji title="Add emoji">${icon("smile")}</button>
+            <button class="btn icon quiet" type="button" data-client-comment-attach title="Attach file">${icon("paperclip")}</button>
+            <button class="btn primary compact" type="submit">${icon("send")}Send</button>
+          </div>
+          <p class="status-line"></p>
+        </form>
+      </div>
+    </section>
+  </div>`;
+}
+
+function clientTaskAnnotationItems(task = {}) {
+  const nested = Array.isArray(task.annotations) ? task.annotations : [];
+  const source = nested.length ? nested : ((task.pin_x !== undefined && task.pin_x !== null && task.pin_y !== undefined && task.pin_y !== null) ? [{
+    id: task.id,
+    title: task.title,
+    url: task.url,
+    comment: task.comment || task.content,
+    pin_x: task.pin_x,
+    pin_y: task.pin_y,
+    page_width: task.page_width,
+    page_height: task.page_height,
+    attachments: task.attachments || [],
+    assignee_ids: task.assignee_ids || [],
+    status: task.status,
+    created_at: task.created_at,
+    created_by: task.created_by,
+  }] : []);
+  return source.map((item, index) => ({
+    ...item,
+    id: item.id || `annotation-${index}`,
+    title: item.title || task.title || `Annotation ${index + 1}`,
+    url: item.url || task.url || "",
+    comment: item.comment || "",
+    attachments: item.attachments || [],
+    assignee_ids: item.assignee_ids || task.assignee_ids || [],
+    status: item.status || task.status || "todo",
+    created_at: item.created_at || task.created_at,
+    created_by: item.created_by || task.created_by,
+  })).filter((item) => item.pin_x !== undefined && item.pin_x !== null && item.pin_y !== undefined && item.pin_y !== null);
+}
+
+function clientAnnotationItemRowsHTML(items = [], statuses = [], usersByID = {}, options = {}) {
+  if (!items.length) return `<p class="muted">No annotations in this task yet.</p>`;
+  const taskID = options.taskID || "";
+  return items.map((item, index) => {
+    const status = feedbackStatusObject(statuses, item.status || "todo");
+    return `<article class="feedback-row" data-client-annotation-item-row="${esc(item.id)}">
+      <div class="feedback-row-main">
+        <strong>${esc(item.title || `Annotation ${index + 1}`)}</strong>
+        <span>${icon("map-pin")}Position ${Number(item.pin_x || 0).toFixed(1)}%, ${Number(item.pin_y || 0).toFixed(1)}%</span>
+      </div>
+      <div class="feedback-row-meta">
+        ${assigneeAvatarsHTML(item.assignee_ids || [], usersByID)}
+        ${taskID ? clientAnnotationItemStatusPickerHTML(taskID, item.id, status.value, statuses) : statusBadgeHTML(status, "status-badge status-pill")}
+        <button class="btn compact" type="button" data-open-client-annotation-item="${esc(item.id)}">${icon("panel-top-open")}Details</button>
+      </div>
+    </article>`;
+  }).join("");
+}
+
+function clientAnnotationItemPinHTML(item = {}, index = 0, targetWidth = ANNOTATION_VIEWPORT.width, targetHeight = ANNOTATION_VIEWPORT.height) {
+  return annotationPinHTML({
+    id: item.id,
+    x: item.pin_x,
+    y: item.pin_y,
+    page_width: item.page_width,
+    page_height: item.page_height,
+    target_page_width: targetWidth,
+    target_page_height: targetHeight,
+    label: String(index + 1),
+    title: item.title || "Annotation",
+  });
+}
+
+function contentBlockEditorHTML(blocks = []) {
+  const initial = normalizeTaskBlocks(blocks).length ? normalizeTaskBlocks(blocks) : [{ type: "content", content: "" }];
+  return `<div class="content-block-editor" data-content-block-editor>
+    <div class="content-block-list" data-content-block-list>${initial.map(contentBlockEditorBlockHTML).join("")}</div>
+    <div class="toolbar compact-toolbar">
+      <button class="btn compact" type="button" data-add-content-block>${icon("file-text")}Content</button>
+      <button class="btn compact" type="button" data-add-checklist-block>${icon("list-checks")}Checklist</button>
+    </div>
+  </div>`;
+}
+
+function contentBlockEditorBlockHTML(block = {}) {
+  const type = block.type === "checklist" ? "checklist" : "content";
+  return `<section class="content-block-editor-row" data-content-block data-block-type="${type}">
+    <div class="content-block-head">
+      <strong>${type === "checklist" ? "Checklist" : "Content"}</strong>
+      <button class="btn icon quiet" type="button" data-remove-content-block title="Remove block">${icon("x")}</button>
+    </div>
+    ${type === "checklist" ? `<div class="checklist-builder-rows" data-checklist-rows>${(block.checklist?.length ? block.checklist : [{ text: "", done: false }]).map(checklistBuilderRowHTML).join("")}</div>
+      <button class="btn compact" type="button" data-add-checklist-row>${icon("plus")}Item</button>` : `<div class="rich-editor block-rich-editor" contenteditable="true" data-block-content data-placeholder="Write task details">${esc(block.content || "")}</div>`}
+  </section>`;
+}
+
+function bindContentBlockEditors(root = document) {
+  root.querySelectorAll("[data-content-block-editor]").forEach((editor) => {
+    if (editor.dataset.blocksBound === "1") return;
+    editor.dataset.blocksBound = "1";
+    const list = editor.querySelector("[data-content-block-list]");
+    const bindBlock = (block) => {
+      block.querySelector("[data-remove-content-block]")?.addEventListener("click", () => {
+        block.remove();
+        if (!list.querySelector("[data-content-block]")) {
+          list.insertAdjacentHTML("beforeend", contentBlockEditorBlockHTML({ type: "content", content: "" }));
+          bindBlock(list.lastElementChild);
+        }
+        icons();
+      });
+      const bindChecklistRow = (row) => {
+        row.querySelector("[data-remove-checklist-row]")?.addEventListener("click", () => {
+          const rows = block.querySelector("[data-checklist-rows]");
+          row.remove();
+          if (!rows.querySelector("[data-checklist-row]")) {
+            rows.insertAdjacentHTML("beforeend", checklistBuilderRowHTML());
+            bindChecklistRow(rows.lastElementChild);
+          }
+          icons();
+        });
+      };
+      block.querySelectorAll("[data-checklist-row]").forEach(bindChecklistRow);
+      block.querySelector("[data-add-checklist-row]")?.addEventListener("click", () => {
+        const rows = block.querySelector("[data-checklist-rows]");
+        rows.insertAdjacentHTML("beforeend", checklistBuilderRowHTML());
+        bindChecklistRow(rows.lastElementChild);
+        rows.lastElementChild.querySelector("[data-checklist-text]")?.focus();
+        icons();
+      });
+    };
+    list.querySelectorAll("[data-content-block]").forEach(bindBlock);
+    editor.querySelector("[data-add-content-block]")?.addEventListener("click", () => {
+      list.insertAdjacentHTML("beforeend", contentBlockEditorBlockHTML({ type: "content", content: "" }));
+      bindBlock(list.lastElementChild);
+      list.lastElementChild.querySelector("[data-block-content]")?.focus();
+      icons();
+    });
+    editor.querySelector("[data-add-checklist-block]")?.addEventListener("click", () => {
+      list.insertAdjacentHTML("beforeend", contentBlockEditorBlockHTML({ type: "checklist", checklist: [{ text: "", done: false }] }));
+      bindBlock(list.lastElementChild);
+      list.lastElementChild.querySelector("[data-checklist-text]")?.focus();
+      icons();
+    });
+  });
+}
+
+function readContentBlocks(root = document) {
+  return Array.from(root.querySelectorAll("[data-content-block]")).map((block) => {
+    const type = block.dataset.blockType === "checklist" ? "checklist" : "content";
+    if (type === "checklist") return { type, checklist: readChecklistItems(block) };
+    return { type, content: block.querySelector("[data-block-content]")?.innerText.trim() || "" };
+  }).filter((block) => block.type === "checklist" ? block.checklist.length : block.content);
+}
+
+function contentFromBlocks(blocks = []) {
+  return blocks.find((block) => block.type === "content" && block.content)?.content || "";
+}
+
+function checklistFromBlocks(blocks = []) {
+  return blocks.filter((block) => block.type === "checklist").flatMap((block) => block.checklist || []);
+}
+
+function taskContentBlocksHTML(blocks = [], canUpdate = false) {
+  const visible = normalizeTaskBlocks(blocks);
+  if (!visible.length) return `<h3>Content</h3><div class="task-rich-content">No content yet.</div>`;
+  return `<section class="task-content-blocks" data-task-blocks>
+    <span class="status-line" data-blocks-save-status></span>
+    ${visible.map((block, blockIndex) => block.type === "checklist" ? taskChecklistBlockHTML(block, blockIndex, canUpdate) : `<div class="task-content-block" data-task-render-block data-block-type="content"><h3>Content</h3><div class="task-rich-content">${chatText(block.content)}</div></div>`).join("")}
+  </section>`;
+}
+
+function taskChecklistBlockHTML(block, blockIndex, canUpdate = false) {
+  const checklist = block.checklist || [];
+  const doneCount = checklist.filter((item) => item.done).length;
+  return `<section class="task-checklist task-content-block" data-task-render-block data-block-type="checklist">
+    <div class="task-checklist-head"><h3>Checklist</h3><span class="muted" data-checklist-count>${doneCount}/${checklist.length} done</span></div>
+    <div class="task-checklist-items">
+      ${checklist.map((item, itemIndex) => `<label class="task-checklist-item ${item.done ? "done" : ""}">
+        <input type="checkbox" data-task-checklist-done data-block-index="${blockIndex}" data-item-index="${itemIndex}" ${item.done ? "checked" : ""} ${canUpdate ? "" : "disabled"}>
+        <span>${chatText(item.text)}</span>
+      </label>`).join("")}
+    </div>
+  </section>`;
+}
+
 function taskChecklistHTML(items = [], canUpdate = false) {
   const checklist = Array.isArray(items) ? items.filter((item) => String(item.text || "").trim()) : [];
   if (!checklist.length) return "";
@@ -2063,19 +4695,29 @@ function readVisibleTaskChecklist(root = document) {
   })).filter((item) => item.text);
 }
 
+function readVisibleTaskBlocks(root = document) {
+  return Array.from(root.querySelectorAll("[data-task-render-block]")).map((block) => {
+    const type = block.dataset.blockType === "checklist" ? "checklist" : "content";
+    if (type === "checklist") return { type, checklist: readVisibleTaskChecklist(block) };
+    return { type, content: block.querySelector(".task-rich-content")?.innerText.trim() || "" };
+  }).filter((block) => block.type === "checklist" ? block.checklist.length : block.content);
+}
+
 function bindTaskChecklistAutosave(root, taskID, afterSave = () => {}) {
-  const box = root.querySelector("[data-task-checklist]");
+  const box = root.querySelector("[data-task-blocks]");
   if (!box || !taskID) return;
-  const status = box.querySelector("[data-checklist-save-status]");
+  const status = box.querySelector("[data-blocks-save-status]");
   box.querySelectorAll("[data-task-checklist-done]").forEach((input) => input.addEventListener("change", async () => {
     input.closest(".task-checklist-item")?.classList.toggle("done", input.checked);
     if (status) status.textContent = "Saving...";
     try {
-      await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify({ checklist: readVisibleTaskChecklist(box) }) });
-      const items = readVisibleTaskChecklist(box);
-      const doneCount = items.filter((item) => item.done).length;
-      const count = box.querySelector(".task-checklist-head .muted");
-      if (count) count.textContent = `${doneCount}/${items.length} done`;
+      const blocks = readVisibleTaskBlocks(box);
+      await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify({ blocks }) });
+      box.querySelectorAll("[data-task-render-block][data-block-type='checklist']").forEach((block) => {
+        const items = readVisibleTaskChecklist(block);
+        const count = block.querySelector("[data-checklist-count]");
+        if (count) count.textContent = `${items.filter((item) => item.done).length}/${items.length} done`;
+      });
       if (status) status.textContent = "Saved";
       await afterSave();
     } catch (error) {
@@ -2107,18 +4749,26 @@ function canManageClientTaskUI(task, canManageFolder = false) {
 function clientTaskBoardHTML(tasks, tab, members, canManage, canManageStatuses = false, canUpdateProgress = false) {
   const statuses = clientTaskStatuses(tab, tasks);
   const usersByID = clientTaskUsersByID(members);
-  return `<div class="client-board">
+  return `<div class="client-board" ${canManageStatuses ? `data-status-board-sort="${esc(tab.id)}"` : ""}>
     ${statuses.map((status) => `<section class="kanban-column" data-client-status="${esc(status.value)}">
-      <h3>${statusBadgeHTML(status, "status-badge status-heading")}</h3>
+      <div class="kanban-status-head">
+        <h3>${statusBadgeHTML(status, "status-badge status-heading")}</h3>
+        ${canManageStatuses ? `<span class="status-column-controls">
+          <button class="btn icon quiet" type="button" data-status-column-move="${esc(status.value)}" data-status-column-dir="-1" title="Move status up">${icon("chevron-up")}</button>
+          <button class="btn icon quiet" type="button" data-status-column-move="${esc(status.value)}" data-status-column-dir="1" title="Move status down">${icon("chevron-down")}</button>
+          <button class="btn icon quiet status-column-handle" type="button" data-status-column-handle title="Drag status">${icon("grip-vertical")}</button>
+        </span>` : ""}
+      </div>
       ${(tasks || []).filter((task) => (task.status || "todo") === status.value && task.tab_id === tab.id).map((task) => {
         const canManageTask = canManageClientTaskUI(task, canManage);
         const canUpdateTaskProgress = Boolean(canUpdateProgress || canManageTask);
         const dueInfo = taskDueInfo(task);
         return `<article class="task-card client-task-card" data-client-task-id="${esc(task.id)}" data-can-drag="${canUpdateTaskProgress ? "true" : "false"}">
           <button class="client-task-open" type="button" data-open-client-task="${esc(task.id)}">${esc(compactClientTaskTitle(task.title))}</button>
-          <p>${chatText(compactClientTaskContent(task.type === "annotation" ? task.comment || task.content : task.content) || "No content yet.")}</p>
+          <p>${chatText(taskPreviewText(task) || "No content yet.")}</p>
           <div class="client-task-card-meta">
             ${statusBadgeHTML(status, "status-badge status-pill")}
+            ${taskCompletionBadgeHTML(task)}
             <span class="pill">${esc(fmtDate(task.created_at))}</span>
             ${dueInfo.text ? `<button class="pill warn due-count" type="button" data-due-calendar="${esc(dueInfo.date || task.due_date)}">${icon("calendar-days")}${esc(dueInfo.text)}</button>` : ""}
             ${assigneeAvatarsHTML(task.assignee_ids || [], usersByID)}
@@ -2137,31 +4787,150 @@ function clientTaskUsersByID(members = []) {
   return Object.fromEntries(members.map((entry) => [entry.user?.id, entry.user]).filter(([id]) => id));
 }
 
-function clientTaskCommentArticleHTML(comment, usersByID = {}, canManageFolder = false, nested = false) {
+function clientCommentReactionUsers(reaction = {}) {
+  return Array.isArray(reaction.user_ids) ? reaction.user_ids.map(String) : [];
+}
+
+function clientReactionUserLabel(userID, usersByID = {}) {
+  const user = usersByID[String(userID)] || (String(userID) === String(state.me?.id) ? state.me : null) || {};
+  const username = String(user.username || "").trim();
+  if (username) return `@${username}`;
+  return user.name || user.email || "Unknown user";
+}
+
+function clientCommentReactionsHTML(comment = {}, usersByID = {}) {
+  const reactions = Array.isArray(comment.reactions) ? comment.reactions : [];
+  const byEmoji = new Map();
+  reactions.forEach((reaction) => {
+    if (reaction?.emoji) byEmoji.set(reaction.emoji, clientCommentReactionUsers(reaction));
+  });
+  const emojis = Array.from(new Set([...COMMENT_REACTION_EMOJIS, ...reactions.map((reaction) => reaction?.emoji).filter(Boolean)]));
+  if (!emojis.length) return "";
+  return `<div class="comment-reactions">
+    ${emojis.map((emoji) => {
+      const userIDs = byEmoji.get(emoji) || [];
+      const active = Boolean(state.me?.id && userIDs.includes(String(state.me.id)));
+      const count = userIDs.length;
+      const reactors = userIDs.map((id) => clientReactionUserLabel(id, usersByID)).join(", ");
+      const title = reactors ? `${emoji} by ${reactors}` : `React ${emoji}`;
+      return `<button class="comment-reaction ${active ? "active" : ""} ${count ? "" : "empty"}" type="button" data-client-comment-reaction="${esc(comment.id)}" data-emoji="${esc(emoji)}" data-reactors="${esc(reactors)}" title="${esc(title)}">${esc(emoji)}${count ? `<span>${count}</span>` : ""}</button>`;
+    }).join("")}
+  </div>`;
+}
+
+function bindClientCommentReactions(root = document, refresh = async () => {}, usersByID = {}) {
+  root.querySelectorAll("[data-client-comment-reaction]").forEach((btn) => {
+    if (btn.dataset.reactionBound === "1") return;
+    btn.dataset.reactionBound = "1";
+    btn.addEventListener("click", async () => {
+      const commentID = btn.dataset.clientCommentReaction;
+      const emoji = btn.dataset.emoji || btn.textContent.trim();
+      if (!commentID || !emoji) return;
+      btn.disabled = true;
+      try {
+        const result = await api(`/api/client-task-comments/${commentID}/reactions`, { method: "POST", body: JSON.stringify({ emoji }) });
+        const article = btn.closest("[data-client-comment-id]");
+        const reactionsHTML = clientCommentReactionsHTML({ id: commentID, reactions: result.reactions || [] }, usersByID);
+        const current = article?.querySelector(".comment-reactions");
+        if (current) {
+          current.outerHTML = reactionsHTML;
+          bindClientCommentReactions(article, refresh, usersByID);
+          icons();
+        } else {
+          await refresh();
+        }
+      } catch (error) {
+        console.error(error);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+function resetClientCommentForm(form, root = document) {
+  if (!form) return;
+  const textarea = form.elements?.content;
+  if (textarea) textarea.value = "";
+  const attachment = form.elements?.attachment;
+  if (attachment) attachment.value = "";
+  const attachmentPreview = form.querySelector("[data-client-task-attachment-preview]");
+  if (attachmentPreview) {
+    attachmentPreview.hidden = true;
+    attachmentPreview.innerHTML = "";
+  }
+  state.clientTaskReply = null;
+  state.clientTaskCommentEdit = null;
+  moveClientCommentComposer(root, "");
+  const replyPreview = form.querySelector("[data-client-task-reply-preview]");
+  if (replyPreview) {
+    replyPreview.hidden = true;
+    replyPreview.innerHTML = "";
+  }
+  const submit = form.querySelector("[type='submit']");
+  if (submit) submit.innerHTML = `${icon("send")}Send`;
+  setFormStatus(form, "");
+  icons();
+}
+
+async function refreshClientTaskCommentList(root = document, taskID = "", usersByID = {}, canManageFolder = false, afterRender = () => {}) {
+  if (!taskID) return null;
+  const form = root.querySelector("#clientTaskCommentForm");
+  if (form) moveClientCommentComposer(root, "");
+  const latest = await api(`/api/client-tasks/${taskID}`);
+  const latestUsersByID = { ...usersByID };
+  (latest.members || []).forEach((entry) => {
+    if (entry?.user?.id) latestUsersByID[entry.user.id] = entry.user;
+  });
+  (latest.log_users || []).forEach((user) => {
+    if (user?.id) latestUsersByID[user.id] = user;
+  });
+  const list = root.querySelector(".client-task-comment-list");
+  if (list) list.innerHTML = clientTaskCommentsHTML(latest.comments || [], latestUsersByID, canManageFolder);
+  const livePanel = root?.id === "clientTaskPanel" ? root : root?.closest?.("#clientTaskPanel") || root?.querySelector?.("#clientTaskPanel");
+  if (livePanel) livePanel.dataset.liveSignature = clientTaskDetailLiveSignature(latest);
+  afterRender(root, latest, latestUsersByID);
+  icons();
+  return latest;
+}
+
+function focusClientTaskComment(root = document, commentID = "") {
+  if (!commentID) return;
+  const comment = root.querySelector(`[data-client-comment-id="${selectorEscape(commentID)}"]`);
+  if (!comment) return;
+  comment.classList.add("active");
+  comment.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+function clientTaskCommentArticleHTML(comment, usersByID = {}, canManageFolder = false, nested = false, replyCount = 0) {
   const author = usersByID[comment.author_id] || {};
   const authorName = author.name || author.username || "Someone";
   const replyText = comment.content || comment.attachment_name || "Attachment";
   const canManageComment = canManageFolder || comment.author_id === state.me?.id;
+  const replyLabel = replyCount ? `${replyCount} ${replyCount === 1 ? "reply" : "replies"}` : "Reply";
+  const replyIcon = replyCount ? "messages-square" : "reply";
   return `<article class="client-task-comment ${nested ? "is-reply" : ""}" data-client-comment-id="${esc(comment.id)}">
     <div class="message-head"><strong>${esc(authorName)}</strong><time>${inboxTime(comment.created_at)}</time></div>
     ${comment.reply_text && !nested ? `<blockquote>${chatText(comment.reply_text)}</blockquote>` : ""}
     ${comment.content ? `<p>${chatText(comment.content)}</p>` : ""}
     ${comment.attachment_url ? `<div class="comment-attachment">${attachmentPreviewHTML(comment.attachment_url, comment.attachment_name || "Attachment", { compact: true })}</div>` : ""}
+    ${clientCommentReactionsHTML(comment, usersByID)}
     <div class="client-comment-actions">
-      <button class="message-reply-btn" type="button" data-client-comment-reply="${esc(comment.id)}" data-reply-text="${esc(replyText.slice(0, 160))}">${icon("reply")}Reply</button>
+      <button class="message-reply-btn" type="button" ${replyCount ? `data-toggle-comment-replies="${esc(comment.id)}" aria-expanded="false"` : ""} data-client-comment-reply="${esc(comment.id)}" data-reply-text="${esc(replyText.slice(0, 160))}">${icon(replyIcon)}${replyLabel}</button>
       ${canManageComment ? `<button class="message-reply-btn" type="button" data-edit-client-comment="${esc(comment.id)}" data-comment-content="${esc(comment.content || "")}">${icon("pencil")}Edit</button><button class="message-reply-btn danger-text" type="button" data-delete-client-comment="${esc(comment.id)}">${icon("trash-2")}Delete</button>` : ""}
     </div>
+    <div class="client-inline-reply-slot" data-client-comment-reply-slot="${esc(comment.id)}"></div>
   </article>`;
 }
 
 function clientTaskCommentThreadHTML(node, usersByID = {}, canManageFolder = false, nested = false) {
   const replies = node.replies || [];
   return `<div class="client-comment-thread ${nested ? "is-nested" : ""}">
-    ${clientTaskCommentArticleHTML(node, usersByID, canManageFolder, nested)}
-    ${replies.length ? `<details class="comment-thread-replies" open>
-      <summary>${replies.length} ${replies.length === 1 ? "reply" : "replies"}</summary>
+    ${clientTaskCommentArticleHTML(node, usersByID, canManageFolder, nested, nested ? 0 : replies.length)}
+    ${replies.length ? `<div class="comment-thread-replies" data-comment-replies="${esc(node.id)}" hidden>
       <div class="comment-thread-reply-list">${replies.map((reply) => clientTaskCommentArticleHTML(reply, usersByID, canManageFolder, true)).join("")}</div>
-    </details>` : ""}
+      <button class="message-reply-btn thread-reply-action" type="button" data-client-comment-reply="${esc(node.id)}" data-reply-text="${esc((node.content || node.attachment_name || "Comment").slice(0, 160))}">${icon("reply")}Reply to thread</button>
+    </div>` : ""}
   </div>`;
 }
 
@@ -2196,6 +4965,7 @@ function clientTaskCommentsHTML(comments = [], usersByID = {}, canManageFolder =
 function taskLogActionLabel(action = "") {
   const labels = {
     created_task: "Created task",
+    completed_recurrence: "Completed recurring task",
     updated_status: "Updated status",
     updated_assignment: "Updated assignment",
     created_comment: "Created comment",
@@ -2223,11 +4993,24 @@ function taskUpdateLogHTML(logs = [], usersByID = {}) {
   </div>`;
 }
 
-function setClientTaskReply(reply) {
+function moveClientCommentComposer(root = document, commentID = "") {
+  const scope = root || document;
+  const form = scope.querySelector("#clientTaskCommentForm");
+  if (!form) return;
+  const defaultSlot = scope.querySelector("[data-client-comment-composer-default]");
+  const targetSlot = commentID ? scope.querySelector(`[data-client-comment-reply-slot="${selectorEscape(commentID)}"]`) : defaultSlot;
+  const slot = targetSlot || defaultSlot;
+  if (!slot) return;
+  if (form.parentElement !== slot) slot.appendChild(form);
+  form.classList.toggle("is-inline-reply", Boolean(commentID && targetSlot));
+}
+
+function setClientTaskReply(reply, root = $("#clientTaskPanel") || document) {
   state.clientTaskReply = reply;
   if (reply) state.clientTaskCommentEdit = null;
-  const panel = $("#clientTaskPanel");
-  const preview = panel?.querySelector("[data-client-task-reply-preview]");
+  const scope = root || $("#clientTaskPanel") || document;
+  moveClientCommentComposer(scope, reply?.id || "");
+  const preview = scope?.querySelector("[data-client-task-reply-preview]");
   if (!preview) return;
   if (!reply) {
     preview.hidden = true;
@@ -2236,17 +5019,18 @@ function setClientTaskReply(reply) {
   }
   preview.hidden = false;
   preview.innerHTML = `<span>${icon("reply")}Replying to: ${chatText(reply.text)}</span><button class="btn icon quiet" type="button" data-clear-client-task-reply title="Cancel reply">${icon("x")}</button>`;
-  preview.querySelector("[data-clear-client-task-reply]")?.addEventListener("click", () => setClientTaskReply(null));
+  preview.querySelector("[data-clear-client-task-reply]")?.addEventListener("click", () => setClientTaskReply(null, scope));
   icons();
 }
 
-function setClientTaskCommentEdit(comment) {
+function setClientTaskCommentEdit(comment, root = $("#clientTaskPanel") || document) {
   state.clientTaskCommentEdit = comment;
   if (comment) state.clientTaskReply = null;
-  const panel = $("#clientTaskPanel");
-  const form = panel?.querySelector("#clientTaskCommentForm");
+  const scope = root || $("#clientTaskPanel") || document;
+  if (comment || !state.clientTaskReply) moveClientCommentComposer(scope, "");
+  const form = scope?.querySelector("#clientTaskCommentForm");
   const textarea = form?.elements.content;
-  const preview = panel?.querySelector("[data-client-task-reply-preview]");
+  const preview = scope?.querySelector("[data-client-task-reply-preview]");
   if (!form || !textarea || !preview) return;
   if (!comment) {
     form.querySelector("button[type='submit']").innerHTML = `${icon("send")}Send`;
@@ -2263,15 +5047,380 @@ function setClientTaskCommentEdit(comment) {
   form.querySelector("button[type='submit']").innerHTML = `${icon("save")}Save`;
   preview.querySelector("[data-cancel-client-comment-edit]")?.addEventListener("click", () => {
     textarea.value = "";
-    setClientTaskCommentEdit(null);
+    setClientTaskCommentEdit(null, scope);
   });
   textarea.focus();
   icons();
 }
 
-async function openClientTaskPanel(taskID) {
+async function openClientAnnotationTaskViewer(taskID, initialData = null, openAnnotationID = "", focusCommentID = "") {
+  document.body.classList.add("annotation-viewer-open");
+  const data = initialData || await api(`/api/client-tasks/${taskID}`);
+  const task = data.task || {};
+  const [timeEntriesData, activeTimerData] = await Promise.all([
+    api(`/api/time-entries?task_id=${encodeURIComponent(taskID)}`).catch(() => ({ entries: [] })),
+    api("/api/time-entries/active").catch(() => ({ entry: null })),
+  ]);
+  const taskTimeEntries = timeEntriesData.entries || [];
+  const activeTimeEntry = activeTimerData.entry || null;
+  const usersByID = clientTaskUsersByID(data.members || []);
+  (data.log_users || []).forEach((user) => {
+    if (user?.id) usersByID[user.id] = user;
+  });
+  const canManageFolder = Boolean(data.can_manage);
+  const canManageTask = Boolean(data.can_manage_task || canManageClientTaskUI(task, canManageFolder));
+  const canUpdateProgress = Boolean(data.can_update_progress || canManageTask);
+  const canManageStatuses = Boolean(data.can_manage_statuses);
+  const statuses = clientTaskStatuses(data.tab, [task]);
+  const selectorForID = (value) => (window.CSS?.escape ? CSS.escape(String(value)) : String(value).replace(/"/g, '\\"'));
+  const pageWidth = annotationViewportDimension(task.page_width, ANNOTATION_VIEWPORT.width, 320, 8000);
+  const pageHeight = annotationViewportDimension(task.page_height, ANNOTATION_VIEWPORT.height, 900, ANNOTATION_VIEWPORT.maxHeight);
+  const pageURL = task.url || data.website?.url || "";
+  const annotationItems = clientTaskAnnotationItems(task);
+  let activeAnnotationID = String(openAnnotationID || "");
+  if (!activeAnnotationID && focusCommentID && annotationItems[0]?.id) activeAnnotationID = String(annotationItems[0].id);
+  let panel = $("#clientTaskPanel");
+  if (!panel) {
+    panel = document.createElement("section");
+    panel.id = "clientTaskPanel";
+    document.body.appendChild(panel);
+  }
+  panel.className = "client-task-panel annotation-task-viewer";
+  panel.dataset.liveTaskId = taskID;
+  panel.dataset.liveTaskMode = "annotation";
+  panel.dataset.liveAnnotationId = activeAnnotationID;
+  panel.dataset.liveSignature = clientTaskDetailLiveSignature(data);
+  panel.innerHTML = `
+    <header class="client-task-panel-head annotation-viewer-head">
+      <div><span class="muted">${esc(data.client?.name || "Client")} / ${esc(data.website?.name || "Website")}</span><h2>${esc(compactClientTaskTitle(task.title || "Annotation"))}</h2></div>
+      <div class="toolbar">
+        ${canManageTask ? `<button class="btn compact" type="button" id="editClientAnnotationTaskBtn">${icon("pencil")}Edit</button><button class="btn compact danger" type="button" id="deleteClientAnnotationTaskBtn">${icon("trash-2")}Delete</button>` : ""}
+        <button class="btn icon quiet" type="button" data-close-client-task title="Close">${icon("x")}</button>
+      </div>
+    </header>
+    <div class="client-task-panel-body annotation-viewer-body">
+      <section class="annotation-stage annotation-viewer-stage" id="clientAnnotationViewerStage">
+        ${annotationFrameHTML({
+          url: pageURL,
+          title: task.title || "Annotation task",
+          width: pageWidth,
+          height: pageHeight,
+          fallbackHeight: pageHeight,
+          catcherID: "clientAnnotationViewerClickCatcher",
+          pinLayerID: "clientAnnotationViewerPinLayer",
+          pins: annotationItems.map((item, index) => ({ id: item.id, x: item.pin_x, y: item.pin_y, page_width: item.page_width || pageWidth, page_height: item.page_height || pageHeight, label: String(index + 1), title: item.title || "Annotation" })),
+        })}
+      </section>
+      <aside class="bug-side annotation-task-side feedback-side annotation-viewer-side">
+        <div class="feedback-detail-toolbar annotation-sidebar-toolbar">
+          <h2>Annotations</h2>
+          <button class="btn icon quiet" type="button" data-toggle-annotation-sidebar title="Collapse annotations">${icon("panel-right-close")}</button>
+        </div>
+        ${canUpdateProgress ? `<form id="clientTaskQuickEditForm" class="task-detail-meta task-detail-meta-form annotation-viewer-progress">
+          ${statusPickerHTML(statuses, task.status || "todo", "status", "", { canManageStatuses, tabID: data.tab?.id })}
+          ${taskCompletionBadgeHTML(task)}
+          <span class="pill warn due-edit-pill"><button class="due-icon-btn" type="button" data-due-edit-open title="Change due date">${icon("calendar-days")}</button><button class="due-date-text-btn" type="button" data-due-edit-open><span data-due-edit-label>${esc(taskDueInfo(task).text || "No due date")}</span></button><input class="due-edit-input" type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}" title="Due date"></span>
+          ${assigneePickerHTML(data.members || [], task.assignee_ids || [])}
+          <span class="status-line"></span>
+        </form>` : ""}
+        <section class="feedback-sidebar-view" id="annotationViewerListView">
+          <div class="feedback-list" id="annotationViewerList">${clientAnnotationItemRowsHTML(annotationItems, statuses, usersByID, { taskID })}</div>
+          <div class="task-log-actions"><button class="btn compact" type="button" id="taskUpdateLogBtn">${icon("history")}Activity Log</button></div>
+        </section>
+        <section class="feedback-sidebar-view feedback-detail-view annotation-viewer-detail-view" id="annotationViewerDetailView" hidden>
+          <div class="feedback-detail-toolbar">
+            <button class="btn compact" type="button" id="annotationViewerBackBtn">${icon("arrow-left")}Back</button>
+          </div>
+          <div id="annotationViewerDetailBody"></div>
+        </section>
+      </aside>
+      <button class="btn icon annotation-sidebar-expand" type="button" data-toggle-annotation-sidebar title="Show annotations" hidden>${icon("panel-right-open")}</button>
+    </div>
+    <dialog id="editClientAnnotationTaskDialog" class="modal client-dialog">
+      <form id="editClientAnnotationTaskForm" class="form-grid" method="dialog">
+        <div class="modal-head"><h2>Edit annotation</h2><button class="btn icon quiet" type="button" data-close-dialog="editClientAnnotationTaskDialog" title="Close">${icon("x")}</button></div>
+        <input type="hidden" name="page_width" value="${esc(pageWidth)}">
+        <input type="hidden" name="page_height" value="${esc(pageHeight)}">
+        <div class="field"><label>Title</label><input name="title" maxlength="80" value="${esc(task.title || "")}" required></div>
+        <div class="field"><label>Annotation URL</label><input name="url" value="${esc(pageURL)}" placeholder="https://example.com/page"></div>
+        <div class="field"><label>Details</label>${richEditorHTML("comment", task.comment || task.content || "", "Write annotation details")}</div>
+        <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [], task.assignee_ids || [])}</div>
+        <div class="grid-2"><div class="field"><label>Due date</label><input type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}"></div></div>
+        ${recurrenceControlsHTML(task.recurrence || {}, task.due_date)}
+        <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="editClientAnnotationTaskDialog">Cancel</button></div>
+        <p class="status-line"></p>
+      </form>
+    </dialog>
+    <dialog id="taskUpdateLogDialog" class="modal client-dialog update-log-dialog">
+      <div class="modal-head"><h2>Update Log</h2><button class="btn icon quiet" type="button" data-close-dialog="taskUpdateLogDialog" title="Close">${icon("x")}</button></div>
+      <div data-task-update-log-body>${taskUpdateLogHTML(data.logs || [], usersByID)}</div>
+    </dialog>`;
+
+  const close = () => {
+    panel.remove();
+    document.body.classList.remove("annotation-viewer-open");
+    state.clientTaskReply = null;
+    state.clientTaskCommentEdit = null;
+  };
+  panel.querySelector("[data-close-client-task]")?.addEventListener("click", close);
+  const openViewerAnnotationDetail = (annotationID) => {
+    const annotation = annotationItems.find((item) => String(item.id) === String(annotationID)) || annotationItems[0];
+    const body = panel.querySelector("#annotationViewerDetailBody");
+    if (!annotation || !body) return;
+    activeAnnotationID = String(annotation.id);
+    panel.dataset.liveAnnotationId = activeAnnotationID;
+    panel.querySelector("#annotationViewerListView")?.setAttribute("hidden", "");
+    panel.querySelector("#annotationViewerDetailView")?.removeAttribute("hidden");
+    body.innerHTML = `${clientAnnotationTaskDetailHTML(annotation, statuses, usersByID, data.comments || [], canManageFolder, { showStatus: false, commentTaskID: taskID, annotationStatusTaskID: taskID })}
+      ${taskTimeTrackerHTML(taskID, taskTimeEntries, activeTimeEntry)}`;
+    panel.querySelectorAll("[data-client-annotation-item-row]").forEach((row) => row.classList.toggle("active", row.dataset.clientAnnotationItemRow === String(annotation.id)));
+    panel.querySelectorAll("[data-feedback-pin]").forEach((pin) => pin.classList.toggle("highlighted", pin.dataset.feedbackPin === String(annotation.id)));
+    panel.querySelector(`[data-feedback-pin="${selectorForID(annotation.id)}"]`)?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+    bindAttachmentOpeners(body);
+    bindMentionSuggestions(body);
+    bindStatusPickers(body);
+    bindClientAnnotationItemStatusForms(body, statuses, async (result, annotationID, status) => {
+      const item = annotationItems.find((entry) => String(entry.id) === String(annotationID));
+      if (item) item.status = status;
+      syncClientAnnotationItemStatusControls(panel, annotationID, statuses, status);
+    });
+    bindAnnotationViewerCommentForm(body);
+    bindTaskTimeTracker(body, taskID, async () => openClientAnnotationTaskViewer(taskID, null, activeAnnotationID));
+    if (focusCommentID) setTimeout(() => focusClientTaskComment(body, focusCommentID), 60);
+    icons();
+  };
+  const renderViewerPins = () => {
+    const viewport = panel.querySelector("[data-annotation-viewport]");
+    const targetHeight = Number(viewport?.dataset.annotationHeight || pageHeight);
+    const targetWidth = Number(viewport?.dataset.annotationWidth || pageWidth);
+    const layer = panel.querySelector("#clientAnnotationViewerPinLayer");
+    if (layer) layer.innerHTML = annotationItems.map((item, index) => clientAnnotationItemPinHTML({ ...item, page_width: item.page_width || pageWidth, page_height: item.page_height || pageHeight }, index, targetWidth, targetHeight)).join("");
+    icons();
+  };
+  bindAnnotationViewportResize(panel.querySelector("#clientAnnotationViewerStage"));
+  bindAnnotationFrameAutoHeight(panel.querySelector("#clientAnnotationViewerStage"), {
+    fallbackHeight: pageHeight,
+    onHeight: renderViewerPins,
+  });
+  bindAnnotationDeviceControls(panel.querySelector("#clientAnnotationViewerStage"), {
+    fallbackHeight: pageHeight,
+    onChange: renderViewerPins,
+  });
+  renderViewerPins();
+  panel.querySelector("#annotationViewerList")?.querySelectorAll("[data-open-client-annotation-item]").forEach((btn) => btn.addEventListener("click", () => openViewerAnnotationDetail(btn.dataset.openClientAnnotationItem)));
+  panel.querySelector("#clientAnnotationViewerStage")?.addEventListener("click", (event) => {
+    const pin = event.target.closest("[data-feedback-pin]");
+    if (pin) openViewerAnnotationDetail(pin.dataset.feedbackPin);
+  });
+  panel.querySelector("#annotationViewerBackBtn")?.addEventListener("click", () => {
+    activeAnnotationID = "";
+    panel.dataset.liveAnnotationId = "";
+    state.clientTaskReply = null;
+    state.clientTaskCommentEdit = null;
+    panel.querySelector("#annotationViewerDetailView")?.setAttribute("hidden", "");
+    panel.querySelector("#annotationViewerListView")?.removeAttribute("hidden");
+    const body = panel.querySelector("#annotationViewerDetailBody");
+    if (body) body.innerHTML = "";
+    panel.querySelectorAll("[data-feedback-pin]").forEach((pin) => pin.classList.remove("highlighted"));
+    panel.querySelectorAll("[data-client-annotation-item-row]").forEach((row) => row.classList.remove("active"));
+  });
+
+  panel.querySelector("#editClientAnnotationTaskBtn")?.addEventListener("click", () => panel.querySelector("#editClientAnnotationTaskDialog")?.showModal());
+  panel.querySelector("#deleteClientAnnotationTaskBtn")?.addEventListener("click", async () => {
+    if (!typedConfirm("Delete this annotation task? Comments, logs, and attachments linked to this task will be removed.")) return;
+    await api(`/api/client-tasks/${taskID}`, { method: "DELETE" });
+    close();
+    route();
+  });
+  panel.querySelector("#taskUpdateLogBtn")?.addEventListener("click", async () => {
+    const dialog = panel.querySelector("#taskUpdateLogDialog");
+    const body = dialog?.querySelector("[data-task-update-log-body]");
+    try {
+      const latest = await api(`/api/client-tasks/${taskID}`);
+      const logUsersByID = clientTaskUsersByID(latest.members || data.members || []);
+      (latest.log_users || []).forEach((user) => {
+        if (user?.id) logUsersByID[user.id] = user;
+      });
+      if (body) body.innerHTML = taskUpdateLogHTML(latest.logs || [], logUsersByID);
+    } catch {
+      if (body) body.innerHTML = taskUpdateLogHTML(data.logs || [], usersByID);
+    }
+    dialog?.showModal();
+    icons();
+  });
+  panel.querySelector("#editClientAnnotationTaskForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    syncRichEditors(form);
+    const body = Object.fromEntries(new FormData(form).entries());
+    body.title = compactClientTaskTitle(body.title);
+    body.comment = String(body.comment || "").trim();
+    body.content = body.comment;
+    body.checklist = [];
+    body.blocks = [];
+    body.assignee_ids = selectedAssigneeIDs(form);
+    body.recurrence = recurrencePayloadFromForm(form);
+    body.page_width = Number(body.page_width || pageWidth);
+    body.page_height = Number(body.page_height || pageHeight);
+    try {
+      await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify(body) });
+      panel.querySelector("#editClientAnnotationTaskDialog")?.close();
+      await openClientAnnotationTaskViewer(taskID, null, activeAnnotationID);
+      route();
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
+
+  bindAssigneePickers(panel);
+  bindStatusPickers(panel);
+  bindClientAnnotationItemStatusForms(panel, statuses, async (result, annotationID, status) => {
+    const item = annotationItems.find((entry) => String(entry.id) === String(annotationID));
+    if (item) item.status = status;
+    syncClientAnnotationItemStatusControls(panel, annotationID, statuses, status);
+  });
+  bindStatusAddControls(panel, data.tab, [task], async () => {
+    await openClientAnnotationTaskViewer(taskID, null, activeAnnotationID);
+    route();
+  });
+  bindClientTaskQuickAutosave(panel, taskID, async () => {
+    route();
+  }, task);
+  bindRichEditors(panel);
+  bindRecurrenceControls(panel);
+  bindAttachmentOpeners(panel);
+  bindMentionSuggestions(panel);
+  bindDialogCloseButtons(panel);
+  bindAnnotationSidebarToggles(panel);
+
+  async function refreshAnnotationViewerComments(root = panel) {
+    return refreshClientTaskCommentList(root, taskID, usersByID, canManageFolder, (scope) => {
+      bindAttachmentOpeners(scope);
+      bindMentionSuggestions(scope);
+      bindAnnotationViewerCommentForm(scope);
+    });
+  }
+
+  function bindAnnotationViewerCommentForm(root = panel) {
+    root.querySelectorAll("[data-toggle-comment-replies]").forEach((btn) => {
+      if (btn.dataset.annotationRepliesBound === "1") return;
+      btn.dataset.annotationRepliesBound = "1";
+      btn.addEventListener("click", () => {
+        const box = Array.from(root.querySelectorAll("[data-comment-replies]")).find((item) => item.dataset.commentReplies === btn.dataset.toggleCommentReplies);
+        if (!box) return;
+        const nextOpen = box.hidden;
+        box.hidden = !nextOpen;
+        btn.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+        btn.classList.toggle("active", nextOpen);
+      });
+    });
+    root.querySelectorAll("[data-client-comment-reply]").forEach((btn) => {
+      if (btn.dataset.annotationReplyBound === "1") return;
+      btn.dataset.annotationReplyBound = "1";
+      btn.addEventListener("click", () => {
+        setClientTaskReply({ id: btn.dataset.clientCommentReply, text: btn.dataset.replyText || "Comment" }, root);
+        root.querySelector("textarea[name='content']")?.focus();
+      });
+    });
+    root.querySelectorAll("[data-edit-client-comment]").forEach((btn) => {
+      if (btn.dataset.annotationEditBound === "1") return;
+      btn.dataset.annotationEditBound = "1";
+      btn.addEventListener("click", () => {
+        setClientTaskCommentEdit({ id: btn.dataset.editClientComment, content: btn.dataset.commentContent || "" }, root);
+      });
+    });
+    root.querySelectorAll("[data-delete-client-comment]").forEach((btn) => {
+      if (btn.dataset.annotationDeleteBound === "1") return;
+      btn.dataset.annotationDeleteBound = "1";
+      btn.addEventListener("click", async () => {
+        if (!confirm("Delete this comment?")) return;
+        await api(`/api/client-task-comments/${btn.dataset.deleteClientComment}`, { method: "DELETE" });
+        await refreshAnnotationViewerComments(root);
+      });
+    });
+    bindClientCommentReactions(root, async () => refreshAnnotationViewerComments(root), usersByID);
+    const commentForm = root.querySelector(`[data-client-annotation-comment-form="${taskID}"]`);
+    if (!commentForm || commentForm.dataset.annotationViewerCommentBound === "1") return;
+    commentForm.dataset.annotationViewerCommentBound = "1";
+    const textarea = commentForm.elements.content;
+    const attachmentInput = commentForm.elements.attachment;
+    const preview = commentForm.querySelector("[data-client-task-attachment-preview]");
+    commentForm.querySelector("[data-client-comment-emoji]")?.addEventListener("click", (event) => openEmojiPicker(event.currentTarget, textarea));
+    commentForm.querySelector("[data-client-comment-attach]")?.addEventListener("click", () => attachmentInput?.click());
+    attachmentInput?.addEventListener("change", () => {
+      const file = attachmentInput.files?.[0];
+      if (!file || !preview) return;
+      const localURL = file.type.startsWith("image/") ? URL.createObjectURL(file) : "";
+      preview.hidden = false;
+      preview.innerHTML = `<span>${localURL ? `<img class="attachment-preview-mini" src="${esc(localURL)}" alt="${esc(file.name)} preview">` : icon("paperclip")}${esc(file.name)}</span><button class="btn icon quiet" type="button" data-clear-client-comment-attachment>${icon("x")}</button>`;
+      preview.querySelector("[data-clear-client-comment-attachment]")?.addEventListener("click", () => {
+        if (localURL) URL.revokeObjectURL(localURL);
+        attachmentInput.value = "";
+        preview.hidden = true;
+        preview.innerHTML = "";
+      });
+      icons();
+    });
+    commentForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const content = String(textarea?.value || "").trim();
+      const file = attachmentInput?.files?.[0];
+      if (!content && !file) {
+        setFormStatus(commentForm, "Comment or attachment is required.", true);
+        return;
+      }
+      const submit = commentForm.querySelector("[type='submit']");
+      if (submit) submit.disabled = true;
+      try {
+        if (state.clientTaskCommentEdit) {
+          const body = { content };
+          if (file) {
+            body.attachment_url = await upload(file);
+            body.attachment_name = file.name;
+          }
+          await api(`/api/client-task-comments/${state.clientTaskCommentEdit.id}`, { method: "PATCH", body: JSON.stringify(body) });
+          resetClientCommentForm(commentForm, root);
+          await refreshAnnotationViewerComments(root);
+          return;
+        }
+        const body = {
+          content,
+          reply_to_id: state.clientTaskReply?.id || "",
+          reply_text: state.clientTaskReply?.text || "",
+          attachment_url: "",
+          attachment_name: "",
+        };
+        if (file) {
+          body.attachment_url = await upload(file);
+          body.attachment_name = file.name;
+        }
+        await api(`/api/client-tasks/${taskID}/comments`, { method: "POST", body: JSON.stringify(body) });
+        resetClientCommentForm(commentForm, root);
+        await refreshAnnotationViewerComments(root);
+      } catch (error) {
+        setFormStatus(commentForm, error.message, true);
+      } finally {
+        if (submit) submit.disabled = false;
+      }
+    });
+  }
+
+  if (activeAnnotationID) openViewerAnnotationDetail(activeAnnotationID);
+  else {
+    state.clientTaskReply = null;
+    state.clientTaskCommentEdit = null;
+  }
+  icons();
+}
+
+async function openClientTaskPanel(taskID, focusCommentID = "") {
   const data = await api(`/api/client-tasks/${taskID}`);
   const task = data.task || {};
+  if (task.type === "annotation") {
+    await openClientAnnotationTaskViewer(taskID, data, "", focusCommentID);
+    return;
+  }
+  document.body.classList.remove("annotation-viewer-open");
   const usersByID = clientTaskUsersByID(data.members || []);
   (data.log_users || []).forEach((user) => {
     if (user?.id) usersByID[user.id] = user;
@@ -2290,6 +5439,10 @@ async function openClientTaskPanel(taskID) {
   const statuses = clientTaskStatuses(data.tab, [task]);
   const taskContent = task.type === "annotation" ? task.comment || task.content : task.content;
   const dueInfo = taskDueInfo(task);
+  panel.dataset.liveTaskId = taskID;
+  panel.dataset.liveTaskMode = "task";
+  panel.dataset.liveAnnotationId = "";
+  panel.dataset.liveSignature = clientTaskDetailLiveSignature(data);
   panel.innerHTML = `
     <header class="client-task-panel-head">
       <div><span class="muted">${esc(data.client?.name || "Client")} / ${esc(data.website?.name || "Website")}</span><h2>${esc(compactClientTaskTitle(task.title))}</h2></div>
@@ -2303,6 +5456,7 @@ async function openClientTaskPanel(taskID) {
         ${canUpdateProgress ? `<form id="clientTaskQuickEditForm" class="task-detail-meta task-detail-meta-form">
           ${statusPickerHTML(statuses, task.status || "todo", "status", "", { canManageStatuses, tabID: data.tab?.id })}
           <span class="pill">${esc(task.type || "description")}</span>
+          ${taskCompletionBadgeHTML(task)}
           <span class="pill">${icon("calendar-days")}${esc(fmtDate(task.created_at))}</span>
           <span class="pill warn due-edit-pill"><button class="due-icon-btn" type="button" data-due-edit-open title="Change due date">${icon("calendar-days")}</button><button class="due-date-text-btn" type="button" data-due-edit-open><span data-due-edit-label>${esc(dueInfo.text || "No due date")}</span></button><input class="due-edit-input" type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}" title="Due date"></span>
           ${assigneePickerHTML(data.members || [], task.assignee_ids || [])}
@@ -2310,33 +5464,34 @@ async function openClientTaskPanel(taskID) {
         </form>` : `<div class="task-detail-meta">
           ${statusBadgeHTML(statuses.find((item) => item.value === (task.status || "todo")) || statuses[0], "status-badge status-pill")}
           <span class="pill">${esc(task.type || "description")}</span>
+          ${taskCompletionBadgeHTML(task)}
           <span class="pill">${icon("calendar-days")}${esc(fmtDate(task.created_at))}</span>
           ${dueInfo.text ? `<button class="pill warn due-count" type="button" data-due-calendar="${esc(dueInfo.date || task.due_date)}">${icon("calendar-days")}${esc(dueInfo.text)}</button>` : ""}
           ${assigneeAvatarsHTML(task.assignee_ids || [], usersByID)}
         </div>`}
-        <h3>Content</h3>
-        <div class="task-rich-content">${chatText(taskContent || "No content yet.")}</div>
-        ${taskChecklistHTML(task.checklist || [], canUpdateProgress)}
+        ${taskContentBlocksHTML(taskContentBlocks(task), canUpdateProgress)}
         ${task.url ? `<h3>Annotation URL</h3><p><a class="text-link" href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">${esc(task.url)}</a></p>` : ""}
         ${task.pin_x !== undefined && task.pin_y !== undefined && task.pin_x !== null && task.pin_y !== null ? `<h3>Annotation Pin</h3><p class="muted">${Number(task.pin_x).toFixed(1)}%, ${Number(task.pin_y).toFixed(1)}%</p>` : ""}
         ${taskAttachmentGalleryHTML(task, data.comments || [])}
-        <div class="task-log-actions"><button class="btn compact" type="button" id="taskUpdateLogBtn">${icon("history")}Update Log</button></div>
+        <div class="task-log-actions"><button class="btn compact" type="button" id="taskUpdateLogBtn">${icon("history")}Activity Log</button></div>
       </section>
       <aside class="client-task-comments">
         <h3>Comments</h3>
         <div class="client-task-comment-list">${clientTaskCommentsHTML(data.comments || [], usersByID, canManageFolder)}</div>
-        <form id="clientTaskCommentForm" class="client-comment-form">
-          <div class="reply-preview" data-client-task-reply-preview hidden></div>
-          <div class="attachment-preview" data-client-task-attachment-preview hidden></div>
-          <textarea name="content" data-mentionable placeholder="Comment @username"></textarea>
-          <input type="file" name="attachment" hidden>
-          <div class="toolbar compact-toolbar">
-            <button class="btn icon quiet" type="button" data-client-comment-emoji title="Add emoji">${icon("smile")}</button>
-            <button class="btn icon quiet" type="button" data-client-comment-attach title="Attach file">${icon("paperclip")}</button>
-            <button class="btn primary" type="submit">${icon("send")}Send</button>
-          </div>
-          <p class="status-line"></p>
-        </form>
+        <div class="client-comment-composer-slot" data-client-comment-composer-default>
+          <form id="clientTaskCommentForm" class="client-comment-form">
+            <div class="reply-preview" data-client-task-reply-preview hidden></div>
+            <div class="attachment-preview" data-client-task-attachment-preview hidden></div>
+            <textarea name="content" data-mentionable placeholder="Comment @username"></textarea>
+            <input type="file" name="attachment" hidden>
+            <div class="toolbar compact-toolbar">
+              <button class="btn icon quiet" type="button" data-client-comment-emoji title="Add emoji">${icon("smile")}</button>
+              <button class="btn icon quiet" type="button" data-client-comment-attach title="Attach file">${icon("paperclip")}</button>
+              <button class="btn primary" type="submit">${icon("send")}Send</button>
+            </div>
+            <p class="status-line"></p>
+          </form>
+        </div>
       </aside>
     </div>
     <dialog id="editClientTaskDialog" class="modal client-dialog">
@@ -2345,8 +5500,7 @@ async function openClientTaskPanel(taskID) {
         <div class="quick-task-controls"><label class="compact-field"><span>Status</span>${statusPickerHTML(statuses, task.status || "todo", "status", "", { canManageStatuses, tabID: data.tab?.id })}</label><label class="compact-field"><span>Due</span><input type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}"></label></div>
         ${recurrenceControlsHTML(task.recurrence || {}, task.due_date)}
         <div class="field"><label>Title</label><input name="title" maxlength="80" value="${esc(task.title || "")}" required></div>
-        <div class="field"><label>${task.type === "annotation" ? "Comment" : "Content"}</label>${richEditorHTML(task.type === "annotation" ? "comment" : "content", taskContent || "", "Write task details")}</div>
-        ${task.type === "annotation" ? "" : checklistBuilderHTML(task.checklist || [])}
+        ${task.type === "annotation" ? `<div class="field"><label>Comment</label>${richEditorHTML("comment", taskContent || "", "Write task details")}</div>` : `<div class="field"><label>Task body</label>${contentBlockEditorHTML(taskContentBlocks(task))}</div>`}
         <div class="field" ${task.type === "annotation" ? "" : "hidden"}><label>Annotation URL</label><input name="url" value="${esc(task.url || "")}" placeholder="https://example.com/page"></div>
         <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [], task.assignee_ids || [])}</div>
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="editClientTaskDialog">Cancel</button></div>
@@ -2391,9 +5545,17 @@ async function openClientTaskPanel(taskID) {
     syncRichEditors(form);
     const body = Object.fromEntries(new FormData(form).entries());
     body.title = compactClientTaskTitle(body.title);
-    body.content = String(body.content || "").trim();
-    body.comment = String(body.comment || "").trim();
-    body.checklist = readChecklistItems(form);
+    if (task.type === "annotation") {
+      body.comment = String(body.comment || "").trim();
+      body.content = body.comment;
+      body.checklist = [];
+      body.blocks = [];
+    } else {
+      body.blocks = readContentBlocks(form);
+      body.content = contentFromBlocks(body.blocks);
+      body.comment = "";
+      body.checklist = checklistFromBlocks(body.blocks);
+    }
     body.assignee_ids = selectedAssigneeIDs(form);
     body.recurrence = recurrencePayloadFromForm(form);
     try {
@@ -2416,23 +5578,57 @@ async function openClientTaskPanel(taskID) {
   }, task);
   bindRichEditors(panel);
   bindChecklistBuilders(panel);
+  bindContentBlockEditors(panel);
   bindRecurrenceControls(panel);
   bindTaskChecklistAutosave(panel, taskID, async () => {
     route();
   });
   bindAttachmentOpeners(panel);
-  panel.querySelectorAll("[data-client-comment-reply]").forEach((btn) => btn.addEventListener("click", () => {
-    setClientTaskReply({ id: btn.dataset.clientCommentReply, text: btn.dataset.replyText || "Comment" });
-    panel.querySelector("textarea[name='content']")?.focus();
-  }));
-  panel.querySelectorAll("[data-edit-client-comment]").forEach((btn) => btn.addEventListener("click", () => {
-    setClientTaskCommentEdit({ id: btn.dataset.editClientComment, content: btn.dataset.commentContent || "" });
-  }));
-  panel.querySelectorAll("[data-delete-client-comment]").forEach((btn) => btn.addEventListener("click", async () => {
-    if (!confirm("Delete this comment?")) return;
-    await api(`/api/client-task-comments/${btn.dataset.deleteClientComment}`, { method: "DELETE" });
-    await openClientTaskPanel(taskID);
-  }));
+  const refreshTaskPanelComments = async () => refreshClientTaskCommentList(panel, taskID, usersByID, canManageFolder, (scope) => {
+    bindAttachmentOpeners(scope);
+    bindMentionSuggestions(scope);
+    bindTaskPanelCommentActions();
+  });
+  function bindTaskPanelCommentActions() {
+    panel.querySelectorAll("[data-toggle-comment-replies]").forEach((btn) => {
+      if (btn.dataset.taskPanelRepliesBound === "1") return;
+      btn.dataset.taskPanelRepliesBound = "1";
+      btn.addEventListener("click", () => {
+        const box = Array.from(panel.querySelectorAll("[data-comment-replies]")).find((item) => item.dataset.commentReplies === btn.dataset.toggleCommentReplies);
+        if (!box) return;
+        const nextOpen = box.hidden;
+        box.hidden = !nextOpen;
+        btn.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+        btn.classList.toggle("active", nextOpen);
+      });
+    });
+    panel.querySelectorAll("[data-client-comment-reply]").forEach((btn) => {
+      if (btn.dataset.taskPanelReplyBound === "1") return;
+      btn.dataset.taskPanelReplyBound = "1";
+      btn.addEventListener("click", () => {
+        setClientTaskReply({ id: btn.dataset.clientCommentReply, text: btn.dataset.replyText || "Comment" }, panel);
+        panel.querySelector("textarea[name='content']")?.focus();
+      });
+    });
+    panel.querySelectorAll("[data-edit-client-comment]").forEach((btn) => {
+      if (btn.dataset.taskPanelEditBound === "1") return;
+      btn.dataset.taskPanelEditBound = "1";
+      btn.addEventListener("click", () => {
+        setClientTaskCommentEdit({ id: btn.dataset.editClientComment, content: btn.dataset.commentContent || "" }, panel);
+      });
+    });
+    panel.querySelectorAll("[data-delete-client-comment]").forEach((btn) => {
+      if (btn.dataset.taskPanelDeleteBound === "1") return;
+      btn.dataset.taskPanelDeleteBound = "1";
+      btn.addEventListener("click", async () => {
+        if (!confirm("Delete this comment?")) return;
+        await api(`/api/client-task-comments/${btn.dataset.deleteClientComment}`, { method: "DELETE" });
+        await refreshTaskPanelComments();
+      });
+    });
+    bindClientCommentReactions(panel, refreshTaskPanelComments, usersByID);
+  }
+  bindTaskPanelCommentActions();
   const form = panel.querySelector("#clientTaskCommentForm");
   const textarea = form?.elements.content;
   form?.querySelector("[data-client-comment-emoji]")?.addEventListener("click", (event) => openEmojiPicker(event.currentTarget, textarea));
@@ -2465,8 +5661,8 @@ async function openClientTaskPanel(taskID) {
           body.attachment_name = file.name;
         }
         await api(`/api/client-task-comments/${state.clientTaskCommentEdit.id}`, { method: "PATCH", body: JSON.stringify(body) });
-        state.clientTaskCommentEdit = null;
-        await openClientTaskPanel(taskID);
+        resetClientCommentForm(form, panel);
+        await refreshTaskPanelComments();
         return;
       }
       const body = {
@@ -2481,8 +5677,8 @@ async function openClientTaskPanel(taskID) {
         body.attachment_name = file.name;
       }
       await api(`/api/client-tasks/${taskID}/comments`, { method: "POST", body: JSON.stringify(body) });
-      state.clientTaskReply = null;
-      await openClientTaskPanel(taskID);
+      resetClientCommentForm(form, panel);
+      await refreshTaskPanelComments();
     } catch (error) {
       setFormStatus(form, error.message, true);
     }
@@ -2490,7 +5686,22 @@ async function openClientTaskPanel(taskID) {
   setClientTaskReply(null);
   bindDialogCloseButtons(panel);
   bindMentionSuggestions(panel);
+  if (focusCommentID) setTimeout(() => focusClientTaskComment(panel, focusCommentID), 60);
   icons();
+}
+
+function clientTabNavHTML(tabs, selectedTab, canManage) {
+  return (tabs || []).map((tab) => {
+    const active = selectedTab?.id === tab.id;
+    return `<span class="client-tab-item ${active ? "active" : ""} ${canManage ? "has-actions" : ""}" data-client-tab-item>
+      <button class="client-tab-link ${active ? "active" : ""}" type="button" data-client-tab-link="${esc(tab.id)}">${esc(tab.title)}</button>
+      ${canManage ? `<button class="client-tab-menu-trigger" type="button" data-client-tab-menu-trigger aria-label="Tab options"></button>
+        <div class="client-tab-menu" data-client-tab-menu hidden>
+          <button type="button" data-edit-client-tab="${esc(tab.id)}">${icon("pencil")}Edit tab</button>
+          <button class="danger-text" type="button" data-delete-client-tab="${esc(tab.id)}">${icon("trash-2")}Delete tab</button>
+        </div>` : ""}
+    </span>`;
+  }).join("");
 }
 
 function clientTabContentHTML(tab, data) {
@@ -2512,7 +5723,7 @@ function clientTabContentHTML(tab, data) {
     </section>`;
   }
   return `<section class="panel">
-    <div class="panel-head"><h2>${esc(tab.title)}</h2>${canManage ? `<button class="btn compact danger" type="button" data-delete-client-tab="${esc(tab.id)}">${icon("trash-2")}Delete tab</button>` : ""}</div>
+    <div class="panel-head"><h2>${esc(tab.title)}</h2></div>
     ${canManage ? `<form id="descriptionTabForm" class="form-grid">
       <div class="field"><label>Title</label><input name="title" value="${esc(tab.title)}" required></div>
       <div class="field"><label>Description</label><textarea name="content" data-mentionable>${esc(tab.content || "")}</textarea></div>
@@ -2603,17 +5814,18 @@ async function renderClientProject(clientID) {
   const client = data.client;
   const canManage = Boolean(data.can_manage);
   const canManageMembers = Boolean(data.can_manage_members);
+  const canDeleteFolder = Boolean(data.can_delete);
   const candidateData = canManageMembers ? await api(`/api/teams/${client.team_id}`).catch(() => ({ members: [] })) : { members: [] };
   shell(client.name, `
     <div class="page-title">
       <div><h1>${esc(client.name)}</h1><p class="muted">${esc(client.company_email || "Client folder")}</p></div>
-      <div class="toolbar"><a class="btn" href="/projects">${icon("arrow-left")}Projects</a>${canManage ? `<button class="btn primary" id="editClientBtn">${icon("pencil")}Edit client</button>` : ""}</div>
+      <div class="toolbar"><a class="btn" href="/projects">${icon("arrow-left")}Projects</a>${canManage ? `<button class="btn primary" id="editClientBtn">${icon("pencil")}Edit client</button>` : ""}${canDeleteFolder ? `<button class="btn danger" id="deleteClientFolderBtn" type="button">${icon("trash-2")}Delete folder</button>` : ""}</div>
     </div>
     <div class="grid-2">
       <section class="panel"><div class="panel-head"><h2>Client information</h2>${canManage ? `<button class="btn compact" id="addClientDocBtn">${icon("file-plus")}Document</button>` : ""}</div><p>${chatText(client.details || "No client information yet.")}</p><div class="task-list">${clientDocumentRows(data.documents || [], canManage)}</div></section>
       <section class="panel"><div class="panel-head"><h2>Listed members</h2>${canManageMembers ? `<button class="btn compact primary" id="addClientMemberBtn">${icon("user-plus")}Add member</button>` : ""}</div><div class="task-list">${clientMemberRows(data.members || [], canManageMembers)}</div></section>
     </div>
-    <section class="panel"><div class="panel-head"><h2>Websites</h2>${canManage ? `<button class="btn primary compact" id="addClientWebsiteBtn">${icon("plus")}Website</button>` : ""}</div><div class="task-list">${clientWebsiteRows(data.websites || [])}</div></section>
+    <section class="panel"><div class="panel-head"><h2>Websites</h2>${canManage ? `<button class="btn primary compact" id="addClientWebsiteBtn">${icon("plus")}Website</button>` : ""}</div><div class="task-list">${clientWebsiteRows(data.websites || [], canManage, canManageMembers)}</div></section>
     <dialog id="editClientDialog" class="modal client-dialog">
       <form id="editClientForm" class="form-grid" method="dialog">
         <div class="modal-head"><h2>Edit client company</h2><button class="btn icon quiet" type="button" data-close-dialog="editClientDialog" title="Close">${icon("x")}</button></div>
@@ -2624,11 +5836,20 @@ async function renderClientProject(clientID) {
         <p class="status-line"></p>
       </form>
     </dialog>
+    <dialog id="deleteClientFolderDialog" class="modal client-dialog">
+      <form id="deleteClientFolderForm" class="form-grid" method="dialog">
+        <div class="modal-head"><h2>Delete folder</h2><button class="btn icon quiet" type="button" data-close-dialog="deleteClientFolderDialog" title="Close">${icon("x")}</button></div>
+        <p class="muted">This will delete ${esc(client.name)} and its websites, tabs, task boards, documents, comments, and logs.</p>
+        <div class="field"><label>Type Confirm to delete</label><input name="confirm_text" autocomplete="off" required></div>
+        <div class="toolbar"><button class="btn danger" type="submit">${icon("trash-2")}Delete folder</button><button class="btn" type="button" data-close-dialog="deleteClientFolderDialog">Cancel</button></div>
+        <p class="status-line"></p>
+      </form>
+    </dialog>
     <dialog id="clientMemberDialog" class="modal client-dialog">
       <form id="clientMemberForm" class="form-grid" method="dialog">
         <div class="modal-head"><h2>Add member access</h2><button class="btn icon quiet" type="button" data-close-dialog="clientMemberDialog" title="Close">${icon("x")}</button></div>
         <div class="field"><label>Listed member</label><select name="user_id" required>${(candidateData.members || []).map((member) => `<option value="${esc(member.id)}">${esc(member.name || member.email)} - @${esc(member.username || "member")}</option>`).join("")}</select></div>
-        <div class="field"><label>Client folder role</label><select name="role"><option value="member">Member</option><option value="client_admin">Client Admin</option></select></div>
+        <div class="field"><label>User role</label><select name="role">${staffRoleOptions("internal")}</select></div>
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Add</button><button class="btn" type="button" data-close-dialog="clientMemberDialog">Cancel</button></div>
         <p class="status-line"></p>
       </form>
@@ -2643,11 +5864,65 @@ async function renderClientProject(clientID) {
         <p class="status-line"></p>
       </form>
     </dialog>
+    <dialog id="clientWebsiteAccessDialog" class="modal client-dialog">
+      <form id="clientWebsiteAccessForm" class="form-grid" method="dialog">
+        <div class="modal-head"><h2>Domain access</h2><button class="btn icon quiet" type="button" data-close-dialog="clientWebsiteAccessDialog" title="Close">${icon("x")}</button></div>
+        <input type="hidden" name="website_id">
+        <p class="muted" id="clientWebsiteAccessTitle">Share this domain with listed company members only.</p>
+        <div id="clientWebsiteAccessRows" class="task-list"></div>
+        <div class="grid-2">
+          <div class="field"><label>Listed member</label><select name="user_id" required>${(candidateData.members || []).map((member) => `<option value="${esc(member.id)}">${esc(member.name || member.email)} - @${esc(member.username || "member")}</option>`).join("")}</select></div>
+          <div class="field"><label>User role</label><select name="role">${staffRoleOptions("internal")}</select></div>
+        </div>
+        <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Share domain</button><button class="btn" type="button" data-close-dialog="clientWebsiteAccessDialog">Cancel</button></div>
+        <p class="status-line"></p>
+      </form>
+    </dialog>
+    ${editClientWebsiteDialogHTML()}
+    ${deleteClientWebsiteDialogHTML()}
     ${clientDocumentDialogHTML("clientDocumentDialog", "Add client document")}`);
+  bindAccessRoleSelect($("#clientMemberForm"), candidateData.members || []);
+  bindAccessRoleSelect($("#clientWebsiteAccessForm"), candidateData.members || []);
   $("#editClientBtn")?.addEventListener("click", () => $("#editClientDialog")?.showModal());
+  $("#deleteClientFolderBtn")?.addEventListener("click", () => $("#deleteClientFolderDialog")?.showModal());
   $("#addClientMemberBtn")?.addEventListener("click", () => $("#clientMemberDialog")?.showModal());
   $("#addClientWebsiteBtn")?.addEventListener("click", () => $("#clientWebsiteDialog")?.showModal());
   $("#addClientDocBtn")?.addEventListener("click", () => $("#clientDocumentDialog")?.showModal());
+  const websitesByID = Object.fromEntries((data.websites || []).map((site) => [site.id, site]));
+  document.querySelectorAll("[data-share-client-website]").forEach((btn) => btn.addEventListener("click", () => {
+    const site = websitesByID[btn.dataset.shareClientWebsite];
+    const form = $("#clientWebsiteAccessForm");
+    if (!site || !form) return;
+    form.reset();
+    form.elements.website_id.value = site.id || "";
+    $("#clientWebsiteAccessTitle").textContent = `Share ${site.name || "this domain"} with listed company members only.`;
+    $("#clientWebsiteAccessRows").innerHTML = clientWebsiteAccessRows(site, candidateData.members || []);
+    $("#clientWebsiteAccessDialog")?.showModal();
+    icons();
+  }));
+  $("#clientWebsiteAccessForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const websiteID = form.elements.website_id.value;
+    try {
+      await api(`/api/client-websites/${websiteID}/members`, { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
+      $("#clientWebsiteAccessDialog")?.close();
+      await refreshClientSidebarCache();
+      renderClientProject(clientID);
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
+  $("#clientWebsiteAccessRows")?.addEventListener("click", async (event) => {
+    const btn = event.target.closest("[data-remove-domain-member]");
+    if (!btn) return;
+    const websiteID = $("#clientWebsiteAccessForm")?.elements.website_id.value || "";
+    if (!websiteID || !confirm("Remove this member from the domain?")) return;
+    await api(`/api/client-websites/${websiteID}/members/${btn.dataset.removeDomainMember}`, { method: "DELETE" });
+    $("#clientWebsiteAccessDialog")?.close();
+    await refreshClientSidebarCache();
+    renderClientProject(clientID);
+  });
   $("#editClientForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -2700,6 +5975,13 @@ async function renderClientProject(clientID) {
     await api(`/api/client-documents/${btn.dataset.deleteClientDoc}`, { method: "DELETE" });
     renderClientProject(clientID);
   }));
+  bindContextActionMenus(app);
+  bindClientWebsiteEdit(data.websites || [], async () => {
+    await renderClientProject(clientID);
+  });
+  bindClientWebsiteDelete(async () => {
+    await renderClientProject(clientID);
+  });
   bindDialogCloseButtons();
   bindMentionSuggestions(app);
   icons();
@@ -2707,33 +5989,31 @@ async function renderClientProject(clientID) {
 
 async function renderClientWebsite(clientID, websiteID) {
   const data = await api(`/api/client-websites/${websiteID}`);
+  state.liveWebsiteSignature = clientWebsiteLiveSignature(data);
   const website = data.website;
   const canManage = Boolean(data.can_manage);
   const canManageStatuses = Boolean(data.can_manage_statuses);
-  const selectedTabID = new URLSearchParams(location.search).get("tab") || data.tabs?.[0]?.id || "";
+  const routeParams = new URLSearchParams(location.search);
+  const selectedTabID = routeParams.get("tab") || data.tabs?.[0]?.id || "";
+  const autoOpenAnnotation = routeParams.get("new") === "annotation";
+  const annotationReturnTo = routeParams.get("return") || "";
   const selectedTab = (data.tabs || []).find((tab) => tab.id === selectedTabID) || data.tabs?.[0] || null;
+  const clientUsersByID = clientTaskUsersByID(data.members || []);
+  const clientBoardStatuses = clientTaskStatuses(selectedTab, data.tasks || []);
+  const annotationTasks = (data.tasks || []).filter((task) => task.type === "annotation" && (!selectedTab?.id || task.tab_id === selectedTab.id));
+  const tabsByID = Object.fromEntries((data.tabs || []).map((tab) => [tab.id, tab]));
   shell(website.name, `
     <div class="page-title">
       <div><h1>${esc(website.name)}</h1><p class="muted">${esc(data.client?.name || "Client")} ${website.url ? " - " + esc(website.url) : ""}</p></div>
-      <div class="toolbar"><a class="btn" href="/projects/${esc(clientID)}">${icon("arrow-left")}Client folder</a>${canManage ? `<button class="btn" id="editWebsiteBtn">${icon("pencil")}Edit website</button>${selectedTab ? `<button class="btn" id="editClientTabBtn">${icon("file-pen")}Edit tab</button><button class="btn danger" type="button" data-delete-client-tab="${esc(selectedTab.id)}">${icon("trash-2")}Delete tab</button>` : ""}<button class="btn primary" id="addClientTabBtn">${icon("plus")}Tab</button>` : ""}</div>
+      <div class="toolbar"><a class="btn" href="/projects/${esc(clientID)}">${icon("arrow-left")}Client folder</a></div>
     </div>
     <section class="panel">
       <div class="tabs client-tabs">
-        ${(data.tabs || []).map((tab) => `<button class="${selectedTab?.id === tab.id ? "active" : ""}" type="button" data-client-tab-link="${esc(tab.id)}">${esc(tab.title)}</button>`).join("")}
-        ${canManage ? `<button type="button" id="addClientTabInline">${icon("plus")}</button>` : ""}
+        ${clientTabNavHTML(data.tabs || [], selectedTab, canManage)}
+        ${canManage ? `<button class="client-tab-add" type="button" id="addClientTabInline">${icon("plus")}New tab</button>` : ""}
       </div>
     </section>
     ${clientTabContentHTML(selectedTab, data)}
-    <dialog id="editWebsiteDialog" class="modal client-dialog">
-      <form id="editWebsiteForm" class="form-grid" method="dialog">
-        <div class="modal-head"><h2>Edit website</h2><button class="btn icon quiet" type="button" data-close-dialog="editWebsiteDialog" title="Close">${icon("x")}</button></div>
-        <div class="field"><label>Website name</label><input name="name" value="${esc(website.name)}" required></div>
-        <div class="field"><label>Website URL</label><input name="url" value="${esc(website.url || "")}" placeholder="https://example.com"></div>
-        <div class="field"><label>Website details</label><textarea name="details" data-mentionable>${esc(website.details || "")}</textarea></div>
-        <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="editWebsiteDialog">Cancel</button></div>
-        <p class="status-line"></p>
-      </form>
-    </dialog>
     <dialog id="clientTabDialog" class="modal client-dialog">
       <form id="clientTabForm" class="form-grid" method="dialog">
         <div class="modal-head"><h2>Add tab</h2><button class="btn icon quiet" type="button" data-close-dialog="clientTabDialog" title="Close">${icon("x")}</button></div>
@@ -2747,8 +6027,8 @@ async function renderClientWebsite(clientID, websiteID) {
     <dialog id="editClientTabDialog" class="modal client-dialog">
       <form id="editClientTabForm" class="form-grid" method="dialog">
         <div class="modal-head"><h2>Edit tab</h2><button class="btn icon quiet" type="button" data-close-dialog="editClientTabDialog" title="Close">${icon("x")}</button></div>
-        <div class="field"><label>Tab title</label><input name="title" value="${esc(selectedTab?.title || "")}" required></div>
-        <div class="field"><label>Tab note</label><textarea name="content" data-mentionable>${esc(selectedTab?.content || "")}</textarea></div>
+        <input type="hidden" name="tab_id">
+        <div class="field"><label>Tab title</label><input name="title" required></div>
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="editClientTabDialog">Cancel</button></div>
         <p class="status-line"></p>
       </form>
@@ -2767,8 +6047,7 @@ async function renderClientWebsite(clientID, websiteID) {
         ${recurrenceControlsHTML()}
         <div class="field"><label>Title</label><input name="title" maxlength="80" required></div>
         <div data-task-description-fields>
-          <div class="field"><label>Content</label>${richEditorHTML("content", "", "Write task details")}</div>
-          ${checklistBuilderHTML()}
+          <div class="field"><label>Task body</label>${contentBlockEditorHTML()}</div>
         </div>
         <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [])}</div>
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Create task</button><button class="btn" type="button" data-close-dialog="clientTaskDialog">Cancel</button></div>
@@ -2776,42 +6055,80 @@ async function renderClientWebsite(clientID, websiteID) {
       </form>
     </dialog>
     <dialog id="clientAnnotationDialog" class="modal annotation-task-dialog">
-      <form id="clientAnnotationTaskForm" class="annotation-task-form" method="dialog">
+      <div class="annotation-task-form">
         <header class="annotation-task-head">
           <div><span class="muted">${esc(data.client?.name || "Client")} / ${esc(website.name || "Website")}</span><h2>Website annotation</h2></div>
           <button class="btn icon quiet" type="button" data-close-dialog="clientAnnotationDialog" title="Close">${icon("x")}</button>
         </header>
-        <div class="annotation-task-body">
-          <section class="annotation-stage annotation-task-stage" id="clientAnnotationStage">
-            ${website.url ? `<iframe src="${esc(website.url)}" title="${esc(website.name)}"></iframe>` : `<div class="annotation-empty"><p class="muted">Add a website URL before annotating.</p></div>`}
-            <div class="click-catcher" id="clientAnnotationClickCatcher"></div>
-            <div class="pin-layer" id="clientAnnotationPinLayer"></div>
-          </section>
-          <aside class="bug-side annotation-task-side">
-            <input type="hidden" name="type" value="annotation">
-            <input type="hidden" name="pin_x">
-            <input type="hidden" name="pin_y">
-            <div class="field"><label>Coordinates</label><input id="clientAnnotationCoordLabel" disabled placeholder="Click the page to place a pin"></div>
-            <div class="field"><label>Title</label><input name="title" maxlength="80" required placeholder="Annotation title"></div>
-            <div class="field"><label>Annotation URL</label><input name="url" value="${esc(website.url || "")}" placeholder="https://example.com/page" required></div>
-            <div class="field"><label>Comment</label>${richEditorHTML("comment", "", "Write annotation comment")}</div>
-            <div class="field"><label>Attachments</label><input type="file" name="attachments" multiple></div>
-            <div class="grid-2"><div class="field"><label>Due date</label><input type="date" name="due_date"></div></div>
-            ${recurrenceControlsHTML()}
-            <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [])}</div>
-            <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Create annotation</button><button class="btn" type="button" data-close-dialog="clientAnnotationDialog">Cancel</button></div>
+        <section class="annotation-url-step" id="clientAnnotationURLStep">
+          <div class="panel">
+            <h3>Choose page to annotate</h3>
+            <p class="muted">Base domain: ${esc(websiteOrigin(website.url) || website.url || "No website URL set")}</p>
+            <div class="grid-2">
+              <div class="field"><label>Domain</label><input id="clientAnnotationBaseURL" value="${esc(websiteOrigin(website.url) || website.url || "")}" disabled></div>
+              <div class="field"><label>Page URL or path</label><input id="clientAnnotationPageURL" value="${esc(annotationPageURL(website.url, ""))}" placeholder="/contact-us or https://example.com/contact-us"></div>
+            </div>
+            <p class="muted" id="clientAnnotationURLPreview">${esc(annotationPageURL(website.url, ""))}</p>
+            <div class="toolbar"><button class="btn primary" type="button" id="openAnnotationPageBtn">${icon("map-pin")}Open annotation page</button><button class="btn" type="button" data-close-dialog="clientAnnotationDialog">Cancel</button></div>
             <p class="status-line"></p>
+          </div>
+        </section>
+        <div class="annotation-task-body" id="clientAnnotationWorkspace" hidden>
+          <section class="annotation-stage annotation-task-stage" id="clientAnnotationStage">
+            <div class="annotation-empty"><p class="muted">Choose a page path first.</p></div>
+          </section>
+          <aside class="bug-side annotation-task-side feedback-side">
+            <section class="feedback-sidebar-view" id="clientAnnotationListView">
+              <div class="feedback-detail-toolbar annotation-sidebar-toolbar">
+                <h2>Pin feedback</h2>
+                <button class="btn icon quiet" type="button" data-toggle-annotation-sidebar title="Collapse annotations">${icon("panel-right-close")}</button>
+              </div>
+              <form id="clientAnnotationTaskForm" class="form-grid">
+                <input type="hidden" name="type" value="annotation">
+                <input type="hidden" name="pin_x">
+                <input type="hidden" name="pin_y">
+                <input type="hidden" name="page_width">
+                <input type="hidden" name="page_height">
+                <div class="field"><label>Title</label><input name="title" maxlength="80" required placeholder="Annotation title"></div>
+                <div class="field"><label>Coordinates</label><input id="clientAnnotationCoordLabel" disabled placeholder="Click the page to place a pin"></div>
+                <div class="field"><label>Status</label>${statusPickerHTML(clientBoardStatuses, "todo", "status")}</div>
+                <label class="feedback-url-field"><span>Page URL</span><input name="url" value="${esc(website.url || "")}" readonly required></label>
+                <div class="field"><label>Assignee</label>${assigneePickerHTML(data.members || [])}</div>
+                <div class="field"><label>Attachments</label><input type="file" name="attachments" multiple></div>
+                <div class="field"><label>Details</label><textarea name="comment" data-mentionable placeholder="Write annotation details"></textarea></div>
+                <div class="grid-2"><div class="field"><label>Due date</label><input type="date" name="due_date"></div></div>
+                ${recurrenceControlsHTML()}
+                <div class="toolbar"><button class="btn primary" type="submit">${icon("map-pin")}Save annotation</button><button class="btn" type="button" data-close-dialog="clientAnnotationDialog">Cancel</button></div>
+                <p class="status-line"></p>
+              </form>
+              <hr>
+              <div class="feedback-list" id="clientAnnotationTaskList"></div>
+            </section>
+            <section class="feedback-sidebar-view feedback-detail-view" id="clientAnnotationDetailView" hidden>
+              <div class="feedback-detail-toolbar">
+                <button class="btn compact" type="button" id="clientAnnotationBackBtn">${icon("arrow-left")}Back</button>
+              </div>
+              <div id="clientAnnotationDetailBody"></div>
+            </section>
           </aside>
+          <button class="btn icon annotation-sidebar-expand" type="button" data-toggle-annotation-sidebar title="Show annotations" hidden>${icon("panel-right-open")}</button>
         </div>
-      </form>
+      </div>
     </dialog>`);
   document.querySelectorAll("[data-client-tab-link]").forEach((btn) => btn.addEventListener("click", () => {
     window.location.href = `/projects/${clientID}/sites/${websiteID}?tab=${btn.dataset.clientTabLink}`;
   }));
-  $("#editWebsiteBtn")?.addEventListener("click", () => $("#editWebsiteDialog")?.showModal());
-  $("#addClientTabBtn")?.addEventListener("click", () => $("#clientTabDialog")?.showModal());
   $("#addClientTabInline")?.addEventListener("click", () => $("#clientTabDialog")?.showModal());
-  $("#editClientTabBtn")?.addEventListener("click", () => $("#editClientTabDialog")?.showModal());
+  document.querySelectorAll("[data-edit-client-tab]").forEach((btn) => btn.addEventListener("click", () => {
+    const tab = tabsByID[btn.dataset.editClientTab];
+    const form = $("#editClientTabForm");
+    if (!tab || !form) return;
+    form.reset();
+    form.elements.tab_id.value = tab.id || "";
+    form.elements.title.value = tab.title || "";
+    $("#editClientTabDialog")?.showModal();
+  }));
+  bindContextActionMenus(app);
   $("#addWebsiteDocBtn")?.addEventListener("click", () => $("#websiteDocumentDialog")?.showModal());
   $("#addClientTaskBtn")?.addEventListener("click", () => {
     $("#clientTaskForm")?.setAttribute("hidden", "");
@@ -2829,34 +6146,347 @@ async function renderClientWebsite(clientID, websiteID) {
   });
   $("#chooseAnnotationTask")?.addEventListener("click", () => {
     $("#clientTaskDialog")?.close();
+    currentClientAnnotationTask = null;
+    currentClientAnnotationItems = [];
+    $("#clientAnnotationURLStep")?.removeAttribute("hidden");
+    $("#clientAnnotationWorkspace")?.setAttribute("hidden", "");
+    $("#clientAnnotationPageURL").value = annotationPageURL(website.url, "");
+    $("#clientAnnotationURLPreview").textContent = annotationPageURL(website.url, "");
+    $("#clientAnnotationTaskForm input[name='url']").value = annotationPageURL(website.url, "");
+    $("#clientAnnotationCoordLabel").value = "";
+    $("#clientAnnotationTaskForm [name='pin_x']").value = "";
+    $("#clientAnnotationTaskForm [name='pin_y']").value = "";
+    $("#clientAnnotationTaskForm [name='page_width']").value = ANNOTATION_VIEWPORT.width;
+    $("#clientAnnotationTaskForm [name='page_height']").value = ANNOTATION_TALL_FALLBACK_HEIGHT;
+    $("#clientAnnotationStage").innerHTML = `<div class="annotation-empty"><p class="muted">Fill the page URL, then open the annotation page.</p></div>`;
     $("#clientAnnotationDialog")?.showModal();
-    $("#clientAnnotationTaskForm input[name='title']")?.focus();
+    $("#clientAnnotationPageURL")?.focus();
   });
-  $("#clientAnnotationClickCatcher")?.addEventListener("click", (event) => {
-    const stage = $("#clientAnnotationStage");
-    const form = $("#clientAnnotationTaskForm");
-    if (!stage || !form) return;
-    const rect = stage.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * 100;
-    const y = ((event.clientY - rect.top) / rect.height) * 100;
-    form.elements.pin_x.value = x.toFixed(2);
-    form.elements.pin_y.value = y.toFixed(2);
-    $("#clientAnnotationCoordLabel").value = `${x.toFixed(1)}%, ${y.toFixed(1)}%`;
+  $("#clientAnnotationPageURL")?.addEventListener("input", (event) => {
+    $("#clientAnnotationURLPreview").textContent = annotationPageURL(website.url, event.currentTarget.value);
+    const line = $("#clientAnnotationURLStep .status-line");
+    if (line) line.textContent = "";
+  });
+  const clientAnnotationTasks = [...annotationTasks];
+  const clientAnnotationTasksByID = Object.fromEntries(clientAnnotationTasks.map((task) => [task.id, task]));
+  let currentClientAnnotationTask = null;
+  let currentClientAnnotationItems = [];
+  let currentClientAnnotationURL = "";
+  let currentClientAnnotationPageHeight = ANNOTATION_TALL_FALLBACK_HEIGHT;
+  let currentClientAnnotationPageWidth = ANNOTATION_VIEWPORT.width;
+  let clientAnnotationDirty = false;
+  const selectorForID = (value) => (window.CSS?.escape ? CSS.escape(value) : String(value).replace(/"/g, '\\"'));
+  const clientAnnotationsForPage = () => currentClientAnnotationItems.filter((item) => !currentClientAnnotationURL || item.url === currentClientAnnotationURL);
+  const syncClientAnnotationStatusControls = (taskID, value) => {
+    const status = feedbackStatusObject(clientBoardStatuses, value || "todo");
+    document.querySelectorAll(`[data-client-annotation-status-form="${selectorForID(taskID)}"]`).forEach((box) => {
+      const input = box.querySelector("input[name='status']");
+      const trigger = box.querySelector("[data-status-trigger]");
+      const label = box.querySelector("[data-status-trigger-label]");
+      if (input) input.value = status.value;
+      if (label) label.textContent = status.label;
+      trigger?.style.setProperty("--status-icon-color", status.icon_color);
+      trigger?.style.setProperty("--status-text-color", status.text_color);
+    });
+  };
+  const bindClientAnnotationStatusForms = (root = document) => {
+    root.querySelectorAll("[data-client-annotation-status-form]").forEach((box) => {
+      if (box.dataset.clientAnnotationStatusBound === "1") return;
+      box.dataset.clientAnnotationStatusBound = "1";
+      box.addEventListener("change", async (event) => {
+        if (!event.target.matches("input[name='status']")) return;
+        const taskID = box.dataset.clientAnnotationStatusForm;
+        const status = event.target.value || "todo";
+        try {
+          await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify({ status }) });
+          if (clientAnnotationTasksByID[taskID]) clientAnnotationTasksByID[taskID].status = status;
+          clientAnnotationDirty = true;
+          syncClientAnnotationStatusControls(taskID, status);
+          setStatus("Annotation status updated.");
+        } catch (error) {
+          setStatus(error.message, true);
+        }
+      });
+    });
+  };
+  const renderClientAnnotationPins = (extraPin = "") => {
     const layer = $("#clientAnnotationPinLayer");
-    if (layer) layer.innerHTML = `<button class="pin" type="button" style="left:${x.toFixed(2)}%;top:${y.toFixed(2)}%;" title="Annotation pin">1</button>`;
-    $("#clientAnnotationTaskForm [data-rich-editor='comment']")?.focus();
+    if (!layer) return;
+    layer.innerHTML = `${clientAnnotationsForPage().map((item, index) => clientAnnotationItemPinHTML(item, index, currentClientAnnotationPageWidth, currentClientAnnotationPageHeight)).join("")}${extraPin}`;
     icons();
-  });
-  $("#editWebsiteForm")?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    try {
-      await api(`/api/client-websites/${websiteID}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
-      await refreshClientSidebarCache();
-      renderClientWebsite(clientID, websiteID);
-    } catch (error) {
-      setFormStatus(form, error.message, true);
+  };
+  const renderClientAnnotationList = () => {
+    const list = $("#clientAnnotationTaskList");
+    if (!list) return;
+    list.innerHTML = clientAnnotationItemRowsHTML(clientAnnotationsForPage(), clientBoardStatuses, clientUsersByID, { taskID: currentClientAnnotationTask?.id || "" });
+    bindStatusPickers(list);
+    if (currentClientAnnotationTask?.id) {
+      bindClientAnnotationItemStatusForms(list, clientBoardStatuses, async (result, annotationID, status) => {
+        currentClientAnnotationTask.annotations = result.annotations || currentClientAnnotationTask.annotations || [];
+        currentClientAnnotationItems = clientTaskAnnotationItems(currentClientAnnotationTask);
+        clientAnnotationDirty = true;
+        syncClientAnnotationItemStatusControls(document, annotationID, clientBoardStatuses, status);
+      });
     }
+    bindClientAnnotationStatusForms(list);
+    list.querySelectorAll("[data-open-client-annotation-item]").forEach((btn) => btn.addEventListener("click", () => openClientAnnotationDetail(btn.dataset.openClientAnnotationItem)));
+    icons();
+  };
+  const highlightClientAnnotationPin = (taskID) => {
+    document.querySelectorAll("[data-feedback-pin]").forEach((pin) => pin.classList.toggle("highlighted", pin.dataset.feedbackPin === taskID));
+    const pin = document.querySelector(`[data-feedback-pin="${selectorForID(taskID)}"]`);
+    pin?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+  };
+  const showClientAnnotationList = () => {
+    state.clientTaskReply = null;
+    state.clientTaskCommentEdit = null;
+    $("#clientAnnotationDetailView")?.setAttribute("hidden", "");
+    $("#clientAnnotationListView")?.removeAttribute("hidden");
+    const body = $("#clientAnnotationDetailBody");
+    if (body) body.innerHTML = "";
+    document.querySelectorAll("[data-feedback-pin]").forEach((pin) => pin.classList.remove("highlighted"));
+    document.querySelectorAll("[data-client-annotation-item-row]").forEach((row) => row.classList.remove("active"));
+  };
+  const refreshClientAnnotationComments = async (root, taskID, annotationID) => refreshClientTaskCommentList(root, taskID, clientUsersByID, canManage, (scope) => {
+    bindAttachmentOpeners(scope);
+    bindMentionSuggestions(scope);
+    bindClientAnnotationCommentForm(scope, taskID, annotationID);
+  });
+  const bindClientAnnotationCommentForm = (root, taskID, annotationID = taskID) => {
+    root.querySelectorAll("[data-toggle-comment-replies]").forEach((btn) => {
+      if (btn.dataset.clientAnnotationRepliesBound === "1") return;
+      btn.dataset.clientAnnotationRepliesBound = "1";
+      btn.addEventListener("click", () => {
+        const box = Array.from(root.querySelectorAll("[data-comment-replies]")).find((item) => item.dataset.commentReplies === btn.dataset.toggleCommentReplies);
+        if (!box) return;
+        const nextOpen = box.hidden;
+        box.hidden = !nextOpen;
+        btn.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+        btn.classList.toggle("active", nextOpen);
+      });
+    });
+    root.querySelectorAll("[data-client-comment-reply]").forEach((btn) => {
+      if (btn.dataset.clientAnnotationReplyBound === "1") return;
+      btn.dataset.clientAnnotationReplyBound = "1";
+      btn.addEventListener("click", () => {
+        setClientTaskReply({ id: btn.dataset.clientCommentReply, text: btn.dataset.replyText || "Comment" }, root);
+        root.querySelector("textarea[name='content']")?.focus();
+      });
+    });
+    root.querySelectorAll("[data-edit-client-comment]").forEach((btn) => {
+      if (btn.dataset.clientAnnotationEditBound === "1") return;
+      btn.dataset.clientAnnotationEditBound = "1";
+      btn.addEventListener("click", () => {
+        setClientTaskCommentEdit({ id: btn.dataset.editClientComment, content: btn.dataset.commentContent || "" }, root);
+      });
+    });
+    root.querySelectorAll("[data-delete-client-comment]").forEach((btn) => {
+      if (btn.dataset.clientAnnotationDeleteBound === "1") return;
+      btn.dataset.clientAnnotationDeleteBound = "1";
+      btn.addEventListener("click", async () => {
+        if (!confirm("Delete this comment?")) return;
+        await api(`/api/client-task-comments/${btn.dataset.deleteClientComment}`, { method: "DELETE" });
+        await refreshClientAnnotationComments(root, taskID, annotationID);
+      });
+    });
+    bindClientCommentReactions(root, async () => refreshClientAnnotationComments(root, taskID, annotationID), clientUsersByID);
+    const form = root.querySelector(`[data-client-annotation-comment-form="${selectorForID(taskID)}"]`);
+    if (!form || form.dataset.clientAnnotationCommentBound === "1") return;
+    form.dataset.clientAnnotationCommentBound = "1";
+    const textarea = form.elements.content;
+    const attachmentInput = form.elements.attachment;
+    const preview = form.querySelector("[data-client-task-attachment-preview]");
+    form.querySelector("[data-client-comment-emoji]")?.addEventListener("click", (event) => openEmojiPicker(event.currentTarget, textarea));
+    form.querySelector("[data-client-comment-attach]")?.addEventListener("click", () => attachmentInput?.click());
+    attachmentInput?.addEventListener("change", () => {
+      const file = attachmentInput.files?.[0];
+      if (!file || !preview) return;
+      const localURL = file.type.startsWith("image/") ? URL.createObjectURL(file) : "";
+      preview.hidden = false;
+      preview.innerHTML = `<span>${localURL ? `<img class="attachment-preview-mini" src="${esc(localURL)}" alt="${esc(file.name)} preview">` : icon("paperclip")}${esc(file.name)}</span><button class="btn icon quiet" type="button" data-clear-client-comment-attachment>${icon("x")}</button>`;
+      preview.querySelector("[data-clear-client-comment-attachment]")?.addEventListener("click", () => {
+        if (localURL) URL.revokeObjectURL(localURL);
+        attachmentInput.value = "";
+        preview.hidden = true;
+        preview.innerHTML = "";
+      });
+      icons();
+    });
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const content = String(textarea?.value || "").trim();
+      const file = attachmentInput?.files?.[0];
+      if (!content && !file) {
+        setFormStatus(form, "Comment or attachment is required.", true);
+        return;
+      }
+      const submit = form.querySelector("[type='submit']");
+      if (submit) submit.disabled = true;
+      try {
+        if (state.clientTaskCommentEdit) {
+          const body = { content };
+          if (file) {
+            body.attachment_url = await upload(file);
+            body.attachment_name = file.name;
+          }
+          await api(`/api/client-task-comments/${state.clientTaskCommentEdit.id}`, { method: "PATCH", body: JSON.stringify(body) });
+          resetClientCommentForm(form, root);
+          await refreshClientAnnotationComments(root, taskID, annotationID);
+          return;
+        }
+        const body = {
+          content,
+          reply_to_id: state.clientTaskReply?.id || "",
+          reply_text: state.clientTaskReply?.text || "",
+          attachment_url: "",
+          attachment_name: "",
+        };
+        if (file) {
+          body.attachment_url = await upload(file);
+          body.attachment_name = file.name;
+        }
+        await api(`/api/client-tasks/${taskID}/comments`, { method: "POST", body: JSON.stringify(body) });
+        resetClientCommentForm(form, root);
+        await refreshClientAnnotationComments(root, taskID, annotationID);
+      } catch (error) {
+        setFormStatus(form, error.message, true);
+      } finally {
+        if (submit) submit.disabled = false;
+      }
+    });
+  };
+  const openClientAnnotationDetail = async (annotationID) => {
+    try {
+      let latest = null;
+      if (currentClientAnnotationTask?.id) {
+        latest = await api(`/api/client-tasks/${currentClientAnnotationTask.id}`);
+        currentClientAnnotationTask = latest.task || currentClientAnnotationTask;
+        currentClientAnnotationItems = clientTaskAnnotationItems(currentClientAnnotationTask);
+      }
+      const annotation = currentClientAnnotationItems.find((item) => String(item.id) === String(annotationID));
+      if (!annotation) return;
+      const usersByID = clientTaskUsersByID(latest?.members || data.members || []);
+      highlightClientAnnotationPin(annotationID);
+      document.querySelectorAll("[data-client-annotation-item-row]").forEach((row) => row.classList.toggle("active", row.dataset.clientAnnotationItemRow === annotationID));
+      $("#clientAnnotationListView")?.setAttribute("hidden", "");
+      $("#clientAnnotationDetailView")?.removeAttribute("hidden");
+      const body = $("#clientAnnotationDetailBody");
+      if (body) {
+        body.innerHTML = clientAnnotationTaskDetailHTML(annotation, clientBoardStatuses, usersByID, latest?.comments || [], canManage, { showStatus: false, commentTaskID: currentClientAnnotationTask?.id || annotation.id, annotationStatusTaskID: currentClientAnnotationTask?.id || "" });
+        const detailView = $("#clientAnnotationDetailView");
+        bindStatusPickers(detailView);
+        if (currentClientAnnotationTask?.id) {
+          bindClientAnnotationItemStatusForms(detailView, clientBoardStatuses, async (result, savedAnnotationID, status) => {
+            currentClientAnnotationTask.annotations = result.annotations || currentClientAnnotationTask.annotations || [];
+            currentClientAnnotationItems = clientTaskAnnotationItems(currentClientAnnotationTask);
+            clientAnnotationDirty = true;
+            syncClientAnnotationItemStatusControls(document, savedAnnotationID, clientBoardStatuses, status);
+            renderClientAnnotationList();
+          });
+        }
+        bindClientAnnotationStatusForms(detailView);
+        bindAttachmentOpeners(detailView);
+        bindMentionSuggestions(detailView);
+        if (currentClientAnnotationTask?.id) bindClientAnnotationCommentForm(detailView, currentClientAnnotationTask.id, annotation.id);
+        icons();
+      }
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  };
+  $("#clientAnnotationBackBtn")?.addEventListener("click", showClientAnnotationList);
+  $("#clientAnnotationDialog")?.addEventListener("close", () => {
+    if (annotationReturnTo.startsWith("/tasks")) {
+      window.location.href = annotationReturnTo;
+      return;
+    }
+    if (clientAnnotationDirty) renderClientWebsite(clientID, websiteID);
+  });
+  $("#openAnnotationPageBtn")?.addEventListener("click", () => {
+    const form = $("#clientAnnotationTaskForm");
+    const fullURL = annotationPageURL(website.url, $("#clientAnnotationPageURL")?.value || "");
+    const line = $("#clientAnnotationURLStep .status-line");
+    if (!fullURL || !/^https:\/\//i.test(fullURL)) {
+      if (line) {
+        line.textContent = "Website annotation requires an https domain.";
+        line.style.color = "var(--danger)";
+      }
+      return;
+    }
+    $("#clientAnnotationStage").innerHTML = annotationFrameHTML({
+      url: fullURL,
+      title: `${website.name || "Website"} annotation page`,
+      height: ANNOTATION_TALL_FALLBACK_HEIGHT,
+      fallbackHeight: ANNOTATION_TALL_FALLBACK_HEIGHT,
+      catcherID: "clientAnnotationClickCatcher",
+      pinLayerID: "clientAnnotationPinLayer",
+      pins: clientAnnotationsForPage().map((item, index) => ({ id: item.id, x: item.pin_x, y: item.pin_y, page_width: item.page_width, page_height: item.page_height, label: String(index + 1), title: item.title || "Annotation" })),
+    });
+    currentClientAnnotationURL = fullURL;
+    currentClientAnnotationPageWidth = ANNOTATION_VIEWPORT.width;
+    currentClientAnnotationPageHeight = ANNOTATION_TALL_FALLBACK_HEIGHT;
+    $("#clientAnnotationURLStep")?.setAttribute("hidden", "");
+    $("#clientAnnotationWorkspace")?.removeAttribute("hidden");
+    bindAnnotationViewportResize($("#clientAnnotationStage"));
+    bindAnnotationDeviceControls($("#clientAnnotationStage"), {
+      fallbackHeight: ANNOTATION_TALL_FALLBACK_HEIGHT,
+      onChange: ({ width, height }) => {
+        currentClientAnnotationPageWidth = width;
+        currentClientAnnotationPageHeight = height;
+        if (form) {
+          form.elements.page_width.value = width;
+          form.elements.page_height.value = height;
+          form.elements.pin_x.value = "";
+          form.elements.pin_y.value = "";
+        }
+        const coord = $("#clientAnnotationCoordLabel");
+        if (coord) coord.value = "";
+        renderClientAnnotationPins();
+      },
+    });
+    bindAnnotationFrameAutoHeight($("#clientAnnotationStage"), {
+      fallbackHeight: ANNOTATION_TALL_FALLBACK_HEIGHT,
+      onHeight: (height, width) => {
+        currentClientAnnotationPageHeight = height;
+        currentClientAnnotationPageWidth = width;
+        if (form) {
+          form.elements.page_width.value = width;
+          form.elements.page_height.value = height;
+        }
+        renderClientAnnotationPins();
+      },
+    });
+    showClientAnnotationList();
+    renderClientAnnotationList();
+    renderClientAnnotationPins();
+    if (line) line.textContent = "";
+    form.elements.url.value = fullURL;
+    form.elements.page_width.value = currentClientAnnotationPageWidth;
+    form.elements.page_height.value = currentClientAnnotationPageHeight;
+    $("#clientAnnotationTaskForm input[name='title']")?.focus();
+    bindClientAnnotationClick();
+  });
+  const bindClientAnnotationClick = () => {
+    const catcher = $("#clientAnnotationClickCatcher");
+    if (!catcher || catcher.dataset.bound === "1") return;
+    catcher.dataset.bound = "1";
+    catcher.addEventListener("click", (event) => {
+      const viewport = event.currentTarget.closest("[data-annotation-viewport]");
+      const form = $("#clientAnnotationTaskForm");
+      if (!viewport || !form) return;
+      const { x, y } = annotationPointFromEvent(event, viewport);
+      form.elements.pin_x.value = x.toFixed(2);
+      form.elements.pin_y.value = y.toFixed(2);
+      $("#clientAnnotationCoordLabel").value = `${x.toFixed(1)}%, ${y.toFixed(1)}%`;
+      renderClientAnnotationPins(annotationPinHTML({ x, y, target_page_width: currentClientAnnotationPageWidth, target_page_height: currentClientAnnotationPageHeight, label: "New", title: "New annotation" }));
+      $("#clientAnnotationTaskForm textarea[name='comment']")?.focus();
+      icons();
+    });
+  };
+  bindClientAnnotationClick();
+  $("#clientAnnotationStage")?.addEventListener("click", (event) => {
+    const pin = event.target.closest("[data-feedback-pin]");
+    if (pin) openClientAnnotationDetail(pin.dataset.feedbackPin);
   });
   $("#clientTabForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -2881,8 +6511,9 @@ async function renderClientWebsite(clientID, websiteID) {
   $("#editClientTabForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
+    const tabID = form.elements.tab_id.value;
     try {
-      await api(`/api/client-tabs/${selectedTab.id}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
+      await api(`/api/client-tabs/${tabID}`, { method: "PATCH", body: JSON.stringify({ title: form.elements.title.value }) });
       renderClientWebsite(clientID, websiteID);
     } catch (error) {
       setFormStatus(form, error.message, true);
@@ -2905,7 +6536,9 @@ async function renderClientWebsite(clientID, websiteID) {
     const body = Object.fromEntries(new FormData(form).entries());
     body.title = compactClientTaskTitle(body.title);
     body.assignee_ids = selectedAssigneeIDs(form);
-    body.checklist = readChecklistItems(form);
+    body.blocks = readContentBlocks(form);
+    body.content = contentFromBlocks(body.blocks);
+    body.checklist = checklistFromBlocks(body.blocks);
     body.recurrence = recurrencePayloadFromForm(form);
     body.attachments = [];
     try {
@@ -2940,9 +6573,12 @@ async function renderClientWebsite(clientID, websiteID) {
     body.comment = String(body.comment || "").trim();
     body.content = body.comment;
     body.checklist = [];
+    body.blocks = [];
     body.assignee_ids = selectedAssigneeIDs(form);
     body.recurrence = recurrencePayloadFromForm(form);
     body.attachments = [];
+    body.page_width = Number(body.page_width || currentClientAnnotationPageWidth || ANNOTATION_VIEWPORT.width);
+    body.page_height = Number(body.page_height || currentClientAnnotationPageHeight || ANNOTATION_TALL_FALLBACK_HEIGHT);
     try {
       if (!String(body.url || "").startsWith("https://")) {
         throw new Error("annotation URL must start with https://");
@@ -2955,8 +6591,46 @@ async function renderClientWebsite(clientID, websiteID) {
       for (const file of Array.from(form.attachments?.files || [])) {
         body.attachments.push(await upload(file));
       }
-      await api(`/api/client-tabs/${selectedTab.id}/tasks`, { method: "POST", body: JSON.stringify(body) });
-      renderClientWebsite(clientID, websiteID);
+      const annotation = {
+        title: body.title,
+        url: body.url,
+        comment: body.comment,
+        pin_x: body.pin_x,
+        pin_y: body.pin_y,
+        page_width: body.page_width,
+        page_height: body.page_height,
+        attachments: body.attachments,
+        assignee_ids: body.assignee_ids,
+        status: body.status || "todo",
+      };
+      if (!currentClientAnnotationTask?.id) {
+        body.annotations = [annotation];
+        const created = await api(`/api/client-tabs/${selectedTab.id}/tasks`, { method: "POST", body: JSON.stringify(body) });
+        if (created.task?.id) {
+          currentClientAnnotationTask = created.task;
+          currentClientAnnotationItems = clientTaskAnnotationItems(created.task);
+          clientAnnotationTasks.unshift(created.task);
+          clientAnnotationTasksByID[created.task.id] = created.task;
+        }
+      } else {
+        const annotations = [...currentClientAnnotationItems, annotation];
+        await api(`/api/client-tasks/${currentClientAnnotationTask.id}`, { method: "PATCH", body: JSON.stringify({ annotations, page_width: body.page_width, page_height: body.page_height }) });
+        const latest = await api(`/api/client-tasks/${currentClientAnnotationTask.id}`);
+        currentClientAnnotationTask = latest.task || currentClientAnnotationTask;
+        currentClientAnnotationItems = clientTaskAnnotationItems(currentClientAnnotationTask);
+        clientAnnotationTasksByID[currentClientAnnotationTask.id] = currentClientAnnotationTask;
+      }
+      clientAnnotationDirty = true;
+      form.reset();
+      form.elements.url.value = currentClientAnnotationURL;
+      form.elements.page_width.value = currentClientAnnotationPageWidth;
+      form.elements.page_height.value = currentClientAnnotationPageHeight;
+      form.elements.pin_x.value = "";
+      form.elements.pin_y.value = "";
+      $("#clientAnnotationCoordLabel").value = "";
+      renderClientAnnotationList();
+      renderClientAnnotationPins();
+      setFormStatus(form, currentClientAnnotationTask?.id ? "Annotation saved to this task." : "Annotation created.");
     } catch (error) {
       setFormStatus(form, error.message, true);
     }
@@ -2989,75 +6663,455 @@ async function renderClientWebsite(clientID, websiteID) {
     bindStatusAddControls(app, selectedTab, data.tasks || [], async () => {
       renderClientWebsite(clientID, websiteID);
     });
+    bindClientStatusColumnSort(app, selectedTab, data.tasks || [], canManageStatuses, async () => {
+      renderClientWebsite(clientID, websiteID);
+    });
   }
   bindClientBoardDrag(app, async () => {
     renderClientWebsite(clientID, websiteID);
   });
   bindRichEditors(app);
   bindChecklistBuilders(app);
+  bindContentBlockEditors(app);
   bindRecurrenceControls(app);
   bindAttachmentOpeners(app);
   bindDialogCloseButtons();
   bindMentionSuggestions(app);
+  bindAnnotationSidebarToggles(app);
+  if (autoOpenAnnotation) {
+    const url = new URL(location.href);
+    url.searchParams.delete("new");
+    history.replaceState(null, "", `${url.pathname}${url.search}`);
+    setTimeout(() => $("#chooseAnnotationTask")?.click(), 0);
+  }
   icons();
 }
 
-async function renderTasks(projectID = "") {
-  let list = null;
-  let lists = [];
-  if (projectID) {
-    const data = await api(`/api/projects/${projectID}/lists`);
-    lists = data.lists || [];
-    list = lists[0];
-  } else {
-    list = await getFirstList();
-    lists = list ? [list] : [];
+function assignedIndexByID(items = []) {
+  return Object.fromEntries((items || []).map((item) => [item.id, item]).filter(([id]) => id));
+}
+
+function assignedTaskDueBucket(task = {}) {
+  const due = parseLocalDate(taskDueInfo(task).date || task.due_date);
+  if (!due) return "no_due";
+  const today = todayLocalDate();
+  if (due < today) return "overdue";
+  if (due.getTime() === today.getTime()) return "today";
+  if (due <= addDays(today, 7)) return "next7";
+  return "later";
+}
+
+function assignedTaskStatus(task = {}, tab = {}) {
+  const statuses = clientTaskStatuses(tab, [task]);
+  return statuses.find((item) => item.value === (task.status || "todo")) || statuses[0] || { value: "todo", label: "To do" };
+}
+
+function assignedTaskStatusOptions(tasks = [], tabsByID = {}) {
+  const options = new Map();
+  (tasks || []).forEach((task) => {
+    const status = assignedTaskStatus(task, tabsByID[task.tab_id] || {});
+    if (status.value && !options.has(status.value)) options.set(status.value, status.label);
+  });
+  return Array.from(options.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+}
+
+function assignedTaskBoardTabsByWebsite(tabs = []) {
+  const byWebsite = {};
+  (tabs || []).forEach((tab) => {
+    if (tab.type !== "task_board" || !tab.website_id || byWebsite[tab.website_id]) return;
+    byWebsite[tab.website_id] = tab;
+  });
+  return byWebsite;
+}
+
+function taskReportPDFURL(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (String(value || "").trim()) query.set(key, value);
+  });
+  if (!query.has("period")) query.set("period", "all");
+  if (state.access) query.set("token", state.access);
+  return `/api/reports/tasks/export.pdf?${query.toString()}`;
+}
+
+function taskReportPreviewURL(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (String(value || "").trim()) query.set(key, value);
+  });
+  if (!query.has("period")) query.set("period", "all");
+  return `/api/reports/tasks/preview?${query.toString()}`;
+}
+
+function taskReportLinkHTML(params, label, className = "") {
+  return `<a class="${esc(className || "btn compact")}" href="${esc(taskReportPDFURL(params))}" target="_blank" rel="noopener" title="${esc(label)}">${icon("file-down")}${esc(label)}</a>`;
+}
+
+function clientTaskTransferURL(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (String(value || "").trim()) query.set(key, value);
+  });
+  if (state.access) query.set("token", state.access);
+  return `/api/client-tasks/export.json?${query.toString()}`;
+}
+
+function clientTaskImportURL(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (String(value || "").trim()) query.set(key, value);
+  });
+  const suffix = query.toString();
+  return `/api/client-tasks/import${suffix ? `?${suffix}` : ""}`;
+}
+
+function clientTaskTransferLinkHTML(params, label, className = "") {
+  return `<a class="${esc(className || "btn compact")}" href="${esc(clientTaskTransferURL(params))}" target="_blank" rel="noopener" title="${esc(label)}">${icon("download")}${esc(label)}</a>`;
+}
+
+function clientTaskImportButtonHTML(params, label, className = "") {
+  return `<button class="${esc(className || "btn compact")}" type="button"
+    data-import-client-tasks
+    data-import-client-id="${esc(params?.client_id || "")}"
+    data-import-website-id="${esc(params?.website_id || "")}"
+    title="${esc(label)}">${icon("upload")}${esc(label)}</button>`;
+}
+
+function assignedTaskRowHTML(task, context) {
+  const client = context.clientsByID[task.client_id] || {};
+  const website = context.websitesByID[task.website_id] || {};
+  const tab = context.tabsByID[task.tab_id] || {};
+  const status = assignedTaskStatus(task, tab);
+  const dueInfo = taskDueInfo(task);
+  const dueBucket = assignedTaskDueBucket(task);
+  const dueText = dueInfo.date || task.due_date ? fmtDate(dueInfo.date || task.due_date) : "No due date";
+  const categoryLabel = task.type === "annotation" ? "Annotation" : "Description";
+  const searchText = [
+    task.title,
+    task.type,
+    client.name,
+    website.name,
+    website.url,
+    tab.title,
+    status.label,
+    dueInfo.text,
+    fmtDate(task.created_at),
+  ].filter(Boolean).join(" ").toLowerCase();
+  return `<div class="assigned-task-row"
+      data-assigned-task
+      data-client-id="${esc(task.client_id || "")}"
+      data-website-id="${esc(task.website_id || "")}"
+      data-status="${esc(status.value || "")}"
+      data-due-bucket="${esc(dueBucket)}"
+      data-search="${esc(searchText)}">
+    <button class="assigned-task-open" type="button" data-open-client-task="${esc(task.id)}">
+      <span class="assigned-task-title" title="${esc(compactClientTaskTitle(task.title) || "Untitled task")}">
+        <strong>${esc(compactClientTaskTitle(task.title) || "Untitled task")}</strong>
+      </span>
+      <time>${esc(fmtDate(task.created_at))}</time>
+      <span class="assigned-task-due ${dueBucket === "overdue" ? "overdue" : ""}">${icon("calendar-days")}${esc(dueText)}</span>
+      <span class="assigned-task-assignees">${assigneeAvatarsHTML(task.assignee_ids || [], context.usersByID) || `<span class="muted">Unassigned</span>`}</span>
+      <span class="assigned-task-category">${icon(task.type === "annotation" ? "map-pin" : "file-text")}${esc(categoryLabel)}</span>
+    </button>
+    <span class="assigned-transfer-icons">
+      <a class="assigned-export-icon" href="${esc(clientTaskTransferURL({ scope: "task", task_id: task.id }))}" target="_blank" rel="noopener" title="Export this task JSON" aria-label="Export this task JSON">${icon("download")}</a>
+      <button class="assigned-export-icon" type="button" data-import-client-tasks data-import-website-id="${esc(task.website_id || "")}" title="Import task JSON into this domain" aria-label="Import task JSON into this domain">${icon("upload")}</button>
+    </span>
+  </div>`;
+}
+
+function assignedInlineTaskFormHTML(client, website, tab, context) {
+  if (!context.canCreate) return "";
+  if (!tab?.id) {
+    return `<div class="assigned-domain-actions"><button class="btn compact" type="button" disabled title="Create a task board tab on this domain first">${icon("plus")}Add task</button><button class="btn compact" type="button" disabled title="Create a task board tab on this domain first">${icon("map-pin")}Add Annotation</button></div>`;
   }
-  const tasks = list ? ((await api(`/api/tasks?list_id=${list.id}`)).tasks || []) : [];
-  const view = new URLSearchParams(location.search).get("view") || "list";
-  shell("Tasks", `
-    <div class="page-title"><div><h1>${esc(list?.name || "Tasks")}</h1><p class="muted">${esc(list?.statuses?.join(" / ") || "")}</p></div></div>
-    <div class="toolbar">
-      <div class="tabs">
-        ${["list", "board", "calendar"].map((v) => `<button class="${view === v ? "active" : ""}" data-view="${v}">${v}</button>`).join("")}
-      </div>
-      <button class="btn primary" id="newTaskBtn">${icon("plus")}Task</button>
-    </div>
-    <section id="taskSurface">${renderTaskView(view, tasks, list)}</section>
-    <dialog id="taskDialog" class="modal">
-      <form id="taskForm" class="form-grid" method="dialog">
-        <div class="modal-head"><h2>New task</h2><button class="btn icon quiet" type="button" data-close-dialog="taskDialog" title="Close">${icon("x")}</button></div>
-        <div class="field"><label>Title</label><input name="title" required></div>
-        <div class="field"><label>Description</label><textarea name="description" data-mentionable placeholder="Use @username to mention a teammate"></textarea></div>
-        <div class="grid-2">
-          <div class="field"><label>Status</label><select name="status">${(list?.statuses || ["To Do", "In Progress", "Done"]).map((s) => `<option>${esc(s)}</option>`).join("")}</select></div>
-          <div class="field"><label>Priority</label><select name="priority"><option>Normal</option><option>High</option><option>Urgent</option><option>Low</option></select></div>
+  const statuses = clientTaskStatuses(tab, []);
+  const defaultStatus = statuses[0]?.value || "todo";
+  const selectedAssignees = context.assignedOnly && state.me?.id ? [state.me.id] : [];
+  const formID = `inlineTaskForm-${website.id}`;
+  return `<div class="assigned-domain-actions">
+    <button class="btn compact" type="button" data-show-inline-task="${esc(formID)}">${icon("plus")}Add task</button>
+    <button class="btn compact" type="button" data-start-domain-annotation data-client-id="${esc(client.id || "")}" data-website-id="${esc(website.id || "")}" data-tab-id="${esc(tab.id)}">${icon("map-pin")}Add Annotation</button>
+  </div>
+  <form class="assigned-inline-task-form" id="${esc(formID)}" data-inline-domain-task-form data-tab-id="${esc(tab.id)}" hidden>
+    <input type="hidden" name="status" value="${esc(defaultStatus)}">
+    <input name="title" maxlength="80" placeholder="Task title" required>
+    <input type="date" name="due_date" aria-label="Due date">
+    ${assigneePickerHTML(context.memberEntries || [], selectedAssignees)}
+    <button class="btn primary compact" type="submit">${icon("save")}Create</button>
+    <button class="btn compact" type="button" data-cancel-inline-task="${esc(formID)}">Cancel</button>
+    <p class="status-line"></p>
+  </form>`;
+}
+
+function assignedTaskGroupsHTML(tasks = [], context) {
+  const groups = new Map();
+  const ensureClientGroup = (client) => {
+    if (!groups.has(client.id)) groups.set(client.id, { client, websites: new Map(), count: 0 });
+    return groups.get(client.id);
+  };
+  const ensureDomainGroup = (client, website) => {
+    const clientGroup = ensureClientGroup(client);
+    if (!clientGroup.websites.has(website.id)) clientGroup.websites.set(website.id, { website, tasks: [] });
+    return clientGroup.websites.get(website.id);
+  };
+  (context.clients || []).forEach((client) => ensureClientGroup(client));
+  (context.websites || []).forEach((website) => {
+    const client = context.clientsByID[website.client_id] || { id: website.client_id, name: "Unknown folder" };
+    ensureDomainGroup(client, website);
+  });
+  tasks.forEach((task) => {
+    const client = context.clientsByID[task.client_id] || { id: task.client_id, name: "Unknown folder" };
+    const website = context.websitesByID[task.website_id] || { id: task.website_id, client_id: task.client_id, name: "Unknown domain" };
+    const clientGroup = ensureClientGroup(client);
+    ensureDomainGroup(client, website).tasks.push(task);
+    clientGroup.count += 1;
+  });
+  if (!groups.size) {
+    return context.assignedOnly
+      ? `<section class="panel empty-state"><h2>No assigned tasks yet</h2><p class="muted">Tasks assigned to you from domain boards will show here.</p></section>`
+      : `<section class="panel empty-state"><h2>No tasks yet</h2><p class="muted">Domain tasks will show here.</p></section>`;
+  }
+  return `<div class="assigned-task-groups">
+    ${Array.from(groups.values()).map((clientGroup) => `<section class="assigned-client-group" data-assigned-client-group>
+      <div class="assigned-client-heading-row">
+        <button class="assigned-client-heading" type="button" data-toggle-task-folder aria-expanded="true">
+          <div><span data-toggle-icon>${icon("chevron-down")}</span>${icon("folder")}<strong>${esc(clientGroup.client.name || "Client folder")}</strong></div>
+          <span class="pill">${clientGroup.count} ${clientGroup.count === 1 ? "task" : "tasks"}</span>
+        </button>
+        <div class="assigned-transfer-actions">
+          ${clientTaskTransferLinkHTML({ scope: "client", client_id: clientGroup.client.id }, "Export", "btn compact assigned-export-link")}
+          ${clientTaskImportButtonHTML({ client_id: clientGroup.client.id }, "Import", "btn compact assigned-export-link")}
         </div>
-        <div class="field"><label>Due date</label><input type="date" name="due_date"></div>
-        <button class="btn primary" type="submit">${icon("save")}Create</button>
-        <p class="status-line"></p>
-      </form>
-    </dialog>`);
-  document.querySelectorAll("[data-view]").forEach((btn) => btn.addEventListener("click", () => {
-    history.replaceState(null, "", location.pathname + "?view=" + btn.dataset.view);
-    renderTasks(projectID);
+      </div>
+      <div class="assigned-domain-list" data-task-folder-body>
+        ${Array.from(clientGroup.websites.values()).map((domainGroup) => {
+          const website = domainGroup.website;
+          const tab = context.taskBoardTabsByWebsiteID[website.id] || null;
+          const domainSearch = [clientGroup.client.name, website.name, website.url].filter(Boolean).join(" ").toLowerCase();
+          return `<section class="assigned-domain-group" data-assigned-domain-group data-client-id="${esc(clientGroup.client.id || "")}" data-website-id="${esc(website.id || "")}" data-search="${esc(domainSearch)}">
+          <div class="assigned-domain-heading-row">
+            <button class="assigned-domain-heading" type="button" data-toggle-task-domain aria-expanded="true">
+              <div><span data-toggle-icon>${icon("chevron-down")}</span>${icon("globe-2")}<strong>${esc(website.name || "Domain")}</strong>${website.url ? `<span>${esc(website.url)}</span>` : ""}</div>
+              <span class="muted">${domainGroup.tasks.length} ${domainGroup.tasks.length === 1 ? "task" : "tasks"}</span>
+            </button>
+            <div class="assigned-transfer-actions">
+              ${clientTaskTransferLinkHTML({ scope: "domain", client_id: clientGroup.client.id, website_id: website.id }, "Export", "btn compact assigned-export-link")}
+              ${clientTaskImportButtonHTML({ website_id: website.id }, "Import", "btn compact assigned-export-link")}
+            </div>
+          </div>
+          <div class="assigned-domain-content" data-task-domain-body>
+            <div class="assigned-domain-tasks">${domainGroup.tasks.map((task) => assignedTaskRowHTML(task, context)).join("") || `<p class="assigned-domain-empty muted">No tasks yet.</p>`}</div>
+            ${assignedInlineTaskFormHTML(clientGroup.client, website, tab, context)}
+          </div>
+        </section>`;
+        }).join("")}
+      </div>
+    </section>`).join("")}
+    <section id="assignedNoResults" class="panel empty-state" hidden><h2>No matching tasks</h2><p class="muted">Try a different folder, domain, status, due date, or search term.</p></section>
+  </div>`;
+}
+
+function bindAssignedTaskFilters() {
+  const rows = Array.from(document.querySelectorAll("[data-assigned-task]"));
+  const filters = Array.from(document.querySelectorAll("[data-assigned-filter]"));
+  const search = document.querySelector("[data-assigned-search]");
+  const noResults = $("#assignedNoResults");
+  const valueFor = (name) => document.querySelector(`[data-assigned-filter="${name}"]`)?.value || "";
+  const apply = () => {
+    const clientID = valueFor("client");
+    const websiteID = valueFor("website");
+    const status = valueFor("status");
+    const due = valueFor("due");
+    const query = String(search?.value || "").trim().toLowerCase();
+    let visibleCount = 0;
+    rows.forEach((row) => {
+      const dueBucket = row.dataset.dueBucket || "";
+      const dueMatches = !due || dueBucket === due || (due === "next7" && (dueBucket === "today" || dueBucket === "next7"));
+      const visible = (!clientID || row.dataset.clientId === clientID)
+        && (!websiteID || row.dataset.websiteId === websiteID)
+        && (!status || row.dataset.status === status)
+        && dueMatches
+        && (!query || (row.dataset.search || "").includes(query));
+      row.hidden = !visible;
+      if (visible) visibleCount += 1;
+    });
+    let visibleDomainCount = 0;
+    document.querySelectorAll("[data-assigned-domain-group]").forEach((group) => {
+      const domainRows = Array.from(group.querySelectorAll("[data-assigned-task]"));
+      const hasVisibleTask = Boolean(group.querySelector("[data-assigned-task]:not([hidden])"));
+      const domainMatches = (!clientID || group.dataset.clientId === clientID)
+        && (!websiteID || group.dataset.websiteId === websiteID)
+        && (!query || (group.dataset.search || "").includes(query));
+      const taskOnlyFiltersActive = Boolean(status || due);
+      group.hidden = domainRows.length ? !hasVisibleTask : !(domainMatches && !taskOnlyFiltersActive);
+      if (!group.hidden) visibleDomainCount += 1;
+    });
+    document.querySelectorAll("[data-assigned-client-group]").forEach((group) => {
+      group.hidden = !group.querySelector("[data-assigned-domain-group]:not([hidden])");
+    });
+    if (noResults) noResults.hidden = visibleCount !== 0 || visibleDomainCount !== 0;
+  };
+  filters.forEach((filter) => filter.addEventListener("change", apply));
+  search?.addEventListener("input", apply);
+  apply();
+}
+
+function bindAssignedTaskCollapsers() {
+  document.querySelectorAll("[data-toggle-task-folder]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const group = btn.closest("[data-assigned-client-group]");
+      const body = group?.querySelector("[data-task-folder-body]");
+      const expanded = btn.getAttribute("aria-expanded") !== "true";
+      btn.setAttribute("aria-expanded", expanded ? "true" : "false");
+      group?.classList.toggle("is-collapsed", !expanded);
+      if (body) body.hidden = !expanded;
+      const slot = btn.querySelector("[data-toggle-icon]");
+      if (slot) slot.innerHTML = icon(expanded ? "chevron-down" : "chevron-right");
+      icons();
+    });
+  });
+  document.querySelectorAll("[data-toggle-task-domain]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const group = btn.closest("[data-assigned-domain-group]");
+      const body = group?.querySelector("[data-task-domain-body]");
+      const expanded = btn.getAttribute("aria-expanded") !== "true";
+      btn.setAttribute("aria-expanded", expanded ? "true" : "false");
+      group?.classList.toggle("is-collapsed", !expanded);
+      if (body) body.hidden = !expanded;
+      const slot = btn.querySelector("[data-toggle-icon]");
+      if (slot) slot.innerHTML = icon(expanded ? "chevron-down" : "chevron-right");
+      icons();
+    });
+  });
+}
+
+function bindAssignedTaskCreation() {
+  document.querySelectorAll("[data-show-inline-task]").forEach((btn) => btn.addEventListener("click", () => {
+    const form = document.getElementById(btn.dataset.showInlineTask);
+    if (!form) return;
+    form.hidden = false;
+    form.querySelector("input[name='title']")?.focus();
   }));
-  $("#newTaskBtn")?.addEventListener("click", () => $("#taskDialog").showModal());
-  bindDialogCloseButtons();
-  $("#taskForm")?.addEventListener("submit", async (event) => {
+  document.querySelectorAll("[data-cancel-inline-task]").forEach((btn) => btn.addEventListener("click", () => {
+    const form = document.getElementById(btn.dataset.cancelInlineTask);
+    if (!form) return;
+    form.reset();
+    form.hidden = true;
+    form.querySelector(".status-line").textContent = "";
+  }));
+  document.querySelectorAll("[data-start-domain-annotation]").forEach((btn) => btn.addEventListener("click", () => {
+    const clientID = btn.dataset.clientId;
+    const websiteID = btn.dataset.websiteId;
+    const tabID = btn.dataset.tabId;
+    if (!clientID || !websiteID || !tabID) return;
+    const returnTo = encodeURIComponent(`${location.pathname}${location.search}`);
+    window.location.href = `/projects/${clientID}/sites/${websiteID}?tab=${tabID}&new=annotation&return=${returnTo}`;
+  }));
+  document.querySelectorAll("[data-inline-domain-task-form]").forEach((form) => form.addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
-      const form = Object.fromEntries(new FormData(event.currentTarget).entries());
-      await api("/api/tasks", { method: "POST", body: JSON.stringify({ ...form, list_id: list.id, assignee_ids: [state.me.id] }) });
-      $("#taskDialog").close();
-      renderTasks(projectID);
+      const body = {
+        type: "description",
+        title: form.elements.title.value,
+        status: form.elements.status.value,
+        due_date: form.elements.due_date.value,
+        assignee_ids: selectedAssigneeIDs(form),
+        blocks: [],
+        content: "",
+      };
+      await api(`/api/client-tabs/${form.dataset.tabId}/tasks`, { method: "POST", body: JSON.stringify(body) });
+      renderTasks();
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  }));
+}
+
+function bindClientTaskTransferControls() {
+  document.querySelectorAll("[data-import-client-tasks]").forEach((btn) => btn.addEventListener("click", () => {
+    const params = {};
+    if (btn.dataset.importClientId) params.client_id = btn.dataset.importClientId;
+    if (btn.dataset.importWebsiteId) params.website_id = btn.dataset.importWebsiteId;
+    openClientTaskImportPicker(params);
+  }));
+}
+
+function openClientTaskImportPicker(params = {}) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "application/json,.json";
+  input.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const bundle = JSON.parse(text);
+      const result = await api(clientTaskImportURL(params), { method: "POST", body: JSON.stringify(bundle) });
+      await renderTasks();
+      setStatus(`Imported ${result.imported || 0} tasks.`);
     } catch (error) {
       setStatus(error.message, true);
+    } finally {
+      input.remove();
     }
-  });
-  bindTaskActions();
-  bindTaskComments();
-  bindBoardDrag(list);
+  }, { once: true });
+  document.body.appendChild(input);
+  input.click();
+}
+
+async function renderTasks(projectID = "") {
+  const routeParams = new URLSearchParams(location.search);
+  const view = routeParams.get("view") || "all";
+  const assignedOnly = view === "assigned";
+  const data = await api(`/api/client-tasks/assigned${assignedOnly ? "?scope=assigned" : ""}`);
+  state.liveTaskSignature = taskListLiveSignature(data);
+  const tasks = data.tasks || [];
+  const clients = data.clients || [];
+  const websites = data.websites || [];
+  const tabs = data.tabs || [];
+  const canCreate = Boolean(data.can_create_tasks);
+  const clientsByID = assignedIndexByID(clients);
+  const websitesByID = assignedIndexByID(websites);
+  const tabsByID = assignedIndexByID(tabs);
+  const usersByID = clientTaskUsersByID(data.members || []);
+  const taskBoardTabsByWebsiteID = assignedTaskBoardTabsByWebsite(tabs);
+  const initialSearch = routeParams.get("search") || "";
+  const statusOptions = assignedTaskStatusOptions(tasks, tabsByID);
+  const context = { clients, websites, tabs, clientsByID, websitesByID, tabsByID, usersByID, taskBoardTabsByWebsiteID, memberEntries: data.members || [], canCreate, assignedOnly };
+  const pageTitle = assignedOnly ? "Assigned to me" : "Tasks";
+  shell(pageTitle, `
+    <div class="page-title assigned-task-page-title">
+      <div><h1>${esc(pageTitle)}</h1><p class="muted">${assignedOnly ? "Tasks assigned to you, grouped by project folder and domain." : "All tasks you can access, grouped by project folder and domain."}</p><p class="status-line assigned-transfer-status"></p></div>
+      <div class="assigned-task-filters">
+        ${clientTaskTransferLinkHTML({ scope: assignedOnly ? "assigned" : "all" }, assignedOnly ? "Export assigned" : "Export all", "btn compact assigned-page-export")}
+        ${clientTaskImportButtonHTML({}, "Import", "btn compact assigned-page-export")}
+        <label><span>Folder</span><select data-assigned-filter="client"><option value="">All folders</option>${clients.map((client) => `<option value="${esc(client.id)}">${esc(client.name)}</option>`).join("")}</select></label>
+        <label><span>Domain</span><select data-assigned-filter="website"><option value="">All domains</option>${websites.map((website) => `<option value="${esc(website.id)}">${esc(website.name)}</option>`).join("")}</select></label>
+        <label><span>Status</span><select data-assigned-filter="status"><option value="">All statuses</option>${statusOptions.map(([value, label]) => `<option value="${esc(value)}">${esc(label)}</option>`).join("")}</select></label>
+        <label><span>Due date</span><select data-assigned-filter="due"><option value="">Any due date</option><option value="overdue">Overdue</option><option value="today">Today</option><option value="next7">Next 7 days</option><option value="later">Later</option><option value="no_due">No due date</option></select></label>
+        <label class="assigned-search"><span>Search</span><input type="search" data-assigned-search placeholder="Search tasks" value="${esc(initialSearch)}"></label>
+      </div>
+    </div>
+    ${assignedTaskGroupsHTML(tasks, context)}`);
+  bindAssignedTaskFilters();
+  bindAssignedTaskCollapsers();
+  bindAssignedTaskCreation();
+  bindClientTaskTransferControls();
+  bindAssigneePickers(app);
+  document.querySelectorAll("[data-open-client-task]").forEach((btn) => btn.addEventListener("click", () => openClientTaskPanel(btn.dataset.openClientTask)));
+  icons();
+  const openTaskID = routeParams.get("task_id") || "";
+  const openCommentID = routeParams.get("comment_id") || "";
+  if (openTaskID) {
+    setTimeout(async () => {
+      if (openCommentID) {
+        const readData = await api(`/api/client-task-comments/${openCommentID}/read`, { method: "POST", body: JSON.stringify({}) }).catch(() => ({}));
+        if (readData.unread_count !== undefined) updateInboxBadge(readData.unread_count);
+      }
+      await openClientTaskPanel(openTaskID, openCommentID);
+    }, 0);
+  }
 }
 
 function renderTaskView(view, tasks, list) {
@@ -3125,6 +7179,9 @@ function showTaskDetailDialog(data, activeCommentID = "") {
     dialog.className = "task-detail-modal";
     document.body.appendChild(dialog);
   }
+  dialog.dataset.liveTaskId = task.id || "";
+  dialog.dataset.liveCommentId = activeCommentID || "";
+  dialog.dataset.liveSignature = liveStableString({ task });
   const comments = task.comments || [];
   dialog.innerHTML = `
     <div class="task-detail-shell">
@@ -3247,52 +7304,246 @@ async function upload(file) {
 async function renderAnnotate(id) {
   const site = (await api(`/api/websites/${id}`)).website;
   const bugs = (await api(`/api/websites/${id}/bugs`)).bugs || [];
+  const teamData = site.team_id ? await api(`/api/teams/${site.team_id}`).catch(() => ({ members: [] })) : { members: [] };
+  const members = teamData.members || [];
+  const memberEntries = feedbackMemberEntries(members.length ? members : [state.me].filter(Boolean));
+  const usersByID = Object.fromEntries([...(members || []), state.me].filter((user) => user?.id).map((user) => [user.id, user]));
+  const statuses = feedbackTaskStatuses(bugs);
+  const bugsByID = Object.fromEntries(bugs.map((bug) => [bug.id, bug]));
   shell(site.name, `
     <div class="annotate-layout">
       <section class="annotation-stage" id="annotationStage">
-        ${site.embed_mode === "screenshot" && site.screenshot_url ? `<img src="${esc(site.screenshot_url)}" alt="${esc(site.name)} screenshot">` : `<iframe src="${esc(site.url)}" title="${esc(site.name)}"></iframe>`}
-        <div class="click-catcher" id="clickCatcher"></div>
-        <div class="pin-layer">${bugs.map((bug, i) => `<button class="pin" style="left:${bug.pin_x}%;top:${bug.pin_y}%;" title="${esc(bug.description)}">${i + 1}</button>`).join("")}</div>
+        ${annotationFrameHTML({
+          url: site.url,
+          imageURL: site.embed_mode === "screenshot" ? site.screenshot_url : "",
+          title: site.name,
+          catcherID: "clickCatcher",
+          pinLayerID: "feedbackPinLayer",
+          pins: bugs.map((bug, i) => ({ id: bug.id, x: bug.pin_x, y: bug.pin_y, label: String(i + 1), title: feedbackBugTitle(bug) })),
+        })}
       </section>
-      <aside class="bug-side">
-        <h2>Pin feedback</h2>
-        <form id="bugForm" class="form-grid">
-          <input type="hidden" name="pin_x">
-          <input type="hidden" name="pin_y">
-          <div class="field"><label>Coordinates</label><input id="coordLabel" disabled></div>
-          <div class="field"><label>Description</label><textarea name="description" required data-mentionable placeholder="Use @username to mention a teammate"></textarea></div>
-          <div class="field"><label>Severity</label><select name="severity"><option>Normal</option><option>High</option><option>Urgent</option><option>Low</option></select></div>
-          <button class="btn primary" type="submit">${icon("map-pin")}Save pin</button>
-          <p class="status-line"></p>
-        </form>
-        <hr>
-        <div class="task-list">${bugs.map((bug) => `<article class="task-row"><div><h3>${mentionText(bug.description)}</h3><span class="muted">${bug.pin_x.toFixed(1)}%, ${bug.pin_y.toFixed(1)}%</span></div><span class="pill">${esc(bug.status)}</span><button class="btn" data-convert-bug="${bug.id}">${icon("git-pull-request")}Task</button></article>`).join("")}</div>
+      <aside class="bug-side feedback-side">
+        <section class="feedback-sidebar-view" id="feedbackListView">
+          <h2>Pin feedback</h2>
+          <form id="bugForm" class="form-grid">
+            <input type="hidden" name="pin_x">
+            <input type="hidden" name="pin_y">
+            <div class="field"><label>Title</label><input name="title" maxlength="80" required placeholder="Annotation title"></div>
+            <div class="field"><label>Coordinates</label><input id="coordLabel" disabled></div>
+            <div class="field"><label>Status</label>${statusPickerHTML(statuses, "todo", "status")}</div>
+            <div class="field"><label>Assignee</label>${assigneePickerHTML(memberEntries)}</div>
+            <div class="field"><label>Attachments</label><input type="file" name="attachments" multiple></div>
+            <div class="field"><label>Details</label><textarea name="description" data-mentionable placeholder="Use @username to mention a teammate"></textarea></div>
+            <button class="btn primary" type="submit">${icon("map-pin")}Save annotation</button>
+            <p class="status-line"></p>
+          </form>
+          <hr>
+          <div class="feedback-list">${feedbackBugRowsHTML(bugs, statuses, usersByID)}</div>
+        </section>
+        <section class="feedback-sidebar-view feedback-detail-view" id="feedbackDetailView" hidden>
+          <div class="feedback-detail-toolbar">
+            <button class="btn compact" type="button" id="feedbackBackBtn">${icon("arrow-left")}Back</button>
+          </div>
+          <div id="feedbackSidebarDetailBody"></div>
+        </section>
       </aside>
     </div>`);
   const stage = $("#annotationStage");
+  bindAnnotationViewportResize(stage);
+  bindStatusPickers(app);
+  bindAssigneePickers(app);
+  const selectorForID = (value) => (window.CSS?.escape ? CSS.escape(value) : String(value).replace(/"/g, '\\"'));
+  const syncFeedbackStatusControls = (bugID, value) => {
+    const status = feedbackStatusObject(statuses, value);
+    document.querySelectorAll(`[data-feedback-status-form="${selectorForID(bugID)}"]`).forEach((form) => {
+      const input = form.querySelector("input[name='status']");
+      const trigger = form.querySelector("[data-status-trigger]");
+      const label = form.querySelector("[data-status-trigger-label]");
+      if (input) input.value = status.value;
+      if (label) label.textContent = status.label;
+      trigger?.style.setProperty("--status-icon-color", status.icon_color);
+      trigger?.style.setProperty("--status-text-color", status.text_color);
+    });
+  };
+  const bindFeedbackStatusForms = (root = document) => {
+    root.querySelectorAll("[data-feedback-status-form]").forEach((form) => {
+      if (form.dataset.feedbackStatusBound === "1") return;
+      form.dataset.feedbackStatusBound = "1";
+      form.addEventListener("change", async (event) => {
+        if (!event.target.matches("input[name='status']")) return;
+        const bugID = form.dataset.feedbackStatusForm;
+        const status = feedbackStatusValue(event.target.value);
+        try {
+          await api(`/api/bugs/${bugID}`, { method: "PATCH", body: JSON.stringify({ status, severity: status }) });
+          if (bugsByID[bugID]) {
+            bugsByID[bugID].status = status;
+            bugsByID[bugID].severity = status;
+          }
+          syncFeedbackStatusControls(bugID, status);
+          setStatus("Annotation status updated.");
+        } catch (error) {
+          setStatus(error.message, true);
+        }
+      });
+    });
+  };
+  const renderFeedbackDetail = (bugID) => {
+    const bug = bugsByID[bugID];
+    const body = $("#feedbackSidebarDetailBody");
+    const detailView = $("#feedbackDetailView");
+    const listView = $("#feedbackListView");
+    if (!bug || !body || !detailView || !listView) return;
+    body.innerHTML = feedbackBugDetailHTML(bug, statuses, usersByID);
+    listView.hidden = true;
+    detailView.hidden = false;
+    bindStatusPickers(detailView);
+    bindFeedbackStatusForms(detailView);
+    bindAttachmentOpeners(detailView);
+    bindMentionSuggestions(detailView);
+    bindFeedbackCommentForm(detailView, bugID);
+    icons();
+  };
+  const bindFeedbackCommentForm = (root, bugID) => {
+    const form = root.querySelector(`[data-feedback-comment-form="${selectorForID(bugID)}"]`);
+    if (!form || form.dataset.feedbackCommentBound === "1") return;
+    form.dataset.feedbackCommentBound = "1";
+    const textarea = form.elements.comment;
+    const attachmentInput = form.elements.attachment;
+    const preview = form.querySelector("[data-feedback-attachment-preview]");
+    form.querySelector("[data-feedback-comment-emoji]")?.addEventListener("click", (event) => openEmojiPicker(event.currentTarget, textarea));
+    form.querySelector("[data-feedback-comment-attach]")?.addEventListener("click", () => attachmentInput?.click());
+    attachmentInput?.addEventListener("change", () => {
+      const file = attachmentInput.files?.[0];
+      if (!file || !preview) return;
+      const isImage = file.type.startsWith("image/");
+      const localURL = isImage ? URL.createObjectURL(file) : "";
+      preview.hidden = false;
+      preview.innerHTML = `<span>${localURL ? `<img class="attachment-preview-mini" src="${esc(localURL)}" alt="${esc(file.name)} preview">` : icon("paperclip")}${esc(file.name)}</span><button class="btn icon quiet" type="button" data-clear-feedback-attachment>${icon("x")}</button>`;
+      preview.querySelector("[data-clear-feedback-attachment]")?.addEventListener("click", () => {
+        attachmentInput.value = "";
+        preview.hidden = true;
+        preview.innerHTML = "";
+      });
+      icons();
+    });
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submit = form.querySelector("[type='submit']");
+      const content = String(textarea?.value || "").trim();
+      const file = attachmentInput?.files?.[0];
+      if (!content && !file) {
+        setFormStatus(form, "Comment or attachment is required.", true);
+        return;
+      }
+      if (submit) submit.disabled = true;
+      try {
+        const payload = { comment: content, attachment_url: "", attachment_name: "" };
+        if (file) {
+          payload.attachment_url = await upload(file);
+          payload.attachment_name = file.name;
+        }
+        await api(`/api/bugs/${bugID}`, { method: "PATCH", body: JSON.stringify(payload) });
+        const bug = bugsByID[bugID];
+        if (bug) {
+          bug.comments = [...(bug.comments || []), {
+            id: `local-${Date.now()}`,
+            author_id: state.me?.id,
+            content,
+            attachment_url: payload.attachment_url,
+            attachment_name: payload.attachment_name,
+            created_at: new Date().toISOString(),
+          }];
+        }
+        renderFeedbackDetail(bugID);
+      } catch (error) {
+        setFormStatus(form, error.message, true);
+      } finally {
+        if (submit) submit.disabled = false;
+      }
+    });
+  };
+  const renderPins = (extraPin = "") => {
+    const viewport = stage?.querySelector("[data-annotation-viewport]");
+    const targetWidth = Number(viewport?.dataset.annotationWidth || ANNOTATION_VIEWPORT.width);
+    const targetHeight = Number(viewport?.dataset.annotationHeight || ANNOTATION_VIEWPORT.height);
+    const layer = $("#feedbackPinLayer");
+    if (layer) layer.innerHTML = `${bugs.map((bug, i) => annotationPinHTML({ id: bug.id, x: bug.pin_x, y: bug.pin_y, target_page_width: targetWidth, target_page_height: targetHeight, label: String(i + 1), title: feedbackBugTitle(bug) })).join("")}${extraPin}`;
+  };
+  bindAnnotationDeviceControls(stage, { onChange: () => renderPins() });
+  const highlightFeedbackPin = (bugID) => {
+    document.querySelectorAll("[data-feedback-pin]").forEach((pin) => pin.classList.toggle("highlighted", pin.dataset.feedbackPin === bugID));
+    const pin = document.querySelector(`[data-feedback-pin="${selectorForID(bugID)}"]`);
+    pin?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+  };
+  const openFeedbackDetail = (bugID) => {
+    const bug = bugsByID[bugID];
+    if (!bug) return;
+    highlightFeedbackPin(bugID);
+    document.querySelectorAll("[data-feedback-row]").forEach((row) => row.classList.toggle("active", row.dataset.feedbackRow === bugID));
+    renderFeedbackDetail(bugID);
+  };
+  $("#feedbackBackBtn")?.addEventListener("click", () => {
+    $("#feedbackDetailView")?.setAttribute("hidden", "");
+    $("#feedbackListView")?.removeAttribute("hidden");
+    const body = $("#feedbackSidebarDetailBody");
+    if (body) body.innerHTML = "";
+    document.querySelectorAll("[data-feedback-pin]").forEach((pin) => pin.classList.remove("highlighted"));
+    document.querySelectorAll("[data-feedback-row]").forEach((row) => row.classList.remove("active"));
+  });
+  stage?.addEventListener("click", (event) => {
+    const pin = event.target.closest("[data-feedback-pin]");
+    if (pin) openFeedbackDetail(pin.dataset.feedbackPin);
+  });
   $("#clickCatcher").addEventListener("click", (event) => {
-    const rect = stage.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * 100;
-    const y = ((event.clientY - rect.top) / rect.height) * 100;
+    const viewport = event.currentTarget.closest("[data-annotation-viewport]");
+    const { x, y } = annotationPointFromEvent(event, viewport);
     $("[name=pin_x]").value = x.toFixed(2);
     $("[name=pin_y]").value = y.toFixed(2);
     $("#coordLabel").value = `${x.toFixed(1)}%, ${y.toFixed(1)}%`;
+    const targetWidth = Number(viewport?.dataset.annotationWidth || ANNOTATION_VIEWPORT.width);
+    const targetHeight = Number(viewport?.dataset.annotationHeight || ANNOTATION_VIEWPORT.height);
+    renderPins(annotationPinHTML({ x, y, target_page_width: targetWidth, target_page_height: targetHeight, label: "New", title: "New pin" }));
+    icons();
   });
   $("#bugForm").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const formEl = event.currentTarget;
+    const submitBtn = formEl.querySelector("[type='submit']");
     try {
-      const form = Object.fromEntries(new FormData(event.currentTarget).entries());
-      if (!form.pin_x) throw new Error("Click the page first");
-      await api("/api/bugs", { method: "POST", body: JSON.stringify({ ...form, website_id: id, pin_x: Number(form.pin_x), pin_y: Number(form.pin_y), page_url: site.url }) });
+      if (!formEl.elements.pin_x.value) throw new Error("Click the page first");
+      if (submitBtn) submitBtn.disabled = true;
+      const files = Array.from(formEl.elements.attachments?.files || []);
+      const attachments = [];
+      for (const file of files) attachments.push(await upload(file));
+      const status = formEl.elements.status.value || "todo";
+      await api("/api/bugs", {
+        method: "POST",
+        body: JSON.stringify({
+          website_id: id,
+          pin_x: Number(formEl.elements.pin_x.value),
+          pin_y: Number(formEl.elements.pin_y.value),
+          page_url: site.url,
+          title: formEl.elements.title.value,
+          description: formEl.elements.description.value,
+          status,
+          severity: status,
+          assignee_ids: selectedAssigneeIDs(formEl),
+          attachments,
+        }),
+      });
       renderAnnotate(id);
     } catch (error) {
-      setStatus(error.message, true);
+      setFormStatus(formEl, error.message, true);
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
   });
-  document.querySelectorAll("[data-convert-bug]").forEach((btn) => btn.addEventListener("click", async () => {
-    await api(`/api/bugs/${btn.dataset.convertBug}/convert-to-task`, { method: "POST", body: JSON.stringify({}) });
-    renderAnnotate(id);
-  }));
+  document.querySelectorAll("[data-open-feedback-bug]").forEach((btn) => btn.addEventListener("click", () => openFeedbackDetail(btn.dataset.openFeedbackBug)));
+  bindFeedbackStatusForms(app);
+  const focusBugID = new URLSearchParams(window.location.search).get("bug_id") || "";
+  if (focusBugID && bugsByID[focusBugID]) {
+    setTimeout(() => openFeedbackDetail(focusBugID), 0);
+  }
 }
 
 async function renderBilling() {
@@ -3300,11 +7551,21 @@ async function renderBilling() {
   const invoices = state.team ? ((await api(`/api/subscriptions/${state.team.id}/invoices`)).invoices || []) : [];
   shell("Billing", `
     <div class="page-title"><div><h1>Billing</h1><p class="muted">Plans, trial state, approvals, and receipts.</p></div></div>
-    <div class="pricing-grid">${plans.map((plan) => `<article class="${plan.featured ? "featured" : ""}"><h3>${esc(plan.name)}</h3><p>${plan.pricing_model === "per_seat" ? money(plan.price_per_seat) + "/seat" : money(plan.price)}</p><span>${plan.seat_limit} seats · ${plan.project_limit} projects · ${plan.trial_days} trial days</span><p><button class="btn primary" data-buy="${plan.id}" data-provider="stripe">${icon("credit-card")}Stripe</button> <button class="btn" data-buy="${plan.id}" data-provider="paypal">PayPal</button></p></article>`).join("")}</div>
+    <div class="pricing-grid">${plans.map((plan) => `<article class="${plan.featured ? "featured" : ""}" data-plan-card="${esc(plan.id)}">
+      <h3>${esc(plan.name)}</h3>
+      <p>${esc(planPriceSummary(plan))}</p>
+      <span>${plan.seat_limit} seats · ${plan.project_limit} projects · ${plan.trial_days} trial days</span>
+      <div class="grid-2" style="margin-top:12px">
+        <label class="field"><span>Period</span><select data-buy-period><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label>
+        <label class="field"><span>Amount</span><input data-buy-quantity type="number" min="1" max="120" step="1" value="1"></label>
+      </div>
+      <p><button class="btn primary" data-buy="${plan.id}" data-provider="stripe">${icon("credit-card")}Stripe</button> <button class="btn" data-buy="${plan.id}" data-provider="paypal">PayPal</button></p>
+    </article>`).join("")}</div>
     <section class="panel" style="margin-top:18px"><h2>Invoices</h2><div class="task-list">${invoices.map((invoice) => `<article class="task-row"><div><h3>${money(invoice.amount)} ${esc(invoice.currency).toUpperCase()}</h3><span class="muted">${fmtDate(invoice.issued_at)}</span></div><span class="pill">${esc(invoice.status)}</span><a class="btn" href="${esc(invoice.external_invoice_url)}">Receipt</a></article>`).join("") || `<p class="muted">No invoices yet.</p>`}</div></section>`);
   document.querySelectorAll("[data-buy]").forEach((btn) => btn.addEventListener("click", async () => {
     try {
-      const data = await api("/api/subscriptions/purchase", { method: "POST", body: JSON.stringify({ plan_id: btn.dataset.buy, provider: btn.dataset.provider }) });
+      const card = btn.closest("[data-plan-card]");
+      const data = await api("/api/subscriptions/purchase", { method: "POST", body: JSON.stringify({ plan_id: btn.dataset.buy, provider: btn.dataset.provider, billing_period: card?.querySelector("[data-buy-period]")?.value || "monthly", quantity: Number(card?.querySelector("[data-buy-quantity]")?.value || 1) }) });
       alert(`Checkout created: ${data.checkout.external_id}`);
       renderBilling();
     } catch (error) {
@@ -3313,7 +7574,7 @@ async function renderBilling() {
   }));
 }
 
-async function renderAdmin() {
+async function renderAdminLegacy() {
   const users = (await api("/api/admin/users")).users || [];
   shell("Admin", `
     <div class="page-title"><div><h1>Owner Admin</h1><p class="muted">Platform accounts, emails, settings, and pages.</p></div></div>
@@ -3457,10 +7718,444 @@ async function renderAdmin() {
   });
 }
 
+function adminMembershipLabel(value = "") {
+  const labels = {
+    active: "Active",
+    trialing: "Trialing",
+    pending_approval: "Pending approval",
+    expired: "Expired",
+    no_membership: "No membership",
+    unknown: "Unknown",
+  };
+  return labels[value] || String(value || "Unknown").replaceAll("_", " ").replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+function adminMembershipClass(value = "") {
+  if (["expired", "no_membership"].includes(value)) return "danger";
+  if (["trialing", "pending_approval", "unknown"].includes(value)) return "warn";
+  return "";
+}
+
+function adminPaymentMethodsText(user = {}) {
+  const methods = Array.isArray(user.payment_methods) ? user.payment_methods.filter(Boolean) : [];
+  if (methods.length) return methods.map((item) => item.replace(/\b\w/g, (ch) => ch.toUpperCase())).join(", ");
+  return user.payment_provider ? String(user.payment_provider).replace(/\b\w/g, (ch) => ch.toUpperCase()) : "No payment method";
+}
+
+function adminUserSearchText(user = {}) {
+  return [user.name, user.email, user.username, user.role, user.staff_role, user.team?.name, user.plan?.name, user.membership_status, adminPaymentMethodsText(user)].filter(Boolean).join(" ").toLowerCase();
+}
+
+function adminUserProtectedHTML(user = {}) {
+  return user.role === "owner_adm" ? `<span class="pill warn">${icon("shield-check")}Protected</span>` : "";
+}
+
+function adminUserRowHTML(user = {}) {
+  const membership = user.membership_status || "no_membership";
+  const planName = user.plan?.id && user.plan.id !== NIL_OBJECT_ID ? user.plan.name : "No plan";
+  const expiryText = user.membership_expires_at ? `Expires ${fmtDate(user.membership_expires_at)}` : user.trial_ends_at ? `Trial ends ${fmtDate(user.trial_ends_at)}` : "No expiry date";
+  const paymentText = adminPaymentMethodsText(user);
+  return `<article class="admin-user-row" data-admin-user-row data-user-id="${esc(user.id)}" data-level="${esc(user.role || "")}" data-membership="${esc(membership)}" data-payment="${esc(paymentText.toLowerCase())}" data-search="${esc(adminUserSearchText(user))}">
+    <div class="admin-user-identity">
+      ${userChip(user)}
+      <div>
+        <h3>${esc(user.name || user.email || "Unnamed user")}</h3>
+        <span class="muted">@${esc(user.username || "pending")} - ${esc(user.email || "")}</span>
+      </div>
+    </div>
+    <div class="admin-user-meta">
+      <span class="pill">${esc(roleLabel(user.role))}</span>
+      <span class="pill">${esc(staffRoleLabel(user.staff_role) || "No staff role")}</span>
+      <span class="pill ${user.status === "suspended" ? "danger" : user.status === "pending_approval" ? "warn" : ""}">${esc(user.status || "unknown")}</span>
+      <span class="pill ${adminMembershipClass(membership)}">${esc(adminMembershipLabel(membership))}</span>
+    </div>
+    <div class="admin-user-membership">
+      <strong>${esc(planName)}</strong>
+      <span>${esc(user.team?.name || "No company workspace")}</span>
+      <span>${esc(expiryText)}</span>
+      <span>${esc(paymentText)}${user.payment_transaction ? ` - ${esc(user.payment_transaction)}` : ""}</span>
+    </div>
+    <div class="admin-user-actions">
+      <button class="btn compact" type="button" data-view-user="${esc(user.id)}">${icon("panel-right-open")}Details</button>
+      ${user.status === "pending_approval" ? `<button class="btn compact" type="button" data-approve-user="${esc(user.id)}">${icon("check")}Approve</button>` : ""}
+      ${user.role !== "owner_adm" ? `<button class="btn compact" type="button" data-membership-user="${esc(user.id)}">${icon("badge-dollar-sign")}Membership</button>` : ""}
+      <button class="btn compact" type="button" data-edit-user="${esc(user.id)}">${icon("pencil")}Edit</button>
+      <button class="btn compact" type="button" data-message-user="${esc(user.id)}">${icon("message-square")}Message</button>
+      <button class="btn compact" type="button" data-toggle-user="${esc(user.id)}" data-next-status="${user.status === "suspended" ? "active" : "suspended"}">${icon(user.status === "suspended" ? "rotate-ccw" : "ban")}${user.status === "suspended" ? "Activate" : "Suspend"}</button>
+      ${user.role === "owner_adm" ? adminUserProtectedHTML(user) : `<button class="btn compact danger" type="button" data-remove-user="${esc(user.id)}">${icon("trash-2")}Delete</button>`}
+    </div>
+  </article>`;
+}
+
+function adminStatHTML(label, value) {
+  return `<div class="admin-detail-stat"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+}
+
+function adminMiniRows(items = [], emptyText = "Nothing found.", render) {
+  if (!items.length) return `<p class="muted">${esc(emptyText)}</p>`;
+  return `<div class="admin-mini-list">${items.slice(0, 12).map(render).join("")}</div>`;
+}
+
+function adminUserDetailHTML(data = {}) {
+  const user = data.user || {};
+  const membership = user.membership_status || "no_membership";
+  const teams = data.teams || [];
+  const subs = data.subscriptions || [];
+  const plansByID = Object.fromEntries((data.plans || []).map((plan) => [plan.id, plan]));
+  const invoices = data.invoices || [];
+  const clientProjects = data.client_projects || [];
+  const clientWebsites = data.client_websites || [];
+  const clientTasks = data.client_tasks || [];
+  const workspaceProjects = data.workspace_projects || [];
+  const workspaceTasks = data.workspace_tasks || [];
+  return `
+    <div class="admin-detail-head">
+      <div class="admin-user-identity">${userChip(user)}<div><h2>${esc(user.name || user.email || "User details")}</h2><span class="muted">@${esc(user.username || "pending")} - ${esc(user.email || "")}</span></div></div>
+      <div class="toolbar compact-toolbar">
+        ${user.status === "pending_approval" ? `<button class="btn compact" type="button" data-approve-user="${esc(user.id)}">${icon("check")}Approve</button>` : ""}
+        ${user.role !== "owner_adm" ? `<button class="btn compact" type="button" data-membership-user="${esc(user.id)}">${icon("badge-dollar-sign")}Membership</button>` : ""}
+        <button class="btn compact" type="button" data-edit-user="${esc(user.id)}">${icon("pencil")}Edit</button>
+        <button class="btn compact" type="button" data-message-user="${esc(user.id)}">${icon("message-square")}Message</button>
+        <button class="btn compact" type="button" data-toggle-user="${esc(user.id)}" data-next-status="${user.status === "suspended" ? "active" : "suspended"}">${icon(user.status === "suspended" ? "rotate-ccw" : "ban")}${user.status === "suspended" ? "Activate" : "Suspend"}</button>
+        ${user.role === "owner_adm" ? adminUserProtectedHTML(user) : `<button class="btn compact danger" type="button" data-remove-user="${esc(user.id)}">${icon("trash-2")}Delete</button>`}
+      </div>
+    </div>
+    <div class="admin-detail-stats">
+      ${adminStatHTML("Account level", roleLabel(user.role))}
+      ${adminStatHTML("Status", user.status || "unknown")}
+      ${adminStatHTML("Membership", adminMembershipLabel(membership))}
+      ${adminStatHTML("Membership term", user.subscription?.id && !user.subscription.id.startsWith(NIL_OBJECT_ID.slice(0, 6)) ? subscriptionDurationText(user.subscription) : "No term")}
+      ${adminStatHTML("Payment methods", adminPaymentMethodsText(user))}
+      ${adminStatHTML("Registered", fmtDate(user.created_at))}
+      ${adminStatHTML("Last active", user.last_active_at ? fmtDate(user.last_active_at) : "No activity yet")}
+      ${adminStatHTML("2FA", user.two_factor_enabled ? "Enabled" : "Not enabled")}
+      ${adminStatHTML("Tasks", String(clientTasks.length + workspaceTasks.length))}
+    </div>
+    <section class="admin-detail-section"><h3>Membership and payment</h3>
+      ${adminMiniRows(subs, "No subscriptions found.", (sub) => {
+        const plan = plansByID[sub.plan_id] || {};
+        const status = adminMembershipLabel(sub.expires_at && new Date(sub.expires_at) < new Date() ? "expired" : sub.status);
+        return `<article><strong>${esc(plan.name || "Unknown plan")}</strong><span>${esc(status)} - ${esc(sub.payment_provider || "No payment provider")}</span><span>Started ${esc(fmtDate(sub.started_at))}${sub.expires_at ? ` - Expires ${esc(fmtDate(sub.expires_at))}` : ""}${sub.trial_ends_at ? ` - Trial ends ${esc(fmtDate(sub.trial_ends_at))}` : ""}</span><span>${sub.external_transaction_id ? `Transaction ${esc(sub.external_transaction_id)}` : "No transaction ID"}</span></article>`;
+      })}
+      ${adminMiniRows(invoices, "No invoices found.", (invoice) => `<article><strong>${esc(money(invoice.amount))} ${esc(String(invoice.currency || "USD").toUpperCase())}</strong><span>${esc(invoice.status || "unknown")} - ${esc(invoice.payment_provider || "No provider")}</span><span>${esc(fmtDate(invoice.issued_at))}${invoice.external_invoice_url ? ` - <a class="text-link" href="${esc(invoice.external_invoice_url)}" target="_blank" rel="noopener noreferrer">Receipt</a>` : ""}</span></article>`)}
+    </section>
+    <section class="admin-detail-section"><h3>Companies and workspaces</h3>
+      ${adminMiniRows(teams, "No teams found.", (team) => `<article><strong>${esc(team.name || "Unnamed workspace")}</strong><span>${esc(team.company_email || "No company email")} - ${team.member_ids?.length || 0} members</span><span>Created ${esc(fmtDate(team.created_at))}</span></article>`)}
+    </section>
+    <section class="admin-detail-section"><h3>Projects and domains</h3>
+      ${adminMiniRows(clientProjects, "No client projects found.", (project) => `<article><strong>${esc(project.name || "Client project")}</strong><span>${esc(project.company_email || "No company email")} - ${project.member_ids?.length || 0} members - ${project.client_admin_ids?.length || 0} client admins</span><span>Updated ${esc(fmtDate(project.updated_at))}</span></article>`)}
+      ${adminMiniRows(clientWebsites, "No domains found.", (site) => `<article><strong>${esc(site.name || "Website")}</strong><span>${esc(site.url || "No URL")}</span><span>Updated ${esc(fmtDate(site.updated_at))}</span></article>`)}
+      ${adminMiniRows(workspaceProjects, "No workspace projects found.", (project) => `<article><strong>${esc(project.name || "Workspace project")}</strong><span>${project.list_ids?.length || 0} lists</span><span>Created ${esc(fmtDate(project.created_at))}</span></article>`)}
+    </section>
+    <section class="admin-detail-section"><h3>Tasks</h3>
+      ${adminMiniRows(clientTasks, "No domain tasks found.", (task) => `<article><strong>${esc(task.title || "Task")}</strong><span>${esc(task.status || "todo")} - ${esc(task.type || "description")}</span><span>${task.due_date ? `Due ${esc(fmtDate(task.due_date))}` : "No due date"} - Updated ${esc(fmtDate(task.updated_at))}</span></article>`)}
+      ${adminMiniRows(workspaceTasks, "No workspace tasks found.", (task) => `<article><strong>${esc(task.title || "Task")}</strong><span>${esc(task.status || "todo")} - ${esc(task.priority || "Normal")}</span><span>${task.due_date ? `Due ${esc(fmtDate(task.due_date))}` : "No due date"} - Updated ${esc(fmtDate(task.updated_at))}</span></article>`)}
+    </section>`;
+}
+
+async function renderAdmin() {
+  let users = [];
+  let plans = [];
+  try {
+    const [usersResult, plansResult] = await Promise.all([api("/api/admin/users"), api("/api/admin/plans")]);
+    users = usersResult.users || [];
+    plans = plansResult.plans || [];
+  } catch (error) {
+    shell("Admin Users", `
+      <div class="page-title">
+        <div><h1>Manage users</h1><p class="muted">Owner admin controls for accounts, memberships, payments, projects, domains, and tasks.</p></div>
+      </div>
+      <section class="panel">
+        <h2>Unable to load users</h2>
+        <p class="muted">${esc(error.message)}</p>
+        <div class="toolbar"><a class="btn primary" href="/dashboard">${icon("arrow-left")}Back to dashboard</a><button class="btn" type="button" onclick="window.location.reload()">${icon("refresh-cw")}Retry</button></div>
+      </section>`);
+    return;
+  }
+  shell("Admin Users", `
+    <div class="page-title">
+      <div><h1>Manage users</h1><p class="muted">Owner admin controls for accounts, memberships, payments, projects, domains, and tasks.</p></div>
+      <div class="toolbar"><button class="btn primary" id="newOwnerUserBtn">${icon("user-plus")}Add user</button><a class="btn" href="/admin/settings">${icon("settings")}Settings</a><a class="btn" href="/admin/plans">${icon("badge-dollar-sign")}Pricing plans</a><a class="btn" href="/admin/pages">${icon("file-pen")}Pages</a></div>
+    </div>
+    <div class="admin-user-filters">
+      <label><span>Search</span><input type="search" data-admin-filter-search placeholder="Name, email, company, plan"></label>
+      <label><span>Membership</span><select data-admin-filter="membership"><option value="">All memberships</option><option value="active">Active</option><option value="trialing">Trialing</option><option value="pending_approval">Pending approval</option><option value="expired">Expired</option><option value="no_membership">No membership</option></select></label>
+      <label><span>Level</span><select data-admin-filter="level"><option value="">All levels</option><option value="owner_adm">Owner admin</option><option value="users_admin">User admin</option><option value="users_member">User member</option><option value="client_admin">Client admin</option></select></label>
+      <label><span>Payment</span><select data-admin-filter="payment"><option value="">All payment methods</option><option value="stripe">Stripe</option><option value="paypal">PayPal</option><option value="no payment method">No payment method</option></select></label>
+    </div>
+    <div class="owner-admin-layout">
+      <section class="panel owner-users-panel"><div class="panel-head"><h2>Users</h2><span class="pill" id="adminUserCount">${users.length} users</span></div><div class="admin-user-list">${users.map(adminUserRowHTML).join("") || `<p class="muted">No users found.</p>`}</div><p id="adminUserNoResults" class="muted" hidden>No users match the current filters.</p></section>
+      <section class="panel owner-user-detail" id="ownerUserDetail"><h2>User details</h2><p class="muted">Select a user to view membership, payment, projects, domains, and tasks.</p></section>
+    </div>
+    <section class="panel admin-email-panel">
+      <h2>Email composer</h2>
+      <form id="emailForm" class="form-grid">
+        <div class="grid-3"><div class="field"><label>Segment</label><select name="segment"><option value="all">All users</option><option value="team_admins">Team admins</option></select></div><div class="field"><label>Type</label><select name="type"><option>marketing</option><option>reminder</option><option>warning</option></select></div><div class="field"><label>Subject</label><input name="subject" required></div></div>
+        <div class="field"><label>HTML body</label><textarea name="body_html" required></textarea></div>
+        <button class="btn primary" type="submit">${icon("send")}Queue</button><p class="status-line"></p>
+      </form>
+    </section>
+    ${adminUserDialogsHTML(plans)}`);
+  const usersByID = Object.fromEntries(users.map((user) => [user.id, user]));
+  const loadDetail = async (userID) => {
+    const panel = $("#ownerUserDetail");
+    if (!panel) return;
+    panel.innerHTML = `<p class="muted">Loading user details...</p>`;
+    document.querySelectorAll("[data-admin-user-row]").forEach((row) => row.classList.toggle("active", row.dataset.userId === userID));
+    try {
+      const detail = await api(`/api/admin/users/${userID}`);
+      panel.innerHTML = adminUserDetailHTML(detail);
+      if (detail.user?.id) usersByID[detail.user.id] = detail.user;
+      bindAdminUserActions(usersByID, loadDetail, plans);
+      icons();
+    } catch (error) {
+      panel.innerHTML = `<h2>User details</h2><p class="muted">${esc(error.message)}</p>`;
+    }
+  };
+  const applyAdminFilters = () => {
+    const query = String(document.querySelector("[data-admin-filter-search]")?.value || "").trim().toLowerCase();
+    const membership = document.querySelector("[data-admin-filter='membership']")?.value || "";
+    const level = document.querySelector("[data-admin-filter='level']")?.value || "";
+    const payment = document.querySelector("[data-admin-filter='payment']")?.value || "";
+    let count = 0;
+    document.querySelectorAll("[data-admin-user-row]").forEach((row) => {
+      const visible = (!query || (row.dataset.search || "").includes(query)) && (!membership || row.dataset.membership === membership) && (!level || row.dataset.level === level) && (!payment || (row.dataset.payment || "").includes(payment));
+      row.hidden = !visible;
+      if (visible) count += 1;
+    });
+    const countEl = $("#adminUserCount");
+    if (countEl) countEl.textContent = `${count} ${count === 1 ? "user" : "users"}`;
+    const empty = $("#adminUserNoResults");
+    if (empty) empty.hidden = count !== 0;
+  };
+  document.querySelectorAll("[data-admin-filter], [data-admin-filter-search]").forEach((input) => input.addEventListener(input.tagName === "SELECT" ? "change" : "input", applyAdminFilters));
+  document.querySelectorAll("[data-admin-user-row]").forEach((row) => row.addEventListener("click", (event) => {
+    if (event.target.closest("button, a, input, select, textarea")) return;
+    loadDetail(row.dataset.userId);
+  }));
+  bindAdminUserActions(usersByID, loadDetail, plans);
+  bindDialogCloseButtons();
+  $("#newOwnerUserBtn")?.addEventListener("click", () => $("#userCreateDialog")?.showModal());
+  $("#userCreateForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    try {
+      await api("/api/admin/users", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
+      $("#userCreateDialog")?.close();
+      renderAdmin();
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
+  $("#userEditForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    try {
+      await api(`/api/admin/users/${form.elements.id.value}`, { method: "PATCH", body: JSON.stringify({ name: form.elements.name.value, email: form.elements.email.value, username: form.elements.username.value, staff_role: form.elements.staff_role.value, role: form.elements.role.value, status: form.elements.status.value }) });
+      $("#userEditDialog").close();
+      renderAdmin();
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
+  $("#userMessageForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    try {
+      await api(`/api/admin/users/${form.elements.id.value}/message`, { method: "POST", body: JSON.stringify({ content: form.elements.content.value }) });
+      $("#userMessageDialog").close();
+      setStatus("Message sent.");
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
+  $("#userMembershipForm")?.addEventListener("input", (event) => {
+    if (event.target.matches("select, input")) updateMembershipPreview(event.currentTarget, plans);
+  });
+  $("#userMembershipForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    try {
+      const body = Object.fromEntries(new FormData(form).entries());
+      body.quantity = Number(body.quantity || 1);
+      const result = await api(`/api/admin/users/${form.elements.id.value}/membership`, { method: "PATCH", body: JSON.stringify(body) });
+      $("#userMembershipDialog").close();
+      setStatus(`Membership updated. Expires ${fmtDate(result.expires_at)}.`);
+      renderAdmin();
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
+  $("#emailForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const result = await api("/api/admin/emails/send", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget).entries())) });
+      setStatus(`Queued ${result.queued} emails`);
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  });
+  applyAdminFilters();
+  if (users[0]) loadDetail(users[0].id);
+}
+
+function adminUserDialogsHTML(plans = []) {
+  return `<dialog id="userCreateDialog" class="modal">
+    <form id="userCreateForm" class="form-grid" method="dialog">
+      <div class="modal-head"><h2>Add user manually</h2><button class="btn icon quiet" type="button" data-close-dialog="userCreateDialog" title="Close">${icon("x")}</button></div>
+      <div class="grid-2"><div class="field"><label>Name</label><input name="name" required></div><div class="field"><label>Email</label><input type="email" name="email" required></div></div>
+      <div class="grid-2"><div class="field"><label>Username</label><input name="username" required pattern="[a-zA-Z0-9_]{3,24}"></div><div class="field"><label>Temporary password</label><input name="password" type="password" minlength="8" required></div></div>
+      <div class="field"><label>Company name</label><input name="company_name" placeholder="Company workspace name"></div>
+      <div class="grid-2"><div class="field"><label>Role</label><select name="role"><option value="users_admin">users_admin</option><option value="owner_adm">owner_adm</option><option value="users_member">users_member</option><option value="client_admin">client_admin</option></select></div><div class="field"><label>Status</label><select name="status"><option value="active">active</option><option value="pending_approval">pending_approval</option><option value="suspended">suspended</option></select></div></div>
+      <div class="field"><label>Staff role</label><select name="staff_role">${staffRoleOptions("manager")}</select></div>
+      <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Create user</button><button class="btn" type="button" data-close-dialog="userCreateDialog">Cancel</button></div><p class="status-line"></p>
+    </form>
+  </dialog>
+  <dialog id="userEditDialog" class="modal">
+    <form id="userEditForm" class="form-grid" method="dialog">
+      <div class="modal-head"><h2>Edit user</h2><button class="btn icon quiet" type="button" data-close-dialog="userEditDialog" title="Close">${icon("x")}</button></div>
+      <input type="hidden" name="id"><div class="field"><label>Name</label><input name="name" required></div><div class="field"><label>Email</label><input type="email" name="email" required></div>
+      <div class="grid-2"><div class="field"><label>Username</label><input name="username" required pattern="[a-zA-Z0-9_]{3,24}"></div><div class="field"><label>Staff role</label><select name="staff_role">${staffRoleOptions()}</select></div></div>
+      <div class="grid-2"><div class="field"><label>Role</label><select name="role"><option value="owner_adm">owner_adm</option><option value="users_admin">users_admin</option><option value="users_member">users_member</option><option value="client_admin">client_admin</option></select></div><div class="field"><label>Status</label><select name="status"><option value="active">active</option><option value="pending_approval">pending_approval</option><option value="suspended">suspended</option></select></div></div>
+      <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="userEditDialog">Cancel</button></div><p class="status-line"></p>
+    </form>
+  </dialog>
+  <dialog id="userMessageDialog" class="modal">
+    <form id="userMessageForm" class="form-grid" method="dialog">
+      <div class="modal-head"><h2>Send message</h2><button class="btn icon quiet" type="button" data-close-dialog="userMessageDialog" title="Close">${icon("x")}</button></div>
+      <input type="hidden" name="id"><p class="muted" id="messageTarget"></p><div class="field"><label>Message</label><textarea name="content" required data-mentionable></textarea></div>
+      <div class="toolbar"><button class="btn primary" type="submit">${icon("send")}Send</button><button class="btn" type="button" data-close-dialog="userMessageDialog">Cancel</button></div><p class="status-line"></p>
+    </form>
+  </dialog>
+  <dialog id="userMembershipDialog" class="modal">
+    <form id="userMembershipForm" class="form-grid" method="dialog">
+      <div class="modal-head"><h2>Set membership</h2><button class="btn icon quiet" type="button" data-close-dialog="userMembershipDialog" title="Close">${icon("x")}</button></div>
+      <input type="hidden" name="id">
+      <p class="muted" id="membershipTarget"></p>
+      <div class="field"><label>Pricing plan</label><select name="plan_id" required>${planOptionsHTML(plans)}</select></div>
+      <div class="grid-3">
+        <div class="field"><label>Period</label><select name="billing_period"><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></div>
+        <div class="field"><label>Amount</label><input type="number" name="quantity" min="1" max="120" step="1" value="1"></div>
+        <div class="field"><label>Status</label><select name="status"><option value="active">active</option><option value="trialing">trialing</option><option value="pending_approval">pending_approval</option></select></div>
+      </div>
+      <div class="grid-2">
+        <div class="field"><label>Payment provider</label><select name="payment_provider"><option value="manual">manual</option><option value="stripe">stripe</option><option value="paypal">paypal</option></select></div>
+        <div class="field"><label>Transaction/reference</label><input name="external_transaction_id" placeholder="Optional"></div>
+      </div>
+      <p class="muted" id="membershipPreview">Select a plan and duration.</p>
+      <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save membership</button><button class="btn" type="button" data-close-dialog="userMembershipDialog">Cancel</button></div><p class="status-line"></p>
+    </form>
+  </dialog>`;
+}
+
+function updateMembershipPreview(form, plans = []) {
+  if (!form) return;
+  const plan = plans.find((item) => item.id === form.elements.plan_id?.value);
+  const period = form.elements.billing_period?.value || "monthly";
+  const quantity = Math.max(1, Number(form.elements.quantity?.value || 1));
+  const preview = $("#membershipPreview");
+  if (!preview || !plan) {
+    if (preview) preview.textContent = "Select a plan and duration.";
+    return;
+  }
+  const unit = planUnitAmount(plan, period);
+  const suffix = plan.pricing_model === "per_seat" ? " per seat" : "";
+  const total = unit * quantity;
+  preview.textContent = `${plan.name}: ${money(unit)}${suffix} x ${quantity} ${billingUnitLabel(period)}${quantity === 1 ? "" : "s"} = ${money(total)} before seat multiplication where applicable.`;
+}
+
+function bindAdminUserActions(usersByID = {}, afterAction = () => {}, plans = []) {
+  document.querySelectorAll("[data-approve-user]").forEach((btn) => {
+    if (btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", async () => {
+      await api(`/api/admin/users/${btn.dataset.approveUser}/approve`, { method: "POST" });
+      renderAdmin();
+    });
+  });
+  document.querySelectorAll("[data-toggle-user]").forEach((btn) => {
+    if (btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", async () => {
+      const user = usersByID[btn.dataset.toggleUser];
+      if (btn.dataset.nextStatus === "suspended" && !confirm(`Suspend ${user?.email || "this user"}?`)) return;
+      await api(`/api/admin/users/${btn.dataset.toggleUser}`, { method: "PATCH", body: JSON.stringify({ status: btn.dataset.nextStatus }) });
+      renderAdmin();
+    });
+  });
+  document.querySelectorAll("[data-remove-user]").forEach((btn) => {
+    if (btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", async () => {
+      const user = usersByID[btn.dataset.removeUser];
+      if (!confirm(`Delete ${user?.email || "this user"}? This removes the account login.`)) return;
+      await api(`/api/admin/users/${btn.dataset.removeUser}`, { method: "DELETE" });
+      renderAdmin();
+    });
+  });
+  document.querySelectorAll("[data-edit-user]").forEach((btn) => {
+    if (btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => {
+      const user = usersByID[btn.dataset.editUser];
+      const form = $("#userEditForm");
+      if (!user || !form) return;
+      form.elements.id.value = user.id;
+      form.elements.name.value = user.name || "";
+      form.elements.email.value = user.email || "";
+      form.elements.username.value = user.username || "";
+      form.elements.staff_role.value = user.staff_role === "marketing it" ? "marketing" : (user.staff_role || "internal");
+      form.elements.role.value = user.role || "users_member";
+      form.elements.role.disabled = user.role === "owner_adm";
+      form.elements.status.value = user.status || "active";
+      $("#userEditDialog").showModal();
+    });
+  });
+  document.querySelectorAll("[data-message-user]").forEach((btn) => {
+    if (btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => {
+      const user = usersByID[btn.dataset.messageUser];
+      const form = $("#userMessageForm");
+      if (!user || !form) return;
+      form.elements.id.value = user.id;
+      form.elements.content.value = "";
+      $("#messageTarget").textContent = `${user.name} <${user.email}>`;
+      $("#userMessageDialog").showModal();
+    });
+  });
+  document.querySelectorAll("[data-membership-user]").forEach((btn) => {
+    if (btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => {
+      const user = usersByID[btn.dataset.membershipUser];
+      const form = $("#userMembershipForm");
+      if (!user || !form) return;
+      const currentPlanID = user.subscription?.plan_id || user.plan?.id || plans[0]?.id || "";
+      form.reset();
+      form.elements.id.value = user.id;
+      form.elements.plan_id.value = currentPlanID;
+      form.elements.billing_period.value = user.subscription?.billing_period || "monthly";
+      form.elements.quantity.value = user.subscription?.billing_quantity || 1;
+      form.elements.status.value = user.membership_status === "trialing" ? "trialing" : user.membership_status === "pending_approval" ? "pending_approval" : "active";
+      form.elements.payment_provider.value = ["stripe", "paypal"].includes(user.subscription?.payment_provider || user.payment_provider) ? (user.subscription?.payment_provider || user.payment_provider) : "manual";
+      form.elements.external_transaction_id.value = user.subscription?.external_transaction_id || user.payment_transaction || "";
+      $("#membershipTarget").textContent = `${user.name || user.email} - ${user.team?.name || "Company workspace"}`;
+      updateMembershipPreview(form, plans);
+      $("#userMembershipDialog").showModal();
+    });
+  });
+  document.querySelectorAll("[data-view-user]").forEach((btn) => {
+    if (btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => afterAction(btn.dataset.viewUser));
+  });
+}
+
 async function renderPlansAdmin() {
   const plans = (await api("/api/admin/plans")).plans || [];
   shell("Plan Pricing", `
-    <div class="page-title"><div><h1>Plans</h1><p class="muted">Owner-only pricing and limit controls. Amounts are entered in USD.</p></div></div>
+    <div class="page-title"><div><h1>Plans</h1><p class="muted">Owner-only monthly and yearly pricing controls. Amounts are entered in USD.</p></div></div>
     <div class="grid-3">
       ${plans.map((plan) => `
         <section class="panel">
@@ -3474,8 +8169,12 @@ async function renderPlansAdmin() {
             <div class="field"><label>Description</label><textarea name="description">${esc(plan.description || "")}</textarea></div>
             <div class="field"><label>Pricing model</label><select name="pricing_model"><option value="flat" ${plan.pricing_model === "flat" ? "selected" : ""}>Flat</option><option value="per_seat" ${plan.pricing_model === "per_seat" ? "selected" : ""}>Per seat</option></select></div>
             <div class="grid-2">
-              <div class="field"><label>Flat price USD</label><input type="number" min="0" step="0.01" name="price_dollars" value="${dollars(plan.price)}"></div>
-              <div class="field"><label>Per-seat price USD</label><input type="number" min="0" step="0.01" name="price_per_seat_dollars" value="${dollars(plan.price_per_seat)}"></div>
+              <div class="field"><label>Flat monthly USD</label><input type="number" min="0" step="0.01" name="price_dollars" value="${dollars(plan.price)}"></div>
+              <div class="field"><label>Flat yearly USD</label><input type="number" min="0" step="0.01" name="price_yearly_dollars" value="${dollars(plan.price_yearly || (plan.price || 0) * 12)}"></div>
+            </div>
+            <div class="grid-2">
+              <div class="field"><label>Per-seat monthly USD</label><input type="number" min="0" step="0.01" name="price_per_seat_dollars" value="${dollars(plan.price_per_seat)}"></div>
+              <div class="field"><label>Per-seat yearly USD</label><input type="number" min="0" step="0.01" name="price_per_seat_yearly_dollars" value="${dollars(plan.price_per_seat_yearly || (plan.price_per_seat || 0) * 12)}"></div>
             </div>
             <div class="grid-2">
               <div class="field"><label>Trial days</label><input type="number" min="0" step="1" name="trial_days" value="${plan.trial_days || 0}"></div>
@@ -3500,7 +8199,9 @@ async function renderPlansAdmin() {
       description: data.description,
       pricing_model: data.pricing_model,
       price: cents(data.price_dollars),
+      price_yearly: cents(data.price_yearly_dollars),
       price_per_seat: cents(data.price_per_seat_dollars),
+      price_per_seat_yearly: cents(data.price_per_seat_yearly_dollars),
       trial_days: Number(data.trial_days),
       seat_limit: Number(data.seat_limit),
       project_limit: Number(data.project_limit),
@@ -3520,24 +8221,345 @@ async function renderPlansAdmin() {
   }));
 }
 
+const SOCIAL_LINK_TYPES = [
+  ["link", "Link", "external-link"],
+  ["mail", "Mail", "mail"],
+  ["contact", "Contact", "contact"],
+  ["phone", "Phone", "phone"],
+  ["whatsapp", "WhatsApp", "message-circle"],
+  ["facebook", "Facebook", "facebook"],
+  ["instagram", "Instagram", "instagram"],
+  ["tiktok", "TikTok", "music-2"],
+  ["youtube", "YouTube", "youtube"],
+];
+
+function socialLinkTypeLabel(value = "") {
+  return SOCIAL_LINK_TYPES.find(([key]) => key === value)?.[1] || "Link";
+}
+
+function socialLinkTypeIcon(value = "") {
+  return SOCIAL_LINK_TYPES.find(([key]) => key === value)?.[2] || "external-link";
+}
+
+function socialLinkTypeOptions(selected = "link") {
+  return SOCIAL_LINK_TYPES.map(([value, label]) => `<option value="${esc(value)}" ${value === selected ? "selected" : ""}>${esc(label)}</option>`).join("");
+}
+
+function socialLinkRowHTML(item = {}) {
+  const iconValue = item.icon || "link";
+  return `<article class="social-link-row" data-social-link-row>
+    <span class="social-link-row-icon" data-social-row-icon>${icon(socialLinkTypeIcon(iconValue))}</span>
+    <input type="hidden" name="social_id" value="${esc(item.id || crypto.randomUUID())}">
+    <label><span>Icon</span><select name="social_icon">${socialLinkTypeOptions(iconValue)}</select></label>
+    <label><span>Label</span><input name="social_label" value="${esc(item.label || socialLinkTypeLabel(iconValue))}" placeholder="Instagram"></label>
+    <label><span>URL</span><input name="social_url" value="${esc(item.url || "")}" placeholder="https://..."></label>
+    <label class="check-row social-visible"><input type="checkbox" name="social_visible" ${item.visible !== false ? "checked" : ""}>Show</label>
+    <button class="btn icon quiet danger-text" type="button" data-remove-social-link title="Remove">${icon("trash-2")}</button>
+  </article>`;
+}
+
+function socialLinksBuilderHTML(items = []) {
+  const rows = (Array.isArray(items) && items.length ? items : []).map(socialLinkRowHTML).join("");
+  return `<div class="social-links-builder" data-social-links-builder>
+    <div class="panel-head compact">
+      <div>
+        <h2>Social and contact links</h2>
+        <p class="muted">Use these with [[social_links]] or [[company_contact_card]] shortcodes.</p>
+      </div>
+      <button class="btn compact" type="button" data-add-social-link>${icon("plus")}Add link</button>
+    </div>
+    <div class="social-links-list" data-social-links-list>${rows || `<p class="muted">No social links yet.</p>`}</div>
+  </div>`;
+}
+
+function bindSocialLinksBuilder(root = document) {
+  const builder = root.querySelector("[data-social-links-builder]");
+  if (!builder) return;
+  const list = builder.querySelector("[data-social-links-list]");
+  const ensureRows = () => {
+    if (!list.querySelector("[data-social-link-row]")) list.innerHTML = `<p class="muted">No social links yet.</p>`;
+  };
+  const bindRow = (row) => {
+    const select = row.querySelector("select[name='social_icon']");
+    const label = row.querySelector("input[name='social_label']");
+    const iconHolder = row.querySelector("[data-social-row-icon]");
+    select?.addEventListener("change", () => {
+      iconHolder.innerHTML = icon(socialLinkTypeIcon(select.value));
+      if (!label.value.trim()) label.value = socialLinkTypeLabel(select.value);
+      icons();
+    });
+    row.querySelector("[data-remove-social-link]")?.addEventListener("click", () => {
+      row.remove();
+      ensureRows();
+    });
+  };
+  list.querySelectorAll("[data-social-link-row]").forEach(bindRow);
+  builder.querySelector("[data-add-social-link]")?.addEventListener("click", () => {
+    if (!list.querySelector("[data-social-link-row]")) list.innerHTML = "";
+    list.insertAdjacentHTML("beforeend", socialLinkRowHTML({ icon: "link", label: "New link", visible: true }));
+    bindRow(list.lastElementChild);
+    icons();
+  });
+}
+
+function collectSocialLinks(form) {
+  return Array.from(form.querySelectorAll("[data-social-link-row]")).map((row, index) => ({
+    id: row.querySelector("input[name='social_id']")?.value || crypto.randomUUID(),
+    icon: row.querySelector("select[name='social_icon']")?.value || "link",
+    label: row.querySelector("input[name='social_label']")?.value.trim() || "",
+    url: row.querySelector("input[name='social_url']")?.value.trim() || "",
+    visible: Boolean(row.querySelector("input[name='social_visible']")?.checked),
+    order: index + 1,
+  })).filter((item) => item.label && item.url);
+}
+
 async function renderSettings() {
   const settings = (await api("/api/admin/settings")).settings;
+  const colorDefaults = {
+    theme_primary_color: "#0b8f7a",
+    theme_primary_strong_color: "#066d5d",
+    theme_button_color: "#0b8f7a",
+    theme_button_text_color: "#ffffff",
+    theme_font_color: "#18231f",
+    theme_heading_color: "#18231f",
+    theme_background_color: "#f7f8f4",
+  };
+  const colorValue = (key) => /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(settings[key] || "") ? settings[key] : colorDefaults[key];
+  const secretField = (label, name, savedKey, clearName) => `
+    <div class="field">
+      <label>${esc(label)}</label>
+      <input type="password" name="${esc(name)}" value="" placeholder="${settings[savedKey] ? "Saved - leave blank to keep" : "Enter secret"}" autocomplete="new-password">
+      ${settings[savedKey] ? `<label class="check-row subtle"><input type="checkbox" name="${esc(clearName)}"> Clear saved value</label>` : ""}
+    </div>`;
+  const colorField = (label, name) => `
+    <div class="field color-setting-field">
+      <label>${esc(label)}</label>
+      <input type="color" name="${esc(name)}" value="${esc(colorValue(name))}">
+      <input value="${esc(colorValue(name))}" data-color-text="${esc(name)}" aria-label="${esc(label)} hex">
+    </div>`;
+  const platformAssetField = (label, name, inputID, previewID, value = "", initial = "P") => `
+    <div class="logo-setting platform-asset-upload">
+      <div class="company-logo-preview" id="${esc(previewID)}">${value ? `<img src="${esc(value)}" alt="">` : esc(initial)}</div>
+      <div class="field">
+        <label>${esc(label)}</label>
+        <input id="${esc(inputID)}" type="file" accept="image/png,image/jpeg,image/gif,image/webp">
+        <input id="${esc(`${inputID}Url`)}" name="${esc(name)}" value="${esc(value || "")}" readonly placeholder="/uploads/users/.../image.png">
+        <small class="muted">Recommended size: 500x500px. Uploaded images are resized to max 500x500px.</small>
+      </div>
+    </div>`;
   shell("Settings", `
-    <div class="page-title"><div><h1>Site Settings</h1><p class="muted">Platform identity and legal page shortcodes.</p></div></div>
-    <section class="panel">
-      <form id="settingsForm" class="form-grid">
-        ${["site_name", "company_email", "owner_name", "company_address", "logo_url", "support_phone"].map((key) => `<div class="field"><label>${key.replaceAll("_", " ")}</label><input name="${key}" value="${esc(settings[key] || "")}"></div>`).join("")}
-        <button class="btn primary" type="submit">${icon("save")}Save</button>
-        <p class="status-line"></p>
+    <div class="page-title"><div><h1>Platform Settings</h1><p class="muted">Owner-only controls for identity, sign in, email, payments, and app colors.</p></div></div>
+    <section class="panel platform-settings-panel">
+      <div class="settings-tabs" role="tablist">
+        <button class="active" type="button" data-settings-tab="identity">${icon("building-2")}Identity</button>
+        <button type="button" data-settings-tab="google">${icon("key-round")}Google sign in</button>
+        <button type="button" data-settings-tab="smtp">${icon("mail")}SMTP mail</button>
+        <button type="button" data-settings-tab="payments">${icon("credit-card")}Payments</button>
+        <button type="button" data-settings-tab="colors">${icon("palette")}Colors</button>
+      </div>
+      <form id="settingsForm" class="settings-tab-form">
+        <section data-settings-panel="identity" class="settings-tab-section">
+          <div class="grid-2">
+            <div class="field"><label>Site name</label><input name="site_name" value="${esc(settings.site_name || "")}"></div>
+            <div class="field"><label>Slogan</label><input name="company_slogan" value="${esc(settings.company_slogan || "")}" placeholder="Your platform slogan"></div>
+          </div>
+          <div class="grid-2">
+            <div class="field"><label>Company email</label><input type="email" name="company_email" value="${esc(settings.company_email || "")}"></div>
+            <div class="field"><label>Company contact</label><input name="company_contact" value="${esc(settings.company_contact || "")}" placeholder="Phone, WhatsApp, or contact text"></div>
+          </div>
+          <div class="grid-2">
+            <div class="field"><label>Owner name</label><input name="owner_name" value="${esc(settings.owner_name || "")}"></div>
+            <div class="field"><label>Support phone</label><input name="support_phone" value="${esc(settings.support_phone || "")}"></div>
+          </div>
+          <div class="field"><label>Company address</label><textarea name="company_address" rows="3">${esc(settings.company_address || "")}</textarea></div>
+          <div class="grid-2">
+            ${platformAssetField("Platform logo", "logo_url", "platformLogoFile", "platformLogoPreview", settings.logo_url || "", (settings.site_name || "P").slice(0, 1).toUpperCase())}
+            ${platformAssetField("Favicon", "favicon_url", "platformFaviconFile", "platformFaviconPreview", settings.favicon_url || "", "F")}
+          </div>
+          ${socialLinksBuilderHTML(settings.social_links || [])}
+        </section>
+        <section data-settings-panel="google" class="settings-tab-section" hidden>
+          <label class="check-row"><input type="checkbox" name="google_signin_enabled" ${settings.google_signin_enabled ? "checked" : ""}> Enable Google sign in and registration</label>
+          <div class="grid-2">
+            <div class="field"><label>Google client ID</label><input name="google_client_id" value="${esc(settings.google_client_id || "")}" autocomplete="off"></div>
+            <div class="field"><label>Redirect URL</label><input name="google_redirect_url" value="${esc(settings.google_redirect_url || `${location.origin}/api/auth/google/callback`)}"></div>
+          </div>
+          ${secretField("Google client secret", "google_client_secret", "google_client_secret_set", "clear_google_client_secret")}
+        </section>
+        <section data-settings-panel="smtp" class="settings-tab-section" hidden>
+          <label class="check-row"><input type="checkbox" name="smtp_enabled" ${settings.smtp_enabled ? "checked" : ""}> Enable SMTP delivery</label>
+          <div class="grid-3">
+            <div class="field"><label>SMTP host</label><input name="smtp_host" value="${esc(settings.smtp_host || "")}" placeholder="smtp.example.com"></div>
+            <div class="field"><label>SMTP port</label><input name="smtp_port" value="${esc(settings.smtp_port || "587")}" inputmode="numeric"></div>
+            <div class="field"><label>From email</label><input type="email" name="smtp_from" value="${esc(settings.smtp_from || "")}"></div>
+          </div>
+          <div class="grid-2">
+            <div class="field"><label>SMTP username</label><input name="smtp_user" value="${esc(settings.smtp_user || "")}" autocomplete="off"></div>
+            ${secretField("SMTP password", "smtp_password", "smtp_password_set", "clear_smtp_password")}
+          </div>
+          <div class="smtp-test-box">
+            <div>
+              <h2>Test delivery</h2>
+              <p class="muted">Saves the current SMTP settings, then sends a real test email.</p>
+            </div>
+            <div class="smtp-test-row">
+              <div class="field"><label>Test recipient</label><input id="smtpTestRecipient" type="email" value="${esc(state.me?.email || settings.company_email || "")}" placeholder="owner@example.com"></div>
+              <button class="btn" id="smtpTestBtn" type="button">${icon("send")}Send test email</button>
+            </div>
+            <p class="status-line"></p>
+          </div>
+        </section>
+        <section data-settings-panel="payments" class="settings-tab-section" hidden>
+          <div class="settings-provider-grid">
+            <article class="settings-provider">
+              <h2>Stripe</h2>
+              <label class="check-row"><input type="checkbox" name="stripe_enabled" ${settings.stripe_enabled ? "checked" : ""}> Enable Stripe checkout</label>
+              <div class="field"><label>Publishable key</label><input name="stripe_publishable_key" value="${esc(settings.stripe_publishable_key || "")}" autocomplete="off"></div>
+              ${secretField("Secret key", "stripe_secret_key", "stripe_secret_key_set", "clear_stripe_secret_key")}
+              ${secretField("Webhook secret", "stripe_webhook_secret", "stripe_webhook_secret_set", "clear_stripe_webhook_secret")}
+            </article>
+            <article class="settings-provider">
+              <h2>PayPal</h2>
+              <label class="check-row"><input type="checkbox" name="paypal_enabled" ${settings.paypal_enabled ? "checked" : ""}> Enable PayPal checkout</label>
+              <div class="field"><label>Mode</label><select name="paypal_mode"><option value="sandbox" ${(settings.paypal_mode || "sandbox") === "sandbox" ? "selected" : ""}>Sandbox</option><option value="live" ${settings.paypal_mode === "live" ? "selected" : ""}>Live</option></select></div>
+              <div class="field"><label>Client ID</label><input name="paypal_client_id" value="${esc(settings.paypal_client_id || "")}" autocomplete="off"></div>
+              ${secretField("Client secret", "paypal_client_secret", "paypal_client_secret_set", "clear_paypal_client_secret")}
+              <div class="field"><label>Webhook ID</label><input name="paypal_webhook_id" value="${esc(settings.paypal_webhook_id || "")}" autocomplete="off"></div>
+            </article>
+          </div>
+        </section>
+        <section data-settings-panel="colors" class="settings-tab-section" hidden>
+          <div class="settings-color-preview">
+            <div>
+              <h2>Preview heading</h2>
+              <p>Body text and buttons will follow these saved platform colors.</p>
+            </div>
+            <button class="btn primary" type="button">Primary button</button>
+          </div>
+          <div class="grid-3">
+            ${colorField("Primary accent", "theme_primary_color")}
+            ${colorField("Primary hover", "theme_primary_strong_color")}
+            ${colorField("Primary button", "theme_button_color")}
+            ${colorField("Button text", "theme_button_text_color")}
+            ${colorField("Font text", "theme_font_color")}
+            ${colorField("Heading text", "theme_heading_color")}
+            ${colorField("Page background", "theme_background_color")}
+          </div>
+        </section>
+        <div class="settings-save-row">
+          <button class="btn primary" type="submit">${icon("save")}Save settings</button>
+        </div>
+        <p class="status-line" id="settingsFormStatus"></p>
       </form>
     </section>`);
+  document.querySelectorAll("[data-settings-tab]").forEach((button) => button.addEventListener("click", () => {
+    const tab = button.dataset.settingsTab;
+    document.querySelectorAll("[data-settings-tab]").forEach((item) => item.classList.toggle("active", item === button));
+    document.querySelectorAll("[data-settings-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.settingsPanel !== tab;
+    });
+  }));
+  document.querySelectorAll(".color-setting-field input[type='color']").forEach((input) => {
+    const textInput = document.querySelector(`[data-color-text="${selectorEscape(input.name)}"]`);
+    input.addEventListener("input", () => {
+      if (textInput) textInput.value = input.value;
+      state.platformSettings = { ...(state.platformSettings || {}), [input.name]: input.value };
+      applyPlatformTheme(state.platformSettings || {});
+    });
+  });
+  document.querySelectorAll("[data-color-text]").forEach((input) => {
+    const colorInput = document.querySelector(`input[type='color'][name="${selectorEscape(input.dataset.colorText)}"]`);
+    input.addEventListener("input", () => {
+      const value = input.value.trim();
+      if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)) {
+        if (colorInput) colorInput.value = value;
+        state.platformSettings = { ...(state.platformSettings || {}), [input.dataset.colorText]: value };
+        applyPlatformTheme(state.platformSettings || {});
+      }
+    });
+  });
+  bindSocialLinksBuilder($("#settingsForm"));
+  icons();
+  const settingsPayloadFromForm = (form) => {
+    const body = Object.fromEntries(new FormData(form).entries());
+    [
+      "google_signin_enabled",
+      "smtp_enabled",
+      "stripe_enabled",
+      "paypal_enabled",
+      "clear_google_client_secret",
+      "clear_smtp_password",
+      "clear_stripe_secret_key",
+      "clear_stripe_webhook_secret",
+      "clear_paypal_client_secret",
+    ].forEach((key) => {
+      body[key] = Boolean(form.elements[key]?.checked);
+    });
+    body.social_links = collectSocialLinks(form);
+    return body;
+  };
+  const setSettingsStatus = (text, error = false) => {
+    const line = $("#settingsFormStatus");
+    if (!line) return;
+    line.textContent = text || "";
+    line.style.color = error ? "var(--danger)" : "var(--text-secondary)";
+  };
+  const bindPlatformAssetUpload = (fileID, urlID, previewID, purpose, label) => {
+    $(`#${fileID}`)?.addEventListener("change", async (event) => {
+      const file = event.currentTarget.files?.[0];
+      if (!file) return;
+      try {
+        setSettingsStatus(`Uploading ${label}...`);
+        const data = await uploadResizedImage(file, purpose, 500);
+        const urlInput = $(`#${urlID}`);
+        if (urlInput) urlInput.value = data.url || "";
+        const preview = $(`#${previewID}`);
+        if (preview) preview.innerHTML = `<img src="${esc(data.url || "")}" alt="">`;
+        if (purpose === "platform_favicon") {
+          applyPlatformFavicon({ ...(state.platformSettings || {}), favicon_url: data.url || "" });
+        }
+        setSettingsStatus(`${label} uploaded at max 500x500. Save settings to apply it.`);
+      } catch (error) {
+        setSettingsStatus(error.message, true);
+      }
+    });
+  };
+  bindPlatformAssetUpload("platformLogoFile", "platformLogoFileUrl", "platformLogoPreview", "platform_logo", "Platform logo");
+  bindPlatformAssetUpload("platformFaviconFile", "platformFaviconFileUrl", "platformFaviconPreview", "platform_favicon", "Favicon");
+  $("#smtpTestBtn")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const box = button.closest(".smtp-test-box");
+    const form = $("#settingsForm");
+    const recipient = String($("#smtpTestRecipient")?.value || "").trim();
+    try {
+      button.disabled = true;
+      setFormStatus(box, "Saving SMTP settings...");
+      const result = await api("/api/admin/settings", { method: "PUT", body: JSON.stringify(settingsPayloadFromForm(form)) });
+      state.platformSettings = result.settings || state.platformSettings;
+      applyPlatformTheme(state.platformSettings || {});
+      applyPlatformFavicon(state.platformSettings || {});
+      setSettingsStatus("Saved before SMTP test.");
+      setFormStatus(box, "Sending test email...");
+      const sent = await api("/api/admin/settings/smtp/test", { method: "POST", body: JSON.stringify({ recipient }) });
+      setFormStatus(box, `Test email sent to ${sent.recipient}. Check the inbox and spam folder.`);
+    } catch (error) {
+      setFormStatus(box, error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
   $("#settingsForm").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const form = event.currentTarget;
     try {
-      await api("/api/admin/settings", { method: "PUT", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget).entries())) });
-      setStatus("Saved");
+      const body = settingsPayloadFromForm(form);
+      const result = await api("/api/admin/settings", { method: "PUT", body: JSON.stringify(body) });
+      state.platformSettings = result.settings || state.platformSettings;
+      applyPlatformTheme(state.platformSettings || {});
+      applyPlatformFavicon(state.platformSettings || {});
+      setSettingsStatus("Saved");
     } catch (error) {
-      setStatus(error.message, true);
+      setSettingsStatus(error.message, true);
     }
   });
 }
@@ -3659,14 +8681,22 @@ async function renderCompanySettings() {
         </section>` : ""}
       <section class="panel">
         <h2>Update Password</h2>
-        <form id="passwordForm" class="form-grid">
-          <div class="grid-2">
-            <div class="field"><label>Current password</label><input type="password" name="current_password" required></div>
-            <div class="field"><label>New password</label><input type="password" name="new_password" required minlength="8"></div>
-          </div>
-          <button class="btn primary" type="submit">${icon("key-round")}Update password</button>
+        <div id="passwordUpdatePanel" class="form-grid">
+          <p class="muted">Password changes require a 6-digit code sent to ${esc(state.me?.email || "your email")}.</p>
+          <button class="btn primary" id="requestPasswordOtpBtn" type="button">${icon("key-round")}Update password</button>
+          <form id="passwordForm" class="form-grid" hidden>
+            <div class="grid-3">
+              <div class="field"><label>Email code</label><input name="code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required></div>
+              <div class="field"><label>New password</label><input type="password" name="new_password" required minlength="8" autocomplete="new-password"></div>
+              <div class="field"><label>Confirm password</label><input type="password" name="confirm_password" required minlength="8" autocomplete="new-password"></div>
+            </div>
+            <div class="toolbar">
+              <button class="btn primary" type="submit">${icon("save")}Save new password</button>
+              <button class="btn ghost" id="cancelPasswordUpdateBtn" type="button">${icon("x")}Cancel</button>
+            </div>
+          </form>
           <p class="status-line"></p>
-        </form>
+        </div>
       </section>
       <section class="panel">
         <h2>Two-factor Authentication</h2>
@@ -3680,10 +8710,19 @@ async function renderCompanySettings() {
         ` : `
           <button class="btn primary" id="setup2faBtn" type="button">${icon("shield-check")}Set up 2FA</button>
           <div class="two-factor-setup" id="twoFactorSetup" hidden>
-            <div class="secret-box">
-              <span class="muted">Authenticator setup key</span>
-              <code id="twoFactorSecretText"></code>
-              <div class="field"><label>Authenticator URL</label><input id="twoFactorURI" readonly></div>
+            <div class="two-factor-scan">
+              <div class="two-factor-qr-wrap">
+                <div class="two-factor-qr-card">
+                  <canvas id="twoFactorQRCode" width="180" height="180" hidden></canvas>
+                  <span id="twoFactorQRPlaceholder">QR</span>
+                </div>
+                <p class="two-factor-qr-note muted" id="twoFactorQRStatus">Generating scan code...</p>
+              </div>
+              <div class="secret-box">
+                <span class="muted">Authenticator setup key</span>
+                <code id="twoFactorSecretText"></code>
+                <div class="field"><label>Authenticator URL</label><input id="twoFactorURI" readonly></div>
+              </div>
             </div>
             <form id="enable2faForm" class="form-grid" style="margin-top:12px">
               <input type="hidden" name="secret" id="twoFactorSecret">
@@ -3803,16 +8842,48 @@ async function renderCompanySettings() {
 
   bindInvitationCancels(renderCompanySettings);
 
+  $("#requestPasswordOtpBtn")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const panel = $("#passwordUpdatePanel");
+    try {
+      button.disabled = true;
+      setFormStatus(panel, "Sending verification code...");
+      const data = await api("/api/users/me/password/otp", { method: "POST", body: JSON.stringify({}) });
+      $("#passwordForm")?.removeAttribute("hidden");
+      $("#passwordForm")?.querySelector("input[name='code']")?.focus();
+      setFormStatus(panel, `Code sent to ${data.email || "your email"}. It expires in ${data.expires_in_minutes || 10} minutes.`);
+    } catch (error) {
+      setFormStatus(panel, error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $("#cancelPasswordUpdateBtn")?.addEventListener("click", () => {
+    const form = $("#passwordForm");
+    form?.reset();
+    form?.setAttribute("hidden", "");
+    setFormStatus($("#passwordUpdatePanel"), "");
+  });
+
   $("#passwordForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
+    const panel = $("#passwordUpdatePanel");
     try {
-      const data = await api("/api/users/me/password", { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
+      const body = Object.fromEntries(new FormData(form).entries());
+      if (body.new_password !== body.confirm_password) {
+        setFormStatus(panel, "New password and confirmation do not match.", true);
+        return;
+      }
+      delete body.confirm_password;
+      const data = await api("/api/users/me/password", { method: "PATCH", body: JSON.stringify(body) });
       if (data.access_token && data.refresh_token) storeTokens(data.access_token, data.refresh_token);
       form.reset();
-      setFormStatus(form, "Password updated");
+      form.setAttribute("hidden", "");
+      setFormStatus(panel, "Password updated.");
     } catch (error) {
-      setFormStatus(form, error.message, true);
+      setFormStatus(panel, error.message, true);
     }
   });
 
@@ -3823,6 +8894,7 @@ async function renderCompanySettings() {
       $("#twoFactorSecret").value = data.secret;
       $("#twoFactorSecretText").textContent = data.secret;
       $("#twoFactorURI").value = data.otpauth_url;
+      renderTwoFactorQRCode(data.otpauth_url);
     } catch (error) {
       setStatus(error.message, true);
     }
@@ -3854,16 +8926,28 @@ async function renderCompanySettings() {
 }
 
 async function renderPages() {
-  const pages = (await api("/api/admin/pages")).pages;
+  const data = await api("/api/admin/pages");
+  const pages = (data.pages || []).slice().sort((a, b) => (a.slug === "home" ? -1 : b.slug === "home" ? 1 : 0));
+  const navItems = data.nav_items || [];
+  const navSettings = data.nav_settings || {};
   shell("Pages", `
-    <div class="page-title"><div><h1>Pages</h1><p class="muted">Draft, publish, and rollback legal pages.</p></div></div>
+    <div class="page-title"><div><h1>Pages</h1><p class="muted">Build the home page, public pages, and the public navigation.</p></div></div>
     <div class="grid-2">
-      <section class="panel"><h2>Editable pages</h2><div class="task-list">${pages.map((p) => `<article class="task-row"><div><h3>${esc(p.title)}</h3><span class="muted">/${esc(p.slug)}</span></div><span class="pill">${esc(p.status)}</span><a class="btn" href="/admin/pages/${p.slug}/edit">${icon("file-pen")}Edit</a></article>`).join("")}</div></section>
+      <section class="panel"><h2>Visual pages</h2><div class="task-list">${pages.map(pageListRowHTML).join("") || `<p class="muted">No pages yet.</p>`}</div></section>
       <section class="panel">
         <h2>New page</h2>
-        <form id="pageForm" class="form-grid"><div class="field"><label>Title</label><input name="title" required></div><div class="field"><label>Slug</label><input name="slug" required></div><button class="btn primary">${icon("plus")}Create</button><p class="status-line"></p></form>
+        <form id="pageForm" class="form-grid"><div class="field"><label>Title</label><input name="title" required placeholder="About us"></div><div class="field"><label>Slug</label><input name="slug" required placeholder="about-us or home"></div><button class="btn primary">${icon("plus")}Create</button><p class="status-line"></p></form>
       </section>
-    </div>`);
+    </div>
+    <section class="panel">
+      <div class="panel-head"><div><h2>Public nav bar</h2><p class="muted">Customize the links shown on the home page and public pages.</p></div><button class="btn" id="addNavItemBtn" type="button">${icon("plus")}Add link</button></div>
+      <form id="publicNavForm" class="form-grid">
+        ${publicNavSettingsHTML(navSettings)}
+        <div id="publicNavRows" class="public-nav-builder">${publicNavRowsHTML(navItems)}</div>
+        <button class="btn primary" type="submit">${icon("save")}Save nav bar</button>
+        <p class="status-line"></p>
+      </form>
+    </section>`);
   $("#pageForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
@@ -3873,24 +8957,278 @@ async function renderPages() {
       setStatus(error.message, true);
     }
   });
+  bindPublicNavBuilder(navItems, navSettings);
+}
+
+function pageListRowHTML(page) {
+  const url = publicPageURL(page.slug);
+  const helper = page.slug === "home" && page.status !== "published" ? "Home page draft. Publish it to replace the current / page." : url;
+  return `<article class="task-row"><div><h3>${esc(page.slug === "home" ? "Home page" : page.title)}</h3><span class="muted">${esc(helper)}</span></div><span class="pill">${esc(page.status)}</span><a class="btn compact" href="${esc(url)}" target="_blank" rel="noopener">${icon("external-link")}View</a><a class="btn" href="/admin/pages/${page.slug}/edit">${icon("file-pen")}Edit</a></article>`;
+}
+
+function publicPageURL(slug) {
+  if (slug === "home") return "/";
+  return `/p/${slug}`;
+}
+
+function publicNavRowsHTML(items = []) {
+  const rows = items.length ? items : [
+    { id: "home", label: "Home", url: "/", visible: true },
+    { id: "pricing", label: "Pricing", url: "/pricing", visible: true },
+    { id: "login", label: "Login", url: "/login", visible: true },
+  ];
+  return rows.map((item, index) => publicNavRowHTML(item, index)).join("");
+}
+
+function publicNavSettingsHTML(settings = {}) {
+  const logoURL = String(settings.logo_url || "");
+  const companyName = String(settings.company_name || state.platformSettings?.site_name || "PinFlow");
+  const initial = String(settings.brand_initial || companyName.slice(0, 1) || "P").toUpperCase();
+  const buttonStyle = String(settings.button_style || "primary");
+  return `<div class="public-nav-settings">
+    <div class="logo-setting platform-asset-upload">
+      <div class="company-logo-preview" id="publicNavLogoPreview">${logoURL ? `<img src="${esc(logoURL)}" alt="">` : esc(initial)}</div>
+      <div class="field">
+        <label>Navbar logo</label>
+        <input id="publicNavLogoFile" type="file" accept="image/png,image/jpeg,image/gif,image/webp">
+        <input id="publicNavLogoFileUrl" name="logo_url" value="${esc(logoURL)}" readonly placeholder="/uploads/users/.../logo.png">
+        <small class="muted">Recommended size: 500x500px. Uploaded images are resized to max 500x500px.</small>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="field"><label>Company name</label><input name="company_name" value="${esc(companyName)}" placeholder="Company name"></div>
+      <div class="field"><label>Button text</label><input name="button_text" value="${esc(settings.button_text || "Get Started")}" placeholder="Get Started"></div>
+    </div>
+    <div class="grid-2">
+      <div class="field"><label>Button link</label><input name="button_url" value="${esc(settings.button_url || "/register")}" placeholder="/register or https://example.com"></div>
+      <div class="field"><label>Button style</label><select name="button_style">
+        <option value="primary" ${buttonStyle === "primary" ? "selected" : ""}>Primary button</option>
+        <option value="default" ${["default", "outline", "secondary"].includes(buttonStyle) ? "selected" : ""}>Outline button</option>
+        <option value="quiet" ${buttonStyle === "quiet" ? "selected" : ""}>Plain button</option>
+      </select></div>
+    </div>
+  </div>`;
+}
+
+function publicNavRowHTML(item = {}, index = 0) {
+  return `<article class="public-nav-row" data-nav-row>
+    <input type="hidden" name="id" value="${esc(item.id || crypto.randomUUID())}">
+    <label><span>Label</span><input name="label" value="${esc(item.label || "")}" placeholder="About"></label>
+    <label><span>URL</span><input name="url" value="${esc(item.url || "")}" placeholder="/p/about"></label>
+    <label class="inline-check"><input type="checkbox" name="visible" ${item.visible !== false ? "checked" : ""}> Visible</label>
+    <div class="toolbar">
+      <button class="btn icon quiet" type="button" data-nav-move="-1" title="Move up">${icon("arrow-up")}</button>
+      <button class="btn icon quiet" type="button" data-nav-move="1" title="Move down">${icon("arrow-down")}</button>
+      <button class="btn icon quiet danger-text" type="button" data-nav-remove title="Remove">${icon("trash-2")}</button>
+    </div>
+  </article>`;
+}
+
+function bindPublicNavBuilder(initialItems = [], initialSettings = {}) {
+  let items = (initialItems.length ? initialItems : [
+    { id: "home", label: "Home", url: "/", visible: true },
+    { id: "pricing", label: "Pricing", url: "/pricing", visible: true },
+    { id: "login", label: "Login", url: "/login", visible: true },
+  ]).map((item) => ({ ...item }));
+  const rows = $("#publicNavRows");
+  const draw = () => {
+    rows.innerHTML = publicNavRowsHTML(items);
+    rows.querySelectorAll("[data-nav-remove]").forEach((btn) => btn.addEventListener("click", () => {
+      const index = [...rows.querySelectorAll("[data-nav-row]")].indexOf(btn.closest("[data-nav-row]"));
+      items = collect();
+      items.splice(index, 1);
+      draw();
+    }));
+    rows.querySelectorAll("[data-nav-move]").forEach((btn) => btn.addEventListener("click", () => {
+      const index = [...rows.querySelectorAll("[data-nav-row]")].indexOf(btn.closest("[data-nav-row]"));
+      const next = index + Number(btn.dataset.navMove || 0);
+      if (next < 0 || next >= items.length) return;
+      items = collect();
+      const moved = items.splice(index, 1)[0];
+      items.splice(next, 0, moved);
+      draw();
+    }));
+    icons();
+  };
+  const collect = () => [...rows.querySelectorAll("[data-nav-row]")].map((row, index) => ({
+    id: row.querySelector("input[name='id']").value || crypto.randomUUID(),
+    label: row.querySelector("input[name='label']").value.trim(),
+    url: row.querySelector("input[name='url']").value.trim(),
+    visible: row.querySelector("input[name='visible']").checked,
+    order: index + 1,
+  })).filter((item) => item.label && item.url);
+  const form = $("#publicNavForm");
+  const collectSettings = () => ({
+    logo_url: form?.elements.logo_url?.value.trim() || "",
+    company_name: form?.elements.company_name?.value.trim() || "",
+    button_text: form?.elements.button_text?.value.trim() || "",
+    button_url: form?.elements.button_url?.value.trim() || "",
+    button_style: form?.elements.button_style?.value || "primary",
+  });
+  const fillSettings = (settings = {}) => {
+    if (!form) return;
+    if (form.elements.logo_url) form.elements.logo_url.value = settings.logo_url || "";
+    if (form.elements.company_name) form.elements.company_name.value = settings.company_name || "";
+    if (form.elements.button_text) form.elements.button_text.value = settings.button_text || "Get Started";
+    if (form.elements.button_url) form.elements.button_url.value = settings.button_url || "/register";
+    if (form.elements.button_style) form.elements.button_style.value = settings.button_style || "primary";
+    const preview = $("#publicNavLogoPreview");
+    if (preview) preview.innerHTML = settings.logo_url ? `<img src="${esc(settings.logo_url)}" alt="">` : esc((settings.brand_initial || settings.company_name || "P").slice(0, 1).toUpperCase());
+  };
+  fillSettings(initialSettings);
+  $("#publicNavLogoFile")?.addEventListener("change", async (event) => {
+    const file = event.currentTarget.files?.[0];
+    if (!file || !form) return;
+    try {
+      setFormStatus(form, "Uploading navbar logo...");
+      const data = await uploadResizedImage(file, "public_nav_logo", 500);
+      if (form.elements.logo_url) form.elements.logo_url.value = data.url || "";
+      const preview = $("#publicNavLogoPreview");
+      if (preview) preview.innerHTML = `<img src="${esc(data.url || "")}" alt="">`;
+      setFormStatus(form, "Navbar logo uploaded. Save nav bar to apply it.");
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
+  $("#addNavItemBtn")?.addEventListener("click", () => {
+    items = collect();
+    items.push({ id: crypto.randomUUID(), label: "New page", url: "/p/new-page", visible: true });
+    draw();
+  });
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    try {
+      items = collect();
+      const data = await api("/api/admin/pages/nav", { method: "PUT", body: JSON.stringify({ ...collectSettings(), items }) });
+      items = data.nav_items || items;
+      fillSettings(data.nav_settings || collectSettings());
+      draw();
+      setFormStatus(form, "Navigation saved");
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
+  draw();
+}
+
+function pageBuilderSlug(value = "") {
+  return String(value || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function pageBuilderShortcodesHTML(plans = []) {
+  const scalarShortcodes = [
+    ["building-2", "[[site_name]]", "Platform/company name"],
+    ["sparkles", "[[company_slogan]]", "Platform slogan"],
+    ["mail", "[[company_email]]", "Company email"],
+    ["contact", "[[company_contact]]", "Company contact"],
+    ["map-pin", "[[company_address]]", "Company address"],
+    ["calendar", "[[current_date]]", "Current date"],
+    ["badge-dollar-sign", "[[pricing]]", "All pricing plans"],
+    ["share-2", "[[social_links]]", "Social media list"],
+    ["id-card", "[[company_contact_card]]", "Contact card"],
+  ];
+  const planShortcodes = (plans || []).map((plan) => [
+    "badge-dollar-sign",
+    `[[pricing:${pageBuilderSlug(plan.name || plan.id)}]]`,
+    `Single plan: ${plan.name || "Plan"}`,
+  ]);
+  return `<div class="builder-shortcodes">
+    <div class="panel-head compact"><div><strong>Shortcodes</strong><p class="muted">Click to insert into the selected editor field.</p></div></div>
+    <div class="builder-shortcode-grid">
+      ${[...scalarShortcodes, ...planShortcodes].map(([iconName, code, label]) => `<button class="builder-shortcode" type="button" data-insert-shortcode="${esc(code)}" title="${esc(label)}">${icon(iconName)}<span>${esc(code)}</span><small>${esc(label)}</small></button>`).join("")}
+    </div>
+  </div>`;
+}
+
+function insertTextIntoField(target, value) {
+  if (!target || !value) return;
+  if (target.isContentEditable) {
+    target.focus();
+    document.execCommand("insertText", false, value);
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    return;
+  }
+  if ("value" in target) {
+    const start = target.selectionStart ?? target.value.length;
+    const end = target.selectionEnd ?? start;
+    target.value = `${target.value.slice(0, start)}${value}${target.value.slice(end)}`;
+    const next = start + value.length;
+    target.focus();
+    target.setSelectionRange?.(next, next);
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+}
+
+function bindPageBuilderShortcodes(root = document) {
+  root.querySelectorAll("[data-insert-shortcode]").forEach((btn) => {
+    btn.addEventListener("mousedown", (event) => event.preventDefault());
+    btn.addEventListener("click", () => {
+      const active = document.activeElement;
+      const target = root.contains(active) && (active?.matches?.("input:not([type='hidden']), textarea") || active?.isContentEditable)
+        ? active
+        : root.querySelector("[data-page-rich-editor], textarea[name='text'], textarea[name='html'], input[name='heading']");
+      insertTextIntoField(target, btn.dataset.insertShortcode);
+    });
+  });
 }
 
 async function renderPageEditor(slug) {
   const data = await api(`/api/admin/pages/${slug}`);
+  const plans = (await api("/api/admin/plans").catch(() => ({ plans: [] }))).plans || [];
   let page = data.page;
-  let blocks = page.blocks || [];
+  page.page_width = page.page_width || (page.slug === "home" ? "100%" : "840px");
+  let blocks = normalizePageBuilderBlocks(page.blocks || []);
   shell("Page Builder", `
-    <div class="page-title"><div><h1>${esc(page.title)}</h1><p class="muted">/${esc(page.slug)}</p></div><div class="toolbar"><button class="btn primary" id="publishPage">${icon("upload")}Publish</button><button class="btn" id="savePage">${icon("save")}Save draft</button></div></div>
-    <div class="builder">
-      <aside class="builder-pane"><h2>Palette</h2>${["heading", "rich_text", "image", "button", "divider", "spacer", "video", "team_profiles"].map((type) => `<button class="btn" data-add-block="${type}">${icon("plus")}${type.replace("_", " ")}</button>`).join("<br><br>")}</aside>
-      <section class="builder-pane"><h2>Canvas</h2><div id="builderCanvas" class="builder-canvas"></div></section>
+    <div class="page-title"><div><h1>${esc(page.title)}</h1><p class="muted">${esc(publicPageURL(page.slug))}</p></div><div class="toolbar"><a class="btn" href="${esc(publicPageURL(page.slug))}" target="_blank" rel="noopener">${icon("external-link")}View</a><button class="btn primary" id="publishPage">${icon("upload")}Publish</button><button class="btn" id="savePage">${icon("save")}Save draft</button></div></div>
+    <div class="builder visual-builder">
+      <aside class="builder-pane builder-palette"><h2>Blocks</h2>${pageBuilderPaletteHTML("root")}</aside>
+      <section class="builder-pane builder-canvas-pane"><div class="panel-head"><h2>Live preview</h2><span class="pill">${esc(page.status || "draft")}</span></div><div id="builderCanvas" class="builder-canvas visual-canvas"></div></section>
       <aside class="builder-pane"><h2>Settings</h2><form id="blockSettings" class="form-grid"><p class="muted">Select a block.</p></form><p class="status-line"></p></aside>
     </div>`);
-  let selected = 0;
+  let selectedID = blocks[0]?.id || "";
+  let addMenuID = "";
+  function applyCurrentSettings() {
+    const formEl = $("#blockSettings");
+    if (!formEl) return;
+    syncRichEditors(formEl);
+    syncPageRichEditors(formEl);
+    const form = Object.fromEntries(new FormData(formEl).entries());
+    page.title = form.page_title || page.title;
+    page.page_width = form.page_width || page.page_width || "840px";
+    delete form.page_title;
+    delete form.page_width;
+    const selected = findPageBlock(blocks, selectedID);
+    if (selected) {
+      selected.props = normalizePageBlockProps(selected.type, { ...selected.props, ...form });
+      if (selected.type === "columns") normalizeColumnsBlock(selected);
+    }
+  }
   function draw() {
-    $("#builderCanvas").innerHTML = blocks.map((block, index) => `<article class="builder-block" data-index="${index}"><strong>${esc(block.type)}</strong><p>${esc(block.props?.text || block.props?.url || block.props?.label || "")}</p></article>`).join("");
-    document.querySelectorAll(".builder-block").forEach((el) => el.addEventListener("click", () => {
-      selected = Number(el.dataset.index);
+    blocks = normalizePageBuilderBlocks(blocks);
+    $("#builderCanvas").innerHTML = blocks.length ? blocks.map((block) => pageBuilderBlockHTML(block, selectedID, addMenuID)).join("") : `<div class="builder-empty-state">Add a block from the left to start building this page.</div>`;
+    document.querySelectorAll("[data-select-builder-block]").forEach((el) => el.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectedID = el.dataset.selectBuilderBlock;
+      addMenuID = "";
+      draw();
+      drawSettings();
+    }));
+    document.querySelectorAll("[data-toggle-add-child]").forEach((btn) => btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      addMenuID = addMenuID === btn.dataset.toggleAddChild ? "" : btn.dataset.toggleAddChild;
+      draw();
+    }));
+    document.querySelectorAll("[data-add-child-block]").forEach((btn) => btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const target = findPageBlock(blocks, btn.dataset.addChildTarget);
+      if (!target || target.type !== "column") return;
+      const block = createPageBlock(btn.dataset.addChildBlock);
+      target.children = target.children || [];
+      target.children.push(block);
+      selectedID = block.id;
+      addMenuID = "";
+      draw();
       drawSettings();
     }));
     if (window.Sortable) {
@@ -3899,7 +9237,7 @@ async function renderPageEditor(slug) {
         onEnd: (event) => {
           const moved = blocks.splice(event.oldIndex, 1)[0];
           blocks.splice(event.newIndex, 0, moved);
-          selected = event.newIndex;
+          selectedID = moved.id;
           draw();
           drawSettings();
         },
@@ -3908,42 +9246,87 @@ async function renderPageEditor(slug) {
     icons();
   }
   function drawSettings() {
-    const block = blocks[selected];
-    if (!block) return;
-    const props = block.props || {};
+    const block = findPageBlock(blocks, selectedID);
+    if (!block) {
+      $("#blockSettings").innerHTML = pageSettingsHTML(page, plans);
+      bindPageSettingsOnly();
+      bindPageBuilderShortcodes($("#blockSettings"));
+      icons();
+      return;
+    }
+    const canDelete = block.type !== "column";
+    const canDuplicate = block.type !== "column";
     $("#blockSettings").innerHTML = `
-      <div class="field"><label>Type</label><input disabled value="${esc(block.type)}"></div>
-      <div class="field"><label>Text</label><textarea name="text">${esc(props.text || props.label || "")}</textarea></div>
-      <div class="field"><label>URL</label><input name="url" value="${esc(props.url || "")}"></div>
-      <div class="field"><label>Level</label><select name="level"><option ${props.level === "h1" ? "selected" : ""}>h1</option><option ${props.level !== "h1" ? "selected" : ""}>h2</option><option>h3</option></select></div>
+      ${pageSettingsHTML(page, plans)}
+      <hr>
+      <div class="field"><label>Selected block</label><input disabled value="${esc(pageBlockTypeLabel(block.type))}"></div>
+      ${pageBlockSettingsFields(block)}
       <button class="btn primary" type="submit">${icon("check")}Apply</button>
-      <button class="btn danger" type="button" id="deleteBlock">${icon("trash-2")}Delete</button>`;
+      ${block.type === "column" ? `<div class="builder-field-group"><strong>Add inside this column</strong><div class="builder-mini-palette">${pageBuilderPaletteHTML("child", block.id)}</div></div>` : ""}
+      ${canDuplicate ? `<button class="btn" type="button" id="duplicateBlock">${icon("copy")}Duplicate</button>` : ""}
+      ${canDelete ? `<button class="btn danger" type="button" id="deleteBlock">${icon("trash-2")}Delete</button>` : `<p class="muted">Columns are controlled from the parent Columns block count.</p>`}`;
     $("#blockSettings").onsubmit = (event) => {
       event.preventDefault();
-      const form = Object.fromEntries(new FormData(event.currentTarget).entries());
-      block.props = { ...block.props, text: form.text, label: form.text, url: form.url, level: form.level };
-      draw();
-    };
-    $("#deleteBlock").onclick = () => {
-      blocks.splice(selected, 1);
-      selected = Math.max(0, selected - 1);
+      applyCurrentSettings();
       draw();
       drawSettings();
     };
+    $("#duplicateBlock")?.addEventListener("click", () => {
+      const location = findPageBlockLocation(blocks, selectedID);
+      if (!location) return;
+      const duplicate = clonePageBlock(block);
+      location.items.splice(location.index + 1, 0, duplicate);
+      selectedID = duplicate.id;
+      draw();
+      drawSettings();
+    });
+    $("#deleteBlock")?.addEventListener("click", () => {
+      const location = findPageBlockLocation(blocks, selectedID);
+      if (!location) return;
+      location.items.splice(location.index, 1);
+      selectedID = blocks[0]?.id || "";
+      draw();
+      drawSettings();
+    });
+    document.querySelectorAll("[data-settings-add-child]").forEach((btn) => btn.addEventListener("click", () => {
+      const target = findPageBlock(blocks, btn.dataset.settingsAddTarget);
+      if (!target || target.type !== "column") return;
+      const child = createPageBlock(btn.dataset.settingsAddChild);
+      target.children = target.children || [];
+      target.children.push(child);
+      selectedID = child.id;
+      draw();
+      drawSettings();
+    }));
+    bindRichEditors($("#blockSettings"));
+    bindPageRichEditors($("#blockSettings"));
+    bindBuilderColorPickers($("#blockSettings"));
+    bindPageBuilderShortcodes($("#blockSettings"));
     icons();
+  }
+  function bindPageSettingsOnly() {
+    $("#blockSettings").onsubmit = (event) => {
+      event.preventDefault();
+      applyCurrentSettings();
+      setFormStatus($("#blockSettings"), "Page title updated");
+    };
   }
   document.querySelectorAll("[data-add-block]").forEach((btn) => btn.addEventListener("click", () => {
     const type = btn.dataset.addBlock;
-    blocks.push({ id: crypto.randomUUID(), type, props: defaultProps(type), children: [] });
-    selected = blocks.length - 1;
+    const block = createPageBlock(type);
+    blocks.push(block);
+    selectedID = block.id;
     draw();
     drawSettings();
   }));
   $("#savePage").addEventListener("click", async () => {
-    await api(`/api/admin/pages/${slug}`, { method: "PUT", body: JSON.stringify({ title: page.title, blocks }) });
+    applyCurrentSettings();
+    await api(`/api/admin/pages/${slug}`, { method: "PUT", body: JSON.stringify({ title: page.title, page_width: page.page_width || "840px", blocks }) });
     setStatus("Draft saved");
   });
   $("#publishPage").addEventListener("click", async () => {
+    applyCurrentSettings();
+    await api(`/api/admin/pages/${slug}`, { method: "PUT", body: JSON.stringify({ title: page.title, page_width: page.page_width || "840px", blocks }) });
     await api(`/api/admin/pages/${slug}/publish`, { method: "POST" });
     setStatus("Published");
   });
@@ -3951,11 +9334,382 @@ async function renderPageEditor(slug) {
   drawSettings();
 }
 
+function pageSettingsHTML(page, plans = []) {
+  return `<div class="field"><label>Page title</label><input name="page_title" value="${esc(page.title || "")}" required></div>
+    <div class="field"><label>Page width</label><input name="page_width" value="${esc(page.page_width || "840px")}" placeholder="840px, 90%, 100vw"><small class="muted">Accepts px, %, or vw. Examples: 840px, 90%, 100vw.</small></div>
+    ${pageBuilderShortcodesHTML(plans)}`;
+}
+
+function pageBlockTypeLabel(type) {
+  return String(type || "block").replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+const PAGE_ROOT_BLOCK_TYPES = ["columns", "hero", "section_heading", "text", "heading", "rich_text", "html", "image", "video", "feature_grid", "button", "cta", "divider", "spacer"];
+const PAGE_CHILD_BLOCK_TYPES = ["text", "heading", "rich_text", "html", "image", "video", "button", "columns", "divider", "spacer"];
+
+function pageBuilderPaletteHTML(mode = "root", targetID = "") {
+  const types = mode === "child" ? PAGE_CHILD_BLOCK_TYPES : PAGE_ROOT_BLOCK_TYPES;
+  return types.map((type) => {
+    if (mode === "child") return `<button class="btn compact" type="button" data-settings-add-target="${esc(targetID)}" data-settings-add-child="${esc(type)}">${icon("plus")}${pageBlockTypeLabel(type)}</button>`;
+    return `<button class="btn" type="button" data-add-block="${esc(type)}">${icon("plus")}${pageBlockTypeLabel(type)}</button>`;
+  }).join("");
+}
+
+function createPageBlock(type) {
+  const block = { id: crypto.randomUUID(), type, props: defaultProps(type), children: [] };
+  if (type === "columns") normalizeColumnsBlock(block);
+  return block;
+}
+
+function createPageColumnBlock() {
+  return { id: crypto.randomUUID(), type: "column", props: { flex_direction: "column", gap: 12, custom_css: "" }, children: [] };
+}
+
+function clonePageBlock(block) {
+  const clone = JSON.parse(JSON.stringify(block));
+  refreshPageBlockIDs(clone);
+  return clone;
+}
+
+function refreshPageBlockIDs(block) {
+  block.id = crypto.randomUUID();
+  (block.children || []).forEach(refreshPageBlockIDs);
+}
+
+function normalizePageBuilderBlocks(items = []) {
+  return (items || []).filter(Boolean).map(normalizePageBlock);
+}
+
+function normalizePageBlock(block) {
+  block.id = block.id || crypto.randomUUID();
+  block.props = normalizePageBlockProps(block.type, block.props || {});
+  block.children = normalizePageBuilderBlocks(block.children || []);
+  if (block.type === "columns") normalizeColumnsBlock(block);
+  return block;
+}
+
+function normalizePageBlockProps(type, props = {}) {
+  const next = { ...props };
+  if (type === "columns") {
+    next.columns = Math.max(1, Math.min(4, Number(next.columns || 2)));
+    next.gap = Math.max(0, Math.min(80, Number(next.gap || 18)));
+    next.direction = ["row", "row-reverse", "column", "column-reverse"].includes(next.direction) ? next.direction : "row";
+  }
+  if (type === "column") {
+    next.flex_direction = ["column", "row", "row-reverse", "column-reverse"].includes(next.flex_direction) ? next.flex_direction : "column";
+    next.gap = Math.max(0, Math.min(80, Number(next.gap || 12)));
+    next.border_style = ["none", "solid", "dashed", "dotted", "double"].includes(next.border_style) ? next.border_style : "none";
+    next.border_width = Math.max(0, Math.min(24, Number(next.border_width || 0)));
+    if (next.border_style !== "none" && next.border_width <= 0) next.border_width = 1;
+    next.border_radius = Math.max(0, Math.min(80, Number(next.border_radius || 0)));
+    next.border_color = safeBuilderHexColor(next.border_color);
+    next.background_color = safeBuilderHexColor(next.background_color);
+    next.text_color = safeBuilderHexColor(next.text_color || next.color);
+    delete next.color;
+  }
+  if (type === "spacer") next.height = Math.max(8, Math.min(96, Number(next.height || 24)));
+  if (["text", "rich_text", "heading", "button"].includes(type)) {
+    next.font_color = safeBuilderHexColor(next.font_color || next.text_color);
+    next.font_size = Number(next.font_size || 0) > 0 ? Math.max(8, Math.min(120, Number(next.font_size || 0))) : "";
+    next.font_family = safeBuilderFontFamily(next.font_family);
+    next.letter_spacing = Number(next.letter_spacing || next.font_spacing || 0) !== 0 ? Math.max(-2, Math.min(12, Number(next.letter_spacing || next.font_spacing || 0))) : "";
+    next.line_height = Number(next.line_height || 0) > 0 ? Math.max(0.8, Math.min(3, Number(next.line_height || 0))) : "";
+    next.text_align = safeBuilderTextAlign(next.text_align);
+    delete next.font_spacing;
+    delete next.text_color;
+  }
+  return next;
+}
+
+function normalizeColumnsBlock(block) {
+  const count = Math.max(1, Math.min(4, Number(block.props?.columns || block.children?.length || 2)));
+  block.props = { ...block.props, columns: count };
+  const columns = (block.children || []).filter((child) => child.type === "column").map(normalizePageBlock);
+  while (columns.length < count) columns.push(createPageColumnBlock());
+  block.children = columns.slice(0, count);
+  return block;
+}
+
+function findPageBlock(items = [], id = "") {
+  for (const block of items || []) {
+    if (block.id === id) return block;
+    const found = findPageBlock(block.children || [], id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function findPageBlockLocation(items = [], id = "") {
+  for (let index = 0; index < (items || []).length; index += 1) {
+    const block = items[index];
+    if (block.id === id) return { items, index, block };
+    const found = findPageBlockLocation(block.children || [], id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function pageBuilderBlockHTML(block, selectedID = "", addMenuID = "") {
+  const selected = block.id === selectedID;
+  if (block.type === "columns") {
+    normalizeColumnsBlock(block);
+    const props = block.props || {};
+    return `<article class="builder-block visual-builder-block builder-columns-block ${selected ? "selected" : ""}" data-select-builder-block="${esc(block.id)}">
+      <div class="builder-block-toolbar"><strong>${esc(pageBlockTypeLabel(block.type))}</strong><span>${esc(props.columns)} columns - ${esc(props.direction || "row")}</span></div>
+      <div class="builder-preview-columns" style="--builder-columns:${esc(props.columns || 2)};gap:${esc(props.gap || 18)}px;flex-direction:${esc(props.direction || "row")};">
+        ${(block.children || []).map((column) => pageBuilderColumnHTML(column, selectedID, addMenuID)).join("")}
+      </div>
+    </article>`;
+  }
+  return `<article class="builder-block visual-builder-block ${selected ? "selected" : ""}" data-select-builder-block="${esc(block.id)}">
+    <div class="builder-block-toolbar"><strong>${esc(pageBlockTypeLabel(block.type))}</strong><span>${icon("grip-vertical")}</span></div>
+    ${pageBuilderPreviewBlockHTML(block)}
+  </article>`;
+}
+
+function pageBuilderColumnHTML(column, selectedID = "", addMenuID = "") {
+  const props = column.props || {};
+  const selected = column.id === selectedID;
+  const children = column.children || [];
+  const columnStyle = pageBuilderColumnStyleCSS(props);
+  return `<div class="builder-preview-column builder-block ${selected ? "selected" : ""}" data-select-builder-block="${esc(column.id)}" style="${esc(columnStyle)}">
+    <div class="builder-block-toolbar"><strong>Column</strong><span>${esc(props.flex_direction || "column")}</span></div>
+    <div class="builder-column-children" style="gap:${esc(props.gap || 12)}px;flex-direction:${esc(props.flex_direction || "column")};">
+      ${children.length ? children.map((child) => pageBuilderBlockHTML(child, selectedID, addMenuID)).join("") : `<div class="builder-column-empty">Empty column</div>`}
+    </div>
+    <button class="btn compact builder-add-component" type="button" data-toggle-add-child="${esc(column.id)}">${icon("plus")}Add component</button>
+    ${addMenuID === column.id ? `<div class="builder-add-menu">${PAGE_CHILD_BLOCK_TYPES.map((type) => `<button class="btn compact" type="button" data-add-child-target="${esc(column.id)}" data-add-child-block="${esc(type)}">${icon("plus")}${pageBlockTypeLabel(type)}</button>`).join("")}</div>` : ""}
+  </div>`;
+}
+
+function pageBuilderPreviewBlockHTML(block) {
+  const props = block.props || {};
+  const typography = pageBuilderTypographyCSS(props);
+  const buttonTypography = pageBuilderTypographyCSS(props, { skipAlign: true });
+  const buttonAlign = pageBuilderTextAlignCSS(props);
+  if (block.type === "hero") return `<section class="builder-preview-hero"><span>${esc(props.eyebrow || "Eyebrow")}</span><h1>${esc(props.heading || "Hero heading")}</h1><p>${esc(props.text || "Hero supporting text")}</p><div class="toolbar"><button class="btn primary compact" type="button">${esc(props.primary_label || "Get started")}</button>${props.secondary_label ? `<button class="btn compact" type="button">${esc(props.secondary_label)}</button>` : ""}</div></section>`;
+  if (block.type === "section_heading") return `<div class="section-head builder-preview-section-head"><p class="eyebrow">${esc(props.eyebrow || "Section")}</p><h2>${esc(props.heading || "Section heading")}</h2><p>${esc(props.text || "")}</p></div>`;
+  if (block.type === "heading") return `<${props.level || "h2"} style="${esc(typography)}">${esc(props.text || "Heading")}</${props.level || "h2"}>`;
+  if (block.type === "text") return `<p style="${esc(typography)}">${esc(props.text || "Text")}</p>`;
+  if (block.type === "rich_text") return `<div class="rich-text ${esc(props.class_name || "")}" style="${esc(typography)}">${pageRichSafeHTML(props.text || "Write page copy here.")}</div>`;
+  if (block.type === "html") return `<pre class="builder-html-preview">${esc(props.html || "<p>Safe HTML content</p>")}</pre>`;
+  if (block.type === "image") return props.url ? `<figure class="builder-preview-image"><img src="${esc(props.url)}" alt="${esc(props.alt || "")}"></figure>` : `<div class="builder-preview-placeholder">Image URL</div>`;
+  if (block.type === "video") return `<div class="builder-preview-placeholder">${esc(props.url || "Video URL")}</div>`;
+  if (block.type === "feature_grid") return `<div class="feature-grid builder-preview-features">${[1, 2, 3].map((i) => `<article class="feature-card"><h3>${esc(props[`title_${i}`] || `Feature ${i}`)}</h3><p>${esc(props[`text_${i}`] || "Feature description")}</p></article>`).join("")}</div>`;
+  if (block.type === "button") return `<p style="${esc(buttonAlign)}"><a class="btn primary" href="${esc(props.url || "#")}" style="${esc(buttonTypography)}">${esc(props.label || "Button")}</a></p>`;
+  if (block.type === "cta") return `<section class="closing-cta builder-preview-cta"><h2>${esc(props.heading || "Ready to start?")}</h2><p>${esc(props.text || "")}</p><a class="btn primary compact" href="${esc(props.url || "#")}">${esc(props.label || "Get started")}</a></section>`;
+  if (block.type === "divider") return `<hr>`;
+  if (block.type === "spacer") return `<div class="builder-spacer-preview" style="height:${Math.max(8, Math.min(96, Number(props.height || 24)))}px"></div>`;
+  return `<p>${esc(props.text || pageBlockTypeLabel(block.type))}</p>`;
+}
+
+function textInput(name, label, value = "", type = "text") {
+  const extra = type === "number" ? ` step="any"` : "";
+  return `<div class="field"><label>${esc(label)}</label><input type="${esc(type)}" name="${esc(name)}" value="${esc(value || "")}"${extra}></div>`;
+}
+
+function textAreaInput(name, label, value = "") {
+  return `<div class="field"><label>${esc(label)}</label><textarea name="${esc(name)}">${esc(value || "")}</textarea></div>`;
+}
+
+function selectInput(name, label, value, options = []) {
+  return `<div class="field"><label>${esc(label)}</label><select name="${esc(name)}">${options.map(([optionValue, optionLabel]) => `<option value="${esc(optionValue)}" ${value === optionValue ? "selected" : ""}>${esc(optionLabel)}</option>`).join("")}</select></div>`;
+}
+
+function safeBuilderHexColor(value = "") {
+  const color = String(value || "").trim();
+  return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color) ? color : "";
+}
+
+function colorInput(name, label, value = "", fallback = "#0b8f7a") {
+  const color = safeBuilderHexColor(value);
+  const pickerValue = color || fallback;
+  return `<div class="field builder-color-field">
+    <label>${esc(label)}</label>
+    <div class="builder-color-row">
+      <input type="text" name="${esc(name)}" value="${esc(color)}" placeholder="#0b8f7a" data-builder-color-text="${esc(name)}">
+      <input type="color" value="${esc(pickerValue)}" data-builder-color-picker="${esc(name)}" title="Pick ${esc(label)}">
+      <button class="btn icon quiet" type="button" data-builder-color-clear="${esc(name)}" title="Clear ${esc(label)}">${icon("x")}</button>
+    </div>
+  </div>`;
+}
+
+function bindBuilderColorPickers(root = document) {
+  root.querySelectorAll("[data-builder-color-picker]").forEach((picker) => {
+    if (picker.dataset.builderColorBound === "1") return;
+    picker.dataset.builderColorBound = "1";
+    picker.addEventListener("input", () => {
+      const input = root.querySelector(`[data-builder-color-text="${selectorEscape(picker.dataset.builderColorPicker)}"]`);
+      if (!input) return;
+      input.value = picker.value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  });
+  root.querySelectorAll("[data-builder-color-clear]").forEach((btn) => {
+    if (btn.dataset.builderColorClearBound === "1") return;
+    btn.dataset.builderColorClearBound = "1";
+    btn.addEventListener("click", () => {
+      const input = root.querySelector(`[data-builder-color-text="${selectorEscape(btn.dataset.builderColorClear)}"]`);
+      if (!input) return;
+      input.value = "";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  });
+}
+
+function customCSSField(props = {}) {
+  return `<div class="field"><label>Custom CSS</label><textarea name="custom_css" placeholder="margin-top: 20px; padding: 24px;">${esc(props.custom_css || "")}</textarea><small class="muted">Inline CSS for this component. Unsafe scripts/styles are ignored when published.</small></div>`;
+}
+
+function flexDirectionInput(name, label, value = "column") {
+  return selectInput(name, label, value, [["column", "Column"], ["row", "Row"], ["row-reverse", "Row reverse"], ["column-reverse", "Column reverse"]]);
+}
+
+function pageBuilderColumnStyleCSS(props = {}) {
+  const rules = [];
+  const borderStyle = ["none", "solid", "dashed", "dotted", "double"].includes(props.border_style) ? props.border_style : "none";
+  const borderWidth = Math.max(0, Math.min(24, Number(props.border_width || 0)));
+  const borderColor = safeBuilderHexColor(props.border_color);
+  const radius = Math.max(0, Math.min(80, Number(props.border_radius || 0)));
+  const background = safeBuilderHexColor(props.background_color);
+  const textColor = safeBuilderHexColor(props.text_color || props.color);
+  if (borderStyle !== "none" && borderWidth > 0) {
+    rules.push(`border-style:${borderStyle}`);
+    rules.push(`border-width:${borderWidth}px`);
+    rules.push(`border-color:${borderColor || "var(--border-color)"}`);
+  }
+  if (radius > 0) rules.push(`border-radius:${radius}px`);
+  if (background) rules.push(`background-color:${background}`);
+  if (textColor) rules.push(`color:${textColor}`);
+  return rules.length ? `${rules.join(";")};` : "";
+}
+
+function safeBuilderFontFamily(value = "") {
+  const allowed = [
+    "",
+    "inherit",
+    "Inter, system-ui, sans-serif",
+    "Arial, sans-serif",
+    "Verdana, sans-serif",
+    "Georgia, serif",
+    "'Times New Roman', serif",
+    "'Courier New', monospace",
+    "Poppins, sans-serif",
+    "Montserrat, sans-serif",
+  ];
+  return allowed.includes(String(value || "")) ? String(value || "") : "";
+}
+
+function safeBuilderTextAlign(value = "") {
+  return ["", "left", "center", "right", "justify"].includes(String(value || "")) ? String(value || "") : "";
+}
+
+function pageBuilderTypographyCSS(props = {}, options = {}) {
+  const rules = [];
+  const color = safeBuilderHexColor(props.font_color || props.text_color);
+  const size = Number(props.font_size || 0);
+  const family = safeBuilderFontFamily(props.font_family);
+  const spacing = Number(props.letter_spacing || props.font_spacing || 0);
+  const lineHeight = Number(props.line_height || 0);
+  const align = safeBuilderTextAlign(props.text_align);
+  if (color) rules.push(`color:${color}`);
+  if (Number.isFinite(size) && size > 0) rules.push(`font-size:${Math.max(8, Math.min(120, Math.round(size)))}px`);
+  if (family && family !== "inherit") rules.push(`font-family:${family}`);
+  if (Number.isFinite(spacing) && spacing !== 0) rules.push(`letter-spacing:${Math.max(-2, Math.min(12, spacing))}px`);
+  if (Number.isFinite(lineHeight) && lineHeight > 0) rules.push(`line-height:${Math.max(0.8, Math.min(3, lineHeight))}`);
+  if (!options.skipAlign && align) rules.push(`text-align:${align}`);
+  return rules.length ? `${rules.join(";")};` : "";
+}
+
+function pageBuilderTextAlignCSS(props = {}) {
+  const align = safeBuilderTextAlign(props.text_align);
+  return align ? `text-align:${align};` : "";
+}
+
+function columnStyleFields(props = {}) {
+  return `<div class="builder-field-group">
+    <strong>Column style</strong>
+    ${selectInput("border_style", "Border", props.border_style || "none", [["none", "No border"], ["solid", "Solid"], ["dashed", "Dashed"], ["dotted", "Dotted"], ["double", "Double"]])}
+    <div class="grid-2">
+      ${textInput("border_width", "Border width", props.border_width ?? 1, "number")}
+      ${textInput("border_radius", "Radius", props.border_radius || 0, "number")}
+    </div>
+    ${colorInput("border_color", "Border color", props.border_color || "", "#0b8f7a")}
+    ${colorInput("background_color", "Background color", props.background_color || "", "#f7f8f4")}
+    ${colorInput("text_color", "Text color", props.text_color || props.color || "", "#101613")}
+  </div>`;
+}
+
+function typographyStyleFields(props = {}) {
+  return `<div class="builder-field-group">
+    <strong>Typography</strong>
+    ${colorInput("font_color", "Font color", props.font_color || props.text_color || "", "#101613")}
+    <div class="grid-2">
+      ${textInput("font_size", "Font size", props.font_size || "", "number")}
+      ${textInput("line_height", "Line height", props.line_height || "", "number")}
+    </div>
+    <div class="grid-2">
+      ${textInput("letter_spacing", "Font spacing", props.letter_spacing || props.font_spacing || "", "number")}
+      ${selectInput("text_align", "Text alignment", props.text_align || "", [["", "Default"], ["left", "Left"], ["center", "Center"], ["right", "Right"], ["justify", "Justify"]])}
+    </div>
+    ${selectInput("font_family", "Font family", props.font_family || "", [
+      ["", "Default"],
+      ["inherit", "Inherit"],
+      ["Inter, system-ui, sans-serif", "Inter / System"],
+      ["Arial, sans-serif", "Arial"],
+      ["Verdana, sans-serif", "Verdana"],
+      ["Georgia, serif", "Georgia"],
+      ["'Times New Roman', serif", "Times New Roman"],
+      ["'Courier New', monospace", "Courier New"],
+      ["Poppins, sans-serif", "Poppins"],
+      ["Montserrat, sans-serif", "Montserrat"],
+    ])}
+  </div>`;
+}
+
+function pageBlockSettingsFields(block) {
+  const props = block.props || {};
+  const custom = customCSSField(props);
+  const typography = typographyStyleFields(props);
+  if (block.type === "columns") return `
+    ${selectInput("columns", "Column count", String(props.columns || 2), [["1", "1 column"], ["2", "2 columns"], ["3", "3 columns"], ["4", "4 columns"]])}
+    ${flexDirectionInput("direction", "Layout direction", props.direction || "row")}
+    ${textInput("gap", "Column gap", props.gap || 18, "number")}
+    ${custom}`;
+  if (block.type === "column") return `${flexDirectionInput("flex_direction", "Column flex style", props.flex_direction || "column")}${textInput("gap", "Item gap", props.gap || 12, "number")}${columnStyleFields(props)}${custom}`;
+  if (block.type === "hero") return `
+    ${textInput("eyebrow", "Eyebrow", props.eyebrow)}
+    ${textInput("heading", "Heading", props.heading)}
+    ${textAreaInput("text", "Supporting text", props.text)}
+    <div class="grid-2">${textInput("primary_label", "Primary button", props.primary_label)}${textInput("primary_url", "Primary URL", props.primary_url)}</div>
+    <div class="grid-2">${textInput("secondary_label", "Secondary button", props.secondary_label)}${textInput("secondary_url", "Secondary URL", props.secondary_url)}</div>
+    ${custom}`;
+  if (block.type === "section_heading") return `${textInput("eyebrow", "Eyebrow", props.eyebrow)}${textInput("heading", "Heading", props.heading)}${textAreaInput("text", "Text", props.text)}${custom}`;
+  if (block.type === "heading") return `${textInput("text", "Heading text", props.text)}${selectInput("level", "Level", props.level || "h2", [["h1", "H1"], ["h2", "H2"], ["h3", "H3"], ["h4", "H4"]])}${typography}${custom}`;
+  if (block.type === "text") return `${textAreaInput("text", "Text", props.text)}${typography}${custom}`;
+  if (block.type === "rich_text") return `<div class="field"><label>WYSIWYG text</label>${pageRichEditorHTML("text", props.text || "", "Write formatted page content")}</div>${textInput("class_name", "Custom class", props.class_name || "")}${typography}${custom}`;
+  if (block.type === "html") return `${textAreaInput("html", "Safe HTML", props.html)}${custom}`;
+  if (block.type === "image") return `${textInput("url", "Image URL", props.url)}${textInput("alt", "Alt text", props.alt)}${custom}`;
+  if (block.type === "video") return `${textInput("url", "YouTube or Vimeo URL", props.url)}${custom}`;
+  if (block.type === "feature_grid") return `${[1, 2, 3].map((i) => `<div class="builder-field-group"><strong>Feature ${i}</strong>${textInput(`title_${i}`, "Title", props[`title_${i}`])}${textAreaInput(`text_${i}`, "Text", props[`text_${i}`])}</div>`).join("")}${custom}`;
+  if (block.type === "button") return `${textInput("label", "Button label", props.label)}${textInput("url", "Button URL", props.url)}${typography}${custom}`;
+  if (block.type === "cta") return `${textInput("heading", "Heading", props.heading)}${textAreaInput("text", "Text", props.text)}${textInput("label", "Button label", props.label)}${textInput("url", "Button URL", props.url)}${custom}`;
+  if (block.type === "spacer") return `${textInput("height", "Height", props.height || 24, "number")}${custom}`;
+  return `${custom}<p class="muted">This block has no other settings.</p>`;
+}
+
 function defaultProps(type) {
+  if (type === "columns") return { columns: 2, direction: "row", gap: 18, custom_css: "" };
+  if (type === "hero") return { eyebrow: "Visual page builder", heading: "Build your public page", text: "Add sections, edit copy, then publish when it feels right.", primary_label: "Get started", primary_url: "/register", secondary_label: "View pricing", secondary_url: "/pricing" };
+  if (type === "section_heading") return { eyebrow: "Section", heading: "A clear section heading", text: "Use this to introduce a group of content." };
   if (type === "heading") return { text: "Heading", level: "h2" };
-  if (type === "rich_text") return { text: "Write formatted content with [[site_name]] shortcodes." };
+  if (type === "text") return { text: "Simple text paragraph." };
+  if (type === "rich_text") return { text: "<p>Write formatted content with [[site_name]] shortcodes.</p>", class_name: "" };
+  if (type === "html") return { html: "<p>Add safe custom HTML here.</p>" };
   if (type === "image") return { url: "/static/img/product-preview.png", alt: "Preview" };
+  if (type === "feature_grid") return { title_1: "Plan", text_1: "Organize the work.", title_2: "Collaborate", text_2: "Keep people aligned.", title_3: "Deliver", text_3: "Ship with a clear record." };
   if (type === "button") return { label: "Learn more", url: "/" };
+  if (type === "cta") return { heading: "Ready to start?", text: "Invite your team and keep the work moving.", label: "Get started", url: "/register" };
   if (type === "spacer") return { height: 24 };
   if (type === "video") return { url: "" };
   return {};
@@ -3999,16 +9753,289 @@ async function renderIntegrations() {
   }));
 }
 
+function performancePeriodLabel(period) {
+  return { daily: "Today", weekly: "This week", monthly: "This month", yearly: "This year" }[period] || "This week";
+}
+
+function performanceMetricCard(label, value, helper = "") {
+  return `<article class="metric performance-metric">
+    <span>${esc(label)}</span>
+    <strong>${esc(value)}</strong>
+    ${helper ? `<small>${esc(helper)}</small>` : ""}
+  </article>`;
+}
+
+function performanceWidth(value, max) {
+  if (!max) return 0;
+  return Math.max(4, Math.round((Number(value || 0) / max) * 100));
+}
+
+function performanceMemberRow(member, maxScore) {
+  const displayName = member.name || member.username || member.email || "Team member";
+  const roleText = staffRoleLabel(member.staff_role) || roleLabel(member.role || "");
+  const scoreWidth = performanceWidth(member.score, maxScore);
+  const completedWidth = performanceWidth(member.completed_tasks, Math.max(1, member.assigned_tasks, member.completed_tasks));
+  const openWidth = performanceWidth(member.open_tasks, Math.max(1, member.assigned_tasks, member.open_tasks));
+  const overdueWidth = performanceWidth(member.overdue_tasks, Math.max(1, member.assigned_tasks, member.overdue_tasks));
+  return `<article class="performance-row">
+    <div class="performance-person">
+      ${userChip(member)}
+      <div>
+        <strong>${esc(displayName)}</strong>
+        <span>${member.username ? "@" + esc(member.username) + " - " : ""}${esc(roleText || "Team member")}</span>
+      </div>
+    </div>
+    <div class="performance-chart">
+      <div class="performance-score-line">
+        <span style="width:${scoreWidth}%"></span>
+      </div>
+      <div class="performance-bars" aria-label="Task performance">
+        <span class="done" style="width:${completedWidth}%"></span>
+        <span class="open" style="width:${openWidth}%"></span>
+        <span class="late" style="width:${overdueWidth}%"></span>
+      </div>
+    </div>
+    <div class="performance-stats">
+      <span><strong>${esc(member.completed_tasks || 0)}</strong> done</span>
+      <span><strong>${esc(member.open_tasks || 0)}</strong> open</span>
+      <span><strong>${esc(member.overdue_tasks || 0)}</strong> late</span>
+      <span><strong>${esc(member.comments || 0)}</strong> comments</span>
+      <span><strong>${esc(minutesLabel(member.time_minutes || 0))}</strong> tracked</span>
+    </div>
+  </article>`;
+}
+
+async function renderTeamPerformance() {
+  const params = new URLSearchParams(window.location.search);
+  const period = ["daily", "weekly", "monthly", "yearly"].includes(params.get("period")) ? params.get("period") : "weekly";
+  const data = await api(`/api/team/performance?period=${encodeURIComponent(period)}`);
+  const members = data.members || [];
+  const summary = data.summary || {};
+  const maxScore = Math.max(1, ...members.map((member) => Number(member.score || 0)));
+  const periodButtons = ["daily", "weekly", "monthly", "yearly"].map((item) => `<a class="btn compact ${item === period ? "primary" : ""}" href="/team/performance?period=${item}">${esc(item[0].toUpperCase() + item.slice(1))}</a>`).join("");
+  shell("Team Performance", `
+    <div class="page-title">
+      <div>
+        <h1>Team Performance</h1>
+        <p class="muted">${esc(performancePeriodLabel(period))} - ${esc(fmtDate(data.from))} to ${esc(fmtDate(data.to))}</p>
+      </div>
+      <div class="toolbar performance-periods">${periodButtons}</div>
+    </div>
+    <section class="metrics performance-summary">
+      ${performanceMetricCard("Members", summary.members || 0)}
+      ${performanceMetricCard("Completed", summary.completed_tasks || 0, "Tasks finished")}
+      ${performanceMetricCard("Open", summary.open_tasks || 0, "Still active")}
+      ${performanceMetricCard("Time tracked", minutesLabel(summary.time_minutes || 0))}
+    </section>
+    <section class="panel performance-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Member chart</h2>
+          <p class="muted">Bars combine completed tasks, current open work, late tasks, comments, and tracked time.</p>
+        </div>
+        <div class="performance-legend">
+          <span><i class="done"></i>Done</span>
+          <span><i class="open"></i>Open</span>
+          <span><i class="late"></i>Late</span>
+        </div>
+      </div>
+      <div class="performance-list">
+        ${members.map((member) => performanceMemberRow(member, maxScore)).join("") || `<p class="muted">No team members found yet.</p>`}
+      </div>
+    </section>`);
+}
+
+function reportPeriodOptions() {
+  return [
+    ["day", "Day"],
+    ["week", "Week"],
+    ["month", "Month"],
+    ["year", "Year"],
+    ["all", "All time"],
+    ["custom", "Custom dates"],
+  ].map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
+}
+
+function reportClientOptions(clients = []) {
+  return `<option value="">All project folders</option>${clients.map((client) => `<option value="${esc(client.id)}">${esc(client.name || "Untitled folder")}</option>`).join("")}`;
+}
+
+function reportWebsiteOptions(websites = [], selectedClientID = "") {
+  return `<option value="">All domains</option>${websites
+    .filter((site) => !selectedClientID || site.client_id === selectedClientID)
+    .map((site) => `<option value="${esc(site.id)}">${esc(site.name || site.url || "Untitled domain")}</option>`)
+    .join("")}`;
+}
+
+function reportOptionCheckbox(name, label, checked = true) {
+  return `<label class="report-option"><input type="checkbox" name="${esc(name)}" value="1" ${checked ? "checked" : ""}> <span>${esc(label)}</span></label>`;
+}
+
+function taskReportExportURL(form) {
+  const data = Object.fromEntries(new FormData(form).entries());
+  return taskReportPDFURL(data);
+}
+
+function taskReportPreviewHTML(data = {}) {
+  if (!data.has_visible_data) {
+    return `<div class="report-preview-empty">Select at least one report section to preview.</div>`;
+  }
+  const summary = data.summary ? `<div class="report-preview-summary">
+    <span><strong>${data.summary.completed_in_period ?? 0}</strong> completed</span>
+    <span><strong>${data.summary.total_tasks ?? 0}</strong> tasks</span>
+    <span><strong>${data.summary.open ?? 0}</strong> open</span>
+    <span><strong>${data.summary.overdue ?? 0}</strong> overdue</span>
+    ${data.options?.time ? `<span><strong>${esc(data.summary.tracked_time || "0h")}</strong> tracked</span>` : ""}
+  </div>` : "";
+  const completions = (data.completed_events || []).map((item) => `<article class="report-preview-row">
+    <div>
+      <strong>${esc(item.title || "Untitled task")}</strong>
+      <span>${esc(item.project || "Project")} / ${esc(item.domain || "Domain")} · ${esc(item.completed_at || "")}</span>
+      ${item.detail ? `<p>${esc(item.detail)}</p>` : ""}
+    </div>
+    <span class="pill">${esc(item.recurring ? "recurring" : "complete")}</span>
+  </article>`).join("");
+  const tasks = (data.tasks || []).map(taskReportPreviewTaskHTML).join("");
+  return `<div class="report-preview-head">
+      <div><strong>Live preview</strong><span>${esc(data.scope || "")} · ${esc(data.date_filter || "")}</span></div>
+      <span class="pill">${data.task_count || 0} tasks</span>
+    </div>
+    ${summary}
+    ${completions ? `<div class="report-preview-section"><h3>Completed in this period</h3><div class="report-preview-list">${completions}</div>${data.more_completions ? `<p class="muted">+${data.more_completions} more completed events in the PDF.</p>` : ""}</div>` : ""}
+    ${tasks ? `<div class="report-preview-section"><h3>Tasks</h3><div class="report-preview-list">${tasks}</div>${data.more_tasks ? `<p class="muted">+${data.more_tasks} more tasks in the PDF.</p>` : ""}</div>` : ""}
+    ${!completions && !tasks ? `<div class="report-preview-empty">No matching task data for this filter.</div>` : ""}`;
+}
+
+function taskReportPreviewTaskHTML(task = {}) {
+  const checklist = task.checklist || {};
+  const checklistItems = (checklist.items || []).map((item) => `<li class="${item.done ? "done" : ""}"><span>${item.done ? "[x]" : "[ ]"}</span>${esc(item.text || "")}</li>`).join("");
+  return `<article class="report-preview-row">
+    <div>
+      <strong>${esc(task.title || "Untitled task")}</strong>
+      <span>${esc(task.project || "Project")} / ${esc(task.domain || "Domain")} · ${esc(task.status || "")}${task.due_date ? ` · Due ${esc(task.due_date)}` : ""}${task.tracked_time ? ` · ${esc(task.tracked_time)}` : ""}</span>
+      ${task.assignees ? `<p>Assignees: ${esc(task.assignees)}</p>` : ""}
+      ${task.content ? `<p>${esc(task.content)}</p>` : ""}
+      ${checklist.total ? `<div class="report-checklist-preview"><b>Checklist ${checklist.done || 0}/${checklist.total || 0}</b><ul>${checklistItems}${checklist.more_items ? `<li>+${checklist.more_items} more</li>` : ""}</ul></div>` : ""}
+    </div>
+    <span class="pill">${esc(task.type || "task")}</span>
+  </article>`;
+}
+
+function bindTaskReportExportForm(websites = []) {
+  const form = $("#taskPdfExportForm");
+  const link = $("#taskPdfExportLink");
+  const clientSelect = $("#taskReportClient");
+  const websiteSelect = $("#taskReportWebsite");
+  const fromInput = $("#taskReportFrom");
+  const toInput = $("#taskReportTo");
+  const periodSelect = $("#taskReportPeriod");
+  const preview = $("#taskReportPreview");
+  if (!form || !link || !clientSelect || !websiteSelect || !fromInput || !toInput || !periodSelect) return;
+  let previewTimer = null;
+  let previewRun = 0;
+  const refreshDomains = () => {
+    const previous = websiteSelect.value;
+    websiteSelect.innerHTML = reportWebsiteOptions(websites, clientSelect.value);
+    if ([...websiteSelect.options].some((option) => option.value === previous)) websiteSelect.value = previous;
+  };
+  const refreshCustomDates = () => {
+    const isCustom = periodSelect.value === "custom";
+    fromInput.disabled = !isCustom;
+    toInput.disabled = !isCustom;
+    fromInput.closest(".field")?.classList.toggle("is-disabled", !isCustom);
+    toInput.closest(".field")?.classList.toggle("is-disabled", !isCustom);
+  };
+  const refreshLink = () => {
+    refreshCustomDates();
+    link.href = taskReportExportURL(form);
+    refreshPreview();
+  };
+  const refreshPreview = () => {
+    if (!preview) return;
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(async () => {
+      const run = ++previewRun;
+      preview.innerHTML = `<div class="report-preview-empty">Loading preview...</div>`;
+      try {
+        const data = Object.fromEntries(new FormData(form).entries());
+        const result = await api(taskReportPreviewURL(data));
+        if (run !== previewRun) return;
+        preview.innerHTML = taskReportPreviewHTML(result);
+      } catch (error) {
+        if (run !== previewRun) return;
+        preview.innerHTML = `<div class="report-preview-empty danger">${esc(error.message || "Could not load preview")}</div>`;
+      }
+    }, 250);
+  };
+  refreshDomains();
+  refreshLink();
+  form.addEventListener("input", refreshLink);
+  form.addEventListener("change", () => {
+    refreshDomains();
+    refreshLink();
+  });
+  link.addEventListener("click", (event) => {
+    if (form.elements.scope.value === "domain" && !form.elements.website_id.value) {
+      event.preventDefault();
+      setFormStatus(form, "Select a domain for domain export.", true);
+    }
+  });
+}
+
 async function renderReports() {
   const list = await getFirstList().catch(() => null);
   const data = await api("/api/reports/time");
   data.entries = data.entries || [];
+  const clients = state.clientProjects || [];
+  const websites = state.clientWebsites || [];
   shell("Time Reports", `
-    <div class="page-title"><div><h1>Time</h1><p class="muted">${Math.round((data.total_minutes || 0) / 60 * 10) / 10} hours tracked.</p></div><a class="btn" href="/api/reports/time/export?token=${state.access}">${icon("download")}CSV</a></div>
+    <div class="page-title"><div><h1>Reports</h1><p class="muted">${Math.round((data.total_minutes || 0) / 60 * 10) / 10} hours tracked.</p></div><a class="btn" href="/api/reports/time/export?token=${state.access}">${icon("download")}CSV</a></div>
+    <section class="panel report-export-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Project task PDF</h2>
+          <p class="muted">Export tasks and completed work you can access, filtered by assignment, project folder, domain, and time period.</p>
+        </div>
+        <a class="btn primary" id="taskPdfExportLink" href="#" target="_blank" rel="noopener">${icon("file-down")}Export PDF</a>
+      </div>
+      <form id="taskPdfExportForm" class="form-grid">
+        <input type="hidden" name="customize" value="1">
+        <div class="grid-3">
+          <div class="field"><label>Scope</label><select name="scope"><option value="assigned">Assigned to me</option><option value="all">All tasks in projects</option><option value="domain">Specific domain</option></select></div>
+          <div class="field"><label>Project folder</label><select name="client_id" id="taskReportClient">${reportClientOptions(clients)}</select></div>
+          <div class="field"><label>Domain</label><select name="website_id" id="taskReportWebsite">${reportWebsiteOptions(websites)}</select></div>
+        </div>
+        <div class="grid-3">
+          <div class="field"><label>Time filter</label><select name="period" id="taskReportPeriod">${reportPeriodOptions()}</select></div>
+          <div class="field"><label>Date basis</label><select name="date_field"><option value="created_at">Created date</option><option value="due_date">Due date</option><option value="updated_at">Updated date</option></select></div>
+          <div class="field"><label>Format</label><input value="PDF report" readonly></div>
+        </div>
+        <div class="grid-2">
+          <div class="field"><label>From</label><input type="date" name="from" id="taskReportFrom"></div>
+          <div class="field"><label>To</label><input type="date" name="to" id="taskReportTo"></div>
+        </div>
+        <div class="report-option-block">
+          <h3>Data to show</h3>
+          <div class="report-option-grid">
+            ${reportOptionCheckbox("include_summary", "Summary")}
+            ${reportOptionCheckbox("include_completions", "Completed work")}
+            ${reportOptionCheckbox("include_tasks", "Task list")}
+            ${reportOptionCheckbox("include_content", "Task content")}
+            ${reportOptionCheckbox("include_checklist", "Checklists")}
+            ${reportOptionCheckbox("include_assignees", "Assignees")}
+            ${reportOptionCheckbox("include_due_dates", "Due dates")}
+            ${reportOptionCheckbox("include_time", "Tracked time")}
+          </div>
+        </div>
+        <p class="status-line"></p>
+      </form>
+      <div id="taskReportPreview" class="report-preview"><div class="report-preview-empty">Loading preview...</div></div>
+    </section>
     <div class="grid-2">
       <section class="panel"><h2>Entries</h2><div class="task-list">${data.entries.map((e) => `<article class="task-row"><div><h3>${e.duration_minutes} minutes</h3><span class="muted">${fmtDate(e.start_time)} · ${esc(e.note || "")}</span></div><span class="pill">${e.is_manual ? "manual" : "timer"}</span><span class="pill">${e.billable ? "billable" : "non-billable"}</span></article>`).join("") || `<p class="muted">No time entries yet.</p>`}</div></section>
       <section class="panel"><h2>Manual entry</h2><form id="manualTimeForm" class="form-grid"><input type="hidden" name="task_id" value="${esc(list?.id || "")}"><div class="field"><label>Date</label><input type="date" name="date"></div><div class="field"><label>Minutes</label><input type="number" name="duration_minutes" min="1" value="30"></div><div class="field"><label>Note</label><textarea name="note"></textarea></div><button class="btn primary">${icon("plus")}Log time</button><p class="status-line"></p></form></section>
     </div>`);
+  bindTaskReportExportForm(websites);
   $("#manualTimeForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
@@ -4026,6 +10053,7 @@ async function renderReports() {
 function chatTitle(chat, usersByID = {}) {
   if (!chat) return "Chat";
   if (chat.type === "support") return "Chat for help";
+  if (String(chat.title || "").trim()) return String(chat.title).trim();
   const names = (chat.participant_ids || [])
     .filter((id) => id !== state.me?.id)
     .map((id) => usersByID[id]?.name || usersByID[id]?.username || "")
@@ -4125,6 +10153,7 @@ function startChatDialogHTML(users) {
   return `<dialog id="startChatDialog" class="modal">
     <form id="startChatForm" class="form-grid" method="dialog">
       <div class="modal-head"><h2>Start chat</h2><button class="btn icon quiet" type="button" data-close-dialog title="Close">${icon("x")}</button></div>
+      <div class="field"><label>Chat title</label><input name="title" maxlength="80" placeholder="Website launch, SEO team, client updates"></div>
       <div class="member-picker">
         ${members.length ? members.map((user) => `<label class="member-choice">
           <input type="checkbox" name="participant_ids" value="${esc(user.id)}">
@@ -4261,11 +10290,24 @@ function openEmojiPicker(button, input) {
   picker.innerHTML = emojis.map((emoji) => `<button type="button">${emoji}</button>`).join("");
   document.body.appendChild(picker);
   const rect = button.getBoundingClientRect();
-  picker.style.left = `${Math.max(8, rect.left)}px`;
-  picker.style.top = `${rect.top - 8}px`;
+  const pickerWidth = picker.offsetWidth || 236;
+  const pickerHeight = picker.offsetHeight || 88;
+  const showBelow = rect.top < pickerHeight + 16;
+  picker.classList.toggle("below", showBelow);
+  picker.style.left = `${Math.min(window.innerWidth - pickerWidth - 8, Math.max(8, rect.left))}px`;
+  picker.style.top = `${showBelow ? rect.bottom + 8 : rect.top - 8}px`;
   picker.querySelectorAll("button").forEach((emojiBtn) => emojiBtn.addEventListener("click", () => {
-    input.value += emojiBtn.textContent;
-    input.focus();
+    const emoji = emojiBtn.textContent || "";
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? start;
+    input.value = `${input.value.slice(0, start)}${emoji}${input.value.slice(end)}`;
+    const nextPosition = start + emoji.length;
+    input.setSelectionRange(nextPosition, nextPosition);
+    try {
+      input.focus({ preventScroll: true });
+    } catch {
+      input.focus();
+    }
     picker.remove();
   }));
   setTimeout(() => document.addEventListener("click", function close(event) {
@@ -4279,7 +10321,7 @@ function openEmojiPicker(button, input) {
 async function renderChat() {
   const chats = (await api("/api/chats")).chats || [];
   const requestedChatID = new URLSearchParams(location.search).get("id") || "";
-  const selectedChat = chats.find((chat) => chat.id === requestedChatID) || chats[0] || null;
+  const selectedChat = requestedChatID ? chats.find((chat) => chat.id === requestedChatID) || null : null;
   const selected = selectedChat?.id || "";
   const messages = selected ? ((await api(`/api/chats/${selected}/messages`)).messages || []) : [];
   const mentionUsers = await loadMentionUsers().catch(() => []);
@@ -4288,36 +10330,58 @@ async function renderChat() {
   const selectedStatus = selectedChat ? (selectedChat.deleted_at ? "Deleted room - admins can restore or remove it forever" : selectedChat.status === "ended" ? "Conversation ended" : "Conversation open") : "Choose a conversation";
   shell("Chat", `
     <div class="page-title"><div><h1>Chat</h1><p class="muted">Team conversations and direct messages.</p></div><div class="toolbar"><button class="btn primary" id="startChatBtn">${icon("message-square-plus")}Start chat</button></div></div>
-    <div class="grid-2 chat-layout">
-      <section class="panel"><h2>Conversations</h2><div class="task-list">${chats.map((chat) => chatConversationRow(chat, chat.id === selected, usersByID)).join("") || `<p class="muted">No chats yet.</p>`}</div></section>
-      <section class="panel chat-window">
+    <section class="panel chat-conversation-panel"><h2>Conversations</h2><div class="task-list">${chats.map((chat) => chatConversationRow(chat, chat.id === selected, usersByID)).join("") || `<p class="muted">No chats yet.</p>`}</div></section>
+    ${selectedChat ? `<dialog id="chatRoomDialog" class="modal chat-room-dialog">
+      <section class="chat-window chat-room-window">
         <div class="chat-window-head">
-          <div><h2>${esc(selectedChat ? chatTitle(selectedChat, usersByID) : "Select a chat")}</h2><span class="muted">${esc(selectedStatus)}</span></div>
+          <div><h2>${esc(chatTitle(selectedChat, usersByID))}</h2><span class="muted">${esc(selectedStatus)}</span></div>
           <div class="chat-window-actions">
             ${chatActionsHTML(selectedChat)}
             ${chatCanWrite ? `<button class="btn danger compact" id="endChatBtn" type="button">${icon("phone-off")}End chat</button>` : ""}
+            <button class="btn icon quiet" type="button" data-close-dialog="chatRoomDialog" title="Close">${icon("x")}</button>
           </div>
         </div>
         <div id="messages" class="messages">${messages.map((m) => chatMessageHTML(m, usersByID, "page")).join("")}</div>
         ${chatComposerHTML("chatForm", "page", chatCanWrite, "Message @username")}
       </section>
-    </div>
+    </dialog>` : ""}
     ${startChatDialogHTML(mentionUsers)}`);
   bindChatManagementActions(renderChat);
   $("#startChatBtn")?.addEventListener("click", () => $("#startChatDialog")?.showModal());
-  bindDialogCloseButtons($("#startChatDialog") || document);
+  bindDialogCloseButtons(app);
+  const chatRoomDialog = $("#chatRoomDialog");
+  if (chatRoomDialog) {
+    chatRoomDialog.addEventListener("close", () => {
+      if (state.chatSocket) {
+        state.chatSocket.close();
+        state.chatSocket = null;
+      }
+      if (new URLSearchParams(location.search).has("id")) {
+        history.replaceState(null, "", "/chat");
+        renderChat();
+      }
+    }, { once: true });
+    chatRoomDialog.showModal();
+    $("#messages").scrollTop = $("#messages").scrollHeight;
+  }
   $("#startChatForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const participantIDs = Array.from(event.currentTarget.querySelectorAll("input[name='participant_ids']:checked")).map((input) => input.value);
+    const form = event.currentTarget;
+    const participantIDs = Array.from(form.querySelectorAll("input[name='participant_ids']:checked")).map((input) => input.value);
+    const title = String(new FormData(form).get("title") || "").trim();
     if (!participantIDs.length) {
-      setFormStatus(event.currentTarget, "Choose at least one member.", true);
+      setFormStatus(form, "Choose at least one member.", true);
+      return;
+    }
+    if (participantIDs.length > 1 && !title) {
+      setFormStatus(form, "Add a chat title for group chats.", true);
       return;
     }
     try {
-      const data = await api("/api/chats", { method: "POST", body: JSON.stringify({ type: "direct", participant_ids: participantIDs }) });
+      const data = await api("/api/chats", { method: "POST", body: JSON.stringify({ type: "direct", title, participant_ids: participantIDs }) });
       location.href = "/chat?id=" + data.chat.id;
     } catch (error) {
-      setFormStatus(event.currentTarget, error.message, true);
+      setFormStatus(form, error.message, true);
     }
   });
   $("#endChatBtn")?.addEventListener("click", async () => {
@@ -4331,24 +10395,29 @@ async function renderChat() {
     state.chatSocket.close();
     state.chatSocket = null;
   }
-  bindRichChatComposer("chatForm", "page");
-  bindChatReplyButtons("page");
+  if (selectedChat) {
+    bindRichChatComposer("chatForm", "page");
+    bindChatReplyButtons("page");
+  }
 }
 
-function openChatSocket(chatID, usersByID = {}) {
+function openChatSocket(chatID, usersByID = {}, context = "page") {
   if (state.chatSocket) state.chatSocket.close();
   const protocol = location.protocol === "https:" ? "wss" : "ws";
   state.chatSocket = new WebSocket(`${protocol}://${location.host}/ws/chat?chat_id=${chatID}&token=${encodeURIComponent(state.access)}`);
+  const messagesSelector = context === "notification" ? "#notificationMessages" : "#messages";
   state.chatSocket.onmessage = (event) => {
     const data = JSON.parse(event.data);
     if (data.message) {
-      $("#messages").insertAdjacentHTML("beforeend", chatMessageHTML(data.message, usersByID, "page"));
-      $("#messages").scrollTop = $("#messages").scrollHeight;
-      bindChatReplyButtons("page");
+      const messages = $(messagesSelector);
+      messages?.insertAdjacentHTML("beforeend", chatMessageHTML(data.message, usersByID, context));
+      if (messages) messages.scrollTop = messages.scrollHeight;
+      bindChatReplyButtons(context);
       icons();
     }
     if (["chat_ended", "chat_deleted", "chat_restored", "chat_removed"].includes(data.type)) {
-      renderChat();
+      if (context === "notification") openNotificationChatDialog(chatID);
+      else renderChat();
     }
     if (data.type === "error") {
       setStatus(data.error, true);
@@ -4460,15 +10529,35 @@ async function refreshTimerWidget() {
   state.timerTick = setInterval(draw, 1000);
 }
 
+function renderRouteError(error) {
+  if (String(error.message).includes("invalid token") || String(error.message).includes("missing bearer")) {
+    logout();
+    return;
+  }
+  app.innerHTML = `<div class="auth-wrap"><section class="auth-box"><h1>Something needs attention</h1><p class="muted">${esc(error.message)}</p><p><a class="btn primary" href="/dashboard">Retry</a></p></section></div>`;
+}
+
 async function route() {
-  if (path() === "/login") return renderAuth("login");
-  if (path() === "/register") return renderAuth("register");
+  if (path() === "/login") {
+    stopNotificationPolling();
+    stopLivePolling();
+    return renderAuth("login");
+  }
+  if (path() === "/register") {
+    stopNotificationPolling();
+    stopLivePolling();
+    return renderAuth("register");
+  }
   if (!state.access) {
+    stopNotificationPolling();
+    stopLivePolling();
     window.location.href = "/login";
     return;
   }
   try {
     await loadMe();
+    startNotificationPolling();
+    startLivePolling();
     const matchClientWebsite = path().match(/^\/projects\/([^/]+)\/sites\/([^/]+)/);
     const matchClientProject = path().match(/^\/projects\/([^/]+)$/);
     const matchAnnotate = path().match(/^\/websites\/([^/]+)\/annotate/);
@@ -4486,17 +10575,17 @@ async function route() {
     if (path() === "/settings/company") return renderCompanySettings();
     if (path() === "/settings/billing") return renderBilling();
     if (path() === "/team/integrations") return renderIntegrations();
+    if (path() === "/team/performance") return renderTeamPerformance();
     if (path() === "/reports/time") return renderReports();
-    if (path() === "/admin") return renderAdmin();
+    if (path() === "/admin" || path() === "/admin/users") return renderAdmin();
     if (path() === "/admin/settings") return renderSettings();
     if (path() === "/admin/plans") return renderPlansAdmin();
     if (path() === "/admin/pages") return renderPages();
     if (matchPageEdit) return renderPageEditor(matchPageEdit[1]);
     return renderDashboard();
   } catch (error) {
-    if (String(error.message).includes("invalid token") || String(error.message).includes("missing bearer")) logout();
-    app.innerHTML = `<div class="auth-wrap"><section class="auth-box"><h1>Something needs attention</h1><p class="muted">${esc(error.message)}</p><p><a class="btn primary" href="/dashboard">Retry</a></p></section></div>`;
+    renderRouteError(error);
   }
 }
 
-route();
+route().catch(renderRouteError);

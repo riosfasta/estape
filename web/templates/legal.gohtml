@@ -4,14 +4,25 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ .Title }} | {{ .AppName }}</title>
-  <link rel="stylesheet" href="/static/css/styles.css">
+  {{ if .FaviconURL }}<link rel="icon" href="{{ .FaviconURL }}">{{ end }}
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260719-0013">
 </head>
 <body class="public-page">
   <header class="public-nav">
-    <a class="brand" href="/"><span class="brand-mark">P</span>{{ .AppName }}</a>
-    <div class="nav-actions"><a class="btn quiet" href="/">Home</a></div>
+    <a class="brand" href="/">
+      {{ if .NavLogoURL }}<span class="brand-mark brand-image"><img src="{{ .NavLogoURL }}" alt=""></span>{{ else }}<span class="brand-mark">{{ .NavBrandInitial }}</span>{{ end }}
+      {{ .NavBrandName }}
+    </a>
+    <nav>
+      {{ range .NavItems }}
+      <a href="{{ .URL }}">{{ .Label }}</a>
+      {{ end }}
+    </nav>
+    {{ if and .NavButtonText .NavButtonURL }}
+    <div class="nav-actions"><a class="btn {{ .NavButtonClass }}" href="{{ .NavButtonURL }}">{{ .NavButtonText }}</a></div>
+    {{ end }}
   </header>
-  <main class="legal-page">
+  <main class="legal-page" style="--public-page-width: {{ if .PageWidth }}{{ .PageWidth }}{{ else }}840px{{ end }};">
     {{ .HTML }}
   </main>
   <footer class="public-footer compact">
@@ -19,5 +30,7 @@
     <a href="/legal/terms-of-service">Terms</a>
     <a href="/legal/privacy-policy">Privacy</a>
   </footer>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script>window.lucide && lucide.createIcons();</script>
 </body>
 </html>

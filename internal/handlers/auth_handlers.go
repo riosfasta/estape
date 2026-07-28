@@ -2,8 +2,12 @@ package handlers
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
+	"html"
+	"math/big"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -27,6 +31,12 @@ type registerRequest struct {
 	WorkspaceName string `json:"workspace_name"`
 	InviteToken   string `json:"invite_token"`
 }
+
+const (
+	passwordUpdateOTPPurpose  = "password_update"
+	passwordUpdateOTPMinutes  = 10
+	passwordUpdateMaxAttempts = 5
+)
 
 func (s *Server) register(c *gin.Context) {
 	var req registerRequest
@@ -252,6 +262,41 @@ func (s *Server) me(c *gin.Context) {
 		}
 	}
 	var companyAccess gin.H
+	companyAccesses := make([]gin.H, 0)
+	companyAccessTeams := map[primitive.ObjectID]bool{}
+	inviteCursor, inviteErr := s.store.C("team_invitations").Find(
+		c.Request.Context(),
+		bson.M{"existing_user_id": user.ID, "status": "accepted"},
+		options.Find().SetSort(bson.D{{Key: "responded_at", Value: -1}, {Key: "created_at", Value: -1}}),
+	)
+	if inviteErr == nil {
+		defer inviteCursor.Close(c.Request.Context())
+		for inviteCursor.Next(c.Request.Context()) {
+			var invitation models.TeamInvitation
+			if inviteCursor.Decode(&invitation) != nil || invitation.TeamID.IsZero() || companyAccessTeams[invitation.TeamID] {
+				continue
+			}
+			var invitedTeam models.Team
+			if err := s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": invitation.TeamID, "member_ids": user.ID}).Decode(&invitedTeam); err != nil {
+				continue
+			}
+			joinedAt := invitation.CreatedAt
+			if invitation.RespondedAt != nil {
+				joinedAt = *invitation.RespondedAt
+			}
+			companyAccessTeams[invitation.TeamID] = true
+			companyAccesses = append(companyAccesses, gin.H{
+				"team_id":          invitedTeam.ID,
+				"company_name":     invitedTeam.Name,
+				"company_logo_url": invitedTeam.LogoURL,
+				"company_role":     teamRoleForStaffRole(invitation.StaffRole),
+				"staff_role":       invitation.StaffRole,
+				"status":           models.StatusActive,
+				"joined_at":        joinedAt,
+				"current":          invitedTeam.ID == user.TeamID,
+			})
+		}
+	}
 	if isInvitedCompanyRole(user.Role) && team != nil {
 		joinedAt := user.CreatedAt
 		var invitation models.TeamInvitation
@@ -276,9 +321,29 @@ func (s *Server) me(c *gin.Context) {
 			"status":           user.Status,
 			"joined_at":        joinedAt,
 		}
+		if !companyAccessTeams[team.ID] && containsObjectID(team.MemberIDs, user.ID) {
+			companyAccesses = append(companyAccesses, gin.H{
+				"team_id":          team.ID,
+				"company_name":     team.Name,
+				"company_logo_url": team.LogoURL,
+				"company_role":     user.Role,
+				"staff_role":       user.StaffRole,
+				"status":           user.Status,
+				"joined_at":        joinedAt,
+				"current":          true,
+			})
+		}
 	}
 	unreadCommentCount := s.unreadTaskCommentCount(c.Request.Context(), user.ID, user.TeamID)
-	c.JSON(http.StatusOK, gin.H{"user": user, "team": team, "personal_team": personalTeam, "company_access": companyAccess, "unread_comment_count": unreadCommentCount})
+	c.JSON(http.StatusOK, gin.H{
+		"user":                 user,
+		"team":                 team,
+		"personal_team":        personalTeam,
+		"company_access":       companyAccess,
+		"company_accesses":     companyAccesses,
+		"unread_comment_count": unreadCommentCount,
+		"platform_settings":    s.publicPlatformSettings(c.Request.Context()),
+	})
 }
 
 func (s *Server) updateMyProfile(c *gin.Context) {
@@ -429,8 +494,8 @@ func (s *Server) updatePreferences(c *gin.Context) {
 func (s *Server) updatePassword(c *gin.Context) {
 	userCtx, _ := currentUser(c)
 	var req struct {
-		CurrentPassword string `json:"current_password"`
-		NewPassword     string `json:"new_password"`
+		Code        string `json:"code"`
+		NewPassword string `json:"new_password"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid password body"})
@@ -440,13 +505,30 @@ func (s *Server) updatePassword(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "new password must be at least 8 characters"})
 		return
 	}
+	code := strings.TrimSpace(req.Code)
+	if len(code) != 6 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "enter the 6-digit email code"})
+		return
+	}
 	user, err := s.loadUser(c.Request.Context(), userCtx.ID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
-	if auth.ComparePassword(user.PasswordHash, req.CurrentPassword) != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "current password is incorrect"})
+	now := time.Now()
+	var otp models.PasswordUpdateOTP
+	err = s.store.C("password_update_otps").FindOne(
+		c.Request.Context(),
+		activePasswordOTPFilter(user.ID, now),
+		options.FindOne().SetSort(bson.D{{Key: "created_at", Value: -1}}),
+	).Decode(&otp)
+	if err != nil || otp.AttemptCount >= passwordUpdateMaxAttempts {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "verification code is invalid or expired"})
+		return
+	}
+	if auth.ComparePassword(otp.CodeHash, passwordOTPSecret(user.ID, code)) != nil {
+		_, _ = s.store.C("password_update_otps").UpdateByID(c.Request.Context(), otp.ID, bson.M{"$inc": bson.M{"attempt_count": 1}})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "verification code is invalid or expired"})
 		return
 	}
 	hash, err := auth.HashPassword(req.NewPassword)
@@ -459,13 +541,122 @@ func (s *Server) updatePassword(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update password"})
 		return
 	}
+	_, _ = s.store.C("password_update_otps").UpdateMany(c.Request.Context(), activePasswordOTPFilter(user.ID, now), bson.M{"$set": bson.M{"used_at": now}})
 	user.PasswordHash = hash
 	access, refresh, err := s.issueTokens(c.Request.Context(), user)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not refresh session"})
 		return
 	}
+	s.audit(c.Request.Context(), user.ID, "user.password.updated", "user", user.ID)
 	c.JSON(http.StatusOK, gin.H{"updated": true, "access_token": access, "refresh_token": refresh})
+}
+
+func (s *Server) requestPasswordUpdateOTP(c *gin.Context) {
+	userCtx, _ := currentUser(c)
+	user, err := s.loadUser(c.Request.Context(), userCtx.ID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(user.Email))
+	if email == "" || !strings.Contains(email, "@") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "add a valid email to your profile before updating your password"})
+		return
+	}
+	if s.mailer == nil || !s.mailer.CanSend(c.Request.Context()) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "SMTP email is not configured. Ask the platform owner to set up SMTP mail first."})
+		return
+	}
+	code, err := randomSixDigitCode()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create verification code"})
+		return
+	}
+	codeHash, err := auth.HashPassword(passwordOTPSecret(user.ID, code))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not secure verification code"})
+		return
+	}
+	now := time.Now()
+	_, _ = s.store.C("password_update_otps").UpdateMany(c.Request.Context(), activePasswordOTPFilter(user.ID, now), bson.M{"$set": bson.M{"used_at": now}})
+	otp := models.PasswordUpdateOTP{
+		ID:        primitive.NewObjectID(),
+		UserID:    user.ID,
+		Email:     email,
+		Purpose:   passwordUpdateOTPPurpose,
+		CodeHash:  codeHash,
+		ExpiresAt: now.Add(passwordUpdateOTPMinutes * time.Minute),
+		CreatedAt: now,
+	}
+	if _, err := s.store.C("password_update_otps").InsertOne(c.Request.Context(), otp); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save verification code"})
+		return
+	}
+	if err := s.enqueuePasswordUpdateOTPEmail(c.Request.Context(), user, code, otp.ExpiresAt); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"sent":               true,
+		"email":              maskEmail(email),
+		"expires_in_minutes": passwordUpdateOTPMinutes,
+	})
+}
+
+func activePasswordOTPFilter(userID primitive.ObjectID, now time.Time) bson.M {
+	return bson.M{
+		"user_id":    userID,
+		"purpose":    passwordUpdateOTPPurpose,
+		"expires_at": bson.M{"$gt": now},
+		"$or": []bson.M{
+			{"used_at": bson.M{"$exists": false}},
+			{"used_at": nil},
+		},
+	}
+}
+
+func passwordOTPSecret(userID primitive.ObjectID, code string) string {
+	return userID.Hex() + ":" + strings.TrimSpace(code)
+}
+
+func randomSixDigitCode() (string, error) {
+	value, err := rand.Int(rand.Reader, big.NewInt(1000000))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%06d", value.Int64()), nil
+}
+
+func (s *Server) enqueuePasswordUpdateOTPEmail(ctx context.Context, user models.User, code string, expiresAt time.Time) error {
+	if s.mailer == nil {
+		return fmt.Errorf("email service is not configured")
+	}
+	appName := firstNonEmpty(s.cfg.AppName, "PinFlow")
+	name := firstNonEmpty(user.Name, user.Username, user.Email, "there")
+	body := `<p>Hello ` + html.EscapeString(name) + `,</p>` +
+		`<p>Use this one-time code to update your ` + html.EscapeString(appName) + ` password:</p>` +
+		`<p style="font-size:28px;font-weight:700;letter-spacing:6px;margin:18px 0;">` + html.EscapeString(code) + `</p>` +
+		`<p>This code expires at ` + html.EscapeString(expiresAt.Format("Jan 2, 2006 3:04 PM MST")) + `.</p>` +
+		`<p>If you did not request a password update, you can ignore this email.</p>`
+	return s.mailer.Enqueue(ctx, models.EmailQueueItem{
+		Recipient: strings.ToLower(strings.TrimSpace(user.Email)),
+		Type:      "password_update_otp",
+		Subject:   appName + " password update code",
+		BodyHTML:  body,
+	})
+}
+
+func maskEmail(email string) string {
+	parts := strings.SplitN(strings.TrimSpace(email), "@", 2)
+	if len(parts) != 2 || parts[0] == "" {
+		return email
+	}
+	localRunes := []rune(parts[0])
+	if len(localRunes) == 1 {
+		return string(localRunes[0]) + "***@" + parts[1]
+	}
+	return string(localRunes[0]) + "***" + string(localRunes[len(localRunes)-1]) + "@" + parts[1]
 }
 
 func (s *Server) setupTwoFactor(c *gin.Context) {
@@ -535,6 +726,11 @@ func (s *Server) disableTwoFactor(c *gin.Context) {
 }
 
 func (s *Server) uploadFile(c *gin.Context) {
+	userCtx, ok := currentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
+		return
+	}
 	file, err := c.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "file is required"})
@@ -547,8 +743,15 @@ func (s *Server) uploadFile(c *gin.Context) {
 		return
 	}
 	name := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
-	path := filepath.Join(s.cfg.UploadDir, name)
-	if strings.EqualFold(strings.TrimSpace(c.PostForm("purpose")), "profile") {
+	userDir := userUploadDir(userCtx.ID)
+	path := filepath.Join(s.cfg.UploadDir, userDir, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare upload directory"})
+		return
+	}
+	uploadPurpose := strings.ToLower(strings.TrimSpace(c.PostForm("purpose")))
+	imagePurposes := map[string]bool{"profile": true, "platform_logo": true, "platform_favicon": true, "public_nav_logo": true}
+	if imagePurposes[uploadPurpose] {
 		if err := saveProfileUpload(file, path, ext, 500); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -557,7 +760,7 @@ func (s *Server) uploadFile(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save file"})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"url": "/uploads/" + name})
+	c.JSON(http.StatusCreated, gin.H{"url": "/uploads/" + filepath.ToSlash(filepath.Join(userDir, name))})
 }
 
 func (s *Server) issueTokens(ctx context.Context, user models.User) (string, string, error) {
@@ -590,13 +793,15 @@ func (s *Server) createTrialSubscription(ctx context.Context, teamID primitive.O
 		status = "trialing"
 	}
 	sub := models.Subscription{
-		ID:          primitive.NewObjectID(),
-		TeamID:      teamID,
-		PlanID:      plan.ID,
-		Status:      status,
-		TrialEndsAt: trialEnds,
-		StartedAt:   now,
-		CreatedAt:   now,
+		ID:              primitive.NewObjectID(),
+		TeamID:          teamID,
+		PlanID:          plan.ID,
+		Status:          status,
+		BillingPeriod:   "monthly",
+		BillingQuantity: 1,
+		TrialEndsAt:     trialEnds,
+		StartedAt:       now,
+		CreatedAt:       now,
 	}
 	_, err = s.store.C("subscriptions").InsertOne(ctx, sub)
 	return sub.ID, plan, err

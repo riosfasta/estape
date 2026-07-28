@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ .AppName }} Workspace</title>
+  {{ if .FaviconURL }}<link rel="icon" href="{{ .FaviconURL }}">{{ end }}
   <script>
     (function () {
       var saved = localStorage.getItem('pinflow_theme') || 'system';
@@ -11,11 +12,11 @@
       document.documentElement.dataset.theme = saved === 'system' ? (prefersDark ? 'dark' : 'light') : saved;
     })();
   </script>
-  <link rel="stylesheet" href="/static/css/styles.css?v=20260707-0430">
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260719-0013">
 </head>
 <body class="workspace-page">
   <div id="app"></div>
-  <script type="module" src="/static/js/app.js?v=20260707-0430"></script>
+  <script type="module" src="/static/js/app.js?v=20260719-0013"></script>
   <script async src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <script async src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
 </body>

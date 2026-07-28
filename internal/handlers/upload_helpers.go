@@ -17,7 +17,7 @@ func saveProfileUpload(file *multipart.FileHeader, path string, ext string, maxS
 	switch ext {
 	case ".jpg", ".jpeg", ".png", ".gif":
 	default:
-		return errors.New("profile photo must be a JPG, PNG, or GIF image")
+		return errors.New("image must be a JPG, PNG, or GIF file")
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return errors.New("could not prepare upload directory")
@@ -29,13 +29,13 @@ func saveProfileUpload(file *multipart.FileHeader, path string, ext string, maxS
 	img, _, err := image.Decode(src)
 	_ = src.Close()
 	if err != nil {
-		return errors.New("profile photo must be a valid image")
+		return errors.New("image must be a valid JPG, PNG, or GIF file")
 	}
 	bounds := img.Bounds()
 	width := bounds.Dx()
 	height := bounds.Dy()
 	if width <= 0 || height <= 0 {
-		return errors.New("profile photo has invalid dimensions")
+		return errors.New("image has invalid dimensions")
 	}
 	if width <= maxSize && height <= maxSize {
 		return copyUploadedFile(file, path)

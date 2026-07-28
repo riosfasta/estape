@@ -23,10 +23,36 @@ import (
 
 var wsUpgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 
+func normalizeChatTitle(value string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	if value == "" {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) > 80 {
+		return ""
+	}
+	return value
+}
+
+func chatDisplayTitle(chat models.Chat) string {
+	if strings.TrimSpace(chat.Title) != "" {
+		return strings.TrimSpace(chat.Title)
+	}
+	if chat.Type == "support" {
+		return "Chat for help"
+	}
+	if chat.Type == "direct" {
+		return "Direct chat"
+	}
+	return firstNonEmpty(chat.Type, "chat") + " chat"
+}
+
 func (s *Server) createChat(c *gin.Context) {
 	userCtx, _ := currentUser(c)
 	var req struct {
 		Type           string   `json:"type"`
+		Title          string   `json:"title"`
 		ParticipantIDs []string `json:"participant_ids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -36,9 +62,18 @@ func (s *Server) createChat(c *gin.Context) {
 	if req.Type == "" {
 		req.Type = "team"
 	}
+	title := normalizeChatTitle(req.Title)
+	if strings.TrimSpace(req.Title) != "" && title == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "chat title is too long"})
+		return
+	}
 	ids, err := objectIDsFromStrings(req.ParticipantIDs)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid participant id"})
+		return
+	}
+	if req.Type != "support" && len(ids) > 1 && title == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "chat title is required for group chats"})
 		return
 	}
 	ids = append(ids, userCtx.ID)
@@ -70,10 +105,17 @@ func (s *Server) createChat(c *gin.Context) {
 			}
 		}
 	}
-	chat := models.Chat{ID: primitive.NewObjectID(), Type: req.Type, ParticipantIDs: uniqueObjectIDs(ids), TeamID: userCtx.TeamID, Status: "open", CreatedBy: userCtx.ID, CreatedAt: time.Now()}
+	if req.Type == "support" && title == "" {
+		title = "Chat for help"
+	}
+	chat := models.Chat{ID: primitive.NewObjectID(), Type: req.Type, Title: title, ParticipantIDs: uniqueObjectIDs(ids), TeamID: userCtx.TeamID, Status: "open", CreatedBy: userCtx.ID, CreatedAt: time.Now()}
 	if _, err := s.store.C("chats").InsertOne(c.Request.Context(), chat); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create chat"})
 		return
+	}
+	if req.Type == "support" {
+		actor := s.notificationActorName(c.Request.Context(), userCtx.ID)
+		s.notifyOwnerAdmins(c.Request.Context(), userCtx.ID, "support_chat_created", actor+" started a new help chat.", chat.ID)
 	}
 	c.JSON(http.StatusCreated, gin.H{"chat": chat})
 }
@@ -151,15 +193,12 @@ func (s *Server) endChat(c *gin.Context) {
 	if user, err := s.loadUser(c.Request.Context(), userCtx.ID); err == nil {
 		actor = firstNonEmpty(user.Name, user.Username, user.Email, actor)
 	}
-	for _, participantID := range chat.ParticipantIDs {
-		if participantID == userCtx.ID {
-			continue
-		}
+	for _, participantID := range s.userNotificationRecipients(c.Request.Context(), chat.ParticipantIDs, userCtx.ID) {
 		_, _ = s.store.C("notifications").InsertOne(c.Request.Context(), models.Notification{
 			ID:        primitive.NewObjectID(),
 			UserID:    participantID,
 			Type:      "chat_ended",
-			Content:   actor + " ended a " + chat.Type + " chat.",
+			Content:   actor + " ended " + chatDisplayTitle(chat) + ".",
 			RelatedID: chatID,
 			Read:      false,
 			CreatedAt: now,
@@ -388,26 +427,20 @@ func (s *Server) notifyChatMessage(ctx context.Context, chat models.Chat, sender
 			}
 		}
 	}
-	cursor, err := s.store.C("users").Find(ctx, bson.M{"role": models.RoleOwnerAdmin, "status": models.StatusActive})
-	if err == nil {
-		defer cursor.Close(ctx)
-		for cursor.Next(ctx) {
-			var owner models.User
-			if cursor.Decode(&owner) == nil && owner.ID != senderID {
-				recipients[owner.ID] = true
-			}
-		}
-	}
 	actor := "A user"
 	if user, err := s.loadUser(ctx, senderID); err == nil {
 		actor = firstNonEmpty(user.Name, user.Username, user.Email, actor)
 	}
-	content := actor + " sent a new message in a " + firstNonEmpty(chat.Type, "chat") + " chat."
+	content := actor + " sent a new message in " + chatDisplayTitle(chat) + "."
 	now := msg.SentAt
 	if now.IsZero() {
 		now = time.Now()
 	}
+	recipientIDs := []primitive.ObjectID{}
 	for recipientID := range recipients {
+		recipientIDs = append(recipientIDs, recipientID)
+	}
+	for _, recipientID := range s.userNotificationRecipients(ctx, recipientIDs, senderID) {
 		_, _ = s.store.C("notifications").InsertOne(ctx, models.Notification{
 			ID:        primitive.NewObjectID(),
 			UserID:    recipientID,
@@ -465,17 +498,8 @@ func (s *Server) startTimer(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task_id"})
 		return
 	}
-	var task models.Task
-	if err := s.store.C("tasks").FindOne(c.Request.Context(), bson.M{"_id": taskID}).Decode(&task); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
-		return
-	}
-	teamID, err := s.teamForList(c.Request.Context(), task.ListID)
-	if err != nil || !s.canAccessTeam(c, teamID) {
-		return
-	}
-	if isInvitedCompanyRole(userCtx.Role) && !containsObjectID(task.AssigneeIDs, userCtx.ID) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "you can only track time on assigned tasks"})
+	teamID, taskPayload, ok := s.resolveTimerTask(c, taskID, userCtx)
+	if !ok {
 		return
 	}
 	s.stopActiveTimers(c, userCtx.ID)
@@ -484,7 +508,40 @@ func (s *Server) startTimer(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not start timer"})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"entry": entry, "task": task})
+	c.JSON(http.StatusCreated, gin.H{"entry": entry, "task": taskPayload})
+}
+
+func (s *Server) resolveTimerTask(c *gin.Context, taskID primitive.ObjectID, userCtx middleware.UserContext) (primitive.ObjectID, interface{}, bool) {
+	var task models.Task
+	if err := s.store.C("tasks").FindOne(c.Request.Context(), bson.M{"_id": taskID}).Decode(&task); err == nil {
+		teamID, err := s.teamForList(c.Request.Context(), task.ListID)
+		if err != nil || !s.canAccessTeam(c, teamID) {
+			return primitive.NilObjectID, nil, false
+		}
+		if isInvitedCompanyRole(userCtx.Role) && !containsObjectID(task.AssigneeIDs, userCtx.ID) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "you can only track time on assigned tasks"})
+			return primitive.NilObjectID, nil, false
+		}
+		return teamID, task, true
+	}
+	var clientTask models.ClientTask
+	if err := s.store.C("client_tasks").FindOne(c.Request.Context(), bson.M{"_id": taskID}).Decode(&clientTask); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		return primitive.NilObjectID, nil, false
+	}
+	client, ok := s.loadClientProjectForAccess(c, clientTask.ClientID, false)
+	if !ok {
+		return primitive.NilObjectID, nil, false
+	}
+	if isInvitedCompanyRole(userCtx.Role) && !containsObjectID(clientTask.AssigneeIDs, userCtx.ID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "you can only track time on assigned tasks"})
+		return primitive.NilObjectID, nil, false
+	}
+	teamID := clientTask.TeamID
+	if teamID.IsZero() {
+		teamID = client.TeamID
+	}
+	return teamID, clientTask, true
 }
 
 func (s *Server) stopTimer(c *gin.Context) {
@@ -526,8 +583,16 @@ func (s *Server) activeTimer(c *gin.Context) {
 		return
 	}
 	var task models.Task
-	_ = s.store.C("tasks").FindOne(c.Request.Context(), bson.M{"_id": entry.TaskID}).Decode(&task)
-	c.JSON(http.StatusOK, gin.H{"entry": entry, "task": task})
+	if err := s.store.C("tasks").FindOne(c.Request.Context(), bson.M{"_id": entry.TaskID}).Decode(&task); err == nil {
+		c.JSON(http.StatusOK, gin.H{"entry": entry, "task": task})
+		return
+	}
+	var clientTask models.ClientTask
+	if err := s.store.C("client_tasks").FindOne(c.Request.Context(), bson.M{"_id": entry.TaskID}).Decode(&clientTask); err == nil {
+		c.JSON(http.StatusOK, gin.H{"entry": entry, "task": clientTask})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"entry": entry, "task": nil})
 }
 
 func (s *Server) createManualTimeEntry(c *gin.Context) {
@@ -548,13 +613,8 @@ func (s *Server) createManualTimeEntry(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task_id"})
 		return
 	}
-	var task models.Task
-	if err := s.store.C("tasks").FindOne(c.Request.Context(), bson.M{"_id": taskID}).Decode(&task); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
-		return
-	}
-	teamID, err := s.teamForList(c.Request.Context(), task.ListID)
-	if err != nil || !s.canAccessTeam(c, teamID) {
+	teamID, _, ok := s.resolveTimerTask(c, taskID, userCtx)
+	if !ok {
 		return
 	}
 	date := time.Now()
@@ -753,7 +813,12 @@ func (s *Server) timeEntryFilter(c *gin.Context, userCtx middleware.UserContext)
 	}
 	if taskIDRaw := strings.TrimSpace(c.Query("task_id")); taskIDRaw != "" {
 		if taskID, err := objectIDFromString(taskIDRaw); err == nil {
-			filter["task_id"] = taskID
+			if teamID, _, ok := s.resolveTimerTask(c, taskID, userCtx); ok {
+				filter["task_id"] = taskID
+				filter["team_id"] = teamID
+			} else {
+				filter["task_id"] = primitive.NewObjectID()
+			}
 		}
 	}
 	if from := strings.TrimSpace(c.Query("from")); from != "" {
