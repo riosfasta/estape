@@ -142,6 +142,9 @@ func (s *Server) addTeamMember(c *gin.Context) {
 	if !s.canManageTeam(c, teamID) {
 		return
 	}
+	if !s.requireTeamFeatureAccess(c, teamID, "staff management") {
+		return
+	}
 	var req struct {
 		Name      string `json:"name"`
 		Email     string `json:"email"`

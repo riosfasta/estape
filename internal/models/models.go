@@ -396,6 +396,18 @@ type Notification struct {
 	DeletedAt *time.Time         `bson:"deleted_at,omitempty" json:"deleted_at,omitempty"`
 }
 
+type PushDevice struct {
+	ID         primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	UserID     primitive.ObjectID `bson:"user_id" json:"user_id"`
+	Token      string             `bson:"token" json:"token"`
+	Platform   string             `bson:"platform" json:"platform"`
+	Enabled    bool               `bson:"enabled" json:"enabled"`
+	AppVersion string             `bson:"app_version,omitempty" json:"app_version,omitempty"`
+	CreatedAt  time.Time          `bson:"created_at" json:"created_at"`
+	UpdatedAt  time.Time          `bson:"updated_at" json:"updated_at"`
+	LastSeenAt time.Time          `bson:"last_seen_at" json:"last_seen_at"`
+}
+
 type TeamInvitation struct {
 	ID             primitive.ObjectID `bson:"_id,omitempty" json:"id"`
 	TeamID         primitive.ObjectID `bson:"team_id" json:"team_id"`

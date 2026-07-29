@@ -52,6 +52,10 @@ func (s *Store) CreateIndexes(ctx context.Context) error {
 		"notifications": {
 			{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "read", Value: 1}, {Key: "created_at", Value: -1}}},
 		},
+		"push_devices": {
+			{Keys: bson.D{{Key: "token", Value: 1}}, Options: mongomodels.Index().SetUnique(true)},
+			{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "enabled", Value: 1}}},
+		},
 		"tasks": {
 			{Keys: bson.D{{Key: "list_id", Value: 1}}},
 			{Keys: bson.D{{Key: "assignee_ids", Value: 1}}},

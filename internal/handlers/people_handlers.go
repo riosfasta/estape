@@ -209,6 +209,9 @@ func (s *Server) createTeamInvitation(c *gin.Context) {
 	if !s.canManageTeam(c, teamID) {
 		return
 	}
+	if !s.requireTeamFeatureAccess(c, teamID, "staff invitations") {
+		return
+	}
 	var req struct {
 		Email     string `json:"email"`
 		Username  string `json:"username"`
@@ -867,7 +870,7 @@ func (s *Server) notifyUserIDs(ctx context.Context, userIDs []primitive.ObjectID
 	}
 	now := time.Now()
 	for _, userID := range s.userNotificationRecipients(ctx, userIDs, actorID) {
-		_, _ = s.store.C("notifications").InsertOne(ctx, models.Notification{
+		s.insertNotification(ctx, models.Notification{
 			ID:        primitive.NewObjectID(),
 			UserID:    userID,
 			Type:      notificationType,
@@ -876,7 +879,6 @@ func (s *Server) notifyUserIDs(ctx context.Context, userIDs []primitive.ObjectID
 			Read:      false,
 			CreatedAt: now,
 		})
-		s.broadcastLiveToUsers([]primitive.ObjectID{userID}, "notification_changed", gin.H{"notification_type": notificationType, "related_id": relatedID.Hex()})
 	}
 }
 
@@ -891,14 +893,12 @@ func (s *Server) notifyOwnerAdmins(ctx context.Context, actorID primitive.Object
 	}
 	defer cursor.Close(ctx)
 	now := time.Now()
-	ownerIDs := []primitive.ObjectID{}
 	for cursor.Next(ctx) {
 		var owner models.User
 		if cursor.Decode(&owner) != nil || owner.ID.IsZero() || owner.ID == actorID {
 			continue
 		}
-		ownerIDs = append(ownerIDs, owner.ID)
-		_, _ = s.store.C("notifications").InsertOne(ctx, models.Notification{
+		s.insertNotification(ctx, models.Notification{
 			ID:        primitive.NewObjectID(),
 			UserID:    owner.ID,
 			Type:      notificationType,
@@ -907,9 +907,6 @@ func (s *Server) notifyOwnerAdmins(ctx context.Context, actorID primitive.Object
 			Read:      false,
 			CreatedAt: now,
 		})
-	}
-	if len(ownerIDs) > 0 {
-		s.broadcastLiveToUsers(ownerIDs, "notification_changed", gin.H{"notification_type": notificationType, "related_id": relatedID.Hex()})
 	}
 }
 
@@ -1087,7 +1084,7 @@ func (s *Server) notifyMentions(ctx context.Context, teamID primitive.ObjectID, 
 		if cursor.Decode(&user) != nil || user.ID == actorID {
 			continue
 		}
-		_, _ = s.store.C("notifications").InsertOne(ctx, models.Notification{
+		s.insertNotification(ctx, models.Notification{
 			ID:        primitive.NewObjectID(),
 			UserID:    user.ID,
 			Type:      sourceType + "_mention",

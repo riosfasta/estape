@@ -17,6 +17,7 @@ const state = {
   personalTeam: null,
   companyAccess: null,
   companyAccesses: [],
+  membership: null,
   workspaceContext: localStorage.getItem(WORKSPACE_CONTEXT_KEY) || "personal",
   platformSettings: null,
   unreadCommentCount: 0,
@@ -831,6 +832,7 @@ function normalizeCompanyAccess(access = {}) {
     status: access.status || "active",
     joined_at: access.joined_at || "",
     current: Boolean(access.current),
+    membership: access.membership || null,
   };
 }
 
@@ -1078,6 +1080,124 @@ function planPriceSummary(plan = {}) {
 
 function planOptionsHTML(plans = [], selected = "") {
   return plans.map((plan) => `<option value="${esc(plan.id)}" ${selected === plan.id ? "selected" : ""}>${esc(plan.name)} - ${esc(planPriceSummary(plan))}</option>`).join("");
+}
+
+function activeWorkspaceMembership() {
+  if (state.me?.role === "owner_adm") return { status: "active", allowed: true, trial: false, plans: [] };
+  if (isPersonalWorkspaceContext()) return state.membership || { status: "no_membership", allowed: false, plans: [] };
+  const teamID = activeWorkspaceTeamID();
+  return joinedCompanyAccesses().find((access) => access.team_id === teamID)?.membership || { status: "no_membership", allowed: false, plans: [] };
+}
+
+function paidFeatureAllowed() {
+  const membership = activeWorkspaceMembership();
+  return membership.allowed === true || ["active", "trialing"].includes(membership.status);
+}
+
+function trialActiveForWorkspace() {
+  const membership = activeWorkspaceMembership();
+  return membership.status === "trialing" || membership.trial === true;
+}
+
+function trialNoticeKey() {
+  return `pinflow_trial_notice:${activeWorkspaceTeamID() || "personal"}`;
+}
+
+function showTrialNoticeOnce() {
+  if (!trialActiveForWorkspace()) return;
+  const key = trialNoticeKey();
+  if (sessionStorage.getItem(key) === "1") return;
+  sessionStorage.setItem(key, "1");
+  const membership = activeWorkspaceMembership();
+  const trialEnds = membership.trial_ends_at ? ` Trial ends ${fmtDate(membership.trial_ends_at)}.` : "";
+  document.body.insertAdjacentHTML("beforeend", `<dialog id="trialNoticeDialog" class="modal compact-modal">
+    <div class="modal-head"><h2>Enjoy your trial</h2><button class="btn icon quiet" type="button" data-close-dialog="trialNoticeDialog" title="Close">${icon("x")}</button></div>
+    <p class="muted">Your workspace has full access during the 14-day trial.${esc(trialEnds)}</p>
+    <div class="toolbar"><button class="btn primary" type="button" data-close-dialog="trialNoticeDialog">Continue</button></div>
+  </dialog>`);
+  bindDialogCloseButtons(document);
+  icons();
+  $("#trialNoticeDialog")?.showModal();
+}
+
+function membershipLabel(value) {
+  const labels = {
+    active: "Active",
+    trialing: "Trial",
+    pending_approval: "Pending owner approval",
+    expired: "Expired",
+    no_membership: "Free",
+    unknown: "Unknown",
+  };
+  return labels[value] || value || "Free";
+}
+
+function pricingCardsHTML(plans = [], options = {}) {
+  const canPurchase = options.canPurchase !== false;
+  if (!plans.length) return `<section class="panel"><p class="muted">No pricing plans are available yet. Please contact the platform owner.</p></section>`;
+  return `<div class="pricing-grid app-pricing-grid">${plans.map((plan) => `<article class="${plan.featured ? "featured" : ""}" data-plan-card="${esc(plan.id)}">
+    <h3>${esc(plan.name)}</h3>
+    <p>${esc(planPriceSummary(plan))}</p>
+    <span>${Number(plan.seat_limit || 0)} seats · ${Number(plan.project_limit || 0)} projects · ${Number(plan.trial_days || 0) || 14} trial days</span>
+    ${plan.description ? `<small>${esc(plan.description)}</small>` : ""}
+    <div class="grid-2" style="margin-top:12px">
+      <label class="field"><span>Period</span><select data-buy-period ${canPurchase ? "" : "disabled"}><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label>
+      <label class="field"><span>Amount</span><input data-buy-quantity type="number" min="1" max="120" step="1" value="1" ${canPurchase ? "" : "disabled"}></label>
+    </div>
+    <p class="pricing-actions">
+      <button class="btn primary" data-buy="${esc(plan.id)}" data-provider="stripe" ${canPurchase ? "" : "disabled"}>${icon("credit-card")}Stripe</button>
+      <button class="btn" data-buy="${esc(plan.id)}" data-provider="paypal" ${canPurchase ? "" : "disabled"}>PayPal</button>
+    </p>
+  </article>`).join("")}</div>`;
+}
+
+function bindPurchaseButtons(onDone = null) {
+  document.querySelectorAll("[data-buy]").forEach((btn) => btn.addEventListener("click", async () => {
+    try {
+      const card = btn.closest("[data-plan-card]");
+      const data = await api("/api/subscriptions/purchase", {
+        method: "POST",
+        body: JSON.stringify({
+          plan_id: btn.dataset.buy,
+          provider: btn.dataset.provider,
+          billing_period: card?.querySelector("[data-buy-period]")?.value || "monthly",
+          quantity: Number(card?.querySelector("[data-buy-quantity]")?.value || 1),
+        }),
+      });
+      alert(`Checkout created: ${data.checkout?.external_id || "pending"}. The package is waiting for platform owner activation.`);
+      if (data.checkout?.url) window.open(data.checkout.url, "_blank", "noopener");
+      if (onDone) await onDone(data);
+    } catch (error) {
+      alert(error.message);
+    }
+  }));
+}
+
+async function renderMembershipPaywall(feature = "workspace features") {
+  const membership = activeWorkspaceMembership();
+  const plans = membership.plans?.length ? membership.plans : ((await api("/api/subscriptions/plans").catch(() => ({ plans: [] }))).plans || []);
+  const personal = isPersonalWorkspaceContext();
+  shell("Membership required", `
+    <div class="page-title"><div><h1>Membership required</h1><p class="muted">Upgrade to use ${esc(feature)}. New workspaces can use these tools during the 14-day trial.</p></div><span class="pill warn">${esc(membershipLabel(membership.status))}</span></div>
+    <section class="panel paywall-panel">
+      <h2>Choose a package</h2>
+      <p class="muted">${personal ? "After checkout, your purchase is held for platform owner activation. You will get a notification when it is approved." : "This company workspace needs an active membership. Ask the company admin to purchase or activate a plan."}</p>
+      ${pricingCardsHTML(plans, { canPurchase: personal })}
+    </section>`);
+  bindPurchaseButtons(async () => {
+    await loadMe();
+    await renderMembershipPaywall(feature);
+  });
+  icons();
+}
+
+async function guardPaidFeaturePage(feature) {
+  if (paidFeatureAllowed()) {
+    setTimeout(showTrialNoticeOnce, 0);
+    return true;
+  }
+  await renderMembershipPaywall(feature);
+  return false;
 }
 
 function subscriptionDurationText(subscription = {}) {
@@ -1341,7 +1461,13 @@ async function api(url, options = {}, retry = true) {
   }
   const type = res.headers.get("Content-Type") || "";
   const body = type.includes("application/json") ? await res.json() : await res.text();
-  if (!res.ok) throw new Error(body.error || "Request failed");
+  if (!res.ok) {
+    const message = typeof body === "object" ? (body.error || "Request failed") : (body || "Request failed");
+    const error = new Error(message);
+    error.status = res.status;
+    error.body = body;
+    throw error;
+  }
   return body;
 }
 
@@ -1372,6 +1498,7 @@ async function loadMe() {
   state.companyAccesses = Array.isArray(data.company_accesses)
     ? data.company_accesses
     : (data.company_access ? [data.company_access] : []);
+  state.membership = data.membership || null;
   state.platformSettings = data.platform_settings || null;
   state.unreadCommentCount = Number(data.unread_comment_count || 0);
   const clientData = await api("/api/client-projects").catch(() => ({ clients: [], websites: [] }));
@@ -7551,27 +7678,9 @@ async function renderBilling() {
   const invoices = state.team ? ((await api(`/api/subscriptions/${state.team.id}/invoices`)).invoices || []) : [];
   shell("Billing", `
     <div class="page-title"><div><h1>Billing</h1><p class="muted">Plans, trial state, approvals, and receipts.</p></div></div>
-    <div class="pricing-grid">${plans.map((plan) => `<article class="${plan.featured ? "featured" : ""}" data-plan-card="${esc(plan.id)}">
-      <h3>${esc(plan.name)}</h3>
-      <p>${esc(planPriceSummary(plan))}</p>
-      <span>${plan.seat_limit} seats · ${plan.project_limit} projects · ${plan.trial_days} trial days</span>
-      <div class="grid-2" style="margin-top:12px">
-        <label class="field"><span>Period</span><select data-buy-period><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label>
-        <label class="field"><span>Amount</span><input data-buy-quantity type="number" min="1" max="120" step="1" value="1"></label>
-      </div>
-      <p><button class="btn primary" data-buy="${plan.id}" data-provider="stripe">${icon("credit-card")}Stripe</button> <button class="btn" data-buy="${plan.id}" data-provider="paypal">PayPal</button></p>
-    </article>`).join("")}</div>
+    ${pricingCardsHTML(plans)}
     <section class="panel" style="margin-top:18px"><h2>Invoices</h2><div class="task-list">${invoices.map((invoice) => `<article class="task-row"><div><h3>${money(invoice.amount)} ${esc(invoice.currency).toUpperCase()}</h3><span class="muted">${fmtDate(invoice.issued_at)}</span></div><span class="pill">${esc(invoice.status)}</span><a class="btn" href="${esc(invoice.external_invoice_url)}">Receipt</a></article>`).join("") || `<p class="muted">No invoices yet.</p>`}</div></section>`);
-  document.querySelectorAll("[data-buy]").forEach((btn) => btn.addEventListener("click", async () => {
-    try {
-      const card = btn.closest("[data-plan-card]");
-      const data = await api("/api/subscriptions/purchase", { method: "POST", body: JSON.stringify({ plan_id: btn.dataset.buy, provider: btn.dataset.provider, billing_period: card?.querySelector("[data-buy-period]")?.value || "monthly", quantity: Number(card?.querySelector("[data-buy-quantity]")?.value || 1) }) });
-      alert(`Checkout created: ${data.checkout.external_id}`);
-      renderBilling();
-    } catch (error) {
-      alert(error.message);
-    }
-  }));
+  bindPurchaseButtons(renderBilling);
 }
 
 async function renderAdminLegacy() {
@@ -10563,20 +10672,20 @@ async function route() {
     const matchAnnotate = path().match(/^\/websites\/([^/]+)\/annotate/);
     const matchPageEdit = path().match(/^\/admin\/pages\/([^/]+)\/edit/);
     if (path() === "/dashboard") return renderDashboard();
-    if (path() === "/team") return renderTeam();
-    if (path() === "/tasks") return renderTasks();
-    if (path() === "/projects") return renderClientProjects();
-    if (matchClientWebsite) return renderClientWebsite(matchClientWebsite[1], matchClientWebsite[2]);
-    if (matchClientProject) return renderClientProject(matchClientProject[1]);
-    if (path().startsWith("/spaces/")) return renderTasks();
-    if (path() === "/websites") return renderWebsites();
-    if (matchAnnotate) return renderAnnotate(matchAnnotate[1]);
+    if (path() === "/team") return (await guardPaidFeaturePage("staff management")) ? renderTeam() : null;
+    if (path() === "/tasks") return (await guardPaidFeaturePage("tasks")) ? renderTasks() : null;
+    if (path() === "/projects") return (await guardPaidFeaturePage("projects, folders, and domains")) ? renderClientProjects() : null;
+    if (matchClientWebsite) return (await guardPaidFeaturePage("domains and annotations")) ? renderClientWebsite(matchClientWebsite[1], matchClientWebsite[2]) : null;
+    if (matchClientProject) return (await guardPaidFeaturePage("client folders and domains")) ? renderClientProject(matchClientProject[1]) : null;
+    if (path().startsWith("/spaces/")) return (await guardPaidFeaturePage("tasks")) ? renderTasks() : null;
+    if (path() === "/websites") return (await guardPaidFeaturePage("website feedback")) ? renderWebsites() : null;
+    if (matchAnnotate) return (await guardPaidFeaturePage("annotations")) ? renderAnnotate(matchAnnotate[1]) : null;
     if (path() === "/chat") return renderChat();
     if (path() === "/settings/company") return renderCompanySettings();
     if (path() === "/settings/billing") return renderBilling();
     if (path() === "/team/integrations") return renderIntegrations();
-    if (path() === "/team/performance") return renderTeamPerformance();
-    if (path() === "/reports/time") return renderReports();
+    if (path() === "/team/performance") return (await guardPaidFeaturePage("team performance")) ? renderTeamPerformance() : null;
+    if (path() === "/reports/time") return (await guardPaidFeaturePage("time reports")) ? renderReports() : null;
     if (path() === "/admin" || path() === "/admin/users") return renderAdmin();
     if (path() === "/admin/settings") return renderSettings();
     if (path() === "/admin/plans") return renderPlansAdmin();

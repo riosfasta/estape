@@ -7,4 +7,6 @@ tmp/
 dist/
 *.exe
 deploy/vps/deploy.env
+firebase-service-account*.json
+*-firebase-adminsdk-*.json
 mobile/

@@ -59,6 +59,9 @@ func (s *Server) createSpace(c *gin.Context) {
 	if err != nil || !s.canAccessTeam(c, teamID) || userCtx.TeamID != teamID {
 		return
 	}
+	if !s.requireTeamFeatureAccess(c, teamID, "spaces") {
+		return
+	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "space name is required"})
@@ -93,6 +96,9 @@ func (s *Server) createProject(c *gin.Context) {
 		return
 	}
 	if !s.canAccessTeam(c, space.TeamID) || userCtx.TeamID != space.TeamID {
+		return
+	}
+	if !s.requireTeamFeatureAccess(c, space.TeamID, "projects") {
 		return
 	}
 	if ok, limit := s.teamWithinProjectLimit(c, space.TeamID); !ok {
@@ -161,6 +167,9 @@ func (s *Server) createList(c *gin.Context) {
 	}
 	teamID, err := s.teamForProject(c.Request.Context(), projectID)
 	if err != nil || !s.canAccessTeam(c, teamID) {
+		return
+	}
+	if !s.requireTeamFeatureAccess(c, teamID, "task lists") {
 		return
 	}
 	name := strings.TrimSpace(req.Name)
@@ -761,6 +770,9 @@ func (s *Server) createTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if teamID, err := s.teamForList(c.Request.Context(), task.ListID); err != nil || !s.requireTeamFeatureAccess(c, teamID, "tasks") {
+		return
+	}
 	task.CreatedBy = userCtx.ID
 	task.CreatedAt = time.Now()
 	task.UpdatedAt = task.CreatedAt
@@ -1061,7 +1073,7 @@ func (s *Server) buildTaskFromRequest(c *gin.Context, listIDRaw string, title st
 
 func (s *Server) notifyAssignees(ctx context.Context, task models.Task, content string) {
 	for _, assigneeID := range s.userNotificationRecipients(ctx, task.AssigneeIDs, task.CreatedBy) {
-		_, _ = s.store.C("notifications").InsertOne(ctx, models.Notification{
+		s.insertNotification(ctx, models.Notification{
 			ID:        primitive.NewObjectID(),
 			UserID:    assigneeID,
 			Type:      "task_assigned",

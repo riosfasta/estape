@@ -32,12 +32,13 @@ type Server struct {
 	tokens       *auth.TokenManager
 	mailer       *email.Worker
 	hub          *realtime.Hub
+	push         *PushService
 	payments     map[string]billing.PaymentProvider
 	integrations map[string]integrations.TaskIntegrationProvider
 }
 
 func New(cfg config.Config, store *store.Store, tokens *auth.TokenManager, mailer *email.Worker, hub *realtime.Hub, payments map[string]billing.PaymentProvider, taskIntegrations map[string]integrations.TaskIntegrationProvider) *Server {
-	return &Server{cfg: cfg, store: store, tokens: tokens, mailer: mailer, hub: hub, payments: payments, integrations: taskIntegrations}
+	return &Server{cfg: cfg, store: store, tokens: tokens, mailer: mailer, hub: hub, push: NewPushService(cfg), payments: payments, integrations: taskIntegrations}
 }
 
 func (s *Server) Router() *gin.Engine {
@@ -106,6 +107,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.DELETE("/users/me/company-access", s.leaveCompany)
 	authed.GET("/users/me/notifications", s.listNotifications)
 	authed.DELETE("/users/me/notifications", s.deleteMyNotifications)
+	authed.POST("/users/me/devices", s.registerPushDevice)
+	authed.DELETE("/users/me/devices", s.unregisterPushDevice)
 	authed.POST("/users/me/notifications/bin/restore", s.restoreAllMyNotifications)
 	authed.DELETE("/users/me/notifications/bin/permanent", s.permanentlyDeleteAllMyNotifications)
 	authed.POST("/users/me/notifications/:id/open", s.openMyNotification)

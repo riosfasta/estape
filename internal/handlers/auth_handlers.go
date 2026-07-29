@@ -294,6 +294,7 @@ func (s *Server) me(c *gin.Context) {
 				"status":           models.StatusActive,
 				"joined_at":        joinedAt,
 				"current":          invitedTeam.ID == user.TeamID,
+				"membership":       s.membershipAccessPayload(c.Request.Context(), invitedTeam.ID),
 			})
 		}
 	}
@@ -320,6 +321,7 @@ func (s *Server) me(c *gin.Context) {
 			"staff_role":       user.StaffRole,
 			"status":           user.Status,
 			"joined_at":        joinedAt,
+			"membership":       s.membershipAccessPayload(c.Request.Context(), team.ID),
 		}
 		if !companyAccessTeams[team.ID] && containsObjectID(team.MemberIDs, user.ID) {
 			companyAccesses = append(companyAccesses, gin.H{
@@ -331,16 +333,28 @@ func (s *Server) me(c *gin.Context) {
 				"status":           user.Status,
 				"joined_at":        joinedAt,
 				"current":          true,
+				"membership":       s.membershipAccessPayload(c.Request.Context(), team.ID),
 			})
 		}
 	}
 	unreadCommentCount := s.unreadTaskCommentCount(c.Request.Context(), user.ID, user.TeamID)
+	membershipTeamID := user.TeamID
+	if personalTeam != nil {
+		membershipTeamID = personalTeam.ID
+	}
+	membership := s.membershipAccessPayload(c.Request.Context(), membershipTeamID)
+	if user.Role == models.RoleOwnerAdmin {
+		membership["status"] = "active"
+		membership["allowed"] = true
+		membership["trial"] = false
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"user":                 user,
 		"team":                 team,
 		"personal_team":        personalTeam,
 		"company_access":       companyAccess,
 		"company_accesses":     companyAccesses,
+		"membership":           membership,
 		"unread_comment_count": unreadCommentCount,
 		"platform_settings":    s.publicPlatformSettings(c.Request.Context()),
 	})
@@ -785,21 +799,15 @@ func (s *Server) createTrialSubscription(ctx context.Context, teamID primitive.O
 	if err != nil {
 		return primitive.NilObjectID, models.Plan{}, err
 	}
-	var trialEnds *time.Time
-	status := "active"
-	if plan.TrialDays > 0 {
-		end := now.AddDate(0, 0, plan.TrialDays)
-		trialEnds = &end
-		status = "trialing"
-	}
+	end := now.AddDate(0, 0, defaultTrialDays)
 	sub := models.Subscription{
 		ID:              primitive.NewObjectID(),
 		TeamID:          teamID,
 		PlanID:          plan.ID,
-		Status:          status,
+		Status:          "trialing",
 		BillingPeriod:   "monthly",
 		BillingQuantity: 1,
-		TrialEndsAt:     trialEnds,
+		TrialEndsAt:     &end,
 		StartedAt:       now,
 		CreatedAt:       now,
 	}

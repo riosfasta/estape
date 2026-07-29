@@ -194,7 +194,7 @@ func (s *Server) endChat(c *gin.Context) {
 		actor = firstNonEmpty(user.Name, user.Username, user.Email, actor)
 	}
 	for _, participantID := range s.userNotificationRecipients(c.Request.Context(), chat.ParticipantIDs, userCtx.ID) {
-		_, _ = s.store.C("notifications").InsertOne(c.Request.Context(), models.Notification{
+		s.insertNotification(c.Request.Context(), models.Notification{
 			ID:        primitive.NewObjectID(),
 			UserID:    participantID,
 			Type:      "chat_ended",
@@ -441,7 +441,7 @@ func (s *Server) notifyChatMessage(ctx context.Context, chat models.Chat, sender
 		recipientIDs = append(recipientIDs, recipientID)
 	}
 	for _, recipientID := range s.userNotificationRecipients(ctx, recipientIDs, senderID) {
-		_, _ = s.store.C("notifications").InsertOne(ctx, models.Notification{
+		s.insertNotification(ctx, models.Notification{
 			ID:        primitive.NewObjectID(),
 			UserID:    recipientID,
 			Type:      "chat_message",

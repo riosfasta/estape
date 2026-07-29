@@ -55,6 +55,9 @@ func (s *Server) getWebsite(c *gin.Context) {
 
 func (s *Server) createWebsite(c *gin.Context) {
 	userCtx, _ := currentUser(c)
+	if !s.requireTeamFeatureAccess(c, userCtx.TeamID, "website feedback") {
+		return
+	}
 	var req struct {
 		Name          string `json:"name"`
 		URL           string `json:"url"`
@@ -158,6 +161,9 @@ func (s *Server) createBug(c *gin.Context) {
 	if !s.canAccessTeam(c, website.TeamID) {
 		return
 	}
+	if !s.requireTeamFeatureAccess(c, website.TeamID, "annotations") {
+		return
+	}
 	var assigneeID primitive.ObjectID
 	if strings.TrimSpace(req.AssigneeID) != "" {
 		assigneeID, err = objectIDFromString(req.AssigneeID)
@@ -211,7 +217,7 @@ func (s *Server) createBug(c *gin.Context) {
 		return
 	}
 	for _, id := range s.userNotificationRecipients(c.Request.Context(), assigneeIDs, userCtx.ID) {
-		_, _ = s.store.C("notifications").InsertOne(c.Request.Context(), models.Notification{ID: primitive.NewObjectID(), UserID: id, Type: "bug_assigned", Content: "You were assigned visual feedback: " + bug.Title, RelatedID: bug.ID, CreatedAt: time.Now()})
+		s.insertNotification(c.Request.Context(), models.Notification{ID: primitive.NewObjectID(), UserID: id, Type: "bug_assigned", Content: "You were assigned visual feedback: " + bug.Title, RelatedID: bug.ID, CreatedAt: time.Now()})
 	}
 	s.notifyMentions(c.Request.Context(), website.TeamID, userCtx.ID, bug.Description, "feedback", bug.ID)
 	c.JSON(http.StatusCreated, gin.H{"bug": bug})

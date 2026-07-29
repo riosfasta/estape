@@ -73,6 +73,15 @@ PAYPAL_WEBHOOK_ID=
 PAYPAL_MODE=sandbox
 ```
 
+Firebase Cloud Messaging sends native Android/iOS push notifications. iOS delivery uses APNs through Firebase, so upload your APNs key in Firebase Console first.
+
+```text
+FCM_PROJECT_ID=your-firebase-project-id
+FCM_SERVICE_ACCOUNT_FILE=/opt/pinflow/firebase-service-account.json
+```
+
+Keep the service-account JSON outside git. The mobile app also needs Firebase app IDs in `mobile/pinflow_mobile/.env` or native Firebase config files.
+
 For Docker on Windows/Mac, remember that `localhost` inside the container is the app container, not the host. If MongoDB stays on the host, use `MONGO_URI=mongodb://host.docker.internal:27017/`. Alternatively, add a MongoDB service later when you decide to containerize the database too.
 
 ## Debian VPS Deployment

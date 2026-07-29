@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"context"
+	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"strings"
@@ -14,6 +17,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
+
+const purchaseAlertRecipientEmail = "rioswebdev@gmail.com"
 
 func (s *Server) listPlans(c *gin.Context) {
 	cursor, err := s.store.C("plans").Find(c.Request.Context(), bson.M{}, options.Find().SetSort(bson.D{{Key: "price", Value: 1}, {Key: "price_per_seat", Value: 1}}))
@@ -273,6 +278,66 @@ func teamSeatCount(team models.Team) int64 {
 	return count
 }
 
+func formatBillingAmountCents(amount int64) string {
+	sign := ""
+	if amount < 0 {
+		sign = "-"
+		amount = -amount
+	}
+	return fmt.Sprintf("%s$%d.%02d USD", sign, amount/100, amount%100)
+}
+
+func purchaseAlertRow(label string, value string) string {
+	if strings.TrimSpace(value) == "" {
+		value = "-"
+	}
+	return `<tr><th style="text-align:left;padding:8px 12px;border-bottom:1px solid #d7e4df;color:#45645e;">` +
+		html.EscapeString(label) +
+		`</th><td style="padding:8px 12px;border-bottom:1px solid #d7e4df;color:#10211d;">` +
+		html.EscapeString(value) +
+		`</td></tr>`
+}
+
+func (s *Server) enqueuePurchaseAlertEmail(ctx context.Context, buyer models.User, team models.Team, plan models.Plan, sub models.Subscription, amount int64, seatCount int64) {
+	if s.mailer == nil {
+		return
+	}
+	buyerName := firstNonEmpty(buyer.Name, buyer.Username, buyer.Email, "Unknown user")
+	appName := firstNonEmpty(s.cfg.AppName, "PinFlow")
+	adminURL := strings.TrimRight(s.cfg.AppURL, "/") + "/admin/users"
+	body := `<p>A user completed the purchase checkout handoff. The subscription is waiting for platform owner activation.</p>` +
+		`<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;max-width:720px;border:1px solid #d7e4df;border-radius:8px;overflow:hidden;">` +
+		purchaseAlertRow("User name", buyerName) +
+		purchaseAlertRow("Username", buyer.Username) +
+		purchaseAlertRow("User email", buyer.Email) +
+		purchaseAlertRow("User ID", buyer.ID.Hex()) +
+		purchaseAlertRow("Account role", string(buyer.Role)) +
+		purchaseAlertRow("Staff role", staffRoleDisplayName(buyer.StaffRole)) +
+		purchaseAlertRow("Company/team", firstNonEmpty(team.Name, "Unknown company")) +
+		purchaseAlertRow("Company email", team.CompanyEmail) +
+		purchaseAlertRow("Team ID", team.ID.Hex()) +
+		purchaseAlertRow("Current seat count", fmt.Sprintf("%d", seatCount)) +
+		purchaseAlertRow("Plan", plan.Name) +
+		purchaseAlertRow("Plan ID", plan.ID.Hex()) +
+		purchaseAlertRow("Pricing model", plan.PricingModel) +
+		purchaseAlertRow("Billing period", sub.BillingPeriod) +
+		purchaseAlertRow("Billing quantity", fmt.Sprintf("%d", normalizedBillingQuantity(sub.BillingQuantity))) +
+		purchaseAlertRow("Payment method", sub.PaymentProvider) +
+		purchaseAlertRow("Checkout/payment reference", sub.ExternalTransactionID) +
+		purchaseAlertRow("Amount", formatBillingAmountCents(amount)) +
+		purchaseAlertRow("Subscription status", sub.Status) +
+		purchaseAlertRow("Subscription ID", sub.ID.Hex()) +
+		purchaseAlertRow("Created at", sub.CreatedAt.Format("Jan 2, 2006 3:04 PM MST")) +
+		`</table>` +
+		`<p><a href="` + html.EscapeString(adminURL) + `">Open platform manage users</a></p>`
+	_ = s.mailer.Enqueue(ctx, models.EmailQueueItem{
+		Recipient: purchaseAlertRecipientEmail,
+		Type:      "subscription_purchase_alert",
+		Subject:   appName + " purchase pending activation: " + buyerName,
+		BodyHTML:  body,
+	})
+}
+
 func (s *Server) purchaseSubscription(c *gin.Context) {
 	userCtx, _ := currentUser(c)
 	var req struct {
@@ -319,30 +384,30 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 
 	var team models.Team
 	_ = s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": userCtx.TeamID}).Decode(&team)
-	amount := planBillingAmount(plan, teamSeatCount(team), period, quantity)
+	if team.ID.IsZero() {
+		team.ID = userCtx.TeamID
+	}
+	buyer, err := s.loadUser(c.Request.Context(), userCtx.ID)
+	if err != nil {
+		buyer = models.User{ID: userCtx.ID, Role: userCtx.Role, TeamID: userCtx.TeamID}
+	}
+	seatCount := teamSeatCount(team)
+	amount := planBillingAmount(plan, seatCount, period, quantity)
 	session, err := provider.CreateCheckout(c.Request.Context(), billing.CheckoutRequest{TeamID: userCtx.TeamID.Hex(), PlanID: plan.ID.Hex(), Amount: amount, Currency: "usd"})
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "could not create checkout"})
 		return
 	}
 	now := time.Now()
-	status := "pending_approval"
-	var trialEnds *time.Time
-	if plan.TrialDays > 0 {
-		status = "trialing"
-		end := now.AddDate(0, 0, plan.TrialDays)
-		trialEnds = &end
-	}
 	sub := models.Subscription{
 		ID:                    primitive.NewObjectID(),
 		TeamID:                userCtx.TeamID,
 		PlanID:                plan.ID,
-		Status:                status,
+		Status:                "pending_approval",
 		BillingPeriod:         period,
 		BillingQuantity:       quantity,
 		PaymentProvider:       provider.Name(),
 		ExternalTransactionID: session.ExternalID,
-		TrialEndsAt:           trialEnds,
 		StartedAt:             now,
 		CreatedAt:             now,
 	}
@@ -353,6 +418,7 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 	_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), userCtx.TeamID, bson.M{"$set": bson.M{"subscription_id": sub.ID, "seat_limit_cached": plan.SeatLimit}})
 	actor := s.notificationActorName(c.Request.Context(), userCtx.ID)
 	s.notifyOwnerAdmins(c.Request.Context(), userCtx.ID, "subscription_purchase", actor+" started a "+period+" purchase for "+plan.Name+".", sub.ID)
+	s.enqueuePurchaseAlertEmail(c.Request.Context(), buyer, team, plan, sub, amount, seatCount)
 	c.JSON(http.StatusCreated, gin.H{"subscription": sub, "checkout": session, "amount": amount})
 }
 

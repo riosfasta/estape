@@ -184,6 +184,9 @@ func (s *Server) createClientProject(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !s.requireTeamFeatureAccess(c, team.ID, "client folders") {
+		return
+	}
 	var req struct {
 		Name         string `json:"name"`
 		CompanyEmail string `json:"company_email"`
@@ -357,6 +360,9 @@ func (s *Server) addClientProjectMember(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "only user admins can add members to client folders"})
 		return
 	}
+	if !s.requireTeamFeatureAccess(c, client.TeamID, "project members") {
+		return
+	}
 	var req struct {
 		UserID string `json:"user_id"`
 		Role   string `json:"role"`
@@ -463,6 +469,9 @@ func (s *Server) addClientWebsiteMember(c *gin.Context) {
 	}
 	if !s.canManageTeamSilently(c.Request.Context(), userCtx, site.TeamID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "only user admins can share domain access"})
+		return
+	}
+	if !s.requireTeamFeatureAccess(c, site.TeamID, "domain members") {
 		return
 	}
 	var req struct {
@@ -649,6 +658,9 @@ func (s *Server) createClientWebsite(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !s.requireTeamFeatureAccess(c, client.TeamID, "domains") {
+		return
+	}
 	var req struct {
 		Name    string `json:"name"`
 		URL     string `json:"url"`
@@ -783,6 +795,9 @@ func (s *Server) createClientTab(c *gin.Context) {
 	}
 	site, ok := s.loadClientWebsiteForAccess(c, websiteID, true)
 	if !ok {
+		return
+	}
+	if !s.requireTeamFeatureAccess(c, site.TeamID, "project tabs") {
 		return
 	}
 	var req struct {
@@ -1050,6 +1065,12 @@ func (s *Server) createClientTask(c *gin.Context) {
 	}
 	if taskType != "description" && taskType != "annotation" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "task type must be description or annotation"})
+		return
+	}
+	if !s.requireTeamFeatureAccess(c, tab.TeamID, "tasks") {
+		return
+	}
+	if taskType == "annotation" && !s.requireTeamFeatureAccess(c, tab.TeamID, "annotations") {
 		return
 	}
 	title := normalizeClientTaskTitle(req.Title)
@@ -2969,7 +2990,7 @@ func (s *Server) notifyClientTaskAssignees(ctx context.Context, task models.Clie
 	}
 	now := time.Now()
 	for _, assigneeID := range s.userNotificationRecipients(ctx, task.AssigneeIDs, task.CreatedBy) {
-		_, _ = s.store.C("notifications").InsertOne(ctx, models.Notification{
+		s.insertNotification(ctx, models.Notification{
 			ID:        primitive.NewObjectID(),
 			UserID:    assigneeID,
 			Type:      "client_task_assigned",
@@ -3073,7 +3094,7 @@ func (s *Server) notifyClientTaskCommentMentions(ctx context.Context, task model
 			continue
 		}
 		mentionedIDs = append(mentionedIDs, user.ID)
-		_, _ = s.store.C("notifications").InsertOne(ctx, models.Notification{
+		s.insertNotification(ctx, models.Notification{
 			ID:        primitive.NewObjectID(),
 			UserID:    user.ID,
 			Type:      "client_task_comment_mention",

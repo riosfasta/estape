@@ -195,7 +195,7 @@ func (s *Server) cleanupUserReferences(ctx context.Context, user models.User) er
 	if _, err := s.store.C("messages").DeleteMany(ctx, bson.M{"sender_id": id}); err != nil {
 		return err
 	}
-	for _, collection := range []string{"notifications", "time_entries", "client_task_comments", "client_task_logs", "audit_logs", "password_update_otps"} {
+	for _, collection := range []string{"notifications", "push_devices", "time_entries", "client_task_comments", "client_task_logs", "audit_logs", "password_update_otps"} {
 		filter := bson.M{"user_id": id}
 		switch collection {
 		case "notifications":
