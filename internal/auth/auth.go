@@ -56,7 +56,7 @@ func (tm *TokenManager) GenerateAccessToken(user models.User) (string, error) {
 			Subject:   user.ID.Hex(),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(20 * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			Issuer:    "pinflow",
+			Issuer:    "bugmega",
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

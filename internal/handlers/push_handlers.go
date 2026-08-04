@@ -97,7 +97,7 @@ func (p *PushService) Send(ctx context.Context, token string, title string, body
 			"android": gin.H{
 				"priority": "high",
 				"notification": gin.H{
-					"channel_id": "pinflow_updates",
+					"channel_id": "bugmega_updates",
 					"sound":      "default",
 				},
 			},
@@ -342,7 +342,7 @@ func (s *Server) dispatchPushNotification(note models.Notification) {
 }
 
 func pushTitle(appName string, notificationType string) string {
-	appName = firstNonEmpty(strings.TrimSpace(appName), "PinFlow")
+	appName = firstNonEmpty(strings.TrimSpace(appName), "bugmega")
 	switch {
 	case strings.Contains(notificationType, "subscription"):
 		return appName + " purchase"

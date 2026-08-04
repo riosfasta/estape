@@ -1056,7 +1056,7 @@ func (s *Server) testSMTPEmail(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "email service is not available"})
 		return
 	}
-	appName := firstNonEmpty(s.cfg.AppName, "PinFlow")
+	appName := firstNonEmpty(s.cfg.AppName, "bugmega")
 	body := `<p>Hello ` + html.EscapeString(firstNonEmpty(user.Name, user.Username, user.Email, "there")) + `,</p>` +
 		`<p>This is a test email from your ` + html.EscapeString(appName) + ` SMTP configuration.</p>` +
 		`<p>If this arrived in the inbox, SMTP delivery is working for platform notifications and password OTP emails.</p>` +

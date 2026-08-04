@@ -16,7 +16,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-const clientTaskTransferKind = "pinflow_client_tasks"
+const clientTaskTransferKind = "bugmega_client_tasks"
 
 type clientTaskTransferBundle struct {
 	Kind       string                 `json:"kind"`
@@ -144,7 +144,7 @@ func (s *Server) exportClientTasksJSON(c *gin.Context) {
 		Tabs:       exportTabs,
 		Tasks:      tasks,
 	}
-	c.Header("Content-Disposition", `attachment; filename="pinflow-tasks-`+safeTransferFilePart(scope)+`.json"`)
+	c.Header("Content-Disposition", `attachment; filename="bugmega-tasks-`+safeTransferFilePart(scope)+`.json"`)
 	c.JSON(http.StatusOK, bundle)
 }
 
@@ -159,7 +159,7 @@ func (s *Server) importClientTasks(c *gin.Context) {
 		return
 	}
 	if bundle.Kind != "" && bundle.Kind != clientTaskTransferKind {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "this JSON file is not a PinFlow task export"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "this JSON file is not a bugmega task export"})
 		return
 	}
 	if len(bundle.Tasks) == 0 {

@@ -2,7 +2,7 @@ services:
   app:
     build: .
     environment:
-      APP_NAME: PinFlow
+      APP_NAME: bugmega
       APP_URL: http://localhost:8080
       PORT: 8080
       MONGO_URI: mongodb://host.docker.internal:27017/

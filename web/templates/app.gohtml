@@ -7,7 +7,7 @@
   {{ if .FaviconURL }}<link rel="icon" href="{{ .FaviconURL }}">{{ end }}
   <script>
     (function () {
-      var saved = localStorage.getItem('pinflow_theme') || 'system';
+      var saved = localStorage.getItem('bugmega_theme') || 'system';
       var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
       document.documentElement.dataset.theme = saved === 'system' ? (prefersDark ? 'dark' : 'light') : saved;
     })();

@@ -2,11 +2,11 @@
 set -Eeuo pipefail
 
 log() {
-  printf '\n[pinflow-setup] %s\n' "$*"
+  printf '\n[bugmega-setup] %s\n' "$*"
 }
 
 die() {
-  printf '\n[pinflow-setup] ERROR: %s\n' "$*" >&2
+  printf '\n[bugmega-setup] ERROR: %s\n' "$*" >&2
   exit 1
 }
 
@@ -25,7 +25,7 @@ repo_root() {
 }
 
 load_config() {
-  CONFIG_FILE="${DEPLOY_CONFIG:-/etc/pinflow/deploy.env}"
+  CONFIG_FILE="${DEPLOY_CONFIG:-/etc/bugmega/deploy.env}"
   if [ -f "$CONFIG_FILE" ]; then
     set -a
     # shellcheck disable=SC1090
@@ -33,17 +33,17 @@ load_config() {
     set +a
   fi
 
-  APP_NAME="${APP_NAME:-PinFlow}"
+  APP_NAME="${APP_NAME:-bugmega}"
   APP_DOMAIN="${APP_DOMAIN:-}"
   PORT="${PORT:-8080}"
-  APP_USER="${APP_USER:-pinflow}"
+  APP_USER="${APP_USER:-bugmega}"
   APP_GROUP="${APP_GROUP:-$APP_USER}"
-  APP_ROOT="${APP_ROOT:-/opt/pinflow}"
+  APP_ROOT="${APP_ROOT:-/opt/bugmega}"
   APP_DIR="${APP_DIR:-$APP_ROOT/app}"
   BIN_DIR="${BIN_DIR:-$APP_ROOT/bin}"
-  APP_ENV_FILE="${APP_ENV_FILE:-/etc/pinflow/pinflow.env}"
-  SERVICE_NAME="${SERVICE_NAME:-pinflow}"
-  UPLOAD_DIR="${UPLOAD_DIR:-/var/lib/pinflow/uploads}"
+  APP_ENV_FILE="${APP_ENV_FILE:-/etc/bugmega/bugmega.env}"
+  SERVICE_NAME="${SERVICE_NAME:-bugmega}"
+  UPLOAD_DIR="${UPLOAD_DIR:-/var/lib/bugmega/uploads}"
   GO_VERSION="${GO_VERSION:-1.26.4}"
   INSTALL_MONGODB="${INSTALL_MONGODB:-true}"
   MONGO_VERSION="${MONGO_VERSION:-8.0}"
@@ -53,7 +53,7 @@ load_config() {
   ENABLE_NGINX="${ENABLE_NGINX:-true}"
   ENABLE_CERTBOT="${ENABLE_CERTBOT:-false}"
   CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
-  BACKUP_DIR="${BACKUP_DIR:-/var/backups/pinflow}"
+  BACKUP_DIR="${BACKUP_DIR:-/var/backups/bugmega}"
   BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
 
   if [ -z "${APP_URL:-}" ]; then
@@ -135,13 +135,13 @@ persist_deploy_config() {
     env_line CERTBOT_EMAIL "$CERTBOT_EMAIL"
     env_line JWT_SECRET "${JWT_SECRET:-}"
     env_line OWNER_NAME "${OWNER_NAME:-Platform Owner}"
-    env_line OWNER_EMAIL "${OWNER_EMAIL:-owner@pinflow.local}"
+    env_line OWNER_EMAIL "${OWNER_EMAIL:-owner@bugmega.local}"
     env_line OWNER_PASSWORD "${OWNER_PASSWORD:-ChangeMe123!}"
     env_line SMTP_HOST "${SMTP_HOST:-}"
     env_line SMTP_PORT "${SMTP_PORT:-587}"
     env_line SMTP_USER "${SMTP_USER:-}"
     env_line SMTP_PASSWORD "${SMTP_PASSWORD:-}"
-    env_line SMTP_FROM "${SMTP_FROM:-no-reply@pinflow.local}"
+    env_line SMTP_FROM "${SMTP_FROM:-no-reply@bugmega.local}"
     env_line GOOGLE_CLIENT_ID "${GOOGLE_CLIENT_ID:-}"
     env_line GOOGLE_CLIENT_SECRET "${GOOGLE_CLIENT_SECRET:-}"
     env_line GOOGLE_REDIRECT_URL "$GOOGLE_REDIRECT_URL"

@@ -2,11 +2,11 @@
 set -Eeuo pipefail
 
 log() {
-  printf '\n[pinflow-restore] %s\n' "$*"
+  printf '\n[bugmega-restore] %s\n' "$*"
 }
 
 die() {
-  printf '\n[pinflow-restore] ERROR: %s\n' "$*" >&2
+  printf '\n[bugmega-restore] ERROR: %s\n' "$*" >&2
   exit 1
 }
 
@@ -14,19 +14,19 @@ if [ "$(id -u)" -ne 0 ]; then
   die "run this script with sudo or as root"
 fi
 
-if [ -f "${DEPLOY_CONFIG:-/etc/pinflow/deploy.env}" ]; then
+if [ -f "${DEPLOY_CONFIG:-/etc/bugmega/deploy.env}" ]; then
   set -a
   # shellcheck disable=SC1090
-  . "${DEPLOY_CONFIG:-/etc/pinflow/deploy.env}"
+  . "${DEPLOY_CONFIG:-/etc/bugmega/deploy.env}"
   set +a
 fi
 
 MONGO_URI="${MONGO_URI:-mongodb://127.0.0.1:27017/}"
 MONGO_DB_NAME="${MONGO_DB_NAME:-bugmarking}"
-UPLOAD_DIR="${UPLOAD_DIR:-/var/lib/pinflow/uploads}"
-APP_USER="${APP_USER:-pinflow}"
+UPLOAD_DIR="${UPLOAD_DIR:-/var/lib/bugmega/uploads}"
+APP_USER="${APP_USER:-bugmega}"
 APP_GROUP="${APP_GROUP:-$APP_USER}"
-SERVICE_NAME="${SERVICE_NAME:-pinflow}"
+SERVICE_NAME="${SERVICE_NAME:-bugmega}"
 
 mongo_archive="${1:-}"
 uploads_archive="${2:-}"

@@ -72,8 +72,8 @@ func (s *Server) defaultSiteSettings(now time.Time) models.SiteSettings {
 	return models.SiteSettings{
 		SiteName:             s.cfg.AppName,
 		CompanySlogan:        "Task management with visual website feedback",
-		CompanyEmail:         "support@pinflow.local",
-		CompanyContact:       "support@pinflow.local",
+		CompanyEmail:         "support@bugmega.local",
+		CompanyContact:       "support@bugmega.local",
 		OwnerName:            s.cfg.OwnerName,
 		CompanyAddress:       "Set your company address in Admin Settings",
 		GoogleSigninEnabled:  s.cfg.GoogleClientID != "" && s.cfg.GoogleClientSecret != "",
@@ -293,7 +293,7 @@ func (s *Server) getPublicPlatformSettings(c *gin.Context) {
 
 func (s *Server) publicNavSettingsPayload(settings models.SiteSettings) gin.H {
 	settings = s.settingsWithConfigFallback(settings)
-	companyName := firstNonEmpty(settings.PublicNavCompanyName, settings.SiteName, s.cfg.AppName, "PinFlow")
+	companyName := firstNonEmpty(settings.PublicNavCompanyName, settings.SiteName, s.cfg.AppName, "bugmega")
 	style := normalizePublicNavButtonStyle(settings.PublicNavButtonStyle)
 	return gin.H{
 		"logo_url":      settings.PublicNavLogoURL,

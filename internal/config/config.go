@@ -44,7 +44,7 @@ func Load() Config {
 	port := env("PORT", "8080")
 	appURL := strings.TrimRight(env("APP_URL", "http://localhost:"+port), "/")
 	return Config{
-		AppName:               env("APP_NAME", "PinFlow"),
+		AppName:               env("APP_NAME", "bugmega"),
 		AppURL:                appURL,
 		Port:                  port,
 		MongoURI:              env("MONGO_URI", "mongodb://localhost:27017/"),
@@ -52,13 +52,13 @@ func Load() Config {
 		JWTSecret:             env("JWT_SECRET", "local-dev-secret-change-me"),
 		UploadDir:             env("UPLOAD_DIR", "uploads"),
 		OwnerName:             env("OWNER_NAME", "Platform Owner"),
-		OwnerEmail:            strings.ToLower(env("OWNER_EMAIL", "owner@pinflow.local")),
+		OwnerEmail:            strings.ToLower(env("OWNER_EMAIL", "owner@bugmega.local")),
 		OwnerPassword:         env("OWNER_PASSWORD", "ChangeMe123!"),
 		SMTPHost:              env("SMTP_HOST", ""),
 		SMTPPort:              env("SMTP_PORT", "587"),
 		SMTPUser:              env("SMTP_USER", ""),
 		SMTPPassword:          env("SMTP_PASSWORD", ""),
-		SMTPFrom:              env("SMTP_FROM", "no-reply@pinflow.local"),
+		SMTPFrom:              env("SMTP_FROM", "no-reply@bugmega.local"),
 		GoogleClientID:        env("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret:    env("GOOGLE_CLIENT_SECRET", ""),
 		GoogleRedirectURL:     env("GOOGLE_REDIRECT_URL", appURL+"/api/auth/google/callback"),

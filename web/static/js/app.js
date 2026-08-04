@@ -7,11 +7,11 @@ function readStoredObject(key) {
   }
 }
 
-const WORKSPACE_CONTEXT_KEY = "pinflow_workspace_context";
+const WORKSPACE_CONTEXT_KEY = "bugmega_workspace_context";
 
 const state = {
-  access: localStorage.getItem("pinflow_access") || "",
-  refresh: localStorage.getItem("pinflow_refresh") || "",
+  access: localStorage.getItem("bugmega_access") || "",
+  refresh: localStorage.getItem("bugmega_refresh") || "",
   me: null,
   team: null,
   personalTeam: null,
@@ -45,8 +45,8 @@ const state = {
   mentionActiveIndex: 0,
   clientProjects: [],
   clientWebsites: [],
-  projectSidebarOpen: readStoredObject("pinflow_project_sidebar_open"),
-  sidebarCollapsed: localStorage.getItem("pinflow_sidebar_collapsed") === "1",
+  projectSidebarOpen: readStoredObject("bugmega_project_sidebar_open"),
+  sidebarCollapsed: localStorage.getItem("bugmega_sidebar_collapsed") === "1",
   dropdownDismissBound: false,
   commandSearchDismissBound: false,
   commandSearchTimer: null,
@@ -1100,7 +1100,7 @@ function trialActiveForWorkspace() {
 }
 
 function trialNoticeKey() {
-  return `pinflow_trial_notice:${activeWorkspaceTeamID() || "personal"}`;
+  return `bugmega_trial_notice:${activeWorkspaceTeamID() || "personal"}`;
 }
 
 function showTrialNoticeOnce() {
@@ -1474,15 +1474,15 @@ async function api(url, options = {}, retry = true) {
 function storeTokens(access, refresh) {
   state.access = access;
   state.refresh = refresh;
-  localStorage.setItem("pinflow_access", access);
-  localStorage.setItem("pinflow_refresh", refresh);
+  localStorage.setItem("bugmega_access", access);
+  localStorage.setItem("bugmega_refresh", refresh);
 }
 
 function logout() {
   stopNotificationPolling();
   stopLivePolling();
-  localStorage.removeItem("pinflow_access");
-  localStorage.removeItem("pinflow_refresh");
+  localStorage.removeItem("bugmega_access");
+  localStorage.removeItem("bugmega_refresh");
   state.access = "";
   state.refresh = "";
   window.location.href = "/login";
@@ -1507,7 +1507,7 @@ async function loadMe() {
   ensureWorkspaceContext();
   if ((state.team?.id || "") !== previousTeamID) state.mentionUsers = null;
   const preference = state.me.theme_preference || "system";
-  localStorage.setItem("pinflow_theme", preference);
+  localStorage.setItem("bugmega_theme", preference);
   applyTheme(preference);
   applyPlatformTheme(state.platformSettings || {});
   applyPlatformFavicon(state.platformSettings || {});
@@ -1583,7 +1583,7 @@ async function renderAuth(mode) {
   }
   const isRegister = mode === "register";
   const inviteToken = new URLSearchParams(location.search).get("invite") || "";
-  const platformName = state.platformSettings?.site_name || "PinFlow";
+  const platformName = state.platformSettings?.site_name || "bugmega";
   const googleEnabled = state.platformSettings?.google_signin_enabled === true;
   app.innerHTML = `
     <div class="auth-wrap">
@@ -1656,7 +1656,7 @@ function workspaceChild(href, label, iconName, badge = "") {
 }
 
 function saveProjectSidebarState() {
-  localStorage.setItem("pinflow_project_sidebar_open", JSON.stringify(state.projectSidebarOpen || {}));
+  localStorage.setItem("bugmega_project_sidebar_open", JSON.stringify(state.projectSidebarOpen || {}));
 }
 
 function setProjectSidebarOpen(clientID, isOpen) {
@@ -2022,7 +2022,7 @@ function shell(title, html) {
   $("#themeSelect").value = state.me?.theme_preference || "system";
   $("#themeSelect").addEventListener("change", async (event) => {
     const theme = event.target.value;
-    localStorage.setItem("pinflow_theme", theme);
+    localStorage.setItem("bugmega_theme", theme);
     applyTheme(theme);
     await api("/api/users/me/preferences", { method: "PATCH", body: JSON.stringify({ theme }) });
   });
@@ -2032,7 +2032,7 @@ function shell(title, html) {
   bindSidebarProjectControls();
   $("#sidebarToggle")?.addEventListener("click", () => {
     state.sidebarCollapsed = !state.sidebarCollapsed;
-    localStorage.setItem("pinflow_sidebar_collapsed", state.sidebarCollapsed ? "1" : "0");
+    localStorage.setItem("bugmega_sidebar_collapsed", state.sidebarCollapsed ? "1" : "0");
     document.body.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
     const shellEl = app.querySelector(".workspace-shell");
     shellEl?.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
@@ -2104,7 +2104,7 @@ async function renderDashboard() {
       <div class="inbox-head">
         <div>
           <h1>Inbox</h1>
-          <p class="muted">${esc(state.team?.name || "PinFlow")} task comments</p>
+          <p class="muted">${esc(state.team?.name || "bugmega")} task comments</p>
         </div>
         <span id="inboxUnreadSummary" class="pill ${inboxUnreadTotal() ? "warn" : ""}">${esc(badgeCount(inboxUnreadTotal()))} unread</span>
       </div>
@@ -9091,7 +9091,7 @@ function publicNavRowsHTML(items = []) {
 
 function publicNavSettingsHTML(settings = {}) {
   const logoURL = String(settings.logo_url || "");
-  const companyName = String(settings.company_name || state.platformSettings?.site_name || "PinFlow");
+  const companyName = String(settings.company_name || state.platformSettings?.site_name || "bugmega");
   const initial = String(settings.brand_initial || companyName.slice(0, 1) || "P").toUpperCase();
   const buttonStyle = String(settings.button_style || "primary");
   return `<div class="public-nav-settings">

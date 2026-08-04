@@ -2,11 +2,11 @@
 set -Eeuo pipefail
 
 log() {
-  printf '\n[pinflow] %s\n' "$*"
+  printf '\n[bugmega] %s\n' "$*"
 }
 
 die() {
-  printf '\n[pinflow] ERROR: %s\n' "$*" >&2
+  printf '\n[bugmega] ERROR: %s\n' "$*" >&2
   exit 1
 }
 
@@ -17,7 +17,7 @@ require_root() {
 }
 
 load_config() {
-  CONFIG_FILE="${DEPLOY_CONFIG:-/etc/pinflow/deploy.env}"
+  CONFIG_FILE="${DEPLOY_CONFIG:-/etc/bugmega/deploy.env}"
   if [ -f "$CONFIG_FILE" ]; then
     set -a
     # shellcheck disable=SC1090
@@ -25,7 +25,7 @@ load_config() {
     set +a
   fi
 
-  APP_NAME="${APP_NAME:-PinFlow}"
+  APP_NAME="${APP_NAME:-bugmega}"
   APP_DOMAIN="${APP_DOMAIN:-}"
   PORT="${PORT:-8080}"
   if [ -z "${APP_URL:-}" ]; then
@@ -38,23 +38,23 @@ load_config() {
   APP_URL="${APP_URL%/}"
 
   REPO_BRANCH="${REPO_BRANCH:-}"
-  APP_USER="${APP_USER:-pinflow}"
+  APP_USER="${APP_USER:-bugmega}"
   APP_GROUP="${APP_GROUP:-$APP_USER}"
-  APP_ROOT="${APP_ROOT:-/opt/pinflow}"
+  APP_ROOT="${APP_ROOT:-/opt/bugmega}"
   APP_DIR="${APP_DIR:-$APP_ROOT/app}"
   BIN_DIR="${BIN_DIR:-$APP_ROOT/bin}"
-  APP_BIN="${APP_BIN:-$BIN_DIR/pinflow}"
-  APP_ENV_FILE="${APP_ENV_FILE:-/etc/pinflow/pinflow.env}"
-  SERVICE_NAME="${SERVICE_NAME:-pinflow}"
-  UPLOAD_DIR="${UPLOAD_DIR:-/var/lib/pinflow/uploads}"
+  APP_BIN="${APP_BIN:-$BIN_DIR/bugmega}"
+  APP_ENV_FILE="${APP_ENV_FILE:-/etc/bugmega/bugmega.env}"
+  SERVICE_NAME="${SERVICE_NAME:-bugmega}"
+  UPLOAD_DIR="${UPLOAD_DIR:-/var/lib/bugmega/uploads}"
 
   MONGO_URI="${MONGO_URI:-mongodb://127.0.0.1:27017/}"
   MONGO_DB_NAME="${MONGO_DB_NAME:-bugmarking}"
   PAYPAL_MODE="${PAYPAL_MODE:-sandbox}"
   SMTP_PORT="${SMTP_PORT:-587}"
-  SMTP_FROM="${SMTP_FROM:-no-reply@pinflow.local}"
+  SMTP_FROM="${SMTP_FROM:-no-reply@bugmega.local}"
   OWNER_NAME="${OWNER_NAME:-Platform Owner}"
-  OWNER_EMAIL="${OWNER_EMAIL:-owner@pinflow.local}"
+  OWNER_EMAIL="${OWNER_EMAIL:-owner@bugmega.local}"
   OWNER_PASSWORD="${OWNER_PASSWORD:-ChangeMe123!}"
   GOOGLE_REDIRECT_URL="${GOOGLE_REDIRECT_URL:-$APP_URL/api/auth/google/callback}"
   ENABLE_NGINX="${ENABLE_NGINX:-true}"
@@ -224,7 +224,7 @@ write_nginx_site() {
   fi
 
   log "Writing nginx reverse proxy"
-  cat > /etc/nginx/sites-available/pinflow.conf <<EOF
+  cat > /etc/nginx/sites-available/bugmega.conf <<EOF
 server {
     listen 80;
     listen [::]:80;
@@ -244,7 +244,7 @@ server {
     }
 }
 EOF
-  ln -sf /etc/nginx/sites-available/pinflow.conf /etc/nginx/sites-enabled/pinflow.conf
+  ln -sf /etc/nginx/sites-available/bugmega.conf /etc/nginx/sites-enabled/bugmega.conf
   rm -f /etc/nginx/sites-enabled/default
   nginx -t
   systemctl enable nginx

@@ -2,11 +2,11 @@
 set -Eeuo pipefail
 
 log() {
-  printf '\n[pinflow-backup] %s\n' "$*"
+  printf '\n[bugmega-backup] %s\n' "$*"
 }
 
 die() {
-  printf '\n[pinflow-backup] ERROR: %s\n' "$*" >&2
+  printf '\n[bugmega-backup] ERROR: %s\n' "$*" >&2
   exit 1
 }
 
@@ -14,17 +14,17 @@ if [ "$(id -u)" -ne 0 ]; then
   die "run this script with sudo or as root"
 fi
 
-if [ -f "${DEPLOY_CONFIG:-/etc/pinflow/deploy.env}" ]; then
+if [ -f "${DEPLOY_CONFIG:-/etc/bugmega/deploy.env}" ]; then
   set -a
   # shellcheck disable=SC1090
-  . "${DEPLOY_CONFIG:-/etc/pinflow/deploy.env}"
+  . "${DEPLOY_CONFIG:-/etc/bugmega/deploy.env}"
   set +a
 fi
 
 MONGO_URI="${MONGO_URI:-mongodb://127.0.0.1:27017/}"
 MONGO_DB_NAME="${MONGO_DB_NAME:-bugmarking}"
-UPLOAD_DIR="${UPLOAD_DIR:-/var/lib/pinflow/uploads}"
-BACKUP_DIR="${BACKUP_DIR:-/var/backups/pinflow}"
+UPLOAD_DIR="${UPLOAD_DIR:-/var/lib/bugmega/uploads}"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/bugmega}"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
 
 command -v mongodump >/dev/null || die "mongodump is not installed"

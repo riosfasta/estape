@@ -1,4 +1,4 @@
-# PinFlow
+# bugmega
 
 Self-hosted team and task management with visual website feedback, built with Go, MongoDB, HTML/CSS, and vanilla JavaScript.
 
@@ -18,7 +18,7 @@ Open `http://localhost:8080`.
 Default owner account:
 
 ```text
-owner@pinflow.local
+owner@bugmega.local
 ChangeMe123!
 ```
 
@@ -77,10 +77,10 @@ Firebase Cloud Messaging sends native Android/iOS push notifications. iOS delive
 
 ```text
 FCM_PROJECT_ID=your-firebase-project-id
-FCM_SERVICE_ACCOUNT_FILE=/opt/pinflow/firebase-service-account.json
+FCM_SERVICE_ACCOUNT_FILE=/opt/bugmega/firebase-service-account.json
 ```
 
-Keep the service-account JSON outside git. The mobile app also needs Firebase app IDs in `mobile/pinflow_mobile/.env` or native Firebase config files.
+Keep the service-account JSON outside git. The mobile app also needs Firebase app IDs in `mobile/bugmega_mobile/.env` or native Firebase config files.
 
 For Docker on Windows/Mac, remember that `localhost` inside the container is the app container, not the host. If MongoDB stays on the host, use `MONGO_URI=mongodb://host.docker.internal:27017/`. Alternatively, add a MongoDB service later when you decide to containerize the database too.
 
@@ -169,14 +169,14 @@ sudo apt-get install -y git ca-certificates curl
 Clone your GitHub repo into the live app path:
 
 ```bash
-sudo mkdir -p /opt/pinflow
-sudo git clone https://github.com/YOUR_USER/YOUR_REPO.git /opt/pinflow/app
+sudo mkdir -p /opt/bugmega
+sudo git clone https://github.com/YOUR_USER/YOUR_REPO.git /opt/bugmega/app
 ```
 
 For a private repo:
 
 ```bash
-sudo git clone git@github.com:YOUR_USER/YOUR_REPO.git /opt/pinflow/app
+sudo git clone git@github.com:YOUR_USER/YOUR_REPO.git /opt/bugmega/app
 ```
 
 ### 4. Create the VPS deploy config
@@ -184,9 +184,9 @@ sudo git clone git@github.com:YOUR_USER/YOUR_REPO.git /opt/pinflow/app
 Copy the example config:
 
 ```bash
-sudo mkdir -p /etc/pinflow
-sudo cp /opt/pinflow/app/deploy/vps/env.example /etc/pinflow/deploy.env
-sudo nano /etc/pinflow/deploy.env
+sudo mkdir -p /etc/bugmega
+sudo cp /opt/bugmega/app/deploy/vps/env.example /etc/bugmega/deploy.env
+sudo nano /etc/bugmega/deploy.env
 ```
 
 Set at least these values:
@@ -222,7 +222,7 @@ MONGO_DB_NAME='bugmarking'
 This script installs base packages, Go, MongoDB, nginx, optional Certbot TLS, creates the system user, builds the Go app, writes the systemd service, and starts the website.
 
 ```bash
-sudo bash /opt/pinflow/app/deploy/vps/setup-debian.sh
+sudo bash /opt/bugmega/app/deploy/vps/setup-debian.sh
 ```
 
 The setup script currently targets Debian 12 Bookworm and MongoDB 8.0.
@@ -232,8 +232,8 @@ The setup script currently targets Debian 12 Bookworm and MongoDB 8.0.
 Check the Go service:
 
 ```bash
-sudo systemctl status pinflow
-sudo journalctl -u pinflow -n 100 --no-pager
+sudo systemctl status bugmega
+sudo journalctl -u bugmega -n 100 --no-pager
 ```
 
 Check local HTTP from the VPS:
@@ -260,21 +260,21 @@ https://citywebdev.com
 After you push changes to GitHub, SSH into the VPS and run:
 
 ```bash
-sudo bash /opt/pinflow/app/deploy/vps/deploy.sh
+sudo bash /opt/bugmega/app/deploy/vps/deploy.sh
 ```
 
-That script runs `git fetch`, `git pull --ff-only`, `go mod download`, builds `./cmd/server`, writes the environment file, reloads nginx config, and restarts the `pinflow` systemd service.
+That script runs `git fetch`, `git pull --ff-only`, `go mod download`, builds `./cmd/server`, writes the environment file, reloads nginx config, and restarts the `bugmega` systemd service.
 
 ### 8. Important live paths
 
 ```text
-/opt/pinflow/app                  GitHub checkout
-/opt/pinflow/bin/pinflow          Built Go binary
-/etc/pinflow/deploy.env           VPS deployment config and secrets
-/etc/pinflow/pinflow.env          Runtime environment used by systemd
-/var/lib/pinflow/uploads          Uploaded files
-/etc/systemd/system/pinflow.service
-/etc/nginx/sites-available/pinflow.conf
+/opt/bugmega/app                  GitHub checkout
+/opt/bugmega/bin/bugmega          Built Go binary
+/etc/bugmega/deploy.env           VPS deployment config and secrets
+/etc/bugmega/bugmega.env          Runtime environment used by systemd
+/var/lib/bugmega/uploads          Uploaded files
+/etc/systemd/system/bugmega.service
+/etc/nginx/sites-available/bugmega.conf
 ```
 
 ### 9. Backups
@@ -282,15 +282,15 @@ That script runs `git fetch`, `git pull --ff-only`, `go mod download`, builds `.
 Create a MongoDB and uploads backup:
 
 ```bash
-sudo bash /opt/pinflow/app/deploy/vps/backup-mongodb.sh
+sudo bash /opt/bugmega/app/deploy/vps/backup-mongodb.sh
 ```
 
 Restore:
 
 ```bash
-sudo bash /opt/pinflow/app/deploy/vps/restore-mongodb.sh \
-  /var/backups/pinflow/bugmarking-YYYYMMDD-HHMMSS.archive.gz \
-  /var/backups/pinflow/uploads-YYYYMMDD-HHMMSS.tar.gz
+sudo bash /opt/bugmega/app/deploy/vps/restore-mongodb.sh \
+  /var/backups/bugmega/bugmarking-YYYYMMDD-HHMMSS.archive.gz \
+  /var/backups/bugmega/uploads-YYYYMMDD-HHMMSS.tar.gz
 ```
 
 ### 10. Mobile app production URL
@@ -298,25 +298,25 @@ sudo bash /opt/pinflow/app/deploy/vps/restore-mongodb.sh \
 When the Go backend is live at `https://citywebdev.com`, build the Flutter app with:
 
 ```powershell
-cd mobile\pinflow_mobile
-flutter build apk --release --dart-define=PINFLOW_API_URL=https://citywebdev.com
+cd mobile\bugmega_mobile
+flutter build apk --release --dart-define=bugmega_API_URL=https://citywebdev.com
 ```
 
 ## Mobile App API Setup
 
-The Flutter app in `mobile/pinflow_mobile` connects to this Go backend through `PINFLOW_API_URL`.
+The Flutter app in `mobile/bugmega_mobile` connects to this Go backend through `bugmega_API_URL`.
 
 For `citywebdev.com`, the mobile environment file is:
 
 ```text
-mobile/pinflow_mobile/.env
-PINFLOW_API_URL=https://citywebdev.com
+mobile/bugmega_mobile/.env
+bugmega_API_URL=https://citywebdev.com
 ```
 
 Run or build the mobile app with:
 
 ```powershell
-cd mobile\pinflow_mobile
+cd mobile\bugmega_mobile
 flutter run --dart-define-from-file=.env
 flutter build apk --release --dart-define-from-file=.env
 ```

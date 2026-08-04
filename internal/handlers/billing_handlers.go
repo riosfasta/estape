@@ -303,7 +303,7 @@ func (s *Server) enqueuePurchaseAlertEmail(ctx context.Context, buyer models.Use
 		return
 	}
 	buyerName := firstNonEmpty(buyer.Name, buyer.Username, buyer.Email, "Unknown user")
-	appName := firstNonEmpty(s.cfg.AppName, "PinFlow")
+	appName := firstNonEmpty(s.cfg.AppName, "bugmega")
 	adminURL := strings.TrimRight(s.cfg.AppURL, "/") + "/admin/users"
 	body := `<p>A user completed the purchase checkout handoff. The subscription is waiting for platform owner activation.</p>` +
 		`<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;max-width:720px;border:1px solid #d7e4df;border-radius:8px;overflow:hidden;">` +

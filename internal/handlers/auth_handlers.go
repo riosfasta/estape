@@ -646,7 +646,7 @@ func (s *Server) enqueuePasswordUpdateOTPEmail(ctx context.Context, user models.
 	if s.mailer == nil {
 		return fmt.Errorf("email service is not configured")
 	}
-	appName := firstNonEmpty(s.cfg.AppName, "PinFlow")
+	appName := firstNonEmpty(s.cfg.AppName, "bugmega")
 	name := firstNonEmpty(user.Name, user.Username, user.Email, "there")
 	body := `<p>Hello ` + html.EscapeString(name) + `,</p>` +
 		`<p>Use this one-time code to update your ` + html.EscapeString(appName) + ` password:</p>` +

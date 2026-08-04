@@ -48,7 +48,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("PinFlow running at %s", cfg.AppURL)
+		log.Printf("bugmega running at %s", cfg.AppURL)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("server error: %v", err)
 		}
