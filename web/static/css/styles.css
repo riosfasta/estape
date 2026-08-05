@@ -222,6 +222,24 @@ h2 { font-size: 19px !important; }
 .btn.icon { width: 40px; padding: 0; }
 .btn.large { min-height: 48px; padding: 0 20px; }
 .btn.compact { min-height: 32px; padding: 0 10px; gap: 6px; font-size: 13px; }
+.btn.is-loading,
+.client-task-open.is-loading,
+.assigned-task-open.is-loading {
+  cursor: progress;
+  opacity: .78;
+}
+.btn.is-loading:hover {
+  transform: none;
+}
+.inline-spinner {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 2px solid color-mix(in srgb, currentColor 24%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: routeLoadingSpin .75s linear infinite;
+}
 .text-link { color: var(--accent-strong); font-weight: 700; }
 
 .public-nav {
@@ -1649,6 +1667,11 @@ textarea { min-height: 94px; resize: vertical; }
   color: var(--text-primary);
   cursor: pointer;
   text-align: left;
+}
+.assigned-task-open.is-loading {
+  display: inline-flex;
+  justify-content: flex-start;
+  gap: 8px;
 }
 .assigned-task-row:first-child {
   border-top: 0;
@@ -3176,6 +3199,11 @@ button.inbox-row {
   cursor: pointer;
   overflow-wrap: anywhere;
 }
+.client-task-open.is-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 .client-task-open:hover {
   color: var(--accent-strong);
 }
@@ -3753,6 +3781,34 @@ button.inbox-row {
   color: var(--text-primary);
   border-left: 1px solid var(--border-color);
   box-shadow: -16px 0 30px rgba(0,0,0,.16);
+}
+.client-task-panel.task-panel-loading {
+  grid-template-rows: minmax(0, 1fr);
+  place-items: center;
+}
+.task-panel-loader {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 10px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  font-weight: 850;
+}
+.task-panel-error {
+  display: grid;
+  justify-items: center;
+  border-radius: var(--radius);
+  text-align: center;
+}
+.task-panel-error span {
+  color: var(--text-secondary);
+  font-weight: 650;
 }
 body.sidebar-collapsed .client-task-panel {
   inset: 72px 0 0 72px;

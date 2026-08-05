@@ -102,6 +102,94 @@ function hideRouteLoading() {
   document.querySelectorAll("[data-route-loading]").forEach((node) => node.remove());
 }
 
+const loadingButtonStates = new WeakMap();
+
+function setButtonLoading(button, loading = true, label = "Working...") {
+  if (!button) return () => {};
+  if (loading) {
+    if (!loadingButtonStates.has(button)) {
+      loadingButtonStates.set(button, {
+        html: button.innerHTML,
+        disabled: button.disabled,
+        ariaBusy: button.getAttribute("aria-busy"),
+      });
+    }
+    button.disabled = true;
+    button.classList.add("is-loading");
+    button.setAttribute("aria-busy", "true");
+    button.innerHTML = `<span class="inline-spinner" aria-hidden="true"></span><span>${esc(label)}</span>`;
+    return () => setButtonLoading(button, false);
+  }
+  const previous = loadingButtonStates.get(button);
+  if (!previous) return () => {};
+  button.innerHTML = previous.html;
+  button.disabled = previous.disabled;
+  if (previous.ariaBusy == null) button.removeAttribute("aria-busy");
+  else button.setAttribute("aria-busy", previous.ariaBusy);
+  button.classList.remove("is-loading");
+  loadingButtonStates.delete(button);
+  icons();
+  return () => {};
+}
+
+function beginFormLoading(form, submitter, message = "Working...", buttonLabel = "Working...") {
+  setFormStatus(form, message);
+  form?.classList.add("is-loading");
+  form?.setAttribute("aria-busy", "true");
+  const button = submitter?.matches?.("button") ? submitter : form?.querySelector("button[type='submit']");
+  const stopButton = setButtonLoading(button, true, buttonLabel);
+  return () => {
+    stopButton();
+    form?.classList.remove("is-loading");
+    form?.removeAttribute("aria-busy");
+  };
+}
+
+function showClientTaskPanelLoading(label = "Opening task...") {
+  document.body.classList.remove("annotation-viewer-open");
+  let panel = $("#clientTaskPanel");
+  if (!panel) {
+    panel = document.createElement("section");
+    panel.id = "clientTaskPanel";
+    document.body.appendChild(panel);
+  }
+  panel.className = "client-task-panel task-panel-loading";
+  panel.innerHTML = `<div class="task-panel-loader" role="status" aria-live="polite">
+    <span class="inline-spinner" aria-hidden="true"></span>
+    <span>${esc(label)}</span>
+  </div>`;
+}
+
+function showClientTaskPanelError(message = "Could not open task.") {
+  let panel = $("#clientTaskPanel");
+  if (!panel) {
+    panel = document.createElement("section");
+    panel.id = "clientTaskPanel";
+    document.body.appendChild(panel);
+  }
+  panel.className = "client-task-panel task-panel-loading";
+  panel.innerHTML = `<div class="task-panel-loader task-panel-error">
+    <strong>Could not open task</strong>
+    <span>${esc(message)}</span>
+    <button class="btn compact" type="button" data-close-client-task>${icon("x")}Close</button>
+  </div>`;
+  panel.querySelector("[data-close-client-task]")?.addEventListener("click", () => panel.remove());
+  icons();
+}
+
+async function openClientTaskWithProgress(taskID, focusCommentID = "", trigger = null) {
+  if (!taskID) return;
+  const stopButton = setButtonLoading(trigger, true, "Opening...");
+  showClientTaskPanelLoading();
+  try {
+    await openClientTaskPanel(taskID, focusCommentID);
+  } catch (error) {
+    showClientTaskPanelError(error.message);
+  } finally {
+    stopButton();
+  }
+}
+
 function beginRouteTransition(options = {}) {
   state.routeNavigationToken += 1;
   const token = state.routeNavigationToken;
@@ -2148,7 +2236,7 @@ async function openCommandSearchResult(result = {}) {
     if (commentID) {
       await api(`/api/client-task-comments/${commentID}/read`, { method: "POST", body: JSON.stringify({}) }).catch(() => null);
     }
-    await openClientTaskPanel(taskID, commentID);
+    await openClientTaskWithProgress(taskID, commentID);
     return;
   }
   const target = result.url || `/dashboard?task_id=${encodeURIComponent(taskID)}${commentID ? `&comment_id=${encodeURIComponent(commentID)}` : ""}&source_type=task`;
@@ -2589,11 +2677,7 @@ async function openNotificationTarget(data = {}) {
     }
   }
   if (target.source_type === "client_task" && target.task_id) {
-    try {
-      await openClientTaskPanel(target.task_id, target.comment_id || "");
-    } catch (error) {
-      openNotificationDetailDialog(target, `Could not open the related project task: ${error.message}`);
-    }
+    await openClientTaskWithProgress(target.task_id, target.comment_id || "");
     return;
   }
   if (target.source_type === "chat" && target.chat_id) {
@@ -3277,7 +3361,7 @@ function bindInboxCommentRows() {
         marker.setAttribute("aria-label", "Read comment");
       }
       if (sourceType === "client_task") {
-        await openClientTaskPanel(taskID, commentID);
+        await openClientTaskWithProgress(taskID, commentID, row);
       } else {
         const data = await api(`/api/tasks/${taskID}`);
         showTaskDetailDialog(data, commentID);
@@ -6999,16 +7083,17 @@ async function renderClientWebsite(clientID, websiteID) {
   $("#clientTaskForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
-    syncRichEditors(form);
-    const body = Object.fromEntries(new FormData(form).entries());
-    body.title = compactClientTaskTitle(body.title);
-    body.assignee_ids = selectedAssigneeIDs(form);
-    body.blocks = readContentBlocks(form);
-    body.content = contentFromBlocks(body.blocks);
-    body.checklist = checklistFromBlocks(body.blocks);
-    body.recurrence = recurrencePayloadFromForm(form);
-    body.attachments = [];
+    const stopLoading = beginFormLoading(form, event.submitter, "Creating task...", "Creating...");
     try {
+      syncRichEditors(form);
+      const body = Object.fromEntries(new FormData(form).entries());
+      body.title = compactClientTaskTitle(body.title);
+      body.assignee_ids = selectedAssigneeIDs(form);
+      body.blocks = readContentBlocks(form);
+      body.content = contentFromBlocks(body.blocks);
+      body.checklist = checklistFromBlocks(body.blocks);
+      body.recurrence = recurrencePayloadFromForm(form);
+      body.attachments = [];
       if (body.type === "annotation") {
         body.comment = String(body.comment || "").trim();
         body.content = body.comment;
@@ -7028,25 +7113,28 @@ async function renderClientWebsite(clientID, websiteID) {
       renderClientWebsite(clientID, websiteID);
     } catch (error) {
       setFormStatus(form, error.message, true);
+    } finally {
+      stopLoading();
     }
   });
   $("#clientAnnotationTaskForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
-    syncRichEditors(form);
-    const body = Object.fromEntries(new FormData(form).entries());
-    body.type = "annotation";
-    body.title = compactClientTaskTitle(body.title);
-    body.comment = String(body.comment || "").trim();
-    body.content = body.comment;
-    body.checklist = [];
-    body.blocks = [];
-    body.assignee_ids = selectedAssigneeIDs(form);
-    body.recurrence = recurrencePayloadFromForm(form);
-    body.attachments = [];
-    body.page_width = Number(body.page_width || currentClientAnnotationPageWidth || ANNOTATION_VIEWPORT.width);
-    body.page_height = Number(body.page_height || currentClientAnnotationPageHeight || ANNOTATION_TALL_FALLBACK_HEIGHT);
+    const stopLoading = beginFormLoading(form, event.submitter, "Saving annotation...", "Saving...");
     try {
+      syncRichEditors(form);
+      const body = Object.fromEntries(new FormData(form).entries());
+      body.type = "annotation";
+      body.title = compactClientTaskTitle(body.title);
+      body.comment = String(body.comment || "").trim();
+      body.content = body.comment;
+      body.checklist = [];
+      body.blocks = [];
+      body.assignee_ids = selectedAssigneeIDs(form);
+      body.recurrence = recurrencePayloadFromForm(form);
+      body.attachments = [];
+      body.page_width = Number(body.page_width || currentClientAnnotationPageWidth || ANNOTATION_VIEWPORT.width);
+      body.page_height = Number(body.page_height || currentClientAnnotationPageHeight || ANNOTATION_TALL_FALLBACK_HEIGHT);
       if (!String(body.url || "").startsWith("https://")) {
         throw new Error("annotation URL must start with https://");
       }
@@ -7100,6 +7188,8 @@ async function renderClientWebsite(clientID, websiteID) {
       setFormStatus(form, currentClientAnnotationTask?.id ? "Annotation saved to this task." : "Annotation created.");
     } catch (error) {
       setFormStatus(form, error.message, true);
+    } finally {
+      stopLoading();
     }
   });
   document.querySelectorAll("[data-auto-client-task-status]").forEach((btn) => btn.addEventListener("click", async () => {
@@ -7107,7 +7197,7 @@ async function renderClientWebsite(clientID, websiteID) {
     renderClientWebsite(clientID, websiteID);
   }));
   document.querySelectorAll("[data-due-calendar]").forEach((btn) => btn.addEventListener("click", () => showDueDateCalendar(btn.dataset.dueCalendar)));
-  document.querySelectorAll("[data-open-client-task]").forEach((btn) => btn.addEventListener("click", () => openClientTaskPanel(btn.dataset.openClientTask)));
+  document.querySelectorAll("[data-open-client-task]").forEach((btn) => btn.addEventListener("click", () => openClientTaskWithProgress(btn.dataset.openClientTask, "", btn)));
   document.querySelectorAll("[data-delete-client-task]").forEach((btn) => btn.addEventListener("click", async () => {
     if (!confirm("Delete this task?")) return;
     await api(`/api/client-tasks/${btn.dataset.deleteClientTask}`, { method: "DELETE" });
@@ -7477,6 +7567,7 @@ function bindAssignedTaskCreation() {
   }));
   document.querySelectorAll("[data-inline-domain-task-form]").forEach((form) => form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const stopLoading = beginFormLoading(form, event.submitter, "Creating task...", "Creating...");
     try {
       const body = {
         type: "description",
@@ -7491,6 +7582,8 @@ function bindAssignedTaskCreation() {
       renderTasks();
     } catch (error) {
       setFormStatus(form, error.message, true);
+    } finally {
+      stopLoading();
     }
   }));
 }
@@ -7566,7 +7659,7 @@ async function renderTasks(projectID = "") {
   bindAssignedTaskCreation();
   bindClientTaskTransferControls();
   bindAssigneePickers(app);
-  document.querySelectorAll("[data-open-client-task]").forEach((btn) => btn.addEventListener("click", () => openClientTaskPanel(btn.dataset.openClientTask)));
+  document.querySelectorAll("[data-open-client-task]").forEach((btn) => btn.addEventListener("click", () => openClientTaskWithProgress(btn.dataset.openClientTask, "", btn)));
   icons();
   const openTaskID = routeParams.get("task_id") || "";
   const openCommentID = routeParams.get("comment_id") || "";
@@ -7576,7 +7669,7 @@ async function renderTasks(projectID = "") {
         const readData = await api(`/api/client-task-comments/${openCommentID}/read`, { method: "POST", body: JSON.stringify({}) }).catch(() => ({}));
         if (readData.unread_count !== undefined) updateInboxBadge(readData.unread_count);
       }
-      await openClientTaskPanel(openTaskID, openCommentID);
+      await openClientTaskWithProgress(openTaskID, openCommentID);
     }, 0);
   }
 }
