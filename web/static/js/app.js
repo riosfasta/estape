@@ -53,6 +53,9 @@ const state = {
   commandSearchTimer: null,
   commandSearchAbort: null,
   commandSearchResults: [],
+  appNavigationBound: false,
+  routeLoadingTimer: null,
+  routeNavigationToken: 0,
   purchaseCart: null,
   clientTaskReply: null,
   clientTaskCommentEdit: null,
@@ -72,6 +75,43 @@ function icons() {
 }
 
 window.addEventListener("load", icons);
+
+function routeLoadingHTML(label = "Loading page...") {
+  return `
+    <div class="route-loading-overlay" data-route-loading role="status" aria-live="polite">
+      <div class="route-loading-card">
+        <span class="route-loading-spinner" aria-hidden="true"></span>
+        <span>${esc(label)}</span>
+      </div>
+    </div>`;
+}
+
+function showRouteLoading(label = "Loading page...", immediate = false) {
+  clearTimeout(state.routeLoadingTimer);
+  const draw = () => {
+    if (document.querySelector("[data-route-loading]")) return;
+    document.body.insertAdjacentHTML("beforeend", routeLoadingHTML(label));
+  };
+  if (immediate) draw();
+  else state.routeLoadingTimer = setTimeout(draw, 120);
+}
+
+function hideRouteLoading() {
+  clearTimeout(state.routeLoadingTimer);
+  state.routeLoadingTimer = null;
+  document.querySelectorAll("[data-route-loading]").forEach((node) => node.remove());
+}
+
+function beginRouteTransition(options = {}) {
+  state.routeNavigationToken += 1;
+  const token = state.routeNavigationToken;
+  if (options.loader !== false) showRouteLoading(options.label || "Loading page...");
+  return token;
+}
+
+function finishRouteTransition(token) {
+  if (state.routeNavigationToken === token) hideRouteLoading();
+}
 
 const QR_VERSION = 10;
 const QR_SIZE = QR_VERSION * 4 + 17;
@@ -1209,9 +1249,12 @@ async function checkoutPurchaseCart() {
         quantity: Math.max(1, Number(cart.quantity || 1)),
       }),
     });
-    setPurchaseCartStatus(`Package activated. Reference: ${data.checkout?.external_id || "pending"}.`);
-    if (data.checkout?.url) window.open(data.checkout.url, "_blank", "noopener");
-    if (typeof cart.onDone === "function") await cart.onDone(data);
+    if (data.checkout?.url) {
+      setPurchaseCartStatus("Redirecting to PayPal...");
+      window.location.href = data.checkout.url;
+      return;
+    }
+    setPurchaseCartStatus("PayPal checkout was created, but the approval URL was missing.", true);
   } catch (error) {
     setPurchaseCartStatus(error.message, true);
   } finally {
@@ -1785,6 +1828,58 @@ function workspaceLink(href, label, iconName, badge = "") {
 
 function workspaceChild(href, label, iconName, badge = "") {
   return `<a class="nav-child ${isActiveRoute(href) ? "active" : ""}" href="${href}">${icon(iconName)}<span>${esc(label)}</span>${badge ? `<strong class="mini-count">${esc(badge)}</strong>` : ""}</a>`;
+}
+
+function isRoutableAppURL(url) {
+  if (url.origin !== window.location.origin) return false;
+  const pathname = url.pathname.replace(/\/+$/, "") || "/";
+  if (pathname === "/login" || pathname === "/register") return true;
+  return [
+    "/dashboard",
+    "/chat",
+    "/team",
+    "/tasks",
+    "/projects",
+    "/websites",
+    "/settings",
+    "/reports",
+    "/admin",
+    "/spaces",
+  ].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+function navigateApp(href, options = {}) {
+  const url = new URL(href, window.location.href);
+  if (!isRoutableAppURL(url)) {
+    window.location.href = url.href;
+    return;
+  }
+  const target = `${url.pathname}${url.search}${url.hash}`;
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (target === current) return;
+  if (options.replace) history.replaceState(null, "", target);
+  else history.pushState(null, "", target);
+  window.scrollTo(0, 0);
+  route().catch(renderRouteError);
+}
+
+function bindAppNavigation() {
+  if (state.appNavigationBound) return;
+  state.appNavigationBound = true;
+  document.addEventListener("click", (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const link = event.target.closest("a[href]");
+    if (!link) return;
+    if (link.target && link.target !== "_self") return;
+    if (link.hasAttribute("download")) return;
+    const href = link.getAttribute("href") || "";
+    if (!href || href === "#" || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:")) return;
+    const url = new URL(href, window.location.href);
+    if (!isRoutableAppURL(url)) return;
+    event.preventDefault();
+    navigateApp(url.href);
+  });
+  window.addEventListener("popstate", () => route().catch(renderRouteError));
 }
 
 function saveProjectSidebarState() {
@@ -7830,10 +7925,18 @@ async function renderAnnotate(id) {
 }
 
 async function renderBilling() {
+  const params = new URLSearchParams(location.search);
+  const paymentState = params.get("payment") || "";
+  const paymentMessage = params.get("message") || "";
+  const paymentNotice = paymentState ? `<section class="panel soft-panel payment-result ${paymentState === "success" ? "success" : paymentState === "cancelled" ? "warn" : "danger"}">
+    <strong>${paymentState === "success" ? "PayPal payment completed" : paymentState === "cancelled" ? "PayPal checkout cancelled" : "PayPal payment needs attention"}</strong>
+    <span>${esc(paymentMessage || (paymentState === "success" ? "Your membership is active and the invoice is available below." : paymentState === "cancelled" ? "No payment was captured." : "No membership was activated."))}</span>
+  </section>` : "";
   const plans = (await api("/api/subscriptions/plans")).plans || [];
   const invoices = state.team ? ((await api(`/api/subscriptions/${state.team.id}/invoices`)).invoices || []) : [];
   shell("Billing", `
     <div class="page-title"><div><h1>Billing</h1><p class="muted">Plans, trial state, approvals, and receipts.</p></div></div>
+    ${paymentNotice}
     ${pricingCardsHTML(plans)}
     <section class="panel" style="margin-top:18px"><h2>Invoices</h2><div class="task-list">${invoices.map((invoice) => `<article class="task-row"><div><h3>${money(invoice.amount)} ${esc(invoice.currency).toUpperCase()}</h3><span class="muted">${fmtDate(invoice.issued_at)}</span></div><span class="pill">${esc(invoice.status)}</span><a class="btn" href="${esc(invoice.external_invoice_url)}">Receipt</a></article>`).join("") || `<p class="muted">No invoices yet.</p>`}</div></section>`);
   bindPurchaseButtons(renderBilling);
@@ -10807,24 +10910,25 @@ function renderRouteError(error) {
   app.innerHTML = `<div class="auth-wrap"><section class="auth-box"><h1>Something needs attention</h1><p class="muted">${esc(error.message)}</p><p><a class="btn primary" href="/dashboard">Retry</a></p></section></div>`;
 }
 
-async function route() {
-  if (path() === "/login") {
-    stopNotificationPolling();
-    stopLivePolling();
-    return renderAuth("login");
-  }
-  if (path() === "/register") {
-    stopNotificationPolling();
-    stopLivePolling();
-    return renderAuth("register");
-  }
-  if (!state.access) {
-    stopNotificationPolling();
-    stopLivePolling();
-    window.location.href = "/login";
-    return;
-  }
+async function route(options = {}) {
+  const routeToken = beginRouteTransition(options);
   try {
+    if (path() === "/login") {
+      stopNotificationPolling();
+      stopLivePolling();
+      return renderAuth("login");
+    }
+    if (path() === "/register") {
+      stopNotificationPolling();
+      stopLivePolling();
+      return renderAuth("register");
+    }
+    if (!state.access) {
+      stopNotificationPolling();
+      stopLivePolling();
+      window.location.href = "/login";
+      return;
+    }
     await loadMe();
     startNotificationPolling();
     startLivePolling();
@@ -10832,30 +10936,63 @@ async function route() {
     const matchClientProject = path().match(/^\/projects\/([^/]+)$/);
     const matchAnnotate = path().match(/^\/websites\/([^/]+)\/annotate/);
     const matchPageEdit = path().match(/^\/admin\/pages\/([^/]+)\/edit/);
-    if (path() === "/dashboard") return renderDashboard();
-    if (path() === "/team") return (await guardPaidFeaturePage("staff management")) ? renderTeam() : null;
-    if (path() === "/tasks") return (await guardPaidFeaturePage("tasks")) ? renderTasks() : null;
-    if (path() === "/projects") return (await guardPaidFeaturePage("projects, folders, and domains")) ? renderClientProjects() : null;
-    if (matchClientWebsite) return (await guardPaidFeaturePage("domains and annotations")) ? renderClientWebsite(matchClientWebsite[1], matchClientWebsite[2]) : null;
-    if (matchClientProject) return (await guardPaidFeaturePage("client folders and domains")) ? renderClientProject(matchClientProject[1]) : null;
-    if (path().startsWith("/spaces/")) return (await guardPaidFeaturePage("tasks")) ? renderTasks() : null;
-    if (path() === "/websites") return (await guardPaidFeaturePage("website feedback")) ? renderWebsites() : null;
-    if (matchAnnotate) return (await guardPaidFeaturePage("annotations")) ? renderAnnotate(matchAnnotate[1]) : null;
-    if (path() === "/chat") return renderChat();
-    if (path() === "/settings/company") return renderCompanySettings();
-    if (path() === "/settings/billing") return renderBilling();
-    if (path() === "/team/integrations") return renderIntegrations();
-    if (path() === "/team/performance") return (await guardPaidFeaturePage("team performance")) ? renderTeamPerformance() : null;
-    if (path() === "/reports/time") return (await guardPaidFeaturePage("time reports")) ? renderReports() : null;
-    if (path() === "/admin" || path() === "/admin/users") return renderAdmin();
-    if (path() === "/admin/settings") return renderSettings();
-    if (path() === "/admin/plans") return renderPlansAdmin();
-    if (path() === "/admin/pages") return renderPages();
-    if (matchPageEdit) return renderPageEditor(matchPageEdit[1]);
-    return renderDashboard();
+    if (path() === "/dashboard") return await renderDashboard();
+    if (path() === "/team") {
+      if (await guardPaidFeaturePage("staff management")) await renderTeam();
+      return;
+    }
+    if (path() === "/tasks") {
+      if (await guardPaidFeaturePage("tasks")) await renderTasks();
+      return;
+    }
+    if (path() === "/projects") {
+      if (await guardPaidFeaturePage("projects, folders, and domains")) await renderClientProjects();
+      return;
+    }
+    if (matchClientWebsite) {
+      if (await guardPaidFeaturePage("domains and annotations")) await renderClientWebsite(matchClientWebsite[1], matchClientWebsite[2]);
+      return;
+    }
+    if (matchClientProject) {
+      if (await guardPaidFeaturePage("client folders and domains")) await renderClientProject(matchClientProject[1]);
+      return;
+    }
+    if (path().startsWith("/spaces/")) {
+      if (await guardPaidFeaturePage("tasks")) await renderTasks();
+      return;
+    }
+    if (path() === "/websites") {
+      if (await guardPaidFeaturePage("website feedback")) await renderWebsites();
+      return;
+    }
+    if (matchAnnotate) {
+      if (await guardPaidFeaturePage("annotations")) await renderAnnotate(matchAnnotate[1]);
+      return;
+    }
+    if (path() === "/chat") return await renderChat();
+    if (path() === "/settings/company") return await renderCompanySettings();
+    if (path() === "/settings/billing") return await renderBilling();
+    if (path() === "/team/integrations") return await renderIntegrations();
+    if (path() === "/team/performance") {
+      if (await guardPaidFeaturePage("team performance")) await renderTeamPerformance();
+      return;
+    }
+    if (path() === "/reports/time") {
+      if (await guardPaidFeaturePage("time reports")) await renderReports();
+      return;
+    }
+    if (path() === "/admin" || path() === "/admin/users") return await renderAdmin();
+    if (path() === "/admin/settings") return await renderSettings();
+    if (path() === "/admin/plans") return await renderPlansAdmin();
+    if (path() === "/admin/pages") return await renderPages();
+    if (matchPageEdit) return await renderPageEditor(matchPageEdit[1]);
+    return await renderDashboard();
   } catch (error) {
     renderRouteError(error);
+  } finally {
+    finishRouteTransition(routeToken);
   }
 }
 
+bindAppNavigation();
 route().catch(renderRouteError);

@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -295,6 +297,62 @@ func formatBillingAmountCents(amount int64) string {
 	return fmt.Sprintf("%s$%d.%02d USD", sign, amount/100, amount%100)
 }
 
+func (s *Server) payPalCheckoutBase(ctx context.Context) (billing.CheckoutRequest, error) {
+	settings, err := s.loadSiteSettings(ctx)
+	if err != nil {
+		settings = s.defaultSiteSettings(time.Now())
+	}
+	settings = s.settingsWithConfigFallback(settings)
+	if !settings.PayPalEnabled {
+		return billing.CheckoutRequest{}, errors.New("paypal checkout is disabled")
+	}
+	if strings.TrimSpace(settings.PayPalClientID) == "" || strings.TrimSpace(settings.PayPalClientSecret) == "" {
+		return billing.CheckoutRequest{}, errors.New("paypal client id and secret are required")
+	}
+	return billing.CheckoutRequest{
+		ClientID:     strings.TrimSpace(settings.PayPalClientID),
+		ClientSecret: strings.TrimSpace(settings.PayPalClientSecret),
+		Mode:         firstNonEmpty(settings.PayPalMode, "sandbox"),
+		BrandName:    firstNonEmpty(settings.SiteName, s.cfg.AppName, "BugMega"),
+	}, nil
+}
+
+func (s *Server) appAbsoluteURL(path string) string {
+	base := strings.TrimRight(s.cfg.AppURL, "/")
+	if base == "" {
+		return path
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return base + path
+}
+
+func (s *Server) payPalReturnURL(subscriptionID primitive.ObjectID) string {
+	values := url.Values{}
+	values.Set("subscription_id", subscriptionID.Hex())
+	return s.appAbsoluteURL("/api/paypal/return?" + values.Encode())
+}
+
+func (s *Server) payPalCancelURL(subscriptionID primitive.ObjectID) string {
+	values := url.Values{}
+	values.Set("subscription_id", subscriptionID.Hex())
+	return s.appAbsoluteURL("/api/paypal/cancel?" + values.Encode())
+}
+
+func (s *Server) billingPaymentRedirect(status string, message string, invoiceID primitive.ObjectID) string {
+	values := url.Values{}
+	values.Set("payment", status)
+	if strings.TrimSpace(message) != "" {
+		values.Set("message", message)
+	}
+	target := s.appAbsoluteURL("/settings/billing?" + values.Encode())
+	if !invoiceID.IsZero() {
+		target += "#invoice-" + invoiceID.Hex()
+	}
+	return target
+}
+
 func purchaseAlertRow(label string, value string) string {
 	if strings.TrimSpace(value) == "" {
 		value = "-"
@@ -393,42 +451,174 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 	if team.ID.IsZero() {
 		team.ID = userCtx.TeamID
 	}
-	buyer, err := s.loadUser(c.Request.Context(), userCtx.ID)
-	if err != nil {
-		buyer = models.User{ID: userCtx.ID, Role: userCtx.Role, TeamID: userCtx.TeamID}
-	}
 	seatCount := teamSeatCount(team)
 	amount := planBillingAmount(plan, seatCount, period, quantity)
-	session, err := provider.CreateCheckout(c.Request.Context(), billing.CheckoutRequest{TeamID: userCtx.TeamID.Hex(), PlanID: plan.ID.Hex(), Amount: amount, Currency: "usd"})
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "could not create checkout"})
-		return
-	}
 	now := time.Now()
-	expires := billingExpiry(now, period, quantity)
 	_, _ = s.store.C("subscriptions").UpdateMany(
 		c.Request.Context(),
-		bson.M{"team_id": userCtx.TeamID, "status": "pending_approval"},
+		bson.M{"team_id": userCtx.TeamID, "status": "pending_payment"},
 		bson.M{"$set": bson.M{"status": "cancelled", "expires_at": now}},
 	)
 	sub := models.Subscription{
-		ID:                    primitive.NewObjectID(),
-		TeamID:                userCtx.TeamID,
-		PlanID:                plan.ID,
-		Status:                "active",
-		BillingPeriod:         period,
-		BillingQuantity:       quantity,
-		PaymentProvider:       provider.Name(),
-		ExternalTransactionID: session.ExternalID,
-		StartedAt:             now,
-		ExpiresAt:             &expires,
-		CreatedAt:             now,
+		ID:              primitive.NewObjectID(),
+		TeamID:          userCtx.TeamID,
+		PlanID:          plan.ID,
+		Status:          "pending_payment",
+		BillingPeriod:   period,
+		BillingQuantity: quantity,
+		PaymentProvider: provider.Name(),
+		BuyerID:         userCtx.ID,
+		StartedAt:       now,
+		CreatedAt:       now,
 	}
 	if _, err := s.store.C("subscriptions").InsertOne(c.Request.Context(), sub); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create subscription"})
 		return
 	}
-	_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), userCtx.TeamID, bson.M{"$set": bson.M{"subscription_id": sub.ID, "seat_limit_cached": plan.SeatLimit}})
+	checkoutReq, err := s.payPalCheckoutBase(c.Request.Context())
+	if err != nil {
+		_, _ = s.store.C("subscriptions").UpdateByID(c.Request.Context(), sub.ID, bson.M{"$set": bson.M{"status": "checkout_failed", "expires_at": now}})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	checkoutReq.TeamID = userCtx.TeamID.Hex()
+	checkoutReq.PlanID = plan.ID.Hex()
+	checkoutReq.Amount = amount
+	checkoutReq.Currency = "usd"
+	checkoutReq.CustomID = sub.ID.Hex()
+	checkoutReq.InvoiceID = "bugmega-" + sub.ID.Hex()
+	checkoutReq.Description = fmt.Sprintf("%s %s package", plan.Name, period)
+	checkoutReq.ReturnURL = s.payPalReturnURL(sub.ID)
+	checkoutReq.CancelURL = s.payPalCancelURL(sub.ID)
+	session, err := provider.CreateCheckout(c.Request.Context(), checkoutReq)
+	if err != nil {
+		_, _ = s.store.C("subscriptions").UpdateByID(c.Request.Context(), sub.ID, bson.M{"$set": bson.M{"status": "checkout_failed", "expires_at": now}})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "could not create PayPal checkout"})
+		return
+	}
+	sub.ExternalTransactionID = session.ExternalID
+	if _, err := s.store.C("subscriptions").UpdateByID(c.Request.Context(), sub.ID, bson.M{"$set": bson.M{"external_transaction_id": session.ExternalID}}); err != nil {
+		_, _ = s.store.C("subscriptions").UpdateByID(c.Request.Context(), sub.ID, bson.M{"$set": bson.M{"status": "checkout_failed", "expires_at": now}})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save PayPal checkout"})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"subscription": sub, "checkout": session, "amount": amount})
+}
+
+func (s *Server) payPalCheckoutReturn(c *gin.Context) {
+	orderID := strings.TrimSpace(c.Query("token"))
+	if orderID == "" {
+		c.Redirect(http.StatusFound, s.billingPaymentRedirect("failed", "missing PayPal order token", primitive.NilObjectID))
+		return
+	}
+	provider, ok := s.payments["paypal"]
+	if !ok {
+		c.Redirect(http.StatusFound, s.billingPaymentRedirect("failed", "PayPal checkout is not available", primitive.NilObjectID))
+		return
+	}
+	checkoutReq, err := s.payPalCheckoutBase(c.Request.Context())
+	if err != nil {
+		c.Redirect(http.StatusFound, s.billingPaymentRedirect("failed", err.Error(), primitive.NilObjectID))
+		return
+	}
+	sub, err := s.findPayPalSubscription(c.Request.Context(), c.Query("subscription_id"), orderID)
+	if err != nil {
+		c.Redirect(http.StatusFound, s.billingPaymentRedirect("failed", "checkout subscription was not found", primitive.NilObjectID))
+		return
+	}
+	capture, err := provider.CaptureCheckout(c.Request.Context(), checkoutReq, orderID)
+	if err != nil {
+		s.markPayPalSubscriptionFailed(c.Request.Context(), c.Query("subscription_id"), orderID, "capture_failed")
+		c.Redirect(http.StatusFound, s.billingPaymentRedirect("failed", "PayPal capture failed", primitive.NilObjectID))
+		return
+	}
+	if !strings.EqualFold(capture.Status, "COMPLETED") {
+		s.markPayPalSubscriptionFailed(c.Request.Context(), c.Query("subscription_id"), orderID, "capture_incomplete")
+		c.Redirect(http.StatusFound, s.billingPaymentRedirect("failed", "PayPal payment was not completed", primitive.NilObjectID))
+		return
+	}
+	invoice, err := s.activatePaidPayPalSubscription(c.Request.Context(), sub, capture)
+	if err != nil {
+		c.Redirect(http.StatusFound, s.billingPaymentRedirect("failed", "could not activate membership", primitive.NilObjectID))
+		return
+	}
+	c.Redirect(http.StatusFound, s.billingPaymentRedirect("success", "", invoice.ID))
+}
+
+func (s *Server) payPalCheckoutCancel(c *gin.Context) {
+	s.markPayPalSubscriptionFailed(c.Request.Context(), c.Query("subscription_id"), c.Query("token"), "cancelled")
+	c.Redirect(http.StatusFound, s.billingPaymentRedirect("cancelled", "", primitive.NilObjectID))
+}
+
+func (s *Server) findPayPalSubscription(ctx context.Context, subscriptionID string, orderID string) (models.Subscription, error) {
+	filter := bson.M{"payment_provider": "paypal"}
+	if id, err := objectIDFromString(subscriptionID); err == nil {
+		filter["_id"] = id
+		if strings.TrimSpace(orderID) != "" {
+			filter["external_transaction_id"] = strings.TrimSpace(orderID)
+		}
+	} else if strings.TrimSpace(orderID) != "" {
+		filter["external_transaction_id"] = strings.TrimSpace(orderID)
+	} else {
+		return models.Subscription{}, errors.New("subscription id or order id is required")
+	}
+	var sub models.Subscription
+	if err := s.store.C("subscriptions").FindOne(ctx, filter).Decode(&sub); err != nil {
+		return models.Subscription{}, err
+	}
+	return sub, nil
+}
+
+func (s *Server) markPayPalSubscriptionFailed(ctx context.Context, subscriptionID string, orderID string, status string) {
+	filter := bson.M{"payment_provider": "paypal", "status": bson.M{"$in": []string{"pending_payment", "checkout_failed", "capture_failed", "capture_incomplete"}}}
+	if id, err := objectIDFromString(subscriptionID); err == nil {
+		filter["_id"] = id
+	} else if strings.TrimSpace(orderID) != "" {
+		filter["external_transaction_id"] = strings.TrimSpace(orderID)
+	} else {
+		return
+	}
+	_, _ = s.store.C("subscriptions").UpdateOne(ctx, filter, bson.M{"$set": bson.M{"status": status, "expires_at": time.Now()}})
+}
+
+func (s *Server) activatePaidPayPalSubscription(ctx context.Context, sub models.Subscription, capture billing.PaymentCapture) (models.Invoice, error) {
+	if !strings.EqualFold(capture.Status, "COMPLETED") {
+		return models.Invoice{}, errors.New("paypal capture is not completed")
+	}
+	var existing models.Invoice
+	if err := s.store.C("invoices").FindOne(ctx, bson.M{"subscription_id": sub.ID, "status": "paid"}).Decode(&existing); err == nil {
+		return existing, nil
+	}
+
+	var plan models.Plan
+	if err := s.store.C("plans").FindOne(ctx, bson.M{"_id": sub.PlanID}).Decode(&plan); err != nil {
+		return models.Invoice{}, err
+	}
+	var team models.Team
+	if err := s.store.C("teams").FindOne(ctx, bson.M{"_id": sub.TeamID}).Decode(&team); err != nil {
+		return models.Invoice{}, err
+	}
+	period := normalizedBillingPeriod(sub.BillingPeriod)
+	quantity := normalizedBillingQuantity(sub.BillingQuantity)
+	amount := planBillingAmount(plan, teamSeatCount(team), period, quantity)
+	now := time.Now()
+	expires := billingExpiry(now, period, quantity)
+	transactionID := firstNonEmpty(capture.ExternalID, sub.ExternalTransactionID)
+
+	if _, err := s.store.C("subscriptions").UpdateByID(ctx, sub.ID, bson.M{"$set": bson.M{
+		"status":                  "active",
+		"billing_period":          period,
+		"billing_quantity":        quantity,
+		"external_transaction_id": transactionID,
+		"started_at":              now,
+		"expires_at":              expires,
+	}}); err != nil {
+		return models.Invoice{}, err
+	}
+	if _, err := s.store.C("teams").UpdateByID(ctx, sub.TeamID, bson.M{"$set": bson.M{"subscription_id": sub.ID, "seat_limit_cached": plan.SeatLimit}}); err != nil {
+		return models.Invoice{}, err
+	}
+
 	invoice := models.Invoice{
 		ID:                 primitive.NewObjectID(),
 		TeamID:             sub.TeamID,
@@ -436,15 +626,31 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 		Amount:             amount,
 		Currency:           "usd",
 		Status:             "paid",
-		PaymentProvider:    sub.PaymentProvider,
-		ExternalInvoiceURL: s.cfg.AppURL + "/settings/billing#invoice-" + sub.ID.Hex(),
+		PaymentProvider:    "paypal",
+		ExternalInvoiceURL: s.appAbsoluteURL("/settings/billing#invoice-" + sub.ID.Hex()),
 		IssuedAt:           now,
 	}
-	_, _ = s.store.C("invoices").InsertOne(c.Request.Context(), invoice)
-	actor := s.notificationActorName(c.Request.Context(), userCtx.ID)
-	s.notifyOwnerAdmins(c.Request.Context(), userCtx.ID, "subscription_purchase", actor+" purchased the "+period+" "+plan.Name+" package with PayPal.", sub.ID)
-	s.enqueuePurchaseAlertEmail(c.Request.Context(), buyer, team, plan, sub, amount, seatCount)
-	c.JSON(http.StatusCreated, gin.H{"subscription": sub, "checkout": session, "amount": amount, "invoice": invoice})
+	if _, err := s.store.C("invoices").InsertOne(ctx, invoice); err != nil {
+		return models.Invoice{}, err
+	}
+
+	buyerID := sub.BuyerID
+	if buyerID.IsZero() {
+		buyerID = team.OwnerAdminID
+	}
+	buyer, err := s.loadUser(ctx, buyerID)
+	if err != nil {
+		buyer = models.User{ID: buyerID, Role: models.RoleTeamAdmin, TeamID: sub.TeamID}
+	}
+	sub.Status = "active"
+	sub.ExternalTransactionID = transactionID
+	sub.StartedAt = now
+	sub.ExpiresAt = &expires
+	actor := s.notificationActorName(ctx, buyerID)
+	s.notifyOwnerAdmins(ctx, buyerID, "subscription_purchase", actor+" purchased the "+period+" "+plan.Name+" package with PayPal.", sub.ID)
+	s.enqueuePurchaseAlertEmail(ctx, buyer, team, plan, sub, amount, teamSeatCount(team))
+	s.audit(ctx, buyerID, "subscription.paid", "subscription", sub.ID)
+	return invoice, nil
 }
 
 func (s *Server) listInvoices(c *gin.Context) {

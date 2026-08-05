@@ -63,6 +63,7 @@ type Subscription struct {
 	BillingQuantity       int                `bson:"billing_quantity,omitempty" json:"billing_quantity,omitempty"`
 	PaymentProvider       string             `bson:"payment_provider,omitempty" json:"payment_provider,omitempty"`
 	ExternalTransactionID string             `bson:"external_transaction_id,omitempty" json:"external_transaction_id,omitempty"`
+	BuyerID               primitive.ObjectID `bson:"buyer_id,omitempty" json:"buyer_id,omitempty"`
 	TrialEndsAt           *time.Time         `bson:"trial_ends_at,omitempty" json:"trial_ends_at,omitempty"`
 	ApprovedBy            primitive.ObjectID `bson:"approved_by,omitempty" json:"approved_by,omitempty"`
 	StartedAt             time.Time          `bson:"started_at" json:"started_at"`

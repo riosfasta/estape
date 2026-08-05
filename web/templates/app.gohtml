@@ -12,11 +12,18 @@
       document.documentElement.dataset.theme = saved === 'system' ? (prefersDark ? 'dark' : 'light') : saved;
     })();
   </script>
-  <link rel="stylesheet" href="/static/css/styles.css?v=20260719-0013">
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260805-0001">
 </head>
 <body class="workspace-page">
-  <div id="app"></div>
-  <script type="module" src="/static/js/app.js?v=20260719-0013"></script>
+  <div id="app">
+    <div class="route-loading-overlay route-loading-initial" data-route-loading role="status" aria-live="polite">
+      <div class="route-loading-card">
+        <span class="route-loading-spinner" aria-hidden="true"></span>
+        <span>Loading page...</span>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/static/js/app.js?v=20260805-0001"></script>
   <script async src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <script async src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
 </body>

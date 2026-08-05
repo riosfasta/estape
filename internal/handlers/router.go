@@ -89,6 +89,8 @@ func (s *Server) Router() *gin.Engine {
 	api.GET("/platform-settings", s.getPublicPlatformSettings)
 	api.GET("/subscriptions/plans", s.listPlans)
 	api.GET("/pages/:slug", s.getPublicPage)
+	api.GET("/paypal/return", s.payPalCheckoutReturn)
+	api.GET("/paypal/cancel", s.payPalCheckoutCancel)
 	api.POST("/webhooks/paypal", s.paymentWebhook("paypal"))
 
 	authed := api.Group("")
