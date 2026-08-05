@@ -827,6 +827,13 @@ func maxInt(a int, b int) int {
 	return b
 }
 
+func minFloat(a float64, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func reportScopeLabel(query taskReportQuery) string {
 	switch query.Scope {
 	case "all":
@@ -1033,24 +1040,9 @@ func (p *simplePDF) taskRow(task models.ClientTask, users map[primitive.ObjectID
 			contentLines = contentLines[:2]
 		}
 	}
-	checklistLines := []string{}
-	checklistWrappedLines := []string{}
+	checklistItems := []models.ChecklistItem{}
 	if options.Checklist {
-		items := reportTaskChecklistItems(task)
-		for index, item := range items {
-			if index >= 20 {
-				checklistLines = append(checklistLines, fmt.Sprintf("... %d more checklist items", len(items)-index))
-				break
-			}
-			mark := "[ ]"
-			if item.Done {
-				mark = "[x]"
-			}
-			checklistLines = append(checklistLines, mark+" "+stripReportText(item.Text))
-		}
-		for _, line := range checklistLines {
-			checklistWrappedLines = append(checklistWrappedLines, wrapText(line, 94, 8)...)
-		}
+		checklistItems = reportTaskChecklistItems(task)
 	}
 	metaItems := []string{strings.ToUpper(task.Type), "Created " + task.CreatedAt.Format("2006-01-02")}
 	if options.DueDates && task.DueDate != nil {
@@ -1060,11 +1052,11 @@ func (p *simplePDF) taskRow(task models.ClientTask, users map[primitive.ObjectID
 		metaItems = append(metaItems, "Time "+minutesReportLabel(minutes))
 	}
 	metaLines := wrapText(strings.Join(metaItems, "   "), 96, 7)
-	height := float64(20 + len(metaLines)*9 + len(titleLines)*12 + len(contentLines)*10 + len(checklistWrappedLines)*10)
+	height := float64(20 + len(metaLines)*9 + len(titleLines)*12 + len(contentLines)*10)
 	if options.Assignees {
 		height += 10
 	}
-	if options.Checklist && len(checklistLines) > 0 {
+	if options.Checklist && len(checklistItems) > 0 {
 		height += 10
 	}
 	p.ensure(height)
@@ -1084,21 +1076,96 @@ func (p *simplePDF) taskRow(task models.ClientTask, users map[primitive.ObjectID
 		p.text(46, p.y, 8, line, "0.36 0.42 0.39")
 		p.y -= 10
 	}
-	if len(checklistLines) > 0 {
-		done, total := reportChecklistStats(reportTaskChecklistItems(task))
+	if len(checklistItems) > 0 {
+		done, total := reportChecklistStats(checklistItems)
+		p.ensure(12)
 		p.text(46, p.y, 8, fmt.Sprintf("Checklist: %d/%d done", done, total), "0.04 0.34 0.30")
 		p.y -= 10
-		for _, wrapped := range checklistWrappedLines {
-			p.text(54, p.y, 8, wrapped, "0.36 0.42 0.39")
-			p.y -= 10
-		}
+		p.checklistItems(checklistItems)
 	}
 	if len(task.Annotations) > 0 {
+		p.ensure(12)
 		p.text(46, p.y, 8, fmt.Sprintf("Annotations: %d", len(task.Annotations)), "0.36 0.42 0.39")
 		p.y -= 10
 	}
+	p.ensure(12)
 	p.line(46, p.y, 566, p.y)
 	p.y -= 10
+}
+
+func (p *simplePDF) checklistItems(items []models.ChecklistItem) {
+	const (
+		bottomY    = 52.0
+		lineHeight = 9.0
+		itemGap    = 2.0
+		maxChars   = 46
+	)
+	columnX := [2]float64{54, 314}
+	column := 0
+	pageTop := p.y
+	columnY := [2]float64{p.y, p.y}
+	usedRightColumn := false
+
+	advanceColumn := func() {
+		if column == 0 {
+			column = 1
+			usedRightColumn = true
+			columnY[1] = pageTop
+			return
+		}
+		p.addPage()
+		pageTop = p.y
+		column = 0
+		columnY = [2]float64{p.y, p.y}
+		usedRightColumn = false
+	}
+
+	for _, item := range items {
+		text := stripReportText(item.Text)
+		if text == "" {
+			continue
+		}
+		mark := "[ ]"
+		if item.Done {
+			mark = "[x]"
+		}
+		lines := wrapText(mark+" "+text, maxChars, 8)
+		if len(lines) == 0 {
+			continue
+		}
+		blockHeight := float64(len(lines))*lineHeight + itemGap
+		columnCapacity := pageTop - bottomY
+		if blockHeight <= columnCapacity && columnY[column]-blockHeight < bottomY {
+			advanceColumn()
+		}
+		if blockHeight <= columnCapacity {
+			for _, line := range lines {
+				p.text(columnX[column], columnY[column], 8, line, "0.36 0.42 0.39")
+				columnY[column] -= lineHeight
+			}
+			columnY[column] -= itemGap
+			continue
+		}
+		for _, line := range lines {
+			if columnY[column]-lineHeight < bottomY {
+				advanceColumn()
+			}
+			p.text(columnX[column], columnY[column], 8, line, "0.36 0.42 0.39")
+			columnY[column] -= lineHeight
+		}
+		if columnY[column]-itemGap < bottomY {
+			advanceColumn()
+		} else {
+			columnY[column] -= itemGap
+		}
+	}
+
+	if usedRightColumn {
+		p.y = minFloat(columnY[0], columnY[1])
+	} else {
+		p.y = columnY[0]
+	}
+	p.y -= 4
 }
 
 func (p *simplePDF) completionRow(item taskReportCompletion, clients map[primitive.ObjectID]models.ClientProject, websites map[primitive.ObjectID]models.ClientWebsite, users map[primitive.ObjectID]models.User) {
