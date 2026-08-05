@@ -119,6 +119,9 @@ func (s *Server) googleAuthCallback(c *gin.Context) {
 		s.socialAuthError(c, "Google account email must be verified before signing in.")
 		return
 	}
+	if s.googleAccountNeedsRegistration(c.Request.Context(), info.Email) && !s.allowRegistrationAttempt(c) {
+		return
+	}
 	user, created, err := s.findOrCreateGoogleUser(c.Request.Context(), info, state)
 	if err != nil {
 		s.socialAuthError(c, err.Error())
@@ -144,6 +147,11 @@ func (s *Server) googleAuthCallback(c *gin.Context) {
 	}
 	_, _ = s.store.C("users").UpdateByID(c.Request.Context(), user.ID, bson.M{"$set": bson.M{"last_active_at": time.Now()}})
 	s.socialAuthSuccess(c, access, refresh, created)
+}
+
+func (s *Server) googleAccountNeedsRegistration(ctx context.Context, email string) bool {
+	err := s.store.C("users").FindOne(ctx, bson.M{"email": strings.ToLower(strings.TrimSpace(email))}).Err()
+	return err == mongo.ErrNoDocuments
 }
 
 func (s *Server) googleAuthVerifyTwoFactor(c *gin.Context) {

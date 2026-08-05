@@ -2797,7 +2797,6 @@ function bindNotificationActions() {
     }
   }));
   document.querySelectorAll("[data-notification-permanent]").forEach((btn) => btn.addEventListener("click", async () => {
-    if (!typedConfirm("Remove this notification forever?")) return;
     try {
       await api(`/api/users/me/notifications/${btn.dataset.notificationPermanent}/permanent`, { method: "DELETE" });
       await refreshNotificationsLive();
@@ -2806,7 +2805,6 @@ function bindNotificationActions() {
     }
   }));
   document.querySelectorAll("[data-notification-empty-bin]").forEach((btn) => btn.addEventListener("click", async () => {
-    if (!typedConfirm("Empty the notification bin forever?")) return;
     try {
       await api("/api/users/me/notifications/bin/permanent", { method: "DELETE" });
       await refreshNotificationsLive();
@@ -6332,7 +6330,12 @@ async function renderClientProject(clientID) {
   bindAccessRoleSelect($("#clientMemberForm"), candidateData.members || []);
   bindAccessRoleSelect($("#clientWebsiteAccessForm"), candidateData.members || []);
   $("#editClientBtn")?.addEventListener("click", () => $("#editClientDialog")?.showModal());
-  $("#deleteClientFolderBtn")?.addEventListener("click", () => $("#deleteClientFolderDialog")?.showModal());
+  $("#deleteClientFolderBtn")?.addEventListener("click", () => {
+    const form = $("#deleteClientFolderForm");
+    form?.reset();
+    setFormStatus(form, "");
+    $("#deleteClientFolderDialog")?.showModal();
+  });
   $("#addClientMemberBtn")?.addEventListener("click", () => $("#clientMemberDialog")?.showModal());
   $("#addClientWebsiteBtn")?.addEventListener("click", () => $("#clientWebsiteDialog")?.showModal());
   $("#addClientDocBtn")?.addEventListener("click", () => $("#clientDocumentDialog")?.showModal());
@@ -6378,6 +6381,22 @@ async function renderClientProject(clientID) {
       await api(`/api/client-projects/${clientID}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
       await refreshClientSidebarCache();
       renderClientProject(clientID);
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
+  $("#deleteClientFolderForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (String(form.elements.confirm_text.value || "").trim() !== "Confirm") {
+      setFormStatus(form, "Type Confirm exactly to delete this folder.", true);
+      return;
+    }
+    try {
+      await api(`/api/client-projects/${clientID}`, { method: "DELETE" });
+      $("#deleteClientFolderDialog")?.close();
+      await refreshClientSidebarCache();
+      navigateApp("/projects", { replace: true });
     } catch (error) {
       setFormStatus(form, error.message, true);
     }

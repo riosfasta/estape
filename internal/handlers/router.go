@@ -35,14 +35,16 @@ type Server struct {
 	push         *PushService
 	payments     map[string]billing.PaymentProvider
 	integrations map[string]integrations.TaskIntegrationProvider
+	signupLimits *registrationRateLimiter
 }
 
 func New(cfg config.Config, store *store.Store, tokens *auth.TokenManager, mailer *email.Worker, hub *realtime.Hub, payments map[string]billing.PaymentProvider, taskIntegrations map[string]integrations.TaskIntegrationProvider) *Server {
-	return &Server{cfg: cfg, store: store, tokens: tokens, mailer: mailer, hub: hub, push: NewPushService(cfg), payments: payments, integrations: taskIntegrations}
+	return &Server{cfg: cfg, store: store, tokens: tokens, mailer: mailer, hub: hub, push: NewPushService(cfg), payments: payments, integrations: taskIntegrations, signupLimits: newRegistrationRateLimiter()}
 }
 
 func (s *Server) Router() *gin.Engine {
 	router := gin.Default()
+	_ = router.SetTrustedProxies([]string{"127.0.0.1", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"})
 	router.MaxMultipartMemory = 16 << 20
 	router.Static("/static", "web/static")
 	router.Static("/uploads", s.cfg.UploadDir)

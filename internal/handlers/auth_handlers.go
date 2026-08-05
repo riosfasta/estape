@@ -41,6 +41,10 @@ const (
 )
 
 func (s *Server) register(c *gin.Context) {
+	if !s.allowRegistrationAttempt(c) {
+		return
+	}
+
 	var req registerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid registration body"})

@@ -49,6 +49,14 @@ MONGO_DB_NAME=bugmarking
 
 Do not use the default `JWT_SECRET` or owner password in production.
 
+Registration is rate-limited by client IP to reduce signup spam. If the app runs behind nginx, make sure the proxy sends the visitor IP:
+
+```nginx
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
+
 Platform owner settings can be managed at `/admin/settings`. The same values can also be provided as environment fallbacks for local setup.
 
 Google social login needs OAuth credentials from Google Cloud:
