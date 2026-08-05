@@ -1807,12 +1807,13 @@ async function renderAuth(mode) {
   icons();
   $("#authForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const form = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const authForm = event.currentTarget;
+    const form = Object.fromEntries(new FormData(authForm).entries());
     if (isRegister && form.company_name) form.workspace_name = form.company_name;
     try {
       const data = await api(isRegister ? "/api/auth/register" : "/api/auth/login", { method: "POST", body: JSON.stringify(form) });
       if (data.two_factor_required) {
-        event.currentTarget.dataset.twoFactorPending = "1";
+        authForm.dataset.twoFactorPending = "1";
         $(".two-factor-field")?.removeAttribute("hidden");
         const codeInput = $("#twoFactorCode");
         if (codeInput) {
