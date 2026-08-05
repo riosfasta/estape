@@ -78,15 +78,21 @@ window.addEventListener("load", icons);
 
 function syncTaskPanelOffset() {
   const topbar = $(".topbar");
+  const sidebar = $(".workspace-nav");
   const fallback = 68;
   const rect = topbar?.getBoundingClientRect?.();
   const topbarHeight = topbar ? Math.ceil(topbar.offsetHeight || rect?.height || fallback) : fallback;
   const topbarBottom = rect ? Math.ceil(rect.bottom) : topbarHeight;
-  const offset = Math.max(fallback, topbarHeight, topbarBottom) + 18;
+  const offset = Math.max(fallback, topbarHeight, topbarBottom);
+  const sidebarRect = sidebar?.getBoundingClientRect?.();
+  const sidebarRight = sidebarRect && window.matchMedia("(min-width: 981px)").matches ? Math.max(0, Math.ceil(sidebarRect.right)) : 0;
   document.documentElement.style.setProperty("--task-panel-top-offset", `${offset}px`);
+  document.documentElement.style.setProperty("--active-sidebar-width", `${sidebarRight}px`);
+  document.body.style.setProperty("--active-sidebar-width", `${sidebarRight}px`);
 }
 
 window.addEventListener("resize", syncTaskPanelOffset);
+window.addEventListener("load", syncTaskPanelOffset);
 
 function routeLoadingHTML(label = "Loading page...") {
   return `
@@ -2450,6 +2456,7 @@ function shell(title, html) {
     document.body.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
     const shellEl = app.querySelector(".workspace-shell");
     shellEl?.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
+    requestAnimationFrame(syncTaskPanelOffset);
     const btn = $("#sidebarToggle");
     if (btn) {
       btn.title = state.sidebarCollapsed ? "Expand menu" : "Collapse menu";
@@ -5653,7 +5660,7 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     <header class="client-task-panel-head annotation-viewer-head">
       <div><span class="muted">${esc(data.client?.name || "Client")} / ${esc(data.website?.name || "Website")}</span><h2>${esc(compactClientTaskTitle(task.title || "Annotation"))}</h2></div>
       <div class="toolbar">
-        ${canManageTask ? `<button class="btn compact" type="button" id="editClientAnnotationTaskBtn">${icon("pencil")}Edit</button><button class="btn compact danger" type="button" id="deleteClientAnnotationTaskBtn">${icon("trash-2")}Delete</button>` : ""}
+        ${canManageTask ? `<button class="btn icon quiet" type="button" id="editClientAnnotationTaskBtn" title="Edit" aria-label="Edit annotation">${icon("pencil")}</button><button class="btn icon danger" type="button" id="deleteClientAnnotationTaskBtn" title="Delete" aria-label="Delete annotation">${icon("trash-2")}</button>` : ""}
         <button class="btn icon quiet" type="button" data-close-client-task title="Close">${icon("x")}</button>
       </div>
     </header>
@@ -5986,9 +5993,9 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
   if (!panel) {
     panel = document.createElement("section");
     panel.id = "clientTaskPanel";
-    panel.className = "client-task-panel";
     document.body.appendChild(panel);
   }
+  panel.className = "client-task-panel";
   const canManageFolder = Boolean(data.can_manage);
   const canManageTask = Boolean(data.can_manage_task || canManageClientTaskUI(task, canManageFolder));
   const canUpdateProgress = Boolean(data.can_update_progress || canManageTask);
@@ -6004,7 +6011,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
     <header class="client-task-panel-head">
       <div><span class="muted">${esc(data.client?.name || "Client")} / ${esc(data.website?.name || "Website")}</span><h2>${esc(compactClientTaskTitle(task.title))}</h2></div>
       <div class="toolbar">
-        ${canManageTask ? `<button class="btn compact" type="button" id="editClientTaskBtn">${icon("pencil")}Edit</button><button class="btn compact danger" type="button" id="deleteClientTaskPanelBtn">${icon("trash-2")}Delete</button>` : ""}
+        ${canManageTask ? `<button class="btn icon quiet" type="button" id="editClientTaskBtn" title="Edit" aria-label="Edit task">${icon("pencil")}</button><button class="btn icon danger" type="button" id="deleteClientTaskPanelBtn" title="Delete" aria-label="Delete task">${icon("trash-2")}</button>` : ""}
         <button class="btn icon quiet" type="button" data-close-client-task title="Close">${icon("x")}</button>
       </div>
     </header>
