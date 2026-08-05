@@ -3814,9 +3814,12 @@ body.sidebar-collapsed .client-task-panel {
   inset: 72px 0 0 72px;
 }
 .client-task-panel.annotation-task-viewer {
-  inset: 0;
-  z-index: 180;
+  inset: 72px 0 0 274px;
+  z-index: 70;
   background: var(--bg-primary);
+}
+body.sidebar-collapsed .client-task-panel.annotation-task-viewer {
+  inset: 72px 0 0 72px;
 }
 .client-task-panel-head {
   min-height: 72px;
@@ -3836,6 +3839,7 @@ body.sidebar-collapsed .client-task-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 20%);
   gap: 0;
+  overflow: hidden;
 }
 .annotation-task-viewer .annotation-viewer-head {
   min-height: 64px;
@@ -3872,6 +3876,8 @@ body.sidebar-collapsed .client-task-panel {
 .annotation-viewer-stage {
   height: 100%;
   min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
   border: 0;
   border-radius: 0;
   background: var(--bg-primary);
