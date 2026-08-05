@@ -18,10 +18,15 @@
   --app-topbar-height: 68px;
   --app-sidebar-width: 274px;
   --app-sidebar-collapsed-width: 72px;
+  --active-sidebar-width: var(--app-sidebar-width);
 }
 
 [hidden] {
   display: none !important;
+}
+
+body.sidebar-collapsed {
+  --active-sidebar-width: var(--app-sidebar-collapsed-width);
 }
 
 [data-theme="dark"] {
@@ -3779,11 +3784,15 @@ button.inbox-row {
   top: var(--app-topbar-height);
   right: 0;
   bottom: 0;
-  left: var(--app-sidebar-width);
+  left: var(--active-sidebar-width);
   z-index: 60;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  max-height: calc(100dvh - var(--app-topbar-height));
+  width: calc(100vw - var(--active-sidebar-width));
+  height: calc(100dvh - var(--app-topbar-height));
+  max-width: none;
+  max-height: none;
+  box-sizing: border-box;
   overflow: hidden;
   background: var(--bg-primary);
   color: var(--text-primary);
@@ -3819,18 +3828,24 @@ button.inbox-row {
   font-weight: 650;
 }
 body.sidebar-collapsed .client-task-panel {
-  left: var(--app-sidebar-collapsed-width);
+  left: var(--active-sidebar-width);
+  width: calc(100vw - var(--active-sidebar-width));
 }
 .client-task-panel.annotation-task-viewer {
   top: var(--app-topbar-height);
   right: 0;
   bottom: 0;
-  left: var(--app-sidebar-width);
+  left: var(--active-sidebar-width);
+  width: calc(100vw - var(--active-sidebar-width));
+  height: calc(100dvh - var(--app-topbar-height));
+  max-width: none;
+  max-height: none;
   z-index: 60;
   background: var(--bg-primary);
 }
 body.sidebar-collapsed .client-task-panel.annotation-task-viewer {
-  left: var(--app-sidebar-collapsed-width);
+  left: var(--active-sidebar-width);
+  width: calc(100vw - var(--active-sidebar-width));
 }
 .client-task-panel-head {
   min-height: 72px;
@@ -3850,7 +3865,9 @@ body.sidebar-collapsed .client-task-panel.annotation-task-viewer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 20%);
   gap: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .annotation-task-viewer .annotation-viewer-head {
   min-height: 64px;
@@ -3906,7 +3923,7 @@ body.sidebar-collapsed .client-task-panel.annotation-task-viewer {
 .client-task-detail-main,
 .client-task-comments {
   min-width: 0;
-  overflow: auto;
+  overflow: visible;
   padding: 20px;
 }
 .client-task-detail-main {
@@ -5183,7 +5200,10 @@ dialog::backdrop { background: rgba(0, 0, 0, .34); }
   .client-task-panel.annotation-task-viewer,
   body.sidebar-collapsed .client-task-panel.annotation-task-viewer {
     left: 0;
+    right: 0;
     top: var(--app-topbar-height);
+    width: 100vw;
+    height: calc(100dvh - var(--app-topbar-height));
   }
   .client-task-panel-body,
   .annotation-viewer-body {
