@@ -85,6 +85,27 @@ func (s *Server) broadcastLiveToUsers(userIDs []primitive.ObjectID, event string
 	}
 }
 
+func (s *Server) broadcastAdminUsersChanged(ctx context.Context, actorID primitive.ObjectID, event string, targetID primitive.ObjectID) {
+	cursor, err := s.store.C("users").Find(ctx, bson.M{"role": models.RoleOwnerAdmin, "status": models.StatusActive})
+	if err != nil {
+		return
+	}
+	defer cursor.Close(ctx)
+
+	recipients := []primitive.ObjectID{actorID}
+	for cursor.Next(ctx) {
+		var owner models.User
+		if cursor.Decode(&owner) == nil {
+			recipients = append(recipients, owner.ID)
+		}
+	}
+	s.broadcastLiveToUsers(recipients, "admin_users_changed", gin.H{
+		"event":    event,
+		"user_id":  targetID.Hex(),
+		"actor_id": actorID.Hex(),
+	})
+}
+
 func (s *Server) clientWebsiteLiveRecipients(ctx context.Context, site models.ClientWebsite) []primitive.ObjectID {
 	recipients := append([]primitive.ObjectID{}, site.MemberIDs...)
 	recipients = append(recipients, site.ClientAdminIDs...)

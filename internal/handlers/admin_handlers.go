@@ -177,6 +177,7 @@ func (s *Server) adminCreateUser(c *gin.Context) {
 		_ = s.createStarterWorkspace(c.Request.Context(), team.ID, user.ID, now)
 	}
 	s.audit(c.Request.Context(), userCtx.ID, "user.created", "user", user.ID)
+	s.broadcastAdminUsersChanged(c.Request.Context(), userCtx.ID, "created", user.ID)
 	c.JSON(http.StatusCreated, gin.H{"user": user, "team": team})
 }
 
@@ -246,6 +247,7 @@ func (s *Server) adminApproveUser(c *gin.Context) {
 		return
 	}
 	s.audit(c.Request.Context(), userCtx.ID, "user.approved", "user", id)
+	s.broadcastAdminUsersChanged(c.Request.Context(), userCtx.ID, "approved", id)
 	c.JSON(http.StatusOK, gin.H{"approved": true})
 }
 
@@ -341,6 +343,7 @@ func (s *Server) adminUpdateUser(c *gin.Context) {
 		return
 	}
 	s.audit(c.Request.Context(), userCtx.ID, "user.updated", "user", id)
+	s.broadcastAdminUsersChanged(c.Request.Context(), userCtx.ID, "updated", id)
 	c.JSON(http.StatusOK, gin.H{"updated": true})
 }
 
@@ -504,6 +507,7 @@ func (s *Server) adminSetUserMembership(c *gin.Context) {
 		CreatedAt: now,
 	})
 	s.audit(c.Request.Context(), userCtx.ID, "membership.updated", "subscription", sub.ID)
+	s.broadcastAdminUsersChanged(c.Request.Context(), userCtx.ID, "membership_updated", id)
 	c.JSON(http.StatusOK, gin.H{"updated": true, "subscription": sub, "plan": plan, "invoice": invoice, "amount": amount, "expires_at": expires})
 }
 
@@ -527,14 +531,20 @@ func (s *Server) adminRemoveUser(c *gin.Context) {
 		return
 	}
 	if err := s.cleanupDeletedUser(c.Request.Context(), target); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not clean user data"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not clean user data: " + err.Error()})
 		return
 	}
-	if _, err := s.store.C("users").DeleteOne(c.Request.Context(), bson.M{"_id": id}); err != nil {
+	result, err := s.store.C("users").DeleteOne(c.Request.Context(), bson.M{"_id": id})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not remove user"})
 		return
 	}
+	if result.DeletedCount == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user was already removed"})
+		return
+	}
 	s.audit(c.Request.Context(), userCtx.ID, "user.removed", "user", id)
+	s.broadcastAdminUsersChanged(c.Request.Context(), userCtx.ID, "deleted", id)
 	c.JSON(http.StatusOK, gin.H{"removed": true})
 }
 

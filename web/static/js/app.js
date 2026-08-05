@@ -32,6 +32,7 @@ const state = {
   liveReconnectTimer: null,
   liveRefreshTimer: null,
   liveReconnectDelay: 1500,
+  adminUsersRefreshTimer: null,
   liveTaskSignature: "",
   liveWebsiteSignature: "",
   liveInboxSignature: "",
@@ -2839,11 +2840,33 @@ async function refreshWorkspaceLive() {
     await refreshLegacyTaskDialogLive();
     await refreshTaskPageLive();
     await refreshClientWebsiteLive();
+    await refreshAdminUsersLive();
   } catch {
     // Keep live updates quiet; normal route/api handling will report actionable errors.
   } finally {
     state.livePollBusy = false;
   }
+}
+
+function adminUsersPageActive() {
+  return path() === "/admin" || path() === "/admin/users";
+}
+
+function adminUsersDialogOpen() {
+  return ["userCreateDialog", "userEditDialog", "userMessageDialog", "userMembershipDialog"].some((id) => Boolean($(`#${id}`)?.open));
+}
+
+async function refreshAdminUsersLive() {
+  if (!adminUsersPageActive()) return;
+  if (adminUsersDialogOpen()) {
+    if (state.adminUsersRefreshTimer) clearTimeout(state.adminUsersRefreshTimer);
+    state.adminUsersRefreshTimer = setTimeout(() => {
+      state.adminUsersRefreshTimer = null;
+      refreshAdminUsersLive();
+    }, 1200);
+    return;
+  }
+  await renderAdmin();
 }
 
 function scheduleWorkspaceLiveRefresh(delay = 180) {
@@ -2899,6 +2922,8 @@ function stopLivePolling() {
   state.livePollBusy = false;
   if (state.liveRefreshTimer) clearTimeout(state.liveRefreshTimer);
   state.liveRefreshTimer = null;
+  if (state.adminUsersRefreshTimer) clearTimeout(state.adminUsersRefreshTimer);
+  state.adminUsersRefreshTimer = null;
   if (state.liveReconnectTimer) clearTimeout(state.liveReconnectTimer);
   state.liveReconnectTimer = null;
   if (state.liveSocket) {
@@ -8051,7 +8076,8 @@ async function renderAdmin() {
     try {
       await api("/api/admin/users", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
       $("#userCreateDialog")?.close();
-      renderAdmin();
+      await renderAdmin();
+      setStatus("User created.");
     } catch (error) {
       setFormStatus(form, error.message, true);
     }
@@ -8062,7 +8088,8 @@ async function renderAdmin() {
     try {
       await api(`/api/admin/users/${form.elements.id.value}`, { method: "PATCH", body: JSON.stringify({ name: form.elements.name.value, email: form.elements.email.value, username: form.elements.username.value, staff_role: form.elements.staff_role.value, role: form.elements.role.value, status: form.elements.status.value }) });
       $("#userEditDialog").close();
-      renderAdmin();
+      await renderAdmin();
+      setStatus("User updated.");
     } catch (error) {
       setFormStatus(form, error.message, true);
     }
@@ -8089,8 +8116,8 @@ async function renderAdmin() {
       body.quantity = Number(body.quantity || 1);
       const result = await api(`/api/admin/users/${form.elements.id.value}/membership`, { method: "PATCH", body: JSON.stringify(body) });
       $("#userMembershipDialog").close();
+      await renderAdmin();
       setStatus(`Membership updated. Expires ${fmtDate(result.expires_at)}.`);
-      renderAdmin();
     } catch (error) {
       setFormStatus(form, error.message, true);
     }
@@ -8174,12 +8201,22 @@ function updateMembershipPreview(form, plans = []) {
 }
 
 function bindAdminUserActions(usersByID = {}, afterAction = () => {}, plans = []) {
+  document.querySelectorAll("[data-view-user]").forEach((btn) => {
+    if (btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => afterAction(btn.dataset.viewUser));
+  });
   document.querySelectorAll("[data-approve-user]").forEach((btn) => {
     if (btn.dataset.bound === "1") return;
     btn.dataset.bound = "1";
     btn.addEventListener("click", async () => {
-      await api(`/api/admin/users/${btn.dataset.approveUser}/approve`, { method: "POST" });
-      renderAdmin();
+      try {
+        await api(`/api/admin/users/${btn.dataset.approveUser}/approve`, { method: "POST" });
+        await renderAdmin();
+        setStatus("User approved.");
+      } catch (error) {
+        setStatus(error.message, true);
+      }
     });
   });
   document.querySelectorAll("[data-toggle-user]").forEach((btn) => {
@@ -8188,8 +8225,13 @@ function bindAdminUserActions(usersByID = {}, afterAction = () => {}, plans = []
     btn.addEventListener("click", async () => {
       const user = usersByID[btn.dataset.toggleUser];
       if (btn.dataset.nextStatus === "suspended" && !confirm(`Suspend ${user?.email || "this user"}?`)) return;
-      await api(`/api/admin/users/${btn.dataset.toggleUser}`, { method: "PATCH", body: JSON.stringify({ status: btn.dataset.nextStatus }) });
-      renderAdmin();
+      try {
+        await api(`/api/admin/users/${btn.dataset.toggleUser}`, { method: "PATCH", body: JSON.stringify({ status: btn.dataset.nextStatus }) });
+        await renderAdmin();
+        setStatus(btn.dataset.nextStatus === "suspended" ? "User suspended." : "User activated.");
+      } catch (error) {
+        setStatus(error.message, true);
+      }
     });
   });
   document.querySelectorAll("[data-remove-user]").forEach((btn) => {
@@ -8198,8 +8240,13 @@ function bindAdminUserActions(usersByID = {}, afterAction = () => {}, plans = []
     btn.addEventListener("click", async () => {
       const user = usersByID[btn.dataset.removeUser];
       if (!confirm(`Delete ${user?.email || "this user"}? This removes the account login.`)) return;
-      await api(`/api/admin/users/${btn.dataset.removeUser}`, { method: "DELETE" });
-      renderAdmin();
+      try {
+        await api(`/api/admin/users/${btn.dataset.removeUser}`, { method: "DELETE" });
+        await renderAdmin();
+        setStatus("User deleted.");
+      } catch (error) {
+        setStatus(error.message, true);
+      }
     });
   });
   document.querySelectorAll("[data-edit-user]").forEach((btn) => {
@@ -8253,11 +8300,6 @@ function bindAdminUserActions(usersByID = {}, afterAction = () => {}, plans = []
       updateMembershipPreview(form, plans);
       $("#userMembershipDialog").showModal();
     });
-  });
-  document.querySelectorAll("[data-view-user]").forEach((btn) => {
-    if (btn.dataset.bound === "1") return;
-    btn.dataset.bound = "1";
-    btn.addEventListener("click", () => afterAction(btn.dataset.viewUser));
   });
 }
 
