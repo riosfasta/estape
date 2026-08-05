@@ -19,7 +19,7 @@
   --app-sidebar-width: 274px;
   --app-sidebar-collapsed-width: 72px;
   --active-sidebar-width: var(--app-sidebar-width);
-  --task-panel-top-offset: var(--app-topbar-height);
+  --task-panel-top-offset: calc(var(--app-topbar-height) + 18px);
 }
 
 [hidden] {
@@ -3791,7 +3791,7 @@ button.inbox-row {
   right: 0;
   bottom: 0;
   left: var(--active-sidebar-width);
-  z-index: 60;
+  z-index: 230;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   width: calc(100vw - var(--active-sidebar-width));
@@ -3846,7 +3846,7 @@ body.sidebar-collapsed .client-task-panel {
   height: calc(100dvh - var(--task-panel-top-offset));
   max-width: none;
   max-height: none;
-  z-index: 60;
+  z-index: 230;
   background: var(--bg-primary);
 }
 body.sidebar-collapsed .client-task-panel.annotation-task-viewer {
@@ -3860,14 +3860,27 @@ body.sidebar-collapsed .client-task-panel.annotation-task-viewer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
+  justify-items: stretch;
   gap: 14px;
-  padding: 16px 20px;
+  padding: 16px 28px 16px 20px;
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-primary);
+}
+.client-task-panel-head > div:first-child {
+  min-width: 0;
+}
+.client-task-panel-head .toolbar {
+  justify-self: end;
+  flex-wrap: nowrap;
+  margin-bottom: 0;
 }
 .client-task-panel-head h2 {
   margin: 2px 0 0;
   font-size: 24px;
+  max-width: min(760px, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .client-task-panel-body {
   min-height: 0;

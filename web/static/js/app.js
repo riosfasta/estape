@@ -79,8 +79,10 @@ window.addEventListener("load", icons);
 function syncTaskPanelOffset() {
   const topbar = $(".topbar");
   const fallback = 68;
-  const bottom = topbar ? Math.ceil(topbar.getBoundingClientRect().bottom) : fallback;
-  const offset = Math.max(fallback, bottom) + 10;
+  const rect = topbar?.getBoundingClientRect?.();
+  const topbarHeight = topbar ? Math.ceil(topbar.offsetHeight || rect?.height || fallback) : fallback;
+  const topbarBottom = rect ? Math.ceil(rect.bottom) : topbarHeight;
+  const offset = Math.max(fallback, topbarHeight, topbarBottom) + 18;
   document.documentElement.style.setProperty("--task-panel-top-offset", `${offset}px`);
 }
 
