@@ -2751,10 +2751,12 @@ button.inbox-row {
   font-weight: 900;
   text-align: center;
 }
+.two-factor-qr-card img,
 .two-factor-qr-card canvas {
   width: 180px;
   height: 180px;
   display: block;
+  image-rendering: pixelated;
 }
 .two-factor-qr-note {
   margin: 0;

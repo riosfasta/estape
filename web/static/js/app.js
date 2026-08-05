@@ -413,29 +413,52 @@ function drawLocalQRCode(canvas, text) {
   }));
 }
 
-function renderTwoFactorQRCode(otpauthURL) {
+function renderTwoFactorQRCode(otpauthURL, qrImageURL = "") {
+  const image = $("#twoFactorQRCodeImage");
   const canvas = $("#twoFactorQRCode");
   const placeholder = $("#twoFactorQRPlaceholder");
   const status = $("#twoFactorQRStatus");
-  if (!canvas || !otpauthURL) return;
-  canvas.hidden = true;
+  if (!otpauthURL) return;
+  if (image) {
+    image.hidden = true;
+    image.removeAttribute("src");
+  }
+  if (canvas) canvas.hidden = true;
   if (placeholder) {
     placeholder.hidden = false;
     placeholder.textContent = "QR";
   }
   if (status) status.textContent = "Generating scan code...";
+  if (image && qrImageURL) {
+    image.onload = () => {
+      image.hidden = false;
+      if (placeholder) placeholder.hidden = true;
+      if (status) status.textContent = "Scan this QR code with Google Authenticator, then enter the 6 digit code below.";
+    };
+    image.onerror = () => {
+      image.hidden = true;
+      if (placeholder) {
+        placeholder.hidden = false;
+        placeholder.textContent = "Use setup key";
+      }
+      if (status) status.textContent = "Could not load the QR code. Add the setup key manually in your authenticator app.";
+    };
+    image.src = qrImageURL;
+    return;
+  }
   try {
+    if (!canvas) throw new Error("QR canvas is not available");
     drawLocalQRCode(canvas, otpauthURL);
     canvas.hidden = false;
     if (placeholder) placeholder.hidden = true;
-    if (status) status.textContent = "Scan this QR code with Google Authenticator or another authenticator app.";
+    if (status) status.textContent = "Scan this QR code with Google Authenticator, then enter the 6 digit code below.";
   } catch {
-    canvas.hidden = true;
+    if (canvas) canvas.hidden = true;
     if (placeholder) {
       placeholder.hidden = false;
       placeholder.textContent = "Use setup key";
     }
-    if (status) status.textContent = "Could not draw the QR code. Use the setup key or authenticator URL below.";
+    if (status) status.textContent = "Could not draw the QR code. Add the setup key manually in your authenticator app.";
   }
 }
 
@@ -9086,6 +9109,7 @@ async function renderCompanySettings() {
             <div class="two-factor-scan">
               <div class="two-factor-qr-wrap">
                 <div class="two-factor-qr-card">
+                  <img id="twoFactorQRCodeImage" alt="Authenticator QR code" hidden>
                   <canvas id="twoFactorQRCode" width="180" height="180" hidden></canvas>
                   <span id="twoFactorQRPlaceholder">QR</span>
                 </div>
@@ -9095,6 +9119,7 @@ async function renderCompanySettings() {
                 <span class="muted">Authenticator setup key</span>
                 <code id="twoFactorSecretText"></code>
                 <div class="field"><label>Authenticator URL</label><input id="twoFactorURI" readonly></div>
+                <button class="btn compact" id="copyTwoFactorSecretBtn" type="button">${icon("copy")}Copy setup key</button>
               </div>
             </div>
             <form id="enable2faForm" class="form-grid" style="margin-top:12px">
@@ -9267,9 +9292,19 @@ async function renderCompanySettings() {
       $("#twoFactorSecret").value = data.secret;
       $("#twoFactorSecretText").textContent = data.secret;
       $("#twoFactorURI").value = data.otpauth_url;
-      renderTwoFactorQRCode(data.otpauth_url);
+      renderTwoFactorQRCode(data.otpauth_url, data.qr_png_data_url);
     } catch (error) {
       setStatus(error.message, true);
+    }
+  });
+
+  $("#copyTwoFactorSecretBtn")?.addEventListener("click", async () => {
+    const secret = $("#twoFactorSecretText")?.textContent || "";
+    try {
+      await navigator.clipboard.writeText(secret);
+      setFormStatus($("#enable2faForm"), "Setup key copied.");
+    } catch {
+      setFormStatus($("#enable2faForm"), "Select and copy the setup key manually.", true);
     }
   });
 
@@ -9278,6 +9313,7 @@ async function renderCompanySettings() {
     const form = event.currentTarget;
     try {
       await api("/api/users/me/2fa/enable", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
+      setFormStatus(form, "2FA enabled.");
       await loadMe();
       await renderCompanySettings();
     } catch (error) {

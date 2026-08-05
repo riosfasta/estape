@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"html"
 	"math/big"
@@ -16,6 +17,7 @@ import (
 	"bugmark/internal/models"
 
 	"github.com/gin-gonic/gin"
+	"github.com/skip2/go-qrcode"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -685,9 +687,16 @@ func (s *Server) setupTwoFactor(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create 2FA secret"})
 		return
 	}
+	otpauthURL := auth.TOTPURI(firstNonEmpty(s.cfg.AppName, "BugMega"), firstNonEmpty(user.Email, user.Username, user.ID.Hex()), secret)
+	qrPNG, err := qrcode.Encode(otpauthURL, qrcode.Medium, 256)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create 2FA QR code"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"secret":      secret,
-		"otpauth_url": auth.TOTPURI(s.cfg.AppName, user.Email, secret),
+		"secret":          secret,
+		"otpauth_url":     otpauthURL,
+		"qr_png_data_url": "data:image/png;base64," + base64.StdEncoding.EncodeToString(qrPNG),
 	})
 }
 
