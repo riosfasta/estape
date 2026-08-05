@@ -53,6 +53,7 @@ const state = {
   commandSearchTimer: null,
   commandSearchAbort: null,
   commandSearchResults: [],
+  purchaseCart: null,
   clientTaskReply: null,
   clientTaskCommentEdit: null,
 };
@@ -1083,6 +1084,144 @@ function planOptionsHTML(plans = [], selected = "") {
   return plans.map((plan) => `<option value="${esc(plan.id)}" ${selected === plan.id ? "selected" : ""}>${esc(plan.name)} - ${esc(planPriceSummary(plan))}</option>`).join("");
 }
 
+async function purchasePlans() {
+  const membership = activeWorkspaceMembership();
+  if (membership.plans?.length) return membership.plans;
+  const data = await api("/api/subscriptions/plans").catch(() => ({ plans: [] }));
+  return data.plans || [];
+}
+
+function purchaseCartTotal(plan = {}, period = "monthly", quantity = 1) {
+  return planUnitAmount(plan, period) * Math.max(1, Number(quantity || 1));
+}
+
+function ensurePurchaseCartDialog() {
+  let dialog = $("#purchaseCartDialog");
+  if (dialog) return dialog;
+  document.body.insertAdjacentHTML("beforeend", `<dialog id="purchaseCartDialog" class="modal checkout-cart-modal">
+    <div class="modal-head">
+      <div><h2>Checkout cart</h2><p class="muted">Review your package before PayPal checkout.</p></div>
+      <button class="btn icon quiet" type="button" data-close-dialog="purchaseCartDialog" title="Close">${icon("x")}</button>
+    </div>
+    <div class="form-grid">
+      <div class="field"><label>Package</label><select id="purchaseCartPlan"></select></div>
+      <div class="grid-2">
+        <label class="field"><span>Period</span><select id="purchaseCartPeriod"><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label>
+        <label class="field"><span>Amount</span><input id="purchaseCartQuantity" type="number" min="1" max="120" step="1" value="1"></label>
+      </div>
+      <section class="panel soft-panel" id="purchaseCartSummary"></section>
+      <div class="toolbar">
+        <button class="btn primary" id="purchaseCartCheckout" type="button">Checkout with PayPal</button>
+        <button class="btn" type="button" data-close-dialog="purchaseCartDialog">Continue browsing</button>
+      </div>
+      <p class="status-line" id="purchaseCartStatus"></p>
+    </div>
+  </dialog>`);
+  dialog = $("#purchaseCartDialog");
+  bindDialogCloseButtons(document);
+  ["purchaseCartPlan", "purchaseCartPeriod", "purchaseCartQuantity"].forEach((id) => {
+    $(`#${id}`)?.addEventListener("input", updatePurchaseCartSummary);
+    $(`#${id}`)?.addEventListener("change", updatePurchaseCartSummary);
+  });
+  $("#purchaseCartCheckout")?.addEventListener("click", checkoutPurchaseCart);
+  icons();
+  return dialog;
+}
+
+function setPurchaseCartStatus(text, error = false) {
+  const line = $("#purchaseCartStatus");
+  if (!line) return;
+  line.textContent = text || "";
+  line.style.color = error ? "var(--danger)" : "var(--text-secondary)";
+}
+
+function updatePurchaseCartSummary() {
+  const cart = state.purchaseCart;
+  if (!cart) return;
+  const plans = cart.plans || [];
+  const planID = $("#purchaseCartPlan")?.value || cart.plan_id;
+  const period = $("#purchaseCartPeriod")?.value || cart.billing_period || "monthly";
+  const quantity = Math.max(1, Number($("#purchaseCartQuantity")?.value || cart.quantity || 1));
+  const plan = plans.find((item) => item.id === planID) || plans[0] || {};
+  state.purchaseCart = { ...cart, plan_id: plan.id, billing_period: period, quantity };
+  const total = purchaseCartTotal(plan, period, quantity);
+  const unit = planUnitAmount(plan, period);
+  const summary = $("#purchaseCartSummary");
+  if (summary) {
+    summary.innerHTML = `
+      <div class="panel-head"><h2>${esc(plan.name || "Package")}</h2><span class="pill">${esc(billingPeriodLabel(period))}</span></div>
+      <p class="muted">${esc(plan.description || "Website feedback, tasks, team access, reports, and project management.")}</p>
+      <div class="admin-detail-stats">
+        ${adminStatHTML("Unit price", `${money(unit)} / ${billingUnitLabel(period)}`)}
+        ${adminStatHTML("Amount", String(quantity))}
+        ${adminStatHTML("Total", money(total))}
+      </div>`;
+    icons();
+  }
+}
+
+async function openPurchaseCart(planID = "", options = {}) {
+  const plans = options.plans?.length ? options.plans : await purchasePlans();
+  if (!plans.length) {
+    alert("No pricing package is available yet.");
+    return;
+  }
+  const plan = plans.find((item) => item.id === planID) || plans[0];
+  const dialog = ensurePurchaseCartDialog();
+  state.purchaseCart = {
+    plans,
+    plan_id: plan.id,
+    billing_period: options.period || "monthly",
+    quantity: Math.max(1, Number(options.quantity || 1)),
+    onDone: options.onDone || null,
+  };
+  const planSelect = $("#purchaseCartPlan");
+  if (planSelect) {
+    planSelect.innerHTML = plans.map((item) => `<option value="${esc(item.id)}">${esc(item.name)} - ${esc(planPriceSummary(item))}</option>`).join("");
+    planSelect.value = plan.id;
+  }
+  const periodSelect = $("#purchaseCartPeriod");
+  if (periodSelect) periodSelect.value = state.purchaseCart.billing_period;
+  const quantityInput = $("#purchaseCartQuantity");
+  if (quantityInput) quantityInput.value = String(state.purchaseCart.quantity);
+  setPurchaseCartStatus("");
+  updatePurchaseCartSummary();
+  dialog?.showModal();
+}
+
+async function checkoutPurchaseCart() {
+  const cart = state.purchaseCart;
+  if (!cart?.plan_id) return;
+  const button = $("#purchaseCartCheckout");
+  const previous = button?.textContent || "Checkout with PayPal";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Checking out...";
+  }
+  setPurchaseCartStatus("Creating PayPal checkout...");
+  try {
+    const data = await api("/api/subscriptions/purchase", {
+      method: "POST",
+      body: JSON.stringify({
+        plan_id: cart.plan_id,
+        provider: "paypal",
+        billing_period: cart.billing_period || "monthly",
+        quantity: Math.max(1, Number(cart.quantity || 1)),
+      }),
+    });
+    setPurchaseCartStatus(`Package activated. Reference: ${data.checkout?.external_id || "pending"}.`);
+    if (data.checkout?.url) window.open(data.checkout.url, "_blank", "noopener");
+    if (typeof cart.onDone === "function") await cart.onDone(data);
+  } catch (error) {
+    setPurchaseCartStatus(error.message, true);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = previous;
+    }
+  }
+}
+
 function activeWorkspaceMembership() {
   if (state.me?.role === "owner_adm") return { status: "active", allowed: true, trial: false, plans: [] };
   if (isPersonalWorkspaceContext()) return state.membership || { status: "no_membership", allowed: false, plans: [] };
@@ -1114,9 +1253,13 @@ function showTrialNoticeOnce() {
   document.body.insertAdjacentHTML("beforeend", `<dialog id="trialNoticeDialog" class="modal compact-modal">
     <div class="modal-head"><h2>Enjoy your trial</h2><button class="btn icon quiet" type="button" data-close-dialog="trialNoticeDialog" title="Close">${icon("x")}</button></div>
     <p class="muted">Your workspace has full access during the 14-day trial.${esc(trialEnds)}</p>
-    <div class="toolbar"><button class="btn primary" type="button" data-close-dialog="trialNoticeDialog">Continue</button></div>
+    <div class="toolbar"><button class="btn primary" type="button" id="trialUpgradeBtn">Upgrade</button><button class="btn" type="button" data-close-dialog="trialNoticeDialog">Continue</button></div>
   </dialog>`);
   bindDialogCloseButtons(document);
+  $("#trialUpgradeBtn")?.addEventListener("click", async () => {
+    $("#trialNoticeDialog")?.close();
+    await openPurchaseCart("", { plans: membership.plans || [], onDone: async () => { await loadMe(); } });
+  });
   icons();
   $("#trialNoticeDialog")?.showModal();
 }
@@ -1146,31 +1289,19 @@ function pricingCardsHTML(plans = [], options = {}) {
       <label class="field"><span>Amount</span><input data-buy-quantity type="number" min="1" max="120" step="1" value="1" ${canPurchase ? "" : "disabled"}></label>
     </div>
     <p class="pricing-actions">
-      <button class="btn primary" data-buy="${esc(plan.id)}" data-provider="paypal" ${canPurchase ? "" : "disabled"}>Pay with PayPal</button>
+      <button class="btn primary" data-add-cart="${esc(plan.id)}" ${canPurchase ? "" : "disabled"}>${icon("shopping-cart")}Add to cart</button>
     </p>
   </article>`).join("")}</div>`;
 }
 
 function bindPurchaseButtons(onDone = null) {
-  document.querySelectorAll("[data-buy]").forEach((btn) => btn.addEventListener("click", async () => {
-    try {
-      const card = btn.closest("[data-plan-card]");
-      const data = await api("/api/subscriptions/purchase", {
-        method: "POST",
-        body: JSON.stringify({
-          plan_id: btn.dataset.buy,
-          provider: btn.dataset.provider,
-          billing_period: card?.querySelector("[data-buy-period]")?.value || "monthly",
-          quantity: Number(card?.querySelector("[data-buy-quantity]")?.value || 1),
-        }),
-      });
-      const status = data.subscription?.status === "active" ? "Package activated." : "PayPal checkout created.";
-      alert(`${status} Reference: ${data.checkout?.external_id || "pending"}.`);
-      if (data.checkout?.url) window.open(data.checkout.url, "_blank", "noopener");
-      if (onDone) await onDone(data);
-    } catch (error) {
-      alert(error.message);
-    }
+  document.querySelectorAll("[data-add-cart]").forEach((btn) => btn.addEventListener("click", async () => {
+    const card = btn.closest("[data-plan-card]");
+    await openPurchaseCart(btn.dataset.addCart, {
+      period: card?.querySelector("[data-buy-period]")?.value || "monthly",
+      quantity: Number(card?.querySelector("[data-buy-quantity]")?.value || 1),
+      onDone,
+    });
   }));
 }
 

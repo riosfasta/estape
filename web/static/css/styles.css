@@ -271,6 +271,18 @@ h2 { font-size: 19px !important; }
   width: min(420px, calc(100vw - 32px));
   padding: 18px;
 }
+.checkout-cart-modal {
+  width: min(560px, calc(100vw - 32px));
+}
+.checkout-cart-modal .soft-panel {
+  padding: 14px;
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+}
+.checkout-cart-modal .admin-detail-stats {
+  margin-top: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 [data-theme="dark"] .app-pricing-grid article p,
 [data-theme="dark"] .paywall-panel h2,
 [data-theme="dark"] .compact-modal h2 {
