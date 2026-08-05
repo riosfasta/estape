@@ -29,6 +29,11 @@ body.sidebar-collapsed {
   --active-sidebar-width: var(--app-sidebar-collapsed-width);
 }
 
+html.task-panel-active,
+body.task-panel-active {
+  overflow: hidden;
+}
+
 [data-theme="dark"] {
   --bg-primary: #101613;
   --bg-secondary: #161f1b;
@@ -3862,12 +3867,17 @@ body.sidebar-collapsed .client-task-panel.annotation-task-viewer {
 }
 .client-task-panel-body {
   min-height: 0;
+  height: 100%;
+  max-height: 100%;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 20%);
   gap: 0;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+.client-task-panel-body > * {
+  min-height: 0;
 }
 .annotation-task-viewer .annotation-viewer-head {
   min-height: 64px;

@@ -145,7 +145,21 @@ function beginFormLoading(form, submitter, message = "Working...", buttonLabel =
   };
 }
 
+function setTaskPanelActive(active) {
+  document.documentElement.classList.toggle("task-panel-active", Boolean(active));
+  document.body.classList.toggle("task-panel-active", Boolean(active));
+}
+
+function closeClientTaskPanel(panel = $("#clientTaskPanel")) {
+  panel?.remove();
+  setTaskPanelActive(false);
+  document.body.classList.remove("annotation-viewer-open");
+  state.clientTaskReply = null;
+  state.clientTaskCommentEdit = null;
+}
+
 function showClientTaskPanelLoading(label = "Opening task...") {
+  setTaskPanelActive(true);
   document.body.classList.remove("annotation-viewer-open");
   let panel = $("#clientTaskPanel");
   if (!panel) {
@@ -161,6 +175,7 @@ function showClientTaskPanelLoading(label = "Opening task...") {
 }
 
 function showClientTaskPanelError(message = "Could not open task.") {
+  setTaskPanelActive(true);
   let panel = $("#clientTaskPanel");
   if (!panel) {
     panel = document.createElement("section");
@@ -173,7 +188,7 @@ function showClientTaskPanelError(message = "Could not open task.") {
     <span>${esc(message)}</span>
     <button class="btn compact" type="button" data-close-client-task>${icon("x")}Close</button>
   </div>`;
-  panel.querySelector("[data-close-client-task]")?.addEventListener("click", () => panel.remove());
+  panel.querySelector("[data-close-client-task]")?.addEventListener("click", () => closeClientTaskPanel(panel));
   icons();
 }
 
@@ -3148,8 +3163,7 @@ async function refreshOpenClientTaskPanelLive() {
       if (nextPanel) nextPanel.dataset.liveSignature = signature;
     }
   } catch {
-    panel.remove();
-    document.body.classList.remove("annotation-viewer-open");
+    closeClientTaskPanel(panel);
     if (!livePageRefreshBlocked()) route();
   }
 }
@@ -5584,6 +5598,7 @@ function setClientTaskCommentEdit(comment, root = $("#clientTaskPanel") || docum
 }
 
 async function openClientAnnotationTaskViewer(taskID, initialData = null, openAnnotationID = "", focusCommentID = "") {
+  setTaskPanelActive(true);
   document.body.classList.add("annotation-viewer-open");
   const data = initialData || await api(`/api/client-tasks/${taskID}`);
   const task = data.task || {};
@@ -5687,10 +5702,7 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     </dialog>`;
 
   const close = () => {
-    panel.remove();
-    document.body.classList.remove("annotation-viewer-open");
-    state.clientTaskReply = null;
-    state.clientTaskCommentEdit = null;
+    closeClientTaskPanel(panel);
   };
   panel.querySelector("[data-close-client-task]")?.addEventListener("click", close);
   const openViewerAnnotationDetail = (annotationID) => {
@@ -5950,6 +5962,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
     await openClientAnnotationTaskViewer(taskID, data, "", focusCommentID);
     return;
   }
+  setTaskPanelActive(true);
   document.body.classList.remove("annotation-viewer-open");
   const usersByID = clientTaskUsersByID(data.members || []);
   (data.log_users || []).forEach((user) => {
@@ -6042,9 +6055,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
       <div data-task-update-log-body>${taskUpdateLogHTML(data.logs || [], usersByID)}</div>
     </dialog>`;
   panel.querySelector("[data-close-client-task]")?.addEventListener("click", () => {
-    panel.remove();
-    state.clientTaskReply = null;
-    state.clientTaskCommentEdit = null;
+    closeClientTaskPanel(panel);
   });
   panel.querySelector("#editClientTaskBtn")?.addEventListener("click", () => panel.querySelector("#editClientTaskDialog")?.showModal());
   panel.querySelector("#taskUpdateLogBtn")?.addEventListener("click", async () => {
@@ -6066,7 +6077,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
   panel.querySelector("#deleteClientTaskPanelBtn")?.addEventListener("click", async () => {
     if (!confirm("Delete this task?")) return;
     await api(`/api/client-tasks/${taskID}`, { method: "DELETE" });
-    panel.remove();
+    closeClientTaskPanel(panel);
     route();
   });
   panel.querySelector("#editClientTaskForm")?.addEventListener("submit", async (event) => {
