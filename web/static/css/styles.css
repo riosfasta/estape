@@ -171,6 +171,14 @@ h2 { font-size: 19px !important; }
   color: var(--text-secondary);
   font-size: 14px;
 }
+.billing-membership-panel {
+  display: grid;
+  gap: 12px;
+}
+.billing-detail-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 0;
+}
 
 .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 800; }
 .brand-mark {
@@ -5171,6 +5179,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .34); }
   .admin-detail-stats {
     grid-template-columns: 1fr;
   }
+  .billing-detail-stats { grid-template-columns: 1fr; }
   .workspace-menu { grid-template-columns: 1fr; }
   .command-search-wrap { order: 2; flex-basis: 100%; max-width: none; width: 100%; }
   .current-view { display: none; }

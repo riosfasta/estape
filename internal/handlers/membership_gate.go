@@ -112,6 +112,10 @@ func (s *Server) membershipAccessPayload(ctx context.Context, teamID primitive.O
 		payload["subscription_id"] = sub.ID
 		payload["billing_period"] = sub.BillingPeriod
 		payload["billing_quantity"] = sub.BillingQuantity
+		payload["payment_provider"] = sub.PaymentProvider
+		payload["external_transaction_id"] = sub.ExternalTransactionID
+		payload["started_at"] = sub.StartedAt
+		payload["created_at"] = sub.CreatedAt
 		payload["trial_ends_at"] = sub.TrialEndsAt
 		payload["expires_at"] = sub.ExpiresAt
 	}

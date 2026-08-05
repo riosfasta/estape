@@ -1335,6 +1335,11 @@ function membershipLabel(value) {
     active: "Active",
     trialing: "Trial",
     pending_approval: "Pending owner approval",
+    pending_payment: "Pending payment",
+    checkout_failed: "Checkout failed",
+    capture_failed: "Payment failed",
+    capture_incomplete: "Payment incomplete",
+    cancelled: "Cancelled",
     expired: "Expired",
     no_membership: "Free",
     unknown: "Unknown",
@@ -1402,6 +1407,47 @@ function subscriptionDurationText(subscription = {}) {
   const quantity = Number(subscription.billing_quantity || 1);
   const unit = billingUnitLabel(subscription.billing_period || "monthly");
   return `${quantity} ${unit}${quantity === 1 ? "" : "s"}`;
+}
+
+function usefulBillingDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime()) || date.getFullYear() <= 1) return "";
+  return date.toLocaleDateString();
+}
+
+function currentMembershipIsPaid(membership = activeWorkspaceMembership()) {
+  return membership.status === "active" && Boolean(membership.subscription_id) && !membership.trial;
+}
+
+function billingMembershipDetailsHTML(membership = activeWorkspaceMembership(), plans = []) {
+  const plan = membership.plan || plans.find((item) => item.id === membership.plan_id) || {};
+  const registeredAt = usefulBillingDate(state.me?.created_at) || "Unknown";
+  const startedAt = usefulBillingDate(membership.started_at || membership.created_at) || "Not started";
+  const expiresAt = usefulBillingDate(membership.expires_at) || "No expiry date";
+  const period = membership.billing_period || "monthly";
+  const quantity = Number(membership.billing_quantity || 1);
+  const provider = membership.payment_provider ? String(membership.payment_provider).replace(/^./, (ch) => ch.toUpperCase()) : "No payment method";
+  const amount = plan.id ? purchaseCartTotal(plan, period, quantity) : 0;
+  const term = `${quantity} ${billingUnitLabel(period)}${quantity === 1 ? "" : "s"}`;
+  return `<section class="panel billing-membership-panel">
+    <div class="panel-head">
+      <div>
+        <h2>Membership details</h2>
+        <p class="muted">${esc(plan.name || "Current package")} for ${esc(activeWorkspaceOption()?.name || "your workspace")}</p>
+      </div>
+      <span class="pill ${membership.status === "active" ? "" : membership.status === "trialing" ? "warn" : "danger"}">${esc(membershipLabel(membership.status))}</span>
+    </div>
+    <div class="admin-detail-stats billing-detail-stats">
+      ${adminStatHTML("Account registered", registeredAt)}
+      ${adminStatHTML("Membership started", startedAt)}
+      ${adminStatHTML("Expires", expiresAt)}
+      ${adminStatHTML("Billing term", term)}
+      ${adminStatHTML("Payment method", provider)}
+      ${adminStatHTML("Package price", amount ? money(amount) : "Set in plan")}
+    </div>
+    ${membership.external_transaction_id ? `<p class="muted">PayPal reference: ${esc(membership.external_transaction_id)}</p>` : ""}
+  </section>`;
 }
 
 function fmtDate(value) {
@@ -7957,13 +8003,21 @@ async function renderBilling() {
     <span>${esc(paymentMessage || (paymentState === "success" ? "Your membership is active and the invoice is available below." : paymentState === "cancelled" ? "No payment was captured." : "No membership was activated."))}</span>
   </section>` : "";
   const plans = (await api("/api/subscriptions/plans")).plans || [];
-  const invoices = state.team ? ((await api(`/api/subscriptions/${state.team.id}/invoices`)).invoices || []) : [];
+  const membership = activeWorkspaceMembership();
+  const billingTeamID = activeWorkspaceTeamID() || state.team?.id || state.personalTeam?.id || "";
+  const invoices = billingTeamID ? ((await api(`/api/subscriptions/${billingTeamID}/invoices`)).invoices || []) : [];
+  const paidMembership = currentMembershipIsPaid(membership);
   shell("Billing", `
-    <div class="page-title"><div><h1>Billing</h1><p class="muted">Plans, trial state, approvals, and receipts.</p></div></div>
+    <div class="page-title"><div><h1>Billing</h1><p class="muted">${paidMembership ? "Membership details and receipts." : "Plans, trial state, approvals, and receipts."}</p></div></div>
     ${paymentNotice}
-    ${pricingCardsHTML(plans)}
+    ${paidMembership ? billingMembershipDetailsHTML(membership, plans) : `
+      <section class="panel paywall-panel">
+        <h2>${membership.status === "trialing" ? "Trial membership" : "Choose a package"}</h2>
+        ${membership.status === "trialing" ? `<p class="muted">Your trial is active until ${esc(usefulBillingDate(membership.trial_ends_at) || "the trial expiry date")}. Upgrade when you are ready to keep access after the trial.</p>` : ""}
+        ${pricingCardsHTML(plans)}
+      </section>`}
     <section class="panel" style="margin-top:18px"><h2>Invoices</h2><div class="task-list">${invoices.map((invoice) => `<article class="task-row"><div><h3>${money(invoice.amount)} ${esc(invoice.currency).toUpperCase()}</h3><span class="muted">${fmtDate(invoice.issued_at)}</span></div><span class="pill">${esc(invoice.status)}</span><a class="btn" href="${esc(invoice.external_invoice_url)}">Receipt</a></article>`).join("") || `<p class="muted">No invoices yet.</p>`}</div></section>`);
-  bindPurchaseButtons(renderBilling);
+  if (!paidMembership) bindPurchaseButtons(renderBilling);
 }
 
 async function renderAdminLegacy() {
