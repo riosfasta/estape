@@ -37,11 +37,14 @@ type CheckoutSession struct {
 }
 
 type PaymentCapture struct {
-	Provider   string `json:"provider"`
-	ExternalID string `json:"external_id"`
-	CaptureID  string `json:"capture_id,omitempty"`
-	Status     string `json:"status"`
-	PayerEmail string `json:"payer_email,omitempty"`
+	Provider    string `json:"provider"`
+	ExternalID  string `json:"external_id"`
+	CaptureID   string `json:"capture_id,omitempty"`
+	Status      string `json:"status"`
+	OrderStatus string `json:"order_status,omitempty"`
+	Amount      int64  `json:"amount,omitempty"`
+	Currency    string `json:"currency,omitempty"`
+	PayerEmail  string `json:"payer_email,omitempty"`
 }
 
 type PaymentProvider interface {
@@ -191,6 +194,10 @@ func (p PayPalProvider) CaptureCheckout(ctx context.Context, req CheckoutRequest
 				Captures []struct {
 					ID     string `json:"id"`
 					Status string `json:"status"`
+					Amount struct {
+						CurrencyCode string `json:"currency_code"`
+						Value        string `json:"value"`
+					} `json:"amount"`
 				} `json:"captures"`
 			} `json:"payments"`
 		} `json:"purchase_units"`
@@ -201,20 +208,28 @@ func (p PayPalProvider) CaptureCheckout(ctx context.Context, req CheckoutRequest
 	}
 	captureID := ""
 	captureStatus := ""
+	captureAmount := int64(0)
+	captureCurrency := ""
 	for _, unit := range response.PurchaseUnits {
 		if len(unit.Payments.Captures) > 0 {
-			captureID = unit.Payments.Captures[0].ID
-			captureStatus = unit.Payments.Captures[0].Status
+			capture := unit.Payments.Captures[0]
+			captureID = capture.ID
+			captureStatus = capture.Status
+			captureCurrency = normalizedCurrency(capture.Amount.CurrencyCode)
+			captureAmount = amountStringToCents(capture.Amount.Value)
 			break
 		}
 	}
-	status := firstNonEmpty(response.Status, captureStatus)
+	status := firstNonEmpty(captureStatus, "NO_CAPTURE")
 	return PaymentCapture{
-		Provider:   p.Name(),
-		ExternalID: firstNonEmpty(response.ID, orderID),
-		CaptureID:  captureID,
-		Status:     status,
-		PayerEmail: response.Payer.EmailAddress,
+		Provider:    p.Name(),
+		ExternalID:  firstNonEmpty(response.ID, orderID),
+		CaptureID:   captureID,
+		Status:      status,
+		OrderStatus: response.Status,
+		Amount:      captureAmount,
+		Currency:    captureCurrency,
+		PayerEmail:  response.Payer.EmailAddress,
 	}, nil
 }
 
@@ -345,6 +360,38 @@ func normalizedCurrency(currency string) string {
 
 func amountCentsForPayPal(amount int64) string {
 	return fmt.Sprintf("%d.%02d", amount/100, amount%100)
+}
+
+func amountStringToCents(value string) int64 {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	parts := strings.SplitN(value, ".", 2)
+	whole := int64(0)
+	for _, ch := range parts[0] {
+		if ch < '0' || ch > '9' {
+			return 0
+		}
+		whole = whole*10 + int64(ch-'0')
+	}
+	cents := int64(0)
+	if len(parts) > 1 {
+		fraction := parts[1]
+		if len(fraction) > 2 {
+			fraction = fraction[:2]
+		}
+		for len(fraction) < 2 {
+			fraction += "0"
+		}
+		for _, ch := range fraction {
+			if ch < '0' || ch > '9' {
+				return 0
+			}
+			cents = cents*10 + int64(ch-'0')
+		}
+	}
+	return whole*100 + cents
 }
 
 func requestID(prefix string, value string) string {

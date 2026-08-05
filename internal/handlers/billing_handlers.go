@@ -526,13 +526,23 @@ func (s *Server) payPalCheckoutReturn(c *gin.Context) {
 		c.Redirect(http.StatusFound, s.billingPaymentRedirect("failed", "checkout subscription was not found", primitive.NilObjectID))
 		return
 	}
+	if sub.Status != "pending_payment" {
+		if sub.Status == "active" {
+			if invoice, ok := s.paidInvoiceForSubscription(c.Request.Context(), sub.ID); ok {
+				c.Redirect(http.StatusFound, s.billingPaymentRedirect("success", "", invoice.ID))
+				return
+			}
+		}
+		c.Redirect(http.StatusFound, s.billingPaymentRedirect("failed", "checkout is not pending payment", primitive.NilObjectID))
+		return
+	}
 	capture, err := provider.CaptureCheckout(c.Request.Context(), checkoutReq, orderID)
 	if err != nil {
 		s.markPayPalSubscriptionFailed(c.Request.Context(), c.Query("subscription_id"), orderID, "capture_failed")
 		c.Redirect(http.StatusFound, s.billingPaymentRedirect("failed", "PayPal capture failed", primitive.NilObjectID))
 		return
 	}
-	if !strings.EqualFold(capture.Status, "COMPLETED") {
+	if !strings.EqualFold(capture.Status, "COMPLETED") || strings.TrimSpace(capture.CaptureID) == "" {
 		s.markPayPalSubscriptionFailed(c.Request.Context(), c.Query("subscription_id"), orderID, "capture_incomplete")
 		c.Redirect(http.StatusFound, s.billingPaymentRedirect("failed", "PayPal payment was not completed", primitive.NilObjectID))
 		return
@@ -581,12 +591,20 @@ func (s *Server) markPayPalSubscriptionFailed(ctx context.Context, subscriptionI
 	_, _ = s.store.C("subscriptions").UpdateOne(ctx, filter, bson.M{"$set": bson.M{"status": status, "expires_at": time.Now()}})
 }
 
+func (s *Server) paidInvoiceForSubscription(ctx context.Context, subscriptionID primitive.ObjectID) (models.Invoice, bool) {
+	if subscriptionID.IsZero() {
+		return models.Invoice{}, false
+	}
+	var invoice models.Invoice
+	err := s.store.C("invoices").FindOne(ctx, bson.M{"subscription_id": subscriptionID, "status": "paid"}).Decode(&invoice)
+	return invoice, err == nil
+}
+
 func (s *Server) activatePaidPayPalSubscription(ctx context.Context, sub models.Subscription, capture billing.PaymentCapture) (models.Invoice, error) {
-	if !strings.EqualFold(capture.Status, "COMPLETED") {
+	if !strings.EqualFold(capture.Status, "COMPLETED") || strings.TrimSpace(capture.CaptureID) == "" {
 		return models.Invoice{}, errors.New("paypal capture is not completed")
 	}
-	var existing models.Invoice
-	if err := s.store.C("invoices").FindOne(ctx, bson.M{"subscription_id": sub.ID, "status": "paid"}).Decode(&existing); err == nil {
+	if existing, ok := s.paidInvoiceForSubscription(ctx, sub.ID); ok {
 		return existing, nil
 	}
 
@@ -601,6 +619,9 @@ func (s *Server) activatePaidPayPalSubscription(ctx context.Context, sub models.
 	period := normalizedBillingPeriod(sub.BillingPeriod)
 	quantity := normalizedBillingQuantity(sub.BillingQuantity)
 	amount := planBillingAmount(plan, teamSeatCount(team), period, quantity)
+	if capture.Amount != amount || !strings.EqualFold(firstNonEmpty(capture.Currency, "USD"), "USD") {
+		return models.Invoice{}, errors.New("paypal captured amount does not match checkout")
+	}
 	now := time.Now()
 	expires := billingExpiry(now, period, quantity)
 	transactionID := firstNonEmpty(capture.ExternalID, sub.ExternalTransactionID)
