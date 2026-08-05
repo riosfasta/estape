@@ -76,6 +76,16 @@ function icons() {
 
 window.addEventListener("load", icons);
 
+function syncTaskPanelOffset() {
+  const topbar = $(".topbar");
+  const fallback = 68;
+  const bottom = topbar ? Math.ceil(topbar.getBoundingClientRect().bottom) : fallback;
+  const offset = Math.max(fallback, bottom) + 10;
+  document.documentElement.style.setProperty("--task-panel-top-offset", `${offset}px`);
+}
+
+window.addEventListener("resize", syncTaskPanelOffset);
+
 function routeLoadingHTML(label = "Loading page...") {
   return `
     <div class="route-loading-overlay" data-route-loading role="status" aria-live="polite">
@@ -148,6 +158,7 @@ function beginFormLoading(form, submitter, message = "Working...", buttonLabel =
 function setTaskPanelActive(active) {
   document.documentElement.classList.toggle("task-panel-active", Boolean(active));
   document.body.classList.toggle("task-panel-active", Boolean(active));
+  if (active) requestAnimationFrame(syncTaskPanelOffset);
 }
 
 function closeClientTaskPanel(panel = $("#clientTaskPanel")) {
@@ -2414,6 +2425,7 @@ function shell(title, html) {
     </div>
     <div id="timerWidget" class="timer-widget"></div>
     ${sidebarWebsiteDialogHTML()}`;
+  syncTaskPanelOffset();
   $("#logoutBtn").addEventListener("click", logout);
   $("#helpChatBtn")?.addEventListener("click", () => {
     closeProfileMenu();

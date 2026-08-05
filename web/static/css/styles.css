@@ -19,6 +19,7 @@
   --app-sidebar-width: 274px;
   --app-sidebar-collapsed-width: 72px;
   --active-sidebar-width: var(--app-sidebar-width);
+  --task-panel-top-offset: var(--app-topbar-height);
 }
 
 [hidden] {
@@ -3786,7 +3787,7 @@ button.inbox-row {
 }
 .client-task-panel {
   position: fixed;
-  top: var(--app-topbar-height);
+  top: var(--task-panel-top-offset);
   right: 0;
   bottom: 0;
   left: var(--active-sidebar-width);
@@ -3794,7 +3795,7 @@ button.inbox-row {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   width: calc(100vw - var(--active-sidebar-width));
-  height: calc(100dvh - var(--app-topbar-height));
+  height: calc(100dvh - var(--task-panel-top-offset));
   max-width: none;
   max-height: none;
   box-sizing: border-box;
@@ -3837,12 +3838,12 @@ body.sidebar-collapsed .client-task-panel {
   width: calc(100vw - var(--active-sidebar-width));
 }
 .client-task-panel.annotation-task-viewer {
-  top: var(--app-topbar-height);
+  top: var(--task-panel-top-offset);
   right: 0;
   bottom: 0;
   left: var(--active-sidebar-width);
   width: calc(100vw - var(--active-sidebar-width));
-  height: calc(100dvh - var(--app-topbar-height));
+  height: calc(100dvh - var(--task-panel-top-offset));
   max-width: none;
   max-height: none;
   z-index: 60;
@@ -3854,12 +3855,15 @@ body.sidebar-collapsed .client-task-panel.annotation-task-viewer {
 }
 .client-task-panel-head {
   min-height: 72px;
+  position: relative;
+  z-index: 2;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
   padding: 16px 20px;
   border-bottom: 1px solid var(--border-color);
+  background: var(--bg-primary);
 }
 .client-task-panel-head h2 {
   margin: 2px 0 0;
@@ -5211,9 +5215,9 @@ dialog::backdrop { background: rgba(0, 0, 0, .34); }
   body.sidebar-collapsed .client-task-panel.annotation-task-viewer {
     left: 0;
     right: 0;
-    top: var(--app-topbar-height);
+    top: var(--task-panel-top-offset);
     width: 100vw;
-    height: calc(100dvh - var(--app-topbar-height));
+    height: calc(100dvh - var(--task-panel-top-offset));
   }
   .client-task-panel-body,
   .annotation-viewer-body {
