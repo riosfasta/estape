@@ -85,12 +85,12 @@ func (s *Server) adminUpdatePlan(c *gin.Context) {
 	}
 	if req.PricingModel != nil {
 		model := strings.TrimSpace(*req.PricingModel)
-		if model != "flat" && model != "per_seat" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "pricing_model must be flat or per_seat"})
+		if model != "" && model != "flat" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "only flat package pricing is supported"})
 			return
 		}
-		set["pricing_model"] = model
-		current.PricingModel = model
+		set["pricing_model"] = "flat"
+		current.PricingModel = "flat"
 	}
 	if req.Price != nil {
 		if *req.Price < 0 {
@@ -160,12 +160,20 @@ func (s *Server) adminUpdatePlan(c *gin.Context) {
 		set["featured"] = *req.Featured
 		current.Featured = *req.Featured
 	}
-	if current.PricingModel == "flat" && current.Price <= 0 {
+	if current.PricingModel != "flat" {
+		set["pricing_model"] = "flat"
+		current.PricingModel = "flat"
+	}
+	set["price_per_seat"] = int64(0)
+	set["price_per_seat_yearly"] = int64(0)
+	current.PricePerSeat = 0
+	current.PricePerSeatYearly = 0
+	if current.Price <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "flat plans need a price greater than zero"})
 		return
 	}
-	if current.PricingModel == "per_seat" && current.PricePerSeat <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "per-seat plans need a price_per_seat greater than zero"})
+	if current.PriceYearly <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "flat plans need a yearly price greater than zero"})
 		return
 	}
 	if len(set) == 0 {
@@ -305,7 +313,7 @@ func (s *Server) enqueuePurchaseAlertEmail(ctx context.Context, buyer models.Use
 	buyerName := firstNonEmpty(buyer.Name, buyer.Username, buyer.Email, "Unknown user")
 	appName := firstNonEmpty(s.cfg.AppName, "bugmega")
 	adminURL := strings.TrimRight(s.cfg.AppURL, "/") + "/admin/users"
-	body := `<p>A user completed the purchase checkout handoff. The subscription is waiting for platform owner activation.</p>` +
+	body := `<p>A user purchased the PayPal package. The subscription was activated automatically.</p>` +
 		`<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;max-width:720px;border:1px solid #d7e4df;border-radius:8px;overflow:hidden;">` +
 		purchaseAlertRow("User name", buyerName) +
 		purchaseAlertRow("Username", buyer.Username) +
@@ -333,7 +341,7 @@ func (s *Server) enqueuePurchaseAlertEmail(ctx context.Context, buyer models.Use
 	_ = s.mailer.Enqueue(ctx, models.EmailQueueItem{
 		Recipient: purchaseAlertRecipientEmail,
 		Type:      "subscription_purchase_alert",
-		Subject:   appName + " purchase pending activation: " + buyerName,
+		Subject:   appName + " PayPal purchase: " + buyerName,
 		BodyHTML:  body,
 	})
 }
@@ -351,13 +359,20 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 		return
 	}
 	providerName := strings.ToLower(strings.TrimSpace(req.Provider))
+	if providerName == "" {
+		providerName = "paypal"
+	}
+	if providerName != "paypal" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "PayPal is the only supported payment method"})
+		return
+	}
 	provider, ok := s.payments[providerName]
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "provider must be stripe or paypal; Google Pay is enabled inside those providers"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "PayPal checkout is not available"})
 		return
 	}
 	if !s.paymentProviderEnabled(c.Request.Context(), providerName) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": providerName + " payments are disabled in platform settings"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "PayPal payments are disabled in platform settings"})
 		return
 	}
 	planID, err := objectIDFromString(req.PlanID)
@@ -372,15 +387,6 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 	}
 	period := normalizedBillingPeriod(req.BillingPeriod)
 	quantity := normalizedBillingQuantity(req.Quantity)
-	pending, err := s.store.C("subscriptions").CountDocuments(c.Request.Context(), bson.M{"team_id": userCtx.TeamID, "status": "pending_approval"})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check pending subscriptions"})
-		return
-	}
-	if pending > 0 {
-		c.JSON(http.StatusConflict, gin.H{"error": "a subscription purchase is already pending approval"})
-		return
-	}
 
 	var team models.Team
 	_ = s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": userCtx.TeamID}).Decode(&team)
@@ -399,16 +405,23 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 		return
 	}
 	now := time.Now()
+	expires := billingExpiry(now, period, quantity)
+	_, _ = s.store.C("subscriptions").UpdateMany(
+		c.Request.Context(),
+		bson.M{"team_id": userCtx.TeamID, "status": "pending_approval"},
+		bson.M{"$set": bson.M{"status": "cancelled", "expires_at": now}},
+	)
 	sub := models.Subscription{
 		ID:                    primitive.NewObjectID(),
 		TeamID:                userCtx.TeamID,
 		PlanID:                plan.ID,
-		Status:                "pending_approval",
+		Status:                "active",
 		BillingPeriod:         period,
 		BillingQuantity:       quantity,
 		PaymentProvider:       provider.Name(),
 		ExternalTransactionID: session.ExternalID,
 		StartedAt:             now,
+		ExpiresAt:             &expires,
 		CreatedAt:             now,
 	}
 	if _, err := s.store.C("subscriptions").InsertOne(c.Request.Context(), sub); err != nil {
@@ -416,10 +429,22 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 		return
 	}
 	_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), userCtx.TeamID, bson.M{"$set": bson.M{"subscription_id": sub.ID, "seat_limit_cached": plan.SeatLimit}})
+	invoice := models.Invoice{
+		ID:                 primitive.NewObjectID(),
+		TeamID:             sub.TeamID,
+		SubscriptionID:     sub.ID,
+		Amount:             amount,
+		Currency:           "usd",
+		Status:             "paid",
+		PaymentProvider:    sub.PaymentProvider,
+		ExternalInvoiceURL: s.cfg.AppURL + "/settings/billing#invoice-" + sub.ID.Hex(),
+		IssuedAt:           now,
+	}
+	_, _ = s.store.C("invoices").InsertOne(c.Request.Context(), invoice)
 	actor := s.notificationActorName(c.Request.Context(), userCtx.ID)
-	s.notifyOwnerAdmins(c.Request.Context(), userCtx.ID, "subscription_purchase", actor+" started a "+period+" purchase for "+plan.Name+".", sub.ID)
+	s.notifyOwnerAdmins(c.Request.Context(), userCtx.ID, "subscription_purchase", actor+" purchased the "+period+" "+plan.Name+" package with PayPal.", sub.ID)
 	s.enqueuePurchaseAlertEmail(c.Request.Context(), buyer, team, plan, sub, amount, seatCount)
-	c.JSON(http.StatusCreated, gin.H{"subscription": sub, "checkout": session, "amount": amount})
+	c.JSON(http.StatusCreated, gin.H{"subscription": sub, "checkout": session, "amount": amount, "invoice": invoice})
 }
 
 func (s *Server) listInvoices(c *gin.Context) {
@@ -452,7 +477,7 @@ func (s *Server) paymentWebhook(providerName string) gin.HandlerFunc {
 			return
 		}
 		body, _ := io.ReadAll(c.Request.Body)
-		event, err := provider.HandleWebhook(c.Request.Context(), body, map[string]string{"signature": c.GetHeader("Stripe-Signature") + c.GetHeader("Paypal-Transmission-Sig")})
+		event, err := provider.HandleWebhook(c.Request.Context(), body, map[string]string{"signature": c.GetHeader("Paypal-Transmission-Sig")})
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "webhook rejected"})
 			return

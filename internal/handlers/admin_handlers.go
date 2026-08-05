@@ -409,9 +409,9 @@ func (s *Server) adminSetUserMembership(c *gin.Context) {
 		provider = "manual"
 	}
 	switch provider {
-	case "manual", "stripe", "paypal":
+	case "manual", "paypal":
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "payment_provider must be manual, stripe, or paypal"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "payment_provider must be manual or paypal"})
 		return
 	}
 	now := time.Now()
@@ -1123,8 +1123,8 @@ func (s *Server) updateSettings(c *gin.Context) {
 		"smtp_port":              firstNonEmpty(strings.TrimSpace(req.SMTPPort), "587"),
 		"smtp_user":              strings.TrimSpace(req.SMTPUser),
 		"smtp_from":              strings.TrimSpace(req.SMTPFrom),
-		"stripe_enabled":         req.StripeEnabled,
-		"stripe_publishable_key": strings.TrimSpace(req.StripePublishableKey),
+		"stripe_enabled":         false,
+		"stripe_publishable_key": "",
 		"paypal_enabled":         req.PayPalEnabled,
 		"paypal_mode":            payPalMode,
 		"paypal_client_id":       strings.TrimSpace(req.PayPalClientID),
@@ -1150,16 +1150,8 @@ func (s *Server) updateSettings(c *gin.Context) {
 	} else if req.ClearSMTPPassword {
 		unset["smtp_password"] = ""
 	}
-	if secret := strings.TrimSpace(req.StripeSecretKey); secret != "" {
-		set["stripe_secret_key"] = secret
-	} else if req.ClearStripeSecretKey {
-		unset["stripe_secret_key"] = ""
-	}
-	if secret := strings.TrimSpace(req.StripeWebhookSecret); secret != "" {
-		set["stripe_webhook_secret"] = secret
-	} else if req.ClearStripeWebhookSecret {
-		unset["stripe_webhook_secret"] = ""
-	}
+	unset["stripe_secret_key"] = ""
+	unset["stripe_webhook_secret"] = ""
 	if secret := strings.TrimSpace(req.PayPalClientSecret); secret != "" {
 		set["paypal_client_secret"] = secret
 	} else if req.ClearPayPalClientSecret {

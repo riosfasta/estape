@@ -2,11 +2,11 @@
 set -Eeuo pipefail
 
 log() {
-  printf '\n[bugmega] %s\n' "$*"
+  printf '\n[pinflow] %s\n' "$*"
 }
 
 die() {
-  printf '\n[bugmega] ERROR: %s\n' "$*" >&2
+  printf '\n[pinflow] ERROR: %s\n' "$*" >&2
   exit 1
 }
 
@@ -17,7 +17,7 @@ require_root() {
 }
 
 load_config() {
-  CONFIG_FILE="${DEPLOY_CONFIG:-/etc/bugmega/deploy.env}"
+  CONFIG_FILE="${DEPLOY_CONFIG:-/etc/pinflow/deploy.env}"
   if [ -f "$CONFIG_FILE" ]; then
     set -a
     # shellcheck disable=SC1090
@@ -25,9 +25,11 @@ load_config() {
     set +a
   fi
 
-  APP_NAME="${APP_NAME:-bugmega}"
-  APP_DOMAIN="${APP_DOMAIN:-}"
+  # --- HASIL PENESUAIAN DOMAIN (bugmega.com) ---
+  APP_NAME="${APP_NAME:-PinFlow}"
+  APP_DOMAIN="${APP_DOMAIN:-bugmega.com}"
   PORT="${PORT:-8080}"
+  
   if [ -z "${APP_URL:-}" ]; then
     if [ -n "$APP_DOMAIN" ] && [ "$APP_DOMAIN" != "example.com" ]; then
       APP_URL="https://$APP_DOMAIN"
@@ -37,24 +39,28 @@ load_config() {
   fi
   APP_URL="${APP_URL%/}"
 
+  # --- KONFIGURASI REPOSITORI & USER ---
+  REPO_URL="${REPO_URL:-https://github.com/USERNAME_ANDA/REPO_ANDA.git}"
   REPO_BRANCH="${REPO_BRANCH:-}"
-  APP_USER="${APP_USER:-bugmega}"
+  
+  APP_USER="${APP_USER:-pinflow}"
   APP_GROUP="${APP_GROUP:-$APP_USER}"
-  APP_ROOT="${APP_ROOT:-/opt/bugmega}"
+  APP_ROOT="${APP_ROOT:-/opt/pinflow}"
   APP_DIR="${APP_DIR:-$APP_ROOT/app}"
   BIN_DIR="${BIN_DIR:-$APP_ROOT/bin}"
-  APP_BIN="${APP_BIN:-$BIN_DIR/bugmega}"
-  APP_ENV_FILE="${APP_ENV_FILE:-/etc/bugmega/bugmega.env}"
-  SERVICE_NAME="${SERVICE_NAME:-bugmega}"
-  UPLOAD_DIR="${UPLOAD_DIR:-/var/lib/bugmega/uploads}"
+  APP_BIN="${APP_BIN:-$BIN_DIR/pinflow}"
+  APP_ENV_FILE="${APP_ENV_FILE:-/etc/pinflow/pinflow.env}"
+  SERVICE_NAME="${SERVICE_NAME:-pinflow}"
+  UPLOAD_DIR="${UPLOAD_DIR:-/var/lib/pinflow/uploads}"
 
+  # --- EMAIL & DATABASE ---
   MONGO_URI="${MONGO_URI:-mongodb://127.0.0.1:27017/}"
   MONGO_DB_NAME="${MONGO_DB_NAME:-bugmarking}"
   PAYPAL_MODE="${PAYPAL_MODE:-sandbox}"
   SMTP_PORT="${SMTP_PORT:-587}"
-  SMTP_FROM="${SMTP_FROM:-no-reply@bugmega.local}"
+  SMTP_FROM="${SMTP_FROM:-no-reply@bugmega.com}"
   OWNER_NAME="${OWNER_NAME:-Platform Owner}"
-  OWNER_EMAIL="${OWNER_EMAIL:-owner@bugmega.local}"
+  OWNER_EMAIL="${OWNER_EMAIL:-owner@bugmega.com}"
   OWNER_PASSWORD="${OWNER_PASSWORD:-ChangeMe123!}"
   GOOGLE_REDIRECT_URL="${GOOGLE_REDIRECT_URL:-$APP_URL/api/auth/google/callback}"
   ENABLE_NGINX="${ENABLE_NGINX:-true}"
@@ -133,9 +139,6 @@ write_app_env() {
     env_line GOOGLE_CLIENT_ID "${GOOGLE_CLIENT_ID:-}"
     env_line GOOGLE_CLIENT_SECRET "${GOOGLE_CLIENT_SECRET:-}"
     env_line GOOGLE_REDIRECT_URL "$GOOGLE_REDIRECT_URL"
-    env_line STRIPE_PUBLISHABLE_KEY "${STRIPE_PUBLISHABLE_KEY:-}"
-    env_line STRIPE_SECRET_KEY "${STRIPE_SECRET_KEY:-}"
-    env_line STRIPE_WEBHOOK_SECRET "${STRIPE_WEBHOOK_SECRET:-}"
     env_line PAYPAL_CLIENT_ID "${PAYPAL_CLIENT_ID:-}"
     env_line PAYPAL_CLIENT_SECRET "${PAYPAL_CLIENT_SECRET:-}"
     env_line PAYPAL_WEBHOOK_ID "${PAYPAL_WEBHOOK_ID:-}"
@@ -158,7 +161,7 @@ sync_repo() {
   fi
 
   if [ -z "${REPO_URL:-}" ] || [[ "$REPO_URL" == *"YOUR_USER/YOUR_REPO"* ]]; then
-    die "set REPO_URL in $CONFIG_FILE before first deploy"
+    die "set REPO_URL in $CONFIG_FILE or directly in script before deploy"
   fi
   log "Cloning $REPO_URL into $APP_DIR"
   rm -rf "$APP_DIR"
@@ -167,7 +170,7 @@ sync_repo() {
 
 build_app() {
   export PATH="/usr/local/go/bin:$PATH"
-  command -v go >/dev/null || die "Go is not installed. Run setup-debian.sh first."
+  command -v go >/dev/null || die "Go is not installed. Please install Golang first."
 
   log "Building Go application"
   cd "$APP_DIR"
@@ -218,13 +221,14 @@ write_nginx_site() {
     return
   fi
 
-  server_name="_"
+  # --- PENESUAIAN SERVER NAME NGINX ---
+  server_name="bugmega.com www.bugmega.com"
   if [ -n "$APP_DOMAIN" ] && [ "$APP_DOMAIN" != "example.com" ]; then
-    server_name="$APP_DOMAIN"
+    server_name="$APP_DOMAIN www.$APP_DOMAIN"
   fi
 
   log "Writing nginx reverse proxy"
-  cat > /etc/nginx/sites-available/bugmega.conf <<EOF
+  cat > /etc/nginx/sites-available/pinflow.conf <<EOF
 server {
     listen 80;
     listen [::]:80;
@@ -244,7 +248,7 @@ server {
     }
 }
 EOF
-  ln -sf /etc/nginx/sites-available/bugmega.conf /etc/nginx/sites-enabled/bugmega.conf
+  ln -sf /etc/nginx/sites-available/pinflow.conf /etc/nginx/sites-enabled/pinflow.conf
   rm -f /etc/nginx/sites-enabled/default
   nginx -t
   systemctl enable nginx

@@ -32,7 +32,6 @@ func (a *App) Router() *gin.Engine {
 	go mailer.Start(context.Background())
 
 	payments := map[string]billing.PaymentProvider{
-		"stripe": billing.NewStripeProvider(a.cfg.AppURL),
 		"paypal": billing.NewPayPalProvider(a.cfg.AppURL),
 	}
 	taskIntegrations := map[string]integrations.TaskIntegrationProvider{

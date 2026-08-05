@@ -30,7 +30,7 @@ New team-admin workspaces can also be created at `/register`.
 - Role middleware for `owner_adm`, `users_admin`, and `users_member`
 - Teams, members, spaces, projects, lists, tasks, task board/list/calendar views
 - Website feedback with iframe/screenshot modes, percentage-coordinate pins, and pin-to-task conversion
-- Subscription plans, checkout abstraction for Stripe/PayPal, pending approval, invoices
+- Single flat subscription package with PayPal checkout, automatic activation, and invoices
 - Email queue with SMTP support and local logging fallback
 - WebSocket chat with MongoDB-persisted messages
 - Site settings and block-based legal page builder with sanitized rendering and versions
@@ -61,12 +61,9 @@ GOOGLE_REDIRECT_URL=http://localhost:8080/api/auth/google/callback
 
 If `GOOGLE_REDIRECT_URL` is omitted, the app uses `APP_URL + /api/auth/google/callback`.
 
-Stripe and PayPal checkout keys can be entered in the Payments tab or through:
+PayPal checkout keys can be entered in the Payments tab or through:
 
 ```text
-STRIPE_PUBLISHABLE_KEY=
-STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SECRET=
 PAYPAL_CLIENT_ID=
 PAYPAL_CLIENT_SECRET=
 PAYPAL_WEBHOOK_ID=

@@ -115,23 +115,59 @@ func (s *Store) Seed(ctx context.Context, cfg config.Config) error {
 	if err := s.seedSettings(ctx, cfg, now); err != nil {
 		return err
 	}
+	if err := s.disableStripeSettings(ctx); err != nil {
+		return err
+	}
 	return s.seedPages(ctx, now)
 }
 
 func (s *Store) seedPlans(ctx context.Context, now time.Time) error {
-	count, err := s.C("plans").CountDocuments(ctx, bson.M{})
-	if err != nil {
+	return s.ensureSingleWebsitePlan(ctx, now)
+}
+
+func (s *Store) ensureSingleWebsitePlan(ctx context.Context, now time.Time) error {
+	plan := models.Plan{}
+	err := s.C("plans").FindOne(ctx, bson.M{"name": "Website Package"}).Decode(&plan)
+	if err == mongo.ErrNoDocuments {
+		err = s.C("plans").FindOne(
+			ctx,
+			bson.M{},
+			mongomodels.FindOne().SetSort(bson.D{{Key: "featured", Value: -1}, {Key: "created_at", Value: 1}}),
+		).Decode(&plan)
+	}
+	if err == mongo.ErrNoDocuments {
+		plan = models.Plan{ID: primitive.NewObjectID(), CreatedAt: now}
+		if _, err := s.C("plans").InsertOne(ctx, plan); err != nil {
+			return err
+		}
+	} else if err != nil {
 		return err
 	}
-	if count > 0 {
-		return nil
+
+	set := bson.M{
+		"name":                  "Website Package",
+		"description":           "One flat package for website feedback, tasks, team access, reports, and project management.",
+		"pricing_model":         "flat",
+		"price":                 int64(500),
+		"price_yearly":          int64(3500),
+		"price_per_seat":        int64(0),
+		"price_per_seat_yearly": int64(0),
+		"trial_days":            14,
+		"seat_limit":            25,
+		"project_limit":         100,
+		"storage_limit_mb":      10240,
+		"featured":              true,
 	}
-	plans := []interface{}{
-		models.Plan{ID: primitive.NewObjectID(), Name: "Starter", Description: "A focused plan for a small product team validating visual feedback workflows.", PricingModel: "flat", Price: 2900, PriceYearly: 29000, TrialDays: 14, SeatLimit: 5, ProjectLimit: 3, StorageLimitMB: 1024, CreatedAt: now},
-		models.Plan{ID: primitive.NewObjectID(), Name: "Team", Description: "More seats, projects, and storage for active delivery teams.", PricingModel: "per_seat", PricePerSeat: 900, PricePerSeatYearly: 9000, TrialDays: 14, SeatLimit: 25, ProjectLimit: 15, StorageLimitMB: 10240, Featured: true, CreatedAt: now},
-		models.Plan{ID: primitive.NewObjectID(), Name: "Business", Description: "Higher limits and owner approval workflows for agencies and larger teams.", PricingModel: "flat", Price: 24900, PriceYearly: 249000, TrialDays: 0, SeatLimit: 100, ProjectLimit: 100, StorageLimitMB: 102400, CreatedAt: now},
+	if plan.CreatedAt.IsZero() {
+		set["created_at"] = now
 	}
-	_, err = s.C("plans").InsertMany(ctx, plans)
+	if _, err := s.C("plans").UpdateByID(ctx, plan.ID, bson.M{"$set": set}); err != nil {
+		return err
+	}
+	if _, err := s.C("subscriptions").UpdateMany(ctx, bson.M{"plan_id": bson.M{"$ne": plan.ID}}, bson.M{"$set": bson.M{"plan_id": plan.ID}}); err != nil {
+		return err
+	}
+	_, err = s.C("plans").DeleteMany(ctx, bson.M{"_id": bson.M{"$ne": plan.ID}})
 	return err
 }
 
@@ -217,10 +253,7 @@ func (s *Store) seedSettings(ctx context.Context, cfg config.Config, now time.Ti
 		SMTPUser:             cfg.SMTPUser,
 		SMTPPassword:         cfg.SMTPPassword,
 		SMTPFrom:             cfg.SMTPFrom,
-		StripeEnabled:        cfg.StripeSecretKey != "",
-		StripePublishableKey: cfg.StripePublishableKey,
-		StripeSecretKey:      cfg.StripeSecretKey,
-		StripeWebhookSecret:  cfg.StripeWebhookSecret,
+		StripeEnabled:        false,
 		PayPalEnabled:        cfg.PayPalClientID != "" && cfg.PayPalClientSecret != "",
 		PayPalMode:           cfg.PayPalMode,
 		PayPalClientID:       cfg.PayPalClientID,
@@ -238,6 +271,24 @@ func (s *Store) seedSettings(ctx context.Context, cfg config.Config, now time.Ti
 		UpdatedAt: now,
 	}
 	_, err = s.C("site_settings").InsertOne(ctx, settings)
+	return err
+}
+
+func (s *Store) disableStripeSettings(ctx context.Context) error {
+	_, err := s.C("site_settings").UpdateMany(
+		ctx,
+		bson.M{},
+		bson.M{
+			"$set": bson.M{
+				"stripe_enabled":         false,
+				"stripe_publishable_key": "",
+			},
+			"$unset": bson.M{
+				"stripe_secret_key":     "",
+				"stripe_webhook_secret": "",
+			},
+		},
+	)
 	return err
 }
 

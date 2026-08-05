@@ -1145,8 +1145,7 @@ function pricingCardsHTML(plans = [], options = {}) {
       <label class="field"><span>Amount</span><input data-buy-quantity type="number" min="1" max="120" step="1" value="1" ${canPurchase ? "" : "disabled"}></label>
     </div>
     <p class="pricing-actions">
-      <button class="btn primary" data-buy="${esc(plan.id)}" data-provider="stripe" ${canPurchase ? "" : "disabled"}>${icon("credit-card")}Stripe</button>
-      <button class="btn" data-buy="${esc(plan.id)}" data-provider="paypal" ${canPurchase ? "" : "disabled"}>PayPal</button>
+      <button class="btn primary" data-buy="${esc(plan.id)}" data-provider="paypal" ${canPurchase ? "" : "disabled"}>Pay with PayPal</button>
     </p>
   </article>`).join("")}</div>`;
 }
@@ -1164,7 +1163,8 @@ function bindPurchaseButtons(onDone = null) {
           quantity: Number(card?.querySelector("[data-buy-quantity]")?.value || 1),
         }),
       });
-      alert(`Checkout created: ${data.checkout?.external_id || "pending"}. The package is waiting for platform owner activation.`);
+      const status = data.subscription?.status === "active" ? "Package activated." : "PayPal checkout created.";
+      alert(`${status} Reference: ${data.checkout?.external_id || "pending"}.`);
       if (data.checkout?.url) window.open(data.checkout.url, "_blank", "noopener");
       if (onDone) await onDone(data);
     } catch (error) {
@@ -1181,7 +1181,7 @@ async function renderMembershipPaywall(feature = "workspace features") {
     <div class="page-title"><div><h1>Membership required</h1><p class="muted">Upgrade to use ${esc(feature)}. New workspaces can use these tools during the 14-day trial.</p></div><span class="pill warn">${esc(membershipLabel(membership.status))}</span></div>
     <section class="panel paywall-panel">
       <h2>Choose a package</h2>
-      <p class="muted">${personal ? "After checkout, your purchase is held for platform owner activation. You will get a notification when it is approved." : "This company workspace needs an active membership. Ask the company admin to purchase or activate a plan."}</p>
+      <p class="muted">${personal ? "Pay with PayPal to activate your package." : "This company workspace needs an active membership. Ask the company admin to purchase or activate a plan."}</p>
       ${pricingCardsHTML(plans, { canPurchase: personal })}
     </section>`);
   bindPurchaseButtons(async () => {
@@ -7990,7 +7990,7 @@ async function renderAdmin() {
       <label><span>Search</span><input type="search" data-admin-filter-search placeholder="Name, email, company, plan"></label>
       <label><span>Membership</span><select data-admin-filter="membership"><option value="">All memberships</option><option value="active">Active</option><option value="trialing">Trialing</option><option value="pending_approval">Pending approval</option><option value="expired">Expired</option><option value="no_membership">No membership</option></select></label>
       <label><span>Level</span><select data-admin-filter="level"><option value="">All levels</option><option value="owner_adm">Owner admin</option><option value="users_admin">User admin</option><option value="users_member">User member</option><option value="client_admin">Client admin</option></select></label>
-      <label><span>Payment</span><select data-admin-filter="payment"><option value="">All payment methods</option><option value="stripe">Stripe</option><option value="paypal">PayPal</option><option value="no payment method">No payment method</option></select></label>
+      <label><span>Payment</span><select data-admin-filter="payment"><option value="">All payment methods</option><option value="paypal">PayPal</option><option value="no payment method">No payment method</option></select></label>
     </div>
     <div class="owner-admin-layout">
       <section class="panel owner-users-panel"><div class="panel-head"><h2>Users</h2><span class="pill" id="adminUserCount">${users.length} users</span></div><div class="admin-user-list">${users.map(adminUserRowHTML).join("") || `<p class="muted">No users found.</p>`}</div><p id="adminUserNoResults" class="muted" hidden>No users match the current filters.</p></section>
@@ -8148,7 +8148,7 @@ function adminUserDialogsHTML(plans = []) {
         <div class="field"><label>Status</label><select name="status"><option value="active">active</option><option value="trialing">trialing</option><option value="pending_approval">pending_approval</option></select></div>
       </div>
       <div class="grid-2">
-        <div class="field"><label>Payment provider</label><select name="payment_provider"><option value="manual">manual</option><option value="stripe">stripe</option><option value="paypal">paypal</option></select></div>
+        <div class="field"><label>Payment provider</label><select name="payment_provider"><option value="manual">manual</option><option value="paypal">paypal</option></select></div>
         <div class="field"><label>Transaction/reference</label><input name="external_transaction_id" placeholder="Optional"></div>
       </div>
       <p class="muted" id="membershipPreview">Select a plan and duration.</p>
@@ -8247,7 +8247,7 @@ function bindAdminUserActions(usersByID = {}, afterAction = () => {}, plans = []
       form.elements.billing_period.value = user.subscription?.billing_period || "monthly";
       form.elements.quantity.value = user.subscription?.billing_quantity || 1;
       form.elements.status.value = user.membership_status === "trialing" ? "trialing" : user.membership_status === "pending_approval" ? "pending_approval" : "active";
-      form.elements.payment_provider.value = ["stripe", "paypal"].includes(user.subscription?.payment_provider || user.payment_provider) ? (user.subscription?.payment_provider || user.payment_provider) : "manual";
+      form.elements.payment_provider.value = (user.subscription?.payment_provider || user.payment_provider) === "paypal" ? "paypal" : "manual";
       form.elements.external_transaction_id.value = user.subscription?.external_transaction_id || user.payment_transaction || "";
       $("#membershipTarget").textContent = `${user.name || user.email} - ${user.team?.name || "Company workspace"}`;
       updateMembershipPreview(form, plans);
@@ -8271,19 +8271,15 @@ async function renderPlansAdmin() {
           <form class="form-grid plan-form" data-plan-id="${plan.id}">
             <div>
               <h2>${esc(plan.name)}</h2>
-              <span class="pill">${plan.pricing_model === "per_seat" ? "per seat" : "flat"}</span>
+              <span class="pill">flat package</span>
               ${plan.featured ? `<span class="pill warn">featured</span>` : ""}
             </div>
             <div class="field"><label>Name</label><input name="name" value="${esc(plan.name)}" required></div>
             <div class="field"><label>Description</label><textarea name="description">${esc(plan.description || "")}</textarea></div>
-            <div class="field"><label>Pricing model</label><select name="pricing_model"><option value="flat" ${plan.pricing_model === "flat" ? "selected" : ""}>Flat</option><option value="per_seat" ${plan.pricing_model === "per_seat" ? "selected" : ""}>Per seat</option></select></div>
+            <input type="hidden" name="pricing_model" value="flat">
             <div class="grid-2">
               <div class="field"><label>Flat monthly USD</label><input type="number" min="0" step="0.01" name="price_dollars" value="${dollars(plan.price)}"></div>
               <div class="field"><label>Flat yearly USD</label><input type="number" min="0" step="0.01" name="price_yearly_dollars" value="${dollars(plan.price_yearly || (plan.price || 0) * 12)}"></div>
-            </div>
-            <div class="grid-2">
-              <div class="field"><label>Per-seat monthly USD</label><input type="number" min="0" step="0.01" name="price_per_seat_dollars" value="${dollars(plan.price_per_seat)}"></div>
-              <div class="field"><label>Per-seat yearly USD</label><input type="number" min="0" step="0.01" name="price_per_seat_yearly_dollars" value="${dollars(plan.price_per_seat_yearly || (plan.price_per_seat || 0) * 12)}"></div>
             </div>
             <div class="grid-2">
               <div class="field"><label>Trial days</label><input type="number" min="0" step="1" name="trial_days" value="${plan.trial_days || 0}"></div>
@@ -8309,8 +8305,8 @@ async function renderPlansAdmin() {
       pricing_model: data.pricing_model,
       price: cents(data.price_dollars),
       price_yearly: cents(data.price_yearly_dollars),
-      price_per_seat: cents(data.price_per_seat_dollars),
-      price_per_seat_yearly: cents(data.price_per_seat_yearly_dollars),
+      price_per_seat: 0,
+      price_per_seat_yearly: 0,
       trial_days: Number(data.trial_days),
       seat_limit: Number(data.seat_limit),
       project_limit: Number(data.project_limit),
@@ -8519,23 +8515,18 @@ async function renderSettings() {
           </div>
         </section>
         <section data-settings-panel="payments" class="settings-tab-section" hidden>
-          <div class="settings-provider-grid">
-            <article class="settings-provider">
-              <h2>Stripe</h2>
-              <label class="check-row"><input type="checkbox" name="stripe_enabled" ${settings.stripe_enabled ? "checked" : ""}> Enable Stripe checkout</label>
-              <div class="field"><label>Publishable key</label><input name="stripe_publishable_key" value="${esc(settings.stripe_publishable_key || "")}" autocomplete="off"></div>
-              ${secretField("Secret key", "stripe_secret_key", "stripe_secret_key_set", "clear_stripe_secret_key")}
-              ${secretField("Webhook secret", "stripe_webhook_secret", "stripe_webhook_secret_set", "clear_stripe_webhook_secret")}
-            </article>
-            <article class="settings-provider">
-              <h2>PayPal</h2>
-              <label class="check-row"><input type="checkbox" name="paypal_enabled" ${settings.paypal_enabled ? "checked" : ""}> Enable PayPal checkout</label>
+          <article class="settings-provider">
+            <h2>PayPal</h2>
+            <label class="check-row"><input type="checkbox" name="paypal_enabled" ${settings.paypal_enabled ? "checked" : ""}> Enable PayPal checkout</label>
+            <div class="grid-2">
               <div class="field"><label>Mode</label><select name="paypal_mode"><option value="sandbox" ${(settings.paypal_mode || "sandbox") === "sandbox" ? "selected" : ""}>Sandbox</option><option value="live" ${settings.paypal_mode === "live" ? "selected" : ""}>Live</option></select></div>
               <div class="field"><label>Client ID</label><input name="paypal_client_id" value="${esc(settings.paypal_client_id || "")}" autocomplete="off"></div>
+            </div>
+            <div class="grid-2">
               ${secretField("Client secret", "paypal_client_secret", "paypal_client_secret_set", "clear_paypal_client_secret")}
               <div class="field"><label>Webhook ID</label><input name="paypal_webhook_id" value="${esc(settings.paypal_webhook_id || "")}" autocomplete="off"></div>
-            </article>
-          </div>
+            </div>
+          </article>
         </section>
         <section data-settings-panel="colors" class="settings-tab-section" hidden>
           <div class="settings-color-preview">
@@ -8594,12 +8585,9 @@ async function renderSettings() {
     [
       "google_signin_enabled",
       "smtp_enabled",
-      "stripe_enabled",
       "paypal_enabled",
       "clear_google_client_secret",
       "clear_smtp_password",
-      "clear_stripe_secret_key",
-      "clear_stripe_webhook_secret",
       "clear_paypal_client_secret",
     ].forEach((key) => {
       body[key] = Boolean(form.elements[key]?.checked);

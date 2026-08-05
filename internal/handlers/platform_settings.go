@@ -86,10 +86,7 @@ func (s *Server) defaultSiteSettings(now time.Time) models.SiteSettings {
 		SMTPUser:             s.cfg.SMTPUser,
 		SMTPPassword:         s.cfg.SMTPPassword,
 		SMTPFrom:             s.cfg.SMTPFrom,
-		StripeEnabled:        s.cfg.StripeSecretKey != "",
-		StripePublishableKey: s.cfg.StripePublishableKey,
-		StripeSecretKey:      s.cfg.StripeSecretKey,
-		StripeWebhookSecret:  s.cfg.StripeWebhookSecret,
+		StripeEnabled:        false,
 		PayPalEnabled:        s.cfg.PayPalClientID != "" && s.cfg.PayPalClientSecret != "",
 		PayPalMode:           firstNonEmpty(s.cfg.PayPalMode, "sandbox"),
 		PayPalClientID:       s.cfg.PayPalClientID,
@@ -122,10 +119,6 @@ func (s *Server) settingsWithConfigFallback(settings models.SiteSettings) models
 		strings.TrimSpace(settings.SMTPUser) != "" ||
 		strings.TrimSpace(settings.SMTPPassword) != "" ||
 		strings.TrimSpace(settings.SMTPFrom) != ""
-	stripeTouched := settings.StripeEnabled ||
-		strings.TrimSpace(settings.StripePublishableKey) != "" ||
-		strings.TrimSpace(settings.StripeSecretKey) != "" ||
-		strings.TrimSpace(settings.StripeWebhookSecret) != ""
 	payPalTouched := settings.PayPalEnabled ||
 		strings.TrimSpace(settings.PayPalClientID) != "" ||
 		strings.TrimSpace(settings.PayPalClientSecret) != "" ||
@@ -161,15 +154,10 @@ func (s *Server) settingsWithConfigFallback(settings models.SiteSettings) models
 	if strings.TrimSpace(settings.SMTPFrom) == "" {
 		settings.SMTPFrom = s.cfg.SMTPFrom
 	}
-	if strings.TrimSpace(settings.StripePublishableKey) == "" {
-		settings.StripePublishableKey = s.cfg.StripePublishableKey
-	}
-	if strings.TrimSpace(settings.StripeSecretKey) == "" {
-		settings.StripeSecretKey = s.cfg.StripeSecretKey
-	}
-	if strings.TrimSpace(settings.StripeWebhookSecret) == "" {
-		settings.StripeWebhookSecret = s.cfg.StripeWebhookSecret
-	}
+	settings.StripeEnabled = false
+	settings.StripePublishableKey = ""
+	settings.StripeSecretKey = ""
+	settings.StripeWebhookSecret = ""
 	if strings.TrimSpace(settings.PayPalMode) == "" {
 		settings.PayPalMode = firstNonEmpty(s.cfg.PayPalMode, "sandbox")
 	}
@@ -187,9 +175,6 @@ func (s *Server) settingsWithConfigFallback(settings models.SiteSettings) models
 	}
 	if !smtpTouched {
 		settings.SMTPEnabled = s.cfg.SMTPHost != "" && s.cfg.SMTPUser != ""
-	}
-	if !stripeTouched {
-		settings.StripeEnabled = s.cfg.StripeSecretKey != ""
 	}
 	if !payPalTouched {
 		settings.PayPalEnabled = s.cfg.PayPalClientID != "" && s.cfg.PayPalClientSecret != ""
@@ -434,28 +419,18 @@ func normalizeSocialLinks(items []models.SocialLink) []models.SocialLink {
 func (s *Server) paymentProviderEnabled(ctx context.Context, provider string) bool {
 	settings, err := s.loadSiteSettings(ctx)
 	if err != nil {
-		return true
+		return strings.ToLower(strings.TrimSpace(provider)) == "paypal" &&
+			strings.TrimSpace(s.cfg.PayPalClientID) != "" &&
+			strings.TrimSpace(s.cfg.PayPalClientSecret) != ""
 	}
 	settings = s.settingsWithConfigFallback(settings)
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "stripe":
-		hasSaved := settings.StripeEnabled ||
-			strings.TrimSpace(settings.StripePublishableKey) != "" ||
-			strings.TrimSpace(settings.StripeSecretKey) != "" ||
-			strings.TrimSpace(settings.StripeWebhookSecret) != ""
-		if !hasSaved {
-			return true
-		}
-		return settings.StripeEnabled
+		return false
 	case "paypal":
-		hasSaved := settings.PayPalEnabled ||
-			strings.TrimSpace(settings.PayPalClientID) != "" ||
-			strings.TrimSpace(settings.PayPalClientSecret) != "" ||
-			strings.TrimSpace(settings.PayPalWebhookID) != ""
-		if !hasSaved {
-			return true
-		}
-		return settings.PayPalEnabled
+		return settings.PayPalEnabled &&
+			strings.TrimSpace(settings.PayPalClientID) != "" &&
+			strings.TrimSpace(settings.PayPalClientSecret) != ""
 	default:
 		return false
 	}
