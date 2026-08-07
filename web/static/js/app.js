@@ -10485,8 +10485,10 @@ function taskReportExportURL(form) {
 }
 
 function taskReportPreviewHTML(data = {}) {
+  const note = String(data.note || "").trim();
+  const noteHTML = note ? `<div class="report-preview-note"><strong>Report note</strong><p>${esc(note)}</p></div>` : "";
   if (!data.has_visible_data) {
-    return `<div class="report-preview-empty">Select at least one report section to preview.</div>`;
+    return `<div class="report-preview-empty">Select at least one report section to preview.</div>${noteHTML}`;
   }
   const summary = data.summary ? `<div class="report-preview-summary">
     <span><strong>${data.summary.completed_in_period ?? 0}</strong> completed</span>
@@ -10511,7 +10513,8 @@ function taskReportPreviewHTML(data = {}) {
     ${summary}
     ${completions ? `<div class="report-preview-section"><h3>Completed in this period</h3><div class="report-preview-list">${completions}</div>${data.more_completions ? `<p class="muted">+${data.more_completions} more completed events in the PDF.</p>` : ""}</div>` : ""}
     ${tasks ? `<div class="report-preview-section"><h3>Tasks</h3><div class="report-preview-list">${tasks}</div>${data.more_tasks ? `<p class="muted">+${data.more_tasks} more tasks in the PDF.</p>` : ""}</div>` : ""}
-    ${!completions && !tasks ? `<div class="report-preview-empty">No matching task data for this filter.</div>` : ""}`;
+    ${!completions && !tasks ? `<div class="report-preview-empty">No matching task data for this filter.</div>` : ""}
+    ${noteHTML}`;
 }
 
 function taskReportPreviewTaskHTML(task = {}) {
@@ -10634,6 +10637,10 @@ async function renderReports() {
             ${reportOptionCheckbox("include_due_dates", "Due dates")}
             ${reportOptionCheckbox("include_time", "Tracked time")}
           </div>
+        </div>
+        <div class="field report-note-field">
+          <label>Report note</label>
+          <textarea name="note" maxlength="2000" placeholder="Optional note shown at the bottom of the PDF report"></textarea>
         </div>
         <p class="status-line"></p>
       </form>

@@ -1478,6 +1478,28 @@ textarea { min-height: 94px; resize: vertical; }
   margin: 0;
   font-size: 14px;
 }
+.report-note-field {
+  grid-column: 1 / -1;
+}
+.report-note-field textarea {
+  min-height: 92px;
+}
+.report-preview-note {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+}
+.report-preview-note strong {
+  color: var(--accent-strong);
+}
+.report-preview-note p {
+  margin: 0;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
 .report-preview-list {
   display: grid;
   gap: 6px;

@@ -36,3 +36,18 @@ func TestTaskReportPDFIncludesFullChecklist(t *testing.T) {
 		t.Fatal("PDF checklist should include the final checklist item")
 	}
 }
+
+func TestTaskReportPDFIncludesReportNote(t *testing.T) {
+	pdf := renderTaskReportPDF(taskReportData{
+		Query:       taskReportQuery{Note: "Please review the completed checklist before billing."},
+		GeneratedAt: time.Date(2026, 8, 7, 0, 0, 0, 0, time.UTC),
+	})
+
+	output := string(pdf)
+	if !strings.Contains(output, "Report Note") {
+		t.Fatal("PDF should include a report note heading")
+	}
+	if !strings.Contains(output, "Please review the completed checklist before billing.") {
+		t.Fatal("PDF should include the report note text")
+	}
+}

@@ -30,6 +30,7 @@ type taskReportQuery struct {
 	To          time.Time
 	HasDateSpan bool
 	Options     taskReportOptions
+	Note        string
 }
 
 type taskReportOptions struct {
@@ -118,6 +119,7 @@ func parseTaskReportQuery(c *gin.Context) (taskReportQuery, error) {
 		Period:    strings.ToLower(strings.TrimSpace(c.DefaultQuery("period", "week"))),
 		DateField: strings.ToLower(strings.TrimSpace(c.DefaultQuery("date_field", "created_at"))),
 		Options:   parseTaskReportOptions(c),
+		Note:      normalizeTaskReportNote(c.Query("note")),
 	}
 	switch query.Scope {
 	case "assigned", "all", "domain", "task":
@@ -220,6 +222,15 @@ func parseTaskReportOptions(c *gin.Context) taskReportOptions {
 func reportQueryEnabled(c *gin.Context, key string) bool {
 	value := strings.ToLower(strings.TrimSpace(c.Query(key)))
 	return value == "1" || value == "true" || value == "on" || value == "yes"
+}
+
+func normalizeTaskReportNote(value string) string {
+	value = strings.TrimSpace(value)
+	runes := []rune(value)
+	if len(runes) > 2000 {
+		value = strings.TrimSpace(string(runes[:2000]))
+	}
+	return value
 }
 
 func reportPeriodRange(period string, now time.Time) (time.Time, time.Time, bool) {
@@ -598,6 +609,7 @@ func renderTaskReportPDF(data taskReportData) []byte {
 				pdf.paragraph("No report sections selected.")
 			}
 		}
+		pdf.reportNote(data.Query.Note)
 		return pdf.bytes()
 	}
 	grouped := map[primitive.ObjectID][]models.ClientTask{}
@@ -614,6 +626,7 @@ func renderTaskReportPDF(data taskReportData) []byte {
 	if len(data.Tasks) == 0 && len(data.Completions) == 0 {
 		pdf.section("Tasks")
 		pdf.paragraph("No matching tasks for this report filter.")
+		pdf.reportNote(data.Query.Note)
 		return pdf.bytes()
 	}
 	for _, website := range websites {
@@ -636,6 +649,7 @@ func renderTaskReportPDF(data taskReportData) []byte {
 		}
 		pdf.taskRow(task, data.UsersByID, data.TimeMinutes[task.ID], data.Query.Options)
 	}
+	pdf.reportNote(data.Query.Note)
 	return pdf.bytes()
 }
 
@@ -694,6 +708,9 @@ func taskReportPreviewPayload(data taskReportData) gin.H {
 		"more_completions":  0,
 		"has_visible_data":  data.Query.Options.Summary || data.Query.Options.Completions || data.Query.Options.Tasks,
 		"visible_task_rows": data.Query.Options.Tasks,
+	}
+	if data.Query.Note != "" {
+		payload["note"] = data.Query.Note
 	}
 	if data.Query.Options.Summary {
 		payload["summary"] = gin.H{
@@ -1018,6 +1035,15 @@ func (p *simplePDF) paragraph(text string) {
 		p.y -= 13
 	}
 	p.y -= 6
+}
+
+func (p *simplePDF) reportNote(note string) {
+	note = strings.TrimSpace(note)
+	if note == "" {
+		return
+	}
+	p.section("Report Note")
+	p.paragraph(note)
 }
 
 func (p *simplePDF) taskRow(task models.ClientTask, users map[primitive.ObjectID]models.User, minutes int, options taskReportOptions) {
