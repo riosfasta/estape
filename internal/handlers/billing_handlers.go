@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -19,8 +18,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
-
-const purchaseAlertRecipientEmail = "rioswebdev@gmail.com"
 
 func (s *Server) listPlans(c *gin.Context) {
 	cursor, err := s.store.C("plans").Find(c.Request.Context(), bson.M{}, options.Find().SetSort(bson.D{{Key: "price", Value: 1}, {Key: "price_per_seat", Value: 1}}))
@@ -353,55 +350,32 @@ func (s *Server) billingPaymentRedirect(status string, message string, invoiceID
 	return target
 }
 
-func purchaseAlertRow(label string, value string) string {
-	if strings.TrimSpace(value) == "" {
-		value = "-"
-	}
-	return `<tr><th style="text-align:left;padding:8px 12px;border-bottom:1px solid #d7e4df;color:#45645e;">` +
-		html.EscapeString(label) +
-		`</th><td style="padding:8px 12px;border-bottom:1px solid #d7e4df;color:#10211d;">` +
-		html.EscapeString(value) +
-		`</td></tr>`
-}
-
 func (s *Server) enqueuePurchaseAlertEmail(ctx context.Context, buyer models.User, team models.Team, plan models.Plan, sub models.Subscription, amount int64, seatCount int64) {
-	if s.mailer == nil {
-		return
-	}
 	buyerName := firstNonEmpty(buyer.Name, buyer.Username, buyer.Email, "Unknown user")
-	appName := firstNonEmpty(s.cfg.AppName, "bugmega")
-	adminURL := strings.TrimRight(s.cfg.AppURL, "/") + "/admin/users"
-	body := `<p>A user purchased the PayPal package. The subscription was activated automatically.</p>` +
-		`<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;max-width:720px;border:1px solid #d7e4df;border-radius:8px;overflow:hidden;">` +
-		purchaseAlertRow("User name", buyerName) +
-		purchaseAlertRow("Username", buyer.Username) +
-		purchaseAlertRow("User email", buyer.Email) +
-		purchaseAlertRow("User ID", buyer.ID.Hex()) +
-		purchaseAlertRow("Account role", string(buyer.Role)) +
-		purchaseAlertRow("Staff role", staffRoleDisplayName(buyer.StaffRole)) +
-		purchaseAlertRow("Company/team", firstNonEmpty(team.Name, "Unknown company")) +
-		purchaseAlertRow("Company email", team.CompanyEmail) +
-		purchaseAlertRow("Team ID", team.ID.Hex()) +
-		purchaseAlertRow("Current seat count", fmt.Sprintf("%d", seatCount)) +
-		purchaseAlertRow("Plan", plan.Name) +
-		purchaseAlertRow("Plan ID", plan.ID.Hex()) +
-		purchaseAlertRow("Pricing model", plan.PricingModel) +
-		purchaseAlertRow("Billing period", sub.BillingPeriod) +
-		purchaseAlertRow("Billing quantity", fmt.Sprintf("%d", normalizedBillingQuantity(sub.BillingQuantity))) +
-		purchaseAlertRow("Payment method", sub.PaymentProvider) +
-		purchaseAlertRow("Checkout/payment reference", sub.ExternalTransactionID) +
-		purchaseAlertRow("Amount", formatBillingAmountCents(amount)) +
-		purchaseAlertRow("Subscription status", sub.Status) +
-		purchaseAlertRow("Subscription ID", sub.ID.Hex()) +
-		purchaseAlertRow("Created at", sub.CreatedAt.Format("Jan 2, 2006 3:04 PM MST")) +
-		`</table>` +
-		`<p><a href="` + html.EscapeString(adminURL) + `">Open platform manage users</a></p>`
-	_ = s.mailer.Enqueue(ctx, models.EmailQueueItem{
-		Recipient: purchaseAlertRecipientEmail,
-		Type:      "subscription_purchase_alert",
-		Subject:   appName + " PayPal purchase: " + buyerName,
-		BodyHTML:  body,
-	})
+	rows := [][2]string{
+		{"User name", buyerName},
+		{"Username", buyer.Username},
+		{"User email", buyer.Email},
+		{"User ID", buyer.ID.Hex()},
+		{"Account role", string(buyer.Role)},
+		{"Staff role", staffRoleDisplayName(buyer.StaffRole)},
+		{"Company/team", firstNonEmpty(team.Name, "Unknown company")},
+		{"Company email", team.CompanyEmail},
+		{"Team ID", team.ID.Hex()},
+		{"Current seat count", fmt.Sprintf("%d", seatCount)},
+		{"Plan", plan.Name},
+		{"Plan ID", plan.ID.Hex()},
+		{"Pricing model", plan.PricingModel},
+		{"Billing period", sub.BillingPeriod},
+		{"Billing quantity", fmt.Sprintf("%d", normalizedBillingQuantity(sub.BillingQuantity))},
+		{"Payment method", sub.PaymentProvider},
+		{"Checkout/payment reference", sub.ExternalTransactionID},
+		{"Amount", formatBillingAmountCents(amount)},
+		{"Subscription status", sub.Status},
+		{"Subscription ID", sub.ID.Hex()},
+		{"Created at", ownerEmailTime(sub.CreatedAt)},
+	}
+	s.enqueueOwnerBehaviorEmail(ctx, ownerEmailPurchaseSuccess, "PayPal purchase: "+buyerName, "A user purchased the PayPal package. The subscription was activated automatically.", rows, "Open platform manage users", "/admin/users")
 }
 
 func (s *Server) purchaseSubscription(c *gin.Context) {

@@ -37,6 +37,10 @@ type siteSettingsUpdateRequest struct {
 	SMTPPassword             string              `json:"smtp_password"`
 	SMTPFrom                 string              `json:"smtp_from"`
 	ClearSMTPPassword        bool                `json:"clear_smtp_password"`
+	OwnerNotificationEmail   string              `json:"owner_notification_email"`
+	OwnerNotifyRegistration  bool                `json:"owner_notify_registration"`
+	OwnerNotifyPurchase      bool                `json:"owner_notify_purchase"`
+	OwnerNotifyNewChat       bool                `json:"owner_notify_new_chat"`
 	StripeEnabled            bool                `json:"stripe_enabled"`
 	StripePublishableKey     string              `json:"stripe_publishable_key"`
 	StripeSecretKey          string              `json:"stripe_secret_key"`
@@ -70,34 +74,42 @@ func (s *Server) loadSiteSettings(ctx context.Context) (models.SiteSettings, err
 
 func (s *Server) defaultSiteSettings(now time.Time) models.SiteSettings {
 	return models.SiteSettings{
-		SiteName:             s.cfg.AppName,
-		CompanySlogan:        "Task management with visual website feedback",
-		CompanyEmail:         "support@bugmega.local",
-		CompanyContact:       "support@bugmega.local",
-		OwnerName:            s.cfg.OwnerName,
-		CompanyAddress:       "Set your company address in Admin Settings",
-		GoogleSigninEnabled:  s.cfg.GoogleClientID != "" && s.cfg.GoogleClientSecret != "",
-		GoogleClientID:       s.cfg.GoogleClientID,
-		GoogleClientSecret:   s.cfg.GoogleClientSecret,
-		GoogleRedirectURL:    s.cfg.GoogleRedirectURL,
-		SMTPEnabled:          s.cfg.SMTPHost != "" && s.cfg.SMTPUser != "",
-		SMTPHost:             s.cfg.SMTPHost,
-		SMTPPort:             s.cfg.SMTPPort,
-		SMTPUser:             s.cfg.SMTPUser,
-		SMTPPassword:         s.cfg.SMTPPassword,
-		SMTPFrom:             s.cfg.SMTPFrom,
-		StripeEnabled:        false,
-		PayPalEnabled:        s.cfg.PayPalClientID != "" && s.cfg.PayPalClientSecret != "",
-		PayPalMode:           firstNonEmpty(s.cfg.PayPalMode, "sandbox"),
-		PayPalClientID:       s.cfg.PayPalClientID,
-		PayPalClientSecret:   s.cfg.PayPalClientSecret,
-		PayPalWebhookID:      s.cfg.PayPalWebhookID,
-		PublicNavCompanyName: s.cfg.AppName,
-		PublicNavButtonText:  "Get Started",
-		PublicNavButtonURL:   "/register",
-		PublicNavButtonStyle: "primary",
-		PublicNavItems:       defaultPublicNavItems(),
-		UpdatedAt:            now,
+		SiteName:            s.cfg.AppName,
+		CompanySlogan:       "Task management with visual website feedback",
+		CompanyEmail:        "support@bugmega.local",
+		CompanyContact:      "support@bugmega.local",
+		OwnerName:           s.cfg.OwnerName,
+		CompanyAddress:      "Set your company address in Admin Settings",
+		GoogleSigninEnabled: s.cfg.GoogleClientID != "" && s.cfg.GoogleClientSecret != "",
+		GoogleClientID:      s.cfg.GoogleClientID,
+		GoogleClientSecret:  s.cfg.GoogleClientSecret,
+		GoogleRedirectURL:   s.cfg.GoogleRedirectURL,
+		SMTPEnabled:         s.cfg.SMTPHost != "" && s.cfg.SMTPUser != "",
+		SMTPHost:            s.cfg.SMTPHost,
+		SMTPPort:            s.cfg.SMTPPort,
+		SMTPUser:            s.cfg.SMTPUser,
+		SMTPPassword:        s.cfg.SMTPPassword,
+		SMTPFrom:            s.cfg.SMTPFrom,
+		OwnerNotificationEmail: firstNonEmpty(
+			s.cfg.OwnerEmail,
+			s.cfg.SMTPFrom,
+		),
+		OwnerNotifyRegistration: true,
+		OwnerNotifyPurchase:     true,
+		OwnerNotifyNewChat:      true,
+		OwnerNotificationsSet:   false,
+		StripeEnabled:           false,
+		PayPalEnabled:           s.cfg.PayPalClientID != "" && s.cfg.PayPalClientSecret != "",
+		PayPalMode:              firstNonEmpty(s.cfg.PayPalMode, "sandbox"),
+		PayPalClientID:          s.cfg.PayPalClientID,
+		PayPalClientSecret:      s.cfg.PayPalClientSecret,
+		PayPalWebhookID:         s.cfg.PayPalWebhookID,
+		PublicNavCompanyName:    s.cfg.AppName,
+		PublicNavButtonText:     "Get Started",
+		PublicNavButtonURL:      "/register",
+		PublicNavButtonStyle:    "primary",
+		PublicNavItems:          defaultPublicNavItems(),
+		UpdatedAt:               now,
 	}
 }
 
@@ -153,6 +165,14 @@ func (s *Server) settingsWithConfigFallback(settings models.SiteSettings) models
 	}
 	if strings.TrimSpace(settings.SMTPFrom) == "" {
 		settings.SMTPFrom = s.cfg.SMTPFrom
+	}
+	if strings.TrimSpace(settings.OwnerNotificationEmail) == "" {
+		settings.OwnerNotificationEmail = firstNonEmpty(s.cfg.OwnerEmail, settings.CompanyEmail, settings.SMTPFrom)
+	}
+	if !settings.OwnerNotificationsSet {
+		settings.OwnerNotifyRegistration = true
+		settings.OwnerNotifyPurchase = true
+		settings.OwnerNotifyNewChat = true
 	}
 	settings.StripeEnabled = false
 	settings.StripePublishableKey = ""
@@ -219,6 +239,11 @@ func (s *Server) sanitizedSiteSettings(settings models.SiteSettings) gin.H {
 		"smtp_user":                 settings.SMTPUser,
 		"smtp_from":                 settings.SMTPFrom,
 		"smtp_password_set":         secretSet(settings.SMTPPassword),
+		"owner_notification_email":  settings.OwnerNotificationEmail,
+		"owner_notify_registration": settings.OwnerNotifyRegistration,
+		"owner_notify_purchase":     settings.OwnerNotifyPurchase,
+		"owner_notify_new_chat":     settings.OwnerNotifyNewChat,
+		"owner_notifications_set":   settings.OwnerNotificationsSet,
 		"stripe_enabled":            settings.StripeEnabled,
 		"stripe_publishable_key":    settings.StripePublishableKey,
 		"stripe_secret_key_set":     secretSet(settings.StripeSecretKey),

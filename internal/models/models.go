@@ -478,6 +478,11 @@ type SiteSettings struct {
 	SMTPUser                string             `bson:"smtp_user,omitempty" json:"smtp_user,omitempty"`
 	SMTPPassword            string             `bson:"smtp_password,omitempty" json:"-"`
 	SMTPFrom                string             `bson:"smtp_from,omitempty" json:"smtp_from,omitempty"`
+	OwnerNotificationEmail  string             `bson:"owner_notification_email,omitempty" json:"owner_notification_email,omitempty"`
+	OwnerNotifyRegistration bool               `bson:"owner_notify_registration,omitempty" json:"owner_notify_registration"`
+	OwnerNotifyPurchase     bool               `bson:"owner_notify_purchase,omitempty" json:"owner_notify_purchase"`
+	OwnerNotifyNewChat      bool               `bson:"owner_notify_new_chat,omitempty" json:"owner_notify_new_chat"`
+	OwnerNotificationsSet   bool               `bson:"owner_notifications_set,omitempty" json:"owner_notifications_set"`
 	StripeEnabled           bool               `bson:"stripe_enabled,omitempty" json:"stripe_enabled"`
 	StripePublishableKey    string             `bson:"stripe_publishable_key,omitempty" json:"stripe_publishable_key,omitempty"`
 	StripeSecretKey         string             `bson:"stripe_secret_key,omitempty" json:"-"`

@@ -1200,6 +1200,10 @@ textarea { min-height: 94px; resize: vertical; }
   font-weight: 750;
 }
 .check-row input { width: auto; min-height: auto; }
+.check-list {
+  display: grid;
+  gap: 10px;
+}
 .auth-wrap {
   min-height: 100vh;
   display: grid;

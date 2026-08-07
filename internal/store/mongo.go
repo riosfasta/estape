@@ -22,6 +22,13 @@ type Store struct {
 	DB     *mongo.Database
 }
 
+func defaultOwnerNotificationEmail(cfg config.Config) string {
+	if strings.TrimSpace(cfg.OwnerEmail) != "" {
+		return strings.TrimSpace(cfg.OwnerEmail)
+	}
+	return strings.TrimSpace(cfg.SMTPFrom)
+}
+
 func Connect(ctx context.Context, cfg config.Config) (*Store, error) {
 	client, err := mongo.Connect(ctx, mongomodels.Client().ApplyURI(cfg.MongoURI))
 	if err != nil {
@@ -236,33 +243,38 @@ func (s *Store) seedSettings(ctx context.Context, cfg config.Config, now time.Ti
 		return nil
 	}
 	settings := models.SiteSettings{
-		ID:                   primitive.NewObjectID(),
-		SiteName:             cfg.AppName,
-		CompanySlogan:        "Task management with visual website feedback",
-		CompanyEmail:         "support@bugmega.local",
-		CompanyContact:       "support@bugmega.local",
-		OwnerName:            cfg.OwnerName,
-		CompanyAddress:       "Set your company address in Admin Settings",
-		GoogleSigninEnabled:  cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "",
-		GoogleClientID:       cfg.GoogleClientID,
-		GoogleClientSecret:   cfg.GoogleClientSecret,
-		GoogleRedirectURL:    cfg.GoogleRedirectURL,
-		SMTPEnabled:          cfg.SMTPHost != "" && cfg.SMTPUser != "",
-		SMTPHost:             cfg.SMTPHost,
-		SMTPPort:             cfg.SMTPPort,
-		SMTPUser:             cfg.SMTPUser,
-		SMTPPassword:         cfg.SMTPPassword,
-		SMTPFrom:             cfg.SMTPFrom,
-		StripeEnabled:        false,
-		PayPalEnabled:        cfg.PayPalClientID != "" && cfg.PayPalClientSecret != "",
-		PayPalMode:           cfg.PayPalMode,
-		PayPalClientID:       cfg.PayPalClientID,
-		PayPalClientSecret:   cfg.PayPalClientSecret,
-		PayPalWebhookID:      cfg.PayPalWebhookID,
-		PublicNavCompanyName: cfg.AppName,
-		PublicNavButtonText:  "Get Started",
-		PublicNavButtonURL:   "/register",
-		PublicNavButtonStyle: "primary",
+		ID:                      primitive.NewObjectID(),
+		SiteName:                cfg.AppName,
+		CompanySlogan:           "Task management with visual website feedback",
+		CompanyEmail:            "support@bugmega.local",
+		CompanyContact:          "support@bugmega.local",
+		OwnerName:               cfg.OwnerName,
+		CompanyAddress:          "Set your company address in Admin Settings",
+		GoogleSigninEnabled:     cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "",
+		GoogleClientID:          cfg.GoogleClientID,
+		GoogleClientSecret:      cfg.GoogleClientSecret,
+		GoogleRedirectURL:       cfg.GoogleRedirectURL,
+		SMTPEnabled:             cfg.SMTPHost != "" && cfg.SMTPUser != "",
+		SMTPHost:                cfg.SMTPHost,
+		SMTPPort:                cfg.SMTPPort,
+		SMTPUser:                cfg.SMTPUser,
+		SMTPPassword:            cfg.SMTPPassword,
+		SMTPFrom:                cfg.SMTPFrom,
+		OwnerNotificationEmail:  defaultOwnerNotificationEmail(cfg),
+		OwnerNotifyRegistration: true,
+		OwnerNotifyPurchase:     true,
+		OwnerNotifyNewChat:      true,
+		OwnerNotificationsSet:   false,
+		StripeEnabled:           false,
+		PayPalEnabled:           cfg.PayPalClientID != "" && cfg.PayPalClientSecret != "",
+		PayPalMode:              cfg.PayPalMode,
+		PayPalClientID:          cfg.PayPalClientID,
+		PayPalClientSecret:      cfg.PayPalClientSecret,
+		PayPalWebhookID:         cfg.PayPalWebhookID,
+		PublicNavCompanyName:    cfg.AppName,
+		PublicNavButtonText:     "Get Started",
+		PublicNavButtonURL:      "/register",
+		PublicNavButtonStyle:    "primary",
 		PublicNavItems: []models.PublicNavItem{
 			{ID: "home", Label: "Home", URL: "/", Visible: true, Order: 1},
 			{ID: "pricing", Label: "Pricing", URL: "/pricing", Visible: true, Order: 2},

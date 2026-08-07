@@ -8957,6 +8957,7 @@ async function renderSettings() {
         <button class="active" type="button" data-settings-tab="identity">${icon("building-2")}Identity</button>
         <button type="button" data-settings-tab="google">${icon("key-round")}Google sign in</button>
         <button type="button" data-settings-tab="smtp">${icon("mail")}SMTP mail</button>
+        <button type="button" data-settings-tab="notifications">${icon("bell")}Notifications</button>
         <button type="button" data-settings-tab="payments">${icon("credit-card")}Payments</button>
         <button type="button" data-settings-tab="colors">${icon("palette")}Colors</button>
       </div>
@@ -9010,6 +9011,18 @@ async function renderSettings() {
               <button class="btn" id="smtpTestBtn" type="button">${icon("send")}Send test email</button>
             </div>
             <p class="status-line"></p>
+          </div>
+        </section>
+        <section data-settings-panel="notifications" class="settings-tab-section" hidden>
+          <div class="settings-provider">
+            <h2>Owner email notifications</h2>
+            <p class="muted">These emails use the SMTP settings. Chat emails are sent once when a chat room is created, not for every message.</p>
+            <div class="field"><label>Send owner emails to</label><input type="email" name="owner_notification_email" value="${esc(settings.owner_notification_email || settings.company_email || "")}" placeholder="owner@example.com"></div>
+            <div class="check-list">
+              <label class="check-row"><input type="checkbox" name="owner_notify_registration" ${settings.owner_notify_registration ? "checked" : ""}> New user registration</label>
+              <label class="check-row"><input type="checkbox" name="owner_notify_purchase" ${settings.owner_notify_purchase ? "checked" : ""}> Successful PayPal purchase</label>
+              <label class="check-row"><input type="checkbox" name="owner_notify_new_chat" ${settings.owner_notify_new_chat ? "checked" : ""}> New chat session</label>
+            </div>
           </div>
         </section>
         <section data-settings-panel="payments" class="settings-tab-section" hidden>
@@ -9083,6 +9096,9 @@ async function renderSettings() {
     [
       "google_signin_enabled",
       "smtp_enabled",
+      "owner_notify_registration",
+      "owner_notify_purchase",
+      "owner_notify_new_chat",
       "paypal_enabled",
       "clear_google_client_secret",
       "clear_smtp_password",
@@ -11153,6 +11169,7 @@ function renderRouteError(error) {
 }
 
 async function route(options = {}) {
+  if (options.closeTaskPanel !== false) closeClientTaskPanel();
   const routeToken = beginRouteTransition(options);
   try {
     if (path() === "/login") {

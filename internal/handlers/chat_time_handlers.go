@@ -117,6 +117,7 @@ func (s *Server) createChat(c *gin.Context) {
 		actor := s.notificationActorName(c.Request.Context(), userCtx.ID)
 		s.notifyOwnerAdmins(c.Request.Context(), userCtx.ID, "support_chat_created", actor+" started a new help chat.", chat.ID)
 	}
+	s.enqueueOwnerNewChatEmail(c.Request.Context(), chat, userCtx.ID)
 	c.JSON(http.StatusCreated, gin.H{"chat": chat})
 }
 

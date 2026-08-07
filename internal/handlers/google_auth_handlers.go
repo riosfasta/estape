@@ -369,6 +369,11 @@ func (s *Server) findOrCreateGoogleUser(ctx context.Context, info googleUserInfo
 	} else if err := s.createStarterWorkspace(ctx, teamID, userID, now); err != nil {
 		return models.User{}, false, fmt.Errorf("could not create starter workspace")
 	}
+	registrationTeam := models.Team{}
+	if team != nil {
+		registrationTeam = *team
+	}
+	s.enqueueOwnerRegistrationEmail(ctx, user, registrationTeam, "Google", invitation)
 	return user, true, nil
 }
 

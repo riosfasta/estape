@@ -170,6 +170,11 @@ func (s *Server) register(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create starter workspace"})
 		return
 	}
+	registrationTeam := models.Team{}
+	if team != nil {
+		registrationTeam = *team
+	}
+	s.enqueueOwnerRegistrationEmail(ctx, user, registrationTeam, "Email/password", invitation)
 
 	access, refresh, err := s.issueTokens(ctx, user)
 	if err != nil {

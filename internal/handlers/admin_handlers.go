@@ -1105,6 +1105,11 @@ func (s *Server) updateSettings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "paypal mode must be sandbox or live"})
 		return
 	}
+	ownerNotificationEmail := strings.ToLower(strings.TrimSpace(req.OwnerNotificationEmail))
+	if ownerNotificationEmail != "" && !strings.Contains(ownerNotificationEmail, "@") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "owner notification email must be a valid email address"})
+		return
+	}
 	colorFields := map[string]string{
 		"theme_primary_color":        req.ThemePrimaryColor,
 		"theme_primary_strong_color": req.ThemePrimaryStrongColor,
@@ -1115,31 +1120,36 @@ func (s *Server) updateSettings(c *gin.Context) {
 		"theme_background_color":     req.ThemeBackgroundColor,
 	}
 	set := bson.M{
-		"site_name":              strings.TrimSpace(req.SiteName),
-		"company_slogan":         strings.TrimSpace(req.CompanySlogan),
-		"company_email":          strings.TrimSpace(req.CompanyEmail),
-		"company_contact":        strings.TrimSpace(req.CompanyContact),
-		"owner_name":             strings.TrimSpace(req.OwnerName),
-		"company_address":        strings.TrimSpace(req.CompanyAddress),
-		"logo_url":               strings.TrimSpace(req.LogoURL),
-		"favicon_url":            strings.TrimSpace(req.FaviconURL),
-		"support_phone":          strings.TrimSpace(req.SupportPhone),
-		"social_links":           normalizeSocialLinks(req.SocialLinks),
-		"google_signin_enabled":  req.GoogleSigninEnabled,
-		"google_client_id":       strings.TrimSpace(req.GoogleClientID),
-		"google_redirect_url":    strings.TrimSpace(req.GoogleRedirectURL),
-		"smtp_enabled":           req.SMTPEnabled,
-		"smtp_host":              strings.TrimSpace(req.SMTPHost),
-		"smtp_port":              firstNonEmpty(strings.TrimSpace(req.SMTPPort), "587"),
-		"smtp_user":              strings.TrimSpace(req.SMTPUser),
-		"smtp_from":              strings.TrimSpace(req.SMTPFrom),
-		"stripe_enabled":         false,
-		"stripe_publishable_key": "",
-		"paypal_enabled":         req.PayPalEnabled,
-		"paypal_mode":            payPalMode,
-		"paypal_client_id":       strings.TrimSpace(req.PayPalClientID),
-		"paypal_webhook_id":      strings.TrimSpace(req.PayPalWebhookID),
-		"updated_at":             time.Now(),
+		"site_name":                 strings.TrimSpace(req.SiteName),
+		"company_slogan":            strings.TrimSpace(req.CompanySlogan),
+		"company_email":             strings.TrimSpace(req.CompanyEmail),
+		"company_contact":           strings.TrimSpace(req.CompanyContact),
+		"owner_name":                strings.TrimSpace(req.OwnerName),
+		"company_address":           strings.TrimSpace(req.CompanyAddress),
+		"logo_url":                  strings.TrimSpace(req.LogoURL),
+		"favicon_url":               strings.TrimSpace(req.FaviconURL),
+		"support_phone":             strings.TrimSpace(req.SupportPhone),
+		"social_links":              normalizeSocialLinks(req.SocialLinks),
+		"google_signin_enabled":     req.GoogleSigninEnabled,
+		"google_client_id":          strings.TrimSpace(req.GoogleClientID),
+		"google_redirect_url":       strings.TrimSpace(req.GoogleRedirectURL),
+		"smtp_enabled":              req.SMTPEnabled,
+		"smtp_host":                 strings.TrimSpace(req.SMTPHost),
+		"smtp_port":                 firstNonEmpty(strings.TrimSpace(req.SMTPPort), "587"),
+		"smtp_user":                 strings.TrimSpace(req.SMTPUser),
+		"smtp_from":                 strings.TrimSpace(req.SMTPFrom),
+		"owner_notification_email":  ownerNotificationEmail,
+		"owner_notify_registration": req.OwnerNotifyRegistration,
+		"owner_notify_purchase":     req.OwnerNotifyPurchase,
+		"owner_notify_new_chat":     req.OwnerNotifyNewChat,
+		"owner_notifications_set":   true,
+		"stripe_enabled":            false,
+		"stripe_publishable_key":    "",
+		"paypal_enabled":            req.PayPalEnabled,
+		"paypal_mode":               payPalMode,
+		"paypal_client_id":          strings.TrimSpace(req.PayPalClientID),
+		"paypal_webhook_id":         strings.TrimSpace(req.PayPalWebhookID),
+		"updated_at":                time.Now(),
 	}
 	for field, raw := range colorFields {
 		color, ok := cleanOptionalHexColor(raw)
