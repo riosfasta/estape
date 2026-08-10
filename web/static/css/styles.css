@@ -258,6 +258,11 @@ h2 { font-size: 19px !important; }
   border-radius: 50%;
   animation: routeLoadingSpin .75s linear infinite;
 }
+.inline-spinner.tiny-spinner {
+  width: 10px;
+  height: 10px;
+  border-width: 1.5px;
+}
 .text-link { color: var(--accent-strong); font-weight: 700; }
 
 .public-nav {
@@ -3677,6 +3682,24 @@ button.inbox-row {
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 800;
+}
+.task-checklist-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 18px;
+}
+.checklist-save-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 42px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+}
+.checklist-save-indicator.saving {
+  color: var(--accent-strong);
 }
 .checklist-builder-rows,
 .task-checklist-items {

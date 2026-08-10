@@ -5219,7 +5219,6 @@ function taskContentBlocksHTML(blocks = [], canUpdate = false) {
   const visible = normalizeTaskBlocks(blocks);
   if (!visible.length) return `<h3>Content</h3><div class="task-rich-content">No content yet.</div>`;
   return `<section class="task-content-blocks" data-task-blocks>
-    <span class="status-line" data-blocks-save-status></span>
     ${visible.map((block, blockIndex) => block.type === "checklist" ? taskChecklistBlockHTML(block, blockIndex, canUpdate) : `<div class="task-content-block" data-task-render-block data-block-type="content"><h3>Content</h3><div class="task-rich-content">${chatText(block.content)}</div></div>`).join("")}
   </section>`;
 }
@@ -5228,7 +5227,7 @@ function taskChecklistBlockHTML(block, blockIndex, canUpdate = false) {
   const checklist = block.checklist || [];
   const doneCount = checklist.filter((item) => item.done).length;
   return `<section class="task-checklist task-content-block" data-task-render-block data-block-type="checklist">
-    <div class="task-checklist-head"><h3>Checklist</h3><span class="muted" data-checklist-count>${doneCount}/${checklist.length} done</span></div>
+    <div class="task-checklist-head"><h3>Checklist</h3><span class="task-checklist-meta"><span class="muted" data-checklist-count>${doneCount}/${checklist.length} done</span><span class="checklist-save-indicator" data-checklist-save-status aria-live="polite"></span></span></div>
     <div class="task-checklist-items">
       ${checklist.map((item, itemIndex) => `<label class="task-checklist-item ${item.done ? "done" : ""}">
         <input type="checkbox" data-task-checklist-done data-block-index="${blockIndex}" data-item-index="${itemIndex}" ${item.done ? "checked" : ""} ${canUpdate ? "" : "disabled"}>
@@ -5271,10 +5270,14 @@ function readVisibleTaskBlocks(root = document) {
 function bindTaskChecklistAutosave(root, taskID, afterSave = () => {}) {
   const box = root.querySelector("[data-task-blocks]");
   if (!box || !taskID) return;
-  const status = box.querySelector("[data-blocks-save-status]");
   box.querySelectorAll("[data-task-checklist-done]").forEach((input) => input.addEventListener("change", async () => {
+    const block = input.closest("[data-task-render-block][data-block-type='checklist']");
+    const status = block?.querySelector("[data-checklist-save-status]");
     input.closest(".task-checklist-item")?.classList.toggle("done", input.checked);
-    if (status) status.textContent = "Saving...";
+    if (status) {
+      status.classList.add("saving");
+      status.innerHTML = `<span class="inline-spinner tiny-spinner" aria-hidden="true"></span><span>Saving</span>`;
+    }
     try {
       const blocks = readVisibleTaskBlocks(box);
       await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify({ blocks }) });
@@ -5283,10 +5286,19 @@ function bindTaskChecklistAutosave(root, taskID, afterSave = () => {}) {
         const count = block.querySelector("[data-checklist-count]");
         if (count) count.textContent = `${items.filter((item) => item.done).length}/${items.length} done`;
       });
-      if (status) status.textContent = "Saved";
+      if (status) {
+        status.classList.remove("saving");
+        status.textContent = "Saved";
+        setTimeout(() => {
+          if (status.textContent === "Saved") status.textContent = "";
+        }, 1200);
+      }
       await afterSave();
     } catch (error) {
-      if (status) status.textContent = error.message;
+      if (status) {
+        status.classList.remove("saving");
+        status.textContent = error.message;
+      }
     }
   }));
 }
@@ -6142,9 +6154,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
   bindChecklistBuilders(panel);
   bindContentBlockEditors(panel);
   bindRecurrenceControls(panel);
-  bindTaskChecklistAutosave(panel, taskID, async () => {
-    route();
-  });
+  bindTaskChecklistAutosave(panel, taskID);
   bindAttachmentOpeners(panel);
   const refreshTaskPanelComments = async () => refreshClientTaskCommentList(panel, taskID, usersByID, canManageFolder, (scope) => {
     bindAttachmentOpeners(scope);
