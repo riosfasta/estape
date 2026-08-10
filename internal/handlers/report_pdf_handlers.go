@@ -1037,13 +1037,33 @@ func (p *simplePDF) paragraph(text string) {
 	p.y -= 6
 }
 
+func (p *simplePDF) paragraphWithLineBreaks(text string) {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	for _, rawLine := range strings.Split(text, "\n") {
+		lineText := stripReportText(rawLine)
+		if lineText == "" {
+			p.ensure(8)
+			p.y -= 8
+			continue
+		}
+		lines := wrapText(lineText, 96, 10)
+		for _, line := range lines {
+			p.ensure(13)
+			p.text(46, p.y, 10, line, "0.08 0.12 0.10")
+			p.y -= 13
+		}
+	}
+	p.y -= 6
+}
+
 func (p *simplePDF) reportNote(note string) {
 	note = strings.TrimSpace(note)
 	if note == "" {
 		return
 	}
 	p.section("Report Note")
-	p.paragraph(note)
+	p.paragraphWithLineBreaks(note)
 }
 
 func (p *simplePDF) taskRow(task models.ClientTask, users map[primitive.ObjectID]models.User, minutes int, options taskReportOptions) {

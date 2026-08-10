@@ -51,3 +51,18 @@ func TestTaskReportPDFIncludesReportNote(t *testing.T) {
 		t.Fatal("PDF should include the report note text")
 	}
 }
+
+func TestTaskReportPDFReportNotePreservesLineBreaks(t *testing.T) {
+	pdf := renderTaskReportPDF(taskReportData{
+		Query:       taskReportQuery{Note: "First note line\nSecond note line"},
+		GeneratedAt: time.Date(2026, 8, 7, 0, 0, 0, 0, time.UTC),
+	})
+
+	output := string(pdf)
+	if strings.Contains(output, "First note line Second note line") {
+		t.Fatal("PDF note should not collapse entered line breaks into one sentence")
+	}
+	if !strings.Contains(output, "(First note line)") || !strings.Contains(output, "(Second note line)") {
+		t.Fatal("PDF should render each report note line")
+	}
+}

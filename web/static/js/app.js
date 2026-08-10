@@ -1837,6 +1837,62 @@ async function api(url, options = {}, retry = true) {
   return body;
 }
 
+async function apiBlob(url, options = {}, retry = true) {
+  const headers = options.headers || {};
+  if (state.access) headers.Authorization = "Bearer " + state.access;
+  const res = await fetch(url, { ...options, headers });
+  if (res.status === 401 && retry && state.refresh) {
+    const refreshed = await fetch("/api/auth/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: state.refresh }),
+    });
+    if (refreshed.ok) {
+      const data = await refreshed.json();
+      storeTokens(data.access_token, data.refresh_token);
+      return apiBlob(url, options, false);
+    }
+  }
+  if (!res.ok) {
+    const type = res.headers.get("Content-Type") || "";
+    const body = type.includes("application/json") ? await res.json() : await res.text();
+    const message = typeof body === "object" ? (body.error || "Download failed") : (body || "Download failed");
+    const error = new Error(message);
+    error.status = res.status;
+    error.body = body;
+    throw error;
+  }
+  return {
+    blob: await res.blob(),
+    filename: filenameFromDisposition(res.headers.get("Content-Disposition") || "", "download.pdf"),
+  };
+}
+
+function filenameFromDisposition(disposition, fallback = "download") {
+  const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utfMatch?.[1]) {
+    try {
+      return decodeURIComponent(utfMatch[1].replace(/^"|"$/g, ""));
+    } catch {
+      return utfMatch[1].replace(/^"|"$/g, "");
+    }
+  }
+  const match = disposition.match(/filename="?([^";]+)"?/i);
+  return match?.[1]?.trim() || fallback;
+}
+
+async function downloadAuthenticatedFile(url, fallbackFilename = "download.pdf") {
+  const data = await apiBlob(url);
+  const objectURL = URL.createObjectURL(data.blob);
+  const link = document.createElement("a");
+  link.href = objectURL;
+  link.download = data.filename || fallbackFilename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(objectURL), 1500);
+}
+
 function storeTokens(access, refresh) {
   state.access = access;
   state.refresh = refresh;
@@ -7323,13 +7379,13 @@ function assignedTaskBoardTabsByWebsite(tabs = []) {
   return byWebsite;
 }
 
-function taskReportPDFURL(params = {}) {
+function taskReportPDFURL(params = {}, options = {}) {
   const query = new URLSearchParams();
   Object.entries(params || {}).forEach(([key, value]) => {
     if (String(value || "").trim()) query.set(key, value);
   });
   if (!query.has("period")) query.set("period", "all");
-  if (state.access) query.set("token", state.access);
+  if (options.includeToken !== false && state.access) query.set("token", state.access);
   return `/api/reports/tasks/export.pdf?${query.toString()}`;
 }
 
@@ -10570,6 +10626,7 @@ function bindTaskReportExportForm(websites = []) {
   if (!form || !link || !clientSelect || !websiteSelect || !fromInput || !toInput || !periodSelect) return;
   let previewTimer = null;
   let previewRun = 0;
+  let previewAbort = null;
   const refreshDomains = () => {
     const previous = websiteSelect.value;
     websiteSelect.innerHTML = reportWebsiteOptions(websites, clientSelect.value);
@@ -10592,13 +10649,16 @@ function bindTaskReportExportForm(websites = []) {
     clearTimeout(previewTimer);
     previewTimer = setTimeout(async () => {
       const run = ++previewRun;
+      if (previewAbort) previewAbort.abort();
+      previewAbort = new AbortController();
       preview.innerHTML = `<div class="report-preview-empty">Loading preview...</div>`;
       try {
         const data = Object.fromEntries(new FormData(form).entries());
-        const result = await api(taskReportPreviewURL(data));
+        const result = await api(taskReportPreviewURL(data), { signal: previewAbort.signal });
         if (run !== previewRun) return;
         preview.innerHTML = taskReportPreviewHTML(result);
       } catch (error) {
+        if (error.name === "AbortError") return;
         if (run !== previewRun) return;
         preview.innerHTML = `<div class="report-preview-empty danger">${esc(error.message || "Could not load preview")}</div>`;
       }
@@ -10611,10 +10671,21 @@ function bindTaskReportExportForm(websites = []) {
     refreshDomains();
     refreshLink();
   });
-  link.addEventListener("click", (event) => {
+  link.addEventListener("click", async (event) => {
+    event.preventDefault();
     if (form.elements.scope.value === "domain" && !form.elements.website_id.value) {
-      event.preventDefault();
       setFormStatus(form, "Select a domain for domain export.", true);
+      return;
+    }
+    const stopLoading = setButtonLoading(link, true, "Exporting...");
+    try {
+      const data = Object.fromEntries(new FormData(form).entries());
+      await downloadAuthenticatedFile(taskReportPDFURL(data, { includeToken: false }), "task-report.pdf");
+      setFormStatus(form, "PDF download started.");
+    } catch (error) {
+      setFormStatus(form, error.message || "Could not export PDF", true);
+    } finally {
+      stopLoading();
     }
   });
 }
