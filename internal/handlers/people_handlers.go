@@ -200,6 +200,17 @@ func randomToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
+func parseTeamInvitationRecipient(value string) (string, string) {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "@") && !strings.Contains(strings.TrimPrefix(value, "@"), "@") {
+		return "username", strings.TrimPrefix(value, "@")
+	}
+	if strings.Contains(value, "@") {
+		return "email", value
+	}
+	return "username", value
+}
+
 func (s *Server) createTeamInvitation(c *gin.Context) {
 	userCtx, _ := currentUser(c)
 	teamID, ok := objectIDParam(c, "id")
@@ -213,17 +224,13 @@ func (s *Server) createTeamInvitation(c *gin.Context) {
 		return
 	}
 	var req struct {
+		Recipient string `json:"recipient"`
 		Email     string `json:"email"`
 		Username  string `json:"username"`
 		StaffRole string `json:"staff_role"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid invitation body"})
-		return
-	}
-	email := strings.ToLower(strings.TrimSpace(req.Email))
-	if email == "" || !strings.Contains(email, "@") {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "valid email is required"})
 		return
 	}
 	staffRole := allowedStaffRole(req.StaffRole)
@@ -236,44 +243,93 @@ func (s *Server) createTeamInvitation(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "team not found"})
 		return
 	}
+
+	recipient := strings.TrimSpace(firstNonEmpty(req.Recipient, req.Email, req.Username))
+	if recipient == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "enter an email or @username"})
+		return
+	}
+
+	var existing models.User
+	existingFound := false
+	existingUserID := primitive.NilObjectID
+	email := ""
+	username := ""
+	recipientType, recipientValue := parseTeamInvitationRecipient(recipient)
+	if recipientType == "username" {
+		username = normalizeUsername(recipientValue)
+		if username == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "enter a valid email or @username"})
+			return
+		}
+		err := s.store.C("users").FindOne(c.Request.Context(), bson.M{"username": username}).Decode(&existing)
+		if err == mongo.ErrNoDocuments {
+			c.JSON(http.StatusNotFound, gin.H{"error": "username not found. Invite new users by email."})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check username"})
+			return
+		}
+		existingFound = true
+	} else {
+		email = strings.ToLower(strings.TrimSpace(recipientValue))
+		if email == "" || !strings.Contains(email, "@") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "enter a valid email or @username"})
+			return
+		}
+		err := s.store.C("users").FindOne(c.Request.Context(), bson.M{"email": email}).Decode(&existing)
+		if err == nil {
+			existingFound = true
+		} else if err != mongo.ErrNoDocuments {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check existing user"})
+			return
+		} else if strings.TrimSpace(req.Username) != "" && strings.TrimSpace(req.Recipient) == "" {
+			var usernameErr error
+			username, usernameErr = s.requestedUsername(c.Request.Context(), req.Username, email, email)
+			if usernameErr != nil {
+				writeUsernameError(c, usernameErr)
+				return
+			}
+		}
+	}
+	if existingFound {
+		if existing.TeamID == teamID && existing.Status == models.StatusActive {
+			c.JSON(http.StatusConflict, gin.H{"error": "this user is already an active member of the team"})
+			return
+		}
+		if containsObjectID(team.MemberIDs, existing.ID) && existing.Status == models.StatusActive {
+			c.JSON(http.StatusConflict, gin.H{"error": "this user is already listed in the team"})
+			return
+		}
+		s.ensureUserIdentity(c.Request.Context(), &existing)
+		existingUserID = existing.ID
+		email = strings.ToLower(strings.TrimSpace(existing.Email))
+		username = existing.Username
+		if email == "" || !strings.Contains(email, "@") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "the selected user does not have a valid email address"})
+			return
+		}
+	}
 	now := time.Now()
-	pendingCount, err := s.store.C("team_invitations").CountDocuments(c.Request.Context(), bson.M{
+	pendingFilter := bson.M{
 		"team_id":    teamID,
-		"email":      email,
 		"status":     "pending",
 		"expires_at": bson.M{"$gt": now},
-	})
+	}
+	if !existingUserID.IsZero() {
+		pendingFilter["$or"] = []bson.M{{"email": email}, {"existing_user_id": existingUserID}}
+	} else {
+		pendingFilter["email"] = email
+	}
+	pendingCount, err := s.store.C("team_invitations").CountDocuments(c.Request.Context(), pendingFilter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check invitation status"})
 		return
 	}
 	if pendingCount > 0 {
-		c.JSON(http.StatusConflict, gin.H{"error": "an active invitation already exists for this email"})
+		c.JSON(http.StatusConflict, gin.H{"error": "an active invitation already exists for this user"})
 		return
-	}
-	var existing models.User
-	existingErr := s.store.C("users").FindOne(c.Request.Context(), bson.M{"email": email}).Decode(&existing)
-	existingUserID := primitive.NilObjectID
-	username := normalizeUsername(req.Username)
-	if existingErr == nil {
-		if existing.TeamID == teamID && existing.Status == models.StatusActive {
-			c.JSON(http.StatusConflict, gin.H{"error": "this user is already an active member of the team"})
-			return
-		}
-		s.ensureUserIdentity(c.Request.Context(), &existing)
-		existingUserID = existing.ID
-		username = existing.Username
-	} else {
-		if existingErr != mongo.ErrNoDocuments {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check existing user"})
-			return
-		}
-		var err error
-		username, err = s.requestedUsername(c.Request.Context(), req.Username, email, email)
-		if err != nil {
-			writeUsernameError(c, err)
-			return
-		}
 	}
 	token, err := randomToken()
 	if err != nil {
@@ -304,7 +360,7 @@ func (s *Server) createTeamInvitation(c *gin.Context) {
 		s.enqueueInvitationEmail(c.Request.Context(), email, team.Name, staffRole, s.cfg.AppURL+"/register?invite="+token)
 	}
 	s.audit(c.Request.Context(), userCtx.ID, "team.invitation.created", "team_invitation", invitation.ID)
-	c.JSON(http.StatusCreated, gin.H{"invitation": invitation, "existing_user": existingErr == nil})
+	c.JSON(http.StatusCreated, gin.H{"invitation": invitation, "existing_user": existingFound})
 }
 
 func (s *Server) listTeamInvitations(c *gin.Context) {

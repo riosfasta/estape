@@ -3589,8 +3589,7 @@ async function renderTeam() {
       ${canManageTeam ? `<section class="panel">
         <h2>Invite Staff</h2>
         <form id="inviteForm" class="form-grid">
-          <div class="field"><label>Email</label><input type="email" name="email" required></div>
-          <div class="field"><label>Username</label><input name="username" pattern="[a-zA-Z0-9_]{3,24}" placeholder="alex_dev"></div>
+          <div class="field"><label>Email or @username</label><input name="recipient" required placeholder="staff@company.com or @alex_dev" autocomplete="off"></div>
           <div class="field"><label>User role</label><select name="staff_role" required>${staffRoleOptions()}</select></div>
           <button class="btn primary" type="submit">${icon("mail-plus")}Send invitation</button>
           <p class="status-line"></p>
@@ -9346,9 +9345,8 @@ async function renderCompanySettings() {
         <section class="panel">
           <h2>Add Staff</h2>
           <form id="staffInviteForm" class="form-grid">
-            <div class="grid-3">
-              <div class="field"><label>Email</label><input type="email" name="email" required placeholder="staff@company.com"></div>
-              <div class="field"><label>Username</label><input name="username" pattern="[a-zA-Z0-9_]{3,24}" placeholder="alex_dev"></div>
+            <div class="grid-2">
+              <div class="field"><label>Email or @username</label><input name="recipient" required placeholder="staff@company.com or @alex_dev" autocomplete="off"></div>
               <div class="field"><label>User role</label><select name="staff_role" required>${staffRoleOptions()}</select></div>
             </div>
             <button class="btn primary" type="submit">${icon("user-plus")}Send invitation</button>

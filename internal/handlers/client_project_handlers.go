@@ -692,7 +692,14 @@ func (s *Server) createClientWebsite(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create website"})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"website": site})
+	defaultTab := defaultClientTaskBoardTab(site, userCtx.ID, now)
+	if _, err := s.store.C("client_tabs").InsertOne(c.Request.Context(), defaultTab); err != nil {
+		_, _ = s.store.C("client_websites").DeleteOne(c.Request.Context(), bson.M{"_id": site.ID})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create default task board"})
+		return
+	}
+	s.broadcastClientTabChanged(c.Request.Context(), defaultTab, userCtx.ID, "client_tab_created")
+	c.JSON(http.StatusCreated, gin.H{"website": site, "tab": defaultTab})
 }
 
 func (s *Server) getClientWebsite(c *gin.Context) {
@@ -2818,6 +2825,22 @@ func sameObjectIDSet(a []primitive.ObjectID, b []primitive.ObjectID) bool {
 
 func defaultClientTaskStatuses() []string {
 	return []string{"todo", "in_progress", "done"}
+}
+
+func defaultClientTaskBoardTab(site models.ClientWebsite, actorID primitive.ObjectID, now time.Time) models.ClientTab {
+	statuses := defaultClientTaskStatuses()
+	return models.ClientTab{
+		ID:        primitive.NewObjectID(),
+		ClientID:  site.ClientID,
+		WebsiteID: site.ID,
+		TeamID:    site.TeamID,
+		Type:      "task_board",
+		Title:     "Task Board",
+		Statuses:  statuses,
+		CreatedBy: actorID,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
 }
 
 func normalizeClientTaskStatus(value string) string {
