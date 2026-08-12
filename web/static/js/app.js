@@ -2647,7 +2647,7 @@ function invitationCards(invitations) {
     <article class="invite-card">
       <div>
         <strong>${icon("mail-check")} Team invitation</strong>
-        <span class="muted">Join as ${esc(staffRoleLabel(invite.staff_role))} with @${esc(invite.username || "username")}</span>
+        <span class="muted">Join ${esc(invite.company_name || "the company")} with @${esc(invite.username || "username")}</span>
       </div>
       <div class="toolbar">
         <button class="btn primary" data-invite-id="${invite.id}" data-invite-action="accept">${icon("check")}Accept</button>
@@ -2660,7 +2660,7 @@ function invitationStatusRows(invitations) {
   if (!invitations.length) return `<p class="muted">No staff invitations yet.</p>`;
   return invitations.map((invite) => `
     <article class="task-row">
-      <div><h3>${esc(invite.email)}</h3><span class="muted">@${esc(invite.username || "pending")} · ${esc(staffRoleLabel(invite.staff_role))}</span></div>
+      <div><h3>${esc(invite.email)}</h3><span class="muted">@${esc(invite.username || "pending")}</span></div>
       <span class="pill ${invite.status === "pending" ? "warn" : invite.status === "canceled" || invite.status === "declined" || invite.status === "left" ? "danger" : ""}">${esc(membershipStatusLabel(invite.status))}</span>
       <div class="invite-actions">
         ${invite.status === "pending" ? `<button class="btn compact" data-cancel-invite="${invite.id}">${icon("x")}Cancel</button>` : `<span class="muted">${fmtDate(invite.responded_at || invite.created_at)}</span>`}
@@ -3559,7 +3559,6 @@ function teamMemberRows(members, canManageTeam) {
     const statusText = hasLeft ? "left company" : (isSuspended ? "blocked" : (member.status || "active"));
     return `<article class="task-row">
       <div><h3>${esc(member.name)}</h3><span class="muted">@${esc(member.username || "pending")} · ${esc(member.email)}</span></div>
-      <span class="pill">${esc(staffRoleLabel(member.staff_role) || member.role)}</span>
       <span class="pill ${isSuspended || hasLeft ? "danger" : ""}">${esc(statusText)}</span>
       ${canManageMember ? `
         <details class="row-menu">
@@ -3590,7 +3589,6 @@ async function renderTeam() {
         <h2>Invite Staff</h2>
         <form id="inviteForm" class="form-grid">
           <div class="field"><label>Email or @username</label><input name="recipient" required placeholder="staff@company.com or @alex_dev" autocomplete="off"></div>
-          <div class="field"><label>User role</label><select name="staff_role" required>${staffRoleOptions()}</select></div>
           <button class="btn primary" type="submit">${icon("mail-plus")}Send invitation</button>
           <p class="status-line"></p>
         </form>
@@ -3605,10 +3603,7 @@ async function renderTeam() {
           <div class="field"><label>Name</label><input name="name" required></div>
           <div class="field"><label>Email</label><input type="email" name="email" required></div>
         </div>
-        <div class="grid-2">
-          <div class="field"><label>Username</label><input name="username" required pattern="[a-zA-Z0-9_]{3,24}"></div>
-          <div class="field"><label>User role</label><select name="staff_role">${staffRoleOptions()}</select></div>
-        </div>
+        <div class="field"><label>Username</label><input name="username" required pattern="[a-zA-Z0-9_]{3,24}"></div>
         <div class="field"><label>Status</label><select name="status"><option value="active">active</option><option value="suspended">suspended</option></select></div>
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="memberEditDialog">Cancel</button></div>
         <p class="status-line"></p>
@@ -3632,7 +3627,6 @@ async function renderTeam() {
     form.elements.name.value = member.name || "";
     form.elements.email.value = member.email || "";
     form.elements.username.value = member.username || "";
-    form.elements.staff_role.value = member.staff_role === "marketing it" ? "marketing" : (member.staff_role || "internal");
     form.elements.status.value = member.status || "active";
     $("#memberEditDialog").showModal();
   }));
@@ -3662,7 +3656,6 @@ async function renderTeam() {
           name: form.elements.name.value,
           email: form.elements.email.value,
           username: form.elements.username.value,
-          staff_role: form.elements.staff_role.value,
           status: form.elements.status.value,
         }),
       });
@@ -3687,12 +3680,14 @@ function clientRoleLabel(value) {
 function clientWebsiteAccessRows(site = {}, members = []) {
   const memberIDs = site.member_ids || [];
   const adminIDs = site.client_admin_ids || [];
+  const memberRoles = site.member_roles || {};
   const accessIDs = [...new Set([...memberIDs, ...adminIDs])];
   if (!accessIDs.length) return `<p class="muted">No domain-only access yet.</p>`;
   const membersByID = Object.fromEntries((members || []).map((member) => [member.id, member]));
   return accessIDs.map((id) => {
     const member = membersByID[id] || {};
-    const role = adminIDs.includes(id) ? "Client Admin" : (staffRoleLabel(member.staff_role) || "Member");
+    const accessRole = memberRoles[id] || member.staff_role || "internal";
+    const role = adminIDs.includes(id) ? "Client Admin" : (staffRoleLabel(accessRole) || "Member");
     return `<article class="task-row">
       <div><h3>${esc(member.name || member.username || member.email || "Member")}</h3><span class="muted">@${esc(member.username || "member")} - ${esc(member.email || "")}</span></div>
       <span class="pill">${esc(role)}</span>
@@ -3703,12 +3698,15 @@ function clientWebsiteAccessRows(site = {}, members = []) {
 
 function clientWebsiteRows(websites, canManage = false, canManageMembers = false) {
   if (!websites.length) return `<p class="muted">No websites yet.</p>`;
-  return websites.map((site) => `<article class="task-row website-row">
+  return websites.map((site) => {
+    const accessCount = new Set([...(site.member_ids || []), ...(site.client_admin_ids || [])]).size;
+    return `<article class="task-row website-row">
     <div><h3>${esc(site.name)}</h3><span class="muted">${esc(site.url || "No URL yet")}</span></div>
     <span class="pill">${icon("globe-2")}website</span>
+    ${accessCount ? `<span class="pill">${esc(accessCount)} domain access</span>` : ""}
     <div class="invite-actions">
       <a class="btn compact" href="/projects/${esc(site.client_id)}/sites/${esc(site.id)}">${icon("external-link")}Open</a>
-      ${canManageMembers ? `<button class="btn compact" type="button" data-share-client-website="${esc(site.id)}">${icon("users")}Access</button>` : ""}
+      ${canManageMembers ? `<button class="btn compact" type="button" data-share-client-website="${esc(site.id)}">${icon("users")}Add team</button>` : ""}
       ${canManage ? `<div class="context-actions" data-action-menu-wrap>
         <button class="context-menu-trigger" type="button" data-action-menu-trigger aria-label="Website options"></button>
         <div class="context-menu" data-action-menu hidden>
@@ -3717,7 +3715,8 @@ function clientWebsiteRows(websites, canManage = false, canManageMembers = false
         </div>
       </div>` : ""}
     </div>
-  </article>`).join("");
+  </article>`;
+  }).join("");
 }
 
 function clientDocumentRows(documents, canManage) {
@@ -3865,13 +3864,19 @@ function clientMemberRows(members, canManageMembers) {
   if (!members.length) return `<p class="muted">No members listed yet.</p>`;
   return members.map((entry) => {
     const user = entry.user || {};
-    const role = entry.client_role === "client_admin" ? "Client Admin" : (staffRoleLabel(user.staff_role) || clientRoleLabel(entry.client_role));
+    const role = staffRoleLabel(entry.client_role) || clientRoleLabel(entry.client_role);
     return `<article class="task-row">
       <div><h3>${esc(user.name || user.username || user.email)}</h3><span class="muted">@${esc(user.username || "member")} - ${esc(user.email || "")}</span></div>
       <span class="pill">${esc(role)}</span>
       ${canManageMembers && user.id !== state.me?.id ? `<button class="btn compact danger" type="button" data-remove-client-member="${esc(user.id)}">${icon("user-minus")}Remove</button>` : ""}
     </article>`;
   }).join("");
+}
+
+function teamMemberOptionHTML(members = []) {
+  const activeMembers = (members || []).filter((member) => member.status === "active");
+  if (!activeMembers.length) return `<option value="" disabled>No active team members available</option>`;
+  return activeMembers.map((member) => `<option value="${esc(member.id)}">${esc(member.name || member.email)} - @${esc(member.username || "member")}</option>`).join("");
 }
 
 function memberStaffRole(member) {
@@ -6450,7 +6455,7 @@ async function renderClientProject(clientID) {
     </div>
     <div class="grid-2">
       <section class="panel"><div class="panel-head"><h2>Client information</h2>${canManage ? `<button class="btn compact" id="addClientDocBtn">${icon("file-plus")}Document</button>` : ""}</div><p>${chatText(client.details || "No client information yet.")}</p><div class="task-list">${clientDocumentRows(data.documents || [], canManage)}</div></section>
-      <section class="panel"><div class="panel-head"><h2>Listed members</h2>${canManageMembers ? `<button class="btn compact primary" id="addClientMemberBtn">${icon("user-plus")}Add member</button>` : ""}</div><div class="task-list">${clientMemberRows(data.members || [], canManageMembers)}</div></section>
+      <section class="panel"><div class="panel-head"><h2>Folder team access</h2>${canManageMembers ? `<button class="btn compact primary" id="addClientMemberBtn">${icon("user-plus")}Add team</button>` : ""}</div><p class="muted">People added here can access every domain inside this folder.</p><div class="task-list">${clientMemberRows(data.members || [], canManageMembers)}</div></section>
     </div>
     <section class="panel"><div class="panel-head"><h2>Websites</h2>${canManage ? `<button class="btn primary compact" id="addClientWebsiteBtn">${icon("plus")}Website</button>` : ""}</div><div class="task-list">${clientWebsiteRows(data.websites || [], canManage, canManageMembers)}</div></section>
     <dialog id="editClientDialog" class="modal client-dialog">
@@ -6474,10 +6479,15 @@ async function renderClientProject(clientID) {
     </dialog>
     <dialog id="clientMemberDialog" class="modal client-dialog">
       <form id="clientMemberForm" class="form-grid" method="dialog">
-        <div class="modal-head"><h2>Add member access</h2><button class="btn icon quiet" type="button" data-close-dialog="clientMemberDialog" title="Close">${icon("x")}</button></div>
-        <div class="field"><label>Listed member</label><select name="user_id" required>${(candidateData.members || []).map((member) => `<option value="${esc(member.id)}">${esc(member.name || member.email)} - @${esc(member.username || "member")}</option>`).join("")}</select></div>
+        <div class="modal-head"><h2>Add team access</h2><button class="btn icon quiet" type="button" data-close-dialog="clientMemberDialog" title="Close">${icon("x")}</button></div>
+        <p class="muted">Choose whether this person can access every domain in ${esc(client.name)} or only one specific domain.</p>
+        <div class="field"><label>Team member</label><select name="user_id" required>${teamMemberOptionHTML(candidateData.members || [])}</select></div>
+        <div class="grid-2">
+          <div class="field"><label>Permission</label><select name="permission" data-client-access-permission><option value="all">All domains in this folder</option><option value="domain">Specific domain</option></select></div>
+          <div class="field" data-client-access-domain-field hidden><label>Domain</label><select name="website_id">${(data.websites || []).map((site) => `<option value="${esc(site.id)}">${esc(site.name || site.url || "Untitled domain")}</option>`).join("") || `<option value="" disabled>No domains available</option>`}</select></div>
+        </div>
         <div class="field"><label>User role</label><select name="role">${staffRoleOptions("internal")}</select></div>
-        <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Add</button><button class="btn" type="button" data-close-dialog="clientMemberDialog">Cancel</button></div>
+        <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Add team</button><button class="btn" type="button" data-close-dialog="clientMemberDialog">Cancel</button></div>
         <p class="status-line"></p>
       </form>
     </dialog>
@@ -6493,15 +6503,15 @@ async function renderClientProject(clientID) {
     </dialog>
     <dialog id="clientWebsiteAccessDialog" class="modal client-dialog">
       <form id="clientWebsiteAccessForm" class="form-grid" method="dialog">
-        <div class="modal-head"><h2>Domain access</h2><button class="btn icon quiet" type="button" data-close-dialog="clientWebsiteAccessDialog" title="Close">${icon("x")}</button></div>
+        <div class="modal-head"><h2>Add team to domain</h2><button class="btn icon quiet" type="button" data-close-dialog="clientWebsiteAccessDialog" title="Close">${icon("x")}</button></div>
         <input type="hidden" name="website_id">
-        <p class="muted" id="clientWebsiteAccessTitle">Share this domain with listed company members only.</p>
+        <p class="muted" id="clientWebsiteAccessTitle">Domain access gives this person access only to the selected domain.</p>
         <div id="clientWebsiteAccessRows" class="task-list"></div>
         <div class="grid-2">
-          <div class="field"><label>Listed member</label><select name="user_id" required>${(candidateData.members || []).map((member) => `<option value="${esc(member.id)}">${esc(member.name || member.email)} - @${esc(member.username || "member")}</option>`).join("")}</select></div>
-          <div class="field"><label>User role</label><select name="role">${staffRoleOptions("internal")}</select></div>
+          <div class="field"><label>Team member</label><select name="user_id" required>${teamMemberOptionHTML(candidateData.members || [])}</select></div>
+          <div class="field"><label>Domain role</label><select name="role">${staffRoleOptions("internal")}</select></div>
         </div>
-        <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Share domain</button><button class="btn" type="button" data-close-dialog="clientWebsiteAccessDialog">Cancel</button></div>
+        <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Add team</button><button class="btn" type="button" data-close-dialog="clientWebsiteAccessDialog">Cancel</button></div>
         <p class="status-line"></p>
       </form>
     </dialog>
@@ -6510,6 +6520,17 @@ async function renderClientProject(clientID) {
     ${clientDocumentDialogHTML("clientDocumentDialog", "Add client document")}`);
   bindAccessRoleSelect($("#clientMemberForm"), candidateData.members || []);
   bindAccessRoleSelect($("#clientWebsiteAccessForm"), candidateData.members || []);
+  const clientMemberForm = $("#clientMemberForm");
+  const syncClientMemberPermission = () => {
+    if (!clientMemberForm) return;
+    const domainField = clientMemberForm.querySelector("[data-client-access-domain-field]");
+    const domainSelect = clientMemberForm.elements.website_id;
+    const domainMode = clientMemberForm.elements.permission?.value === "domain";
+    if (domainField) domainField.hidden = !domainMode;
+    if (domainSelect) domainSelect.required = domainMode;
+  };
+  clientMemberForm?.elements.permission?.addEventListener("change", syncClientMemberPermission);
+  syncClientMemberPermission();
   $("#editClientBtn")?.addEventListener("click", () => $("#editClientDialog")?.showModal());
   $("#deleteClientFolderBtn")?.addEventListener("click", () => {
     const form = $("#deleteClientFolderForm");
@@ -6517,7 +6538,15 @@ async function renderClientProject(clientID) {
     setFormStatus(form, "");
     $("#deleteClientFolderDialog")?.showModal();
   });
-  $("#addClientMemberBtn")?.addEventListener("click", () => $("#clientMemberDialog")?.showModal());
+  $("#addClientMemberBtn")?.addEventListener("click", () => {
+    const form = $("#clientMemberForm");
+    form?.reset();
+    form?.elements.user_id?.dispatchEvent(new Event("change"));
+    if (form?.elements.permission) form.elements.permission.value = "all";
+    syncClientMemberPermission();
+    setFormStatus(form, "");
+    $("#clientMemberDialog")?.showModal();
+  });
   $("#addClientWebsiteBtn")?.addEventListener("click", () => $("#clientWebsiteDialog")?.showModal());
   $("#addClientDocBtn")?.addEventListener("click", () => $("#clientDocumentDialog")?.showModal());
   const websitesByID = Object.fromEntries((data.websites || []).map((site) => [site.id, site]));
@@ -6526,8 +6555,9 @@ async function renderClientProject(clientID) {
     const form = $("#clientWebsiteAccessForm");
     if (!site || !form) return;
     form.reset();
+    form.elements.user_id?.dispatchEvent(new Event("change"));
     form.elements.website_id.value = site.id || "";
-    $("#clientWebsiteAccessTitle").textContent = `Share ${site.name || "this domain"} with listed company members only.`;
+    $("#clientWebsiteAccessTitle").textContent = `Domain access gives this person access only to ${site.name || "this domain"}.`;
     $("#clientWebsiteAccessRows").innerHTML = clientWebsiteAccessRows(site, candidateData.members || []);
     $("#clientWebsiteAccessDialog")?.showModal();
     icons();
@@ -6586,7 +6616,22 @@ async function renderClientProject(clientID) {
     event.preventDefault();
     const form = event.currentTarget;
     try {
-      await api(`/api/client-projects/${clientID}/members`, { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
+      const body = JSON.stringify({
+        user_id: form.elements.user_id.value,
+        role: form.elements.role.value,
+      });
+      if (form.elements.permission.value === "domain") {
+        const websiteID = form.elements.website_id.value;
+        if (!websiteID) {
+          setFormStatus(form, "Choose a domain for specific domain access.", true);
+          return;
+        }
+        await api(`/api/client-websites/${websiteID}/members`, { method: "POST", body });
+      } else {
+        await api(`/api/client-projects/${clientID}/members`, { method: "POST", body });
+      }
+      $("#clientMemberDialog")?.close();
+      await refreshClientSidebarCache();
       renderClientProject(clientID);
     } catch (error) {
       setFormStatus(form, error.message, true);
@@ -9315,7 +9360,7 @@ async function renderCompanySettings() {
             <article class="access-row">
               <div class="access-summary">
                 <strong>${esc(invite.company_name || "Company invitation")}</strong>
-                <span class="muted">Invited as ${esc(staffRoleLabel(invite.staff_role) || "staff")} with @${esc(invite.username || "username")}</span>
+                <span class="muted">Invited to join with @${esc(invite.username || "username")}</span>
               </div>
               <span class="pill warn">${esc(invite.status || "pending")}</span>
               <button class="btn danger compact" type="button" data-decline-settings-invite="${invite.id}">${icon("x")}Decline</button>
@@ -9345,10 +9390,7 @@ async function renderCompanySettings() {
         <section class="panel">
           <h2>Add Staff</h2>
           <form id="staffInviteForm" class="form-grid">
-            <div class="grid-2">
-              <div class="field"><label>Email or @username</label><input name="recipient" required placeholder="staff@company.com or @alex_dev" autocomplete="off"></div>
-              <div class="field"><label>User role</label><select name="staff_role" required>${staffRoleOptions()}</select></div>
-            </div>
+            <div class="field"><label>Email or @username</label><input name="recipient" required placeholder="staff@company.com or @alex_dev" autocomplete="off"></div>
             <button class="btn primary" type="submit">${icon("user-plus")}Send invitation</button>
             <p class="status-line"></p>
           </form>

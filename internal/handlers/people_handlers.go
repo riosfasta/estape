@@ -235,8 +235,7 @@ func (s *Server) createTeamInvitation(c *gin.Context) {
 	}
 	staffRole := allowedStaffRole(req.StaffRole)
 	if staffRole == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "choose a valid staff role"})
-		return
+		staffRole = "internal"
 	}
 	var team models.Team
 	if err := s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": teamID}).Decode(&team); err != nil {
@@ -354,7 +353,7 @@ func (s *Server) createTeamInvitation(c *gin.Context) {
 		return
 	}
 	if !existingUserID.IsZero() {
-		s.notifyUserIDs(c.Request.Context(), []primitive.ObjectID{existingUserID}, userCtx.ID, "team_invitation", "You were invited to join "+team.Name+" as "+staffRoleDisplayName(staffRole)+".", invitation.ID)
+		s.notifyUserIDs(c.Request.Context(), []primitive.ObjectID{existingUserID}, userCtx.ID, "team_invitation", "You were invited to join "+team.Name+".", invitation.ID)
 		s.enqueueInvitationEmail(c.Request.Context(), email, team.Name, staffRole, s.cfg.AppURL+"/dashboard")
 	} else {
 		s.enqueueInvitationEmail(c.Request.Context(), email, team.Name, staffRole, s.cfg.AppURL+"/register?invite="+token)
@@ -1156,7 +1155,11 @@ func (s *Server) enqueueInvitationEmail(ctx context.Context, recipient string, t
 	if s.mailer == nil {
 		return
 	}
-	body := `<p>You were invited to join <strong>` + html.EscapeString(teamName) + `</strong> as <strong>` + html.EscapeString(staffRoleDisplayName(staffRole)) + `</strong>.</p><p><a href="` + html.EscapeString(link) + `">Open invitation</a></p>`
+	roleText := ""
+	if allowedStaffRole(staffRole) != "" && allowedStaffRole(staffRole) != "internal" {
+		roleText = ` as <strong>` + html.EscapeString(staffRoleDisplayName(staffRole)) + `</strong>`
+	}
+	body := `<p>You were invited to join <strong>` + html.EscapeString(teamName) + `</strong>` + roleText + `.</p><p><a href="` + html.EscapeString(link) + `">Open invitation</a></p>`
 	_ = s.mailer.Enqueue(ctx, models.EmailQueueItem{
 		Recipient: recipient,
 		Type:      "team_invitation",

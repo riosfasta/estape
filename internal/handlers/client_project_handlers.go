@@ -340,10 +340,22 @@ func clientAccessStaffRole(requested string, member models.User) string {
 	return staffRole
 }
 
-func (s *Server) syncClientAccessStaffRole(ctx context.Context, member models.User, staffRole string) error {
-	set := bson.M{"staff_role": staffRole}
-	_, err := s.store.C("users").UpdateByID(ctx, member.ID, bson.M{"$set": set})
-	return err
+func clientAccessRoleField(memberID primitive.ObjectID) string {
+	return "member_roles." + memberID.Hex()
+}
+
+func storedClientAccessRole(memberRoles map[string]string, member models.User) string {
+	staffRole := ""
+	if memberRoles != nil {
+		staffRole = allowedStaffRole(memberRoles[member.ID.Hex()])
+	}
+	if staffRole == "" {
+		staffRole = allowedStaffRole(member.StaffRole)
+	}
+	if staffRole == "" {
+		staffRole = "internal"
+	}
+	return staffRole
 }
 
 func (s *Server) addClientProjectMember(c *gin.Context) {
@@ -396,22 +408,20 @@ func (s *Server) addClientProjectMember(c *gin.Context) {
 	}
 	staffRole := clientAccessStaffRole(req.Role, member)
 	targetRole := "member"
-	update := bson.M{"$addToSet": bson.M{"member_ids": memberID}, "$pull": bson.M{"client_admin_ids": memberID}, "$set": bson.M{"updated_at": time.Now()}}
+	set := bson.M{"updated_at": time.Now(), clientAccessRoleField(memberID): staffRole}
+	update := bson.M{"$addToSet": bson.M{"member_ids": memberID}, "$pull": bson.M{"client_admin_ids": memberID}, "$set": set}
 	if staffRole == string(models.RoleClientAdmin) {
 		targetRole = string(models.RoleClientAdmin)
-		update = bson.M{"$addToSet": bson.M{"client_admin_ids": memberID}, "$pull": bson.M{"member_ids": memberID}, "$set": bson.M{"updated_at": time.Now()}}
+		update = bson.M{"$addToSet": bson.M{"client_admin_ids": memberID}, "$pull": bson.M{"member_ids": memberID}, "$set": set}
 	}
 	alreadyTargetRole := (targetRole == string(models.RoleClientAdmin) && containsObjectID(client.ClientAdminIDs, memberID)) || (targetRole == "member" && containsObjectID(client.MemberIDs, memberID))
 	alreadyHadAccess := containsObjectID(client.ClientAdminIDs, memberID) || containsObjectID(client.MemberIDs, memberID)
+	roleChanged := alreadyHadAccess && storedClientAccessRole(client.MemberRoles, member) != staffRole
 	if _, err := s.store.C("client_projects").UpdateByID(c.Request.Context(), client.ID, update); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not add member"})
 		return
 	}
-	if err := s.syncClientAccessStaffRole(c.Request.Context(), member, staffRole); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update member role"})
-		return
-	}
-	if !alreadyTargetRole && member.ID != userCtx.ID {
+	if (!alreadyTargetRole || roleChanged) && member.ID != userCtx.ID {
 		roleName := staffRoleDisplayName(staffRole)
 		notificationType := "client_project_added"
 		content := "You were added to " + client.Name + " as " + roleName + "."
@@ -447,8 +457,9 @@ func (s *Server) removeClientProjectMember(c *gin.Context) {
 		return
 	}
 	_, err := s.store.C("client_projects").UpdateByID(c.Request.Context(), client.ID, bson.M{
-		"$pull": bson.M{"member_ids": memberID, "client_admin_ids": memberID},
-		"$set":  bson.M{"updated_at": time.Now()},
+		"$pull":  bson.M{"member_ids": memberID, "client_admin_ids": memberID},
+		"$set":   bson.M{"updated_at": time.Now()},
+		"$unset": bson.M{clientAccessRoleField(memberID): ""},
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not remove member"})
@@ -507,22 +518,20 @@ func (s *Server) addClientWebsiteMember(c *gin.Context) {
 	}
 	staffRole := clientAccessStaffRole(req.Role, member)
 	targetRole := "member"
-	update := bson.M{"$addToSet": bson.M{"member_ids": memberID}, "$pull": bson.M{"client_admin_ids": memberID}, "$set": bson.M{"updated_at": time.Now()}}
+	set := bson.M{"updated_at": time.Now(), clientAccessRoleField(memberID): staffRole}
+	update := bson.M{"$addToSet": bson.M{"member_ids": memberID}, "$pull": bson.M{"client_admin_ids": memberID}, "$set": set}
 	if staffRole == string(models.RoleClientAdmin) {
 		targetRole = string(models.RoleClientAdmin)
-		update = bson.M{"$addToSet": bson.M{"client_admin_ids": memberID}, "$pull": bson.M{"member_ids": memberID}, "$set": bson.M{"updated_at": time.Now()}}
+		update = bson.M{"$addToSet": bson.M{"client_admin_ids": memberID}, "$pull": bson.M{"member_ids": memberID}, "$set": set}
 	}
 	alreadyTargetRole := (targetRole == string(models.RoleClientAdmin) && containsObjectID(site.ClientAdminIDs, memberID)) || (targetRole == "member" && containsObjectID(site.MemberIDs, memberID))
 	alreadyHadAccess := containsObjectID(site.ClientAdminIDs, memberID) || containsObjectID(site.MemberIDs, memberID)
+	roleChanged := alreadyHadAccess && storedClientAccessRole(site.MemberRoles, member) != staffRole
 	if _, err := s.store.C("client_websites").UpdateByID(c.Request.Context(), site.ID, update); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not share domain access"})
 		return
 	}
-	if err := s.syncClientAccessStaffRole(c.Request.Context(), member, staffRole); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update member role"})
-		return
-	}
-	if !alreadyTargetRole && member.ID != userCtx.ID {
+	if (!alreadyTargetRole || roleChanged) && member.ID != userCtx.ID {
 		roleName := staffRoleDisplayName(staffRole)
 		notificationType := "client_domain_added"
 		content := "You were added to " + site.Name + " as " + roleName + "."
@@ -558,8 +567,9 @@ func (s *Server) removeClientWebsiteMember(c *gin.Context) {
 		return
 	}
 	if _, err := s.store.C("client_websites").UpdateByID(c.Request.Context(), site.ID, bson.M{
-		"$pull": bson.M{"member_ids": memberID, "client_admin_ids": memberID},
-		"$set":  bson.M{"updated_at": time.Now()},
+		"$pull":  bson.M{"member_ids": memberID, "client_admin_ids": memberID},
+		"$set":   bson.M{"updated_at": time.Now()},
+		"$unset": bson.M{clientAccessRoleField(memberID): ""},
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not remove domain access"})
 		return
@@ -2386,7 +2396,7 @@ func (s *Server) clientProjectMembers(ctx context.Context, client models.ClientP
 		if cursor.Decode(&user) != nil {
 			continue
 		}
-		role := clientAccessStaffRole(user.StaffRole, user)
+		role := storedClientAccessRole(client.MemberRoles, user)
 		if containsObjectID(client.ClientAdminIDs, user.ID) {
 			role = string(models.RoleClientAdmin)
 		}
@@ -2411,7 +2421,7 @@ func (s *Server) clientWebsiteMembers(ctx context.Context, site models.ClientWeb
 		if cursor.Decode(&user) != nil {
 			continue
 		}
-		role := clientAccessStaffRole(user.StaffRole, user)
+		role := storedClientAccessRole(site.MemberRoles, user)
 		if containsObjectID(site.ClientAdminIDs, user.ID) {
 			role = string(models.RoleClientAdmin)
 		}

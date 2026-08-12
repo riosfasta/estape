@@ -125,6 +125,7 @@ type ClientProject struct {
 	Details        string               `bson:"details,omitempty" json:"details,omitempty"`
 	MemberIDs      []primitive.ObjectID `bson:"member_ids" json:"member_ids"`
 	ClientAdminIDs []primitive.ObjectID `bson:"client_admin_ids" json:"client_admin_ids"`
+	MemberRoles    map[string]string    `bson:"member_roles,omitempty" json:"member_roles,omitempty"`
 	CreatedBy      primitive.ObjectID   `bson:"created_by" json:"created_by"`
 	CreatedAt      time.Time            `bson:"created_at" json:"created_at"`
 	UpdatedAt      time.Time            `bson:"updated_at" json:"updated_at"`
@@ -139,6 +140,7 @@ type ClientWebsite struct {
 	Details        string               `bson:"details,omitempty" json:"details,omitempty"`
 	MemberIDs      []primitive.ObjectID `bson:"member_ids,omitempty" json:"member_ids,omitempty"`
 	ClientAdminIDs []primitive.ObjectID `bson:"client_admin_ids,omitempty" json:"client_admin_ids,omitempty"`
+	MemberRoles    map[string]string    `bson:"member_roles,omitempty" json:"member_roles,omitempty"`
 	CreatedBy      primitive.ObjectID   `bson:"created_by" json:"created_by"`
 	CreatedAt      time.Time            `bson:"created_at" json:"created_at"`
 	UpdatedAt      time.Time            `bson:"updated_at" json:"updated_at"`

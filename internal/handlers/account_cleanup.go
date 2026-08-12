@@ -226,10 +226,16 @@ func (s *Server) cleanupUserReferences(ctx context.Context, user models.User) er
 	if _, err := s.store.C("teams").UpdateMany(ctx, bson.M{}, bson.M{"$pull": bson.M{"member_ids": id}}); err != nil {
 		return err
 	}
-	if _, err := s.store.C("client_projects").UpdateMany(ctx, bson.M{}, bson.M{"$pull": bson.M{"member_ids": id, "client_admin_ids": id}}); err != nil {
+	if _, err := s.store.C("client_projects").UpdateMany(ctx, bson.M{}, bson.M{
+		"$pull":  bson.M{"member_ids": id, "client_admin_ids": id},
+		"$unset": bson.M{clientAccessRoleField(id): ""},
+	}); err != nil {
 		return err
 	}
-	if _, err := s.store.C("client_websites").UpdateMany(ctx, bson.M{}, bson.M{"$pull": bson.M{"member_ids": id, "client_admin_ids": id}}); err != nil {
+	if _, err := s.store.C("client_websites").UpdateMany(ctx, bson.M{}, bson.M{
+		"$pull":  bson.M{"member_ids": id, "client_admin_ids": id},
+		"$unset": bson.M{clientAccessRoleField(id): ""},
+	}); err != nil {
 		return err
 	}
 	if _, err := s.store.C("tasks").UpdateMany(ctx, bson.M{}, bson.M{"$pull": bson.M{"assignee_ids": id, "comments": bson.M{"author_id": id}}}); err != nil {
