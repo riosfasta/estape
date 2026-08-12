@@ -82,6 +82,34 @@ func (s *Server) getTeam(c *gin.Context) {
 		members = append(members, formerMember)
 		seenMembers[formerMember.ID] = true
 	}
+	pendingCursor, err := s.store.C("team_invitations").Find(c.Request.Context(), bson.M{"team_id": teamID, "status": "pending", "existing_user_id": bson.M{"$ne": primitive.NilObjectID}, "expires_at": bson.M{"$gt": time.Now()}})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load pending members"})
+		return
+	}
+	defer pendingCursor.Close(c.Request.Context())
+	var pendingInvitations []models.TeamInvitation
+	if err := pendingCursor.All(c.Request.Context(), &pendingInvitations); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not decode pending members"})
+		return
+	}
+	for _, invitation := range pendingInvitations {
+		if invitation.ExistingUserID.IsZero() || seenMembers[invitation.ExistingUserID] {
+			continue
+		}
+		var pendingMember models.User
+		if err := s.store.C("users").FindOne(c.Request.Context(), bson.M{"_id": invitation.ExistingUserID}).Decode(&pendingMember); err != nil {
+			continue
+		}
+		pendingMember.TeamID = teamID
+		pendingMember.Role = teamRoleForStaffRole(invitation.StaffRole)
+		if invitation.StaffRole != "" {
+			pendingMember.StaffRole = invitation.StaffRole
+		}
+		pendingMember.Status = models.UserStatus("pending")
+		members = append(members, pendingMember)
+		seenMembers[pendingMember.ID] = true
+	}
 	c.JSON(http.StatusOK, gin.H{"team": team, "members": members})
 }
 

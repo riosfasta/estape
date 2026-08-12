@@ -1572,6 +1572,18 @@ function billingMembershipDetailsHTML(membership = activeWorkspaceMembership(), 
   </section>`;
 }
 
+function billingInvoicesPanelHTML(invoices = [], options = {}) {
+  const className = options.className || "";
+  return `<section class="panel billing-invoices-panel ${esc(className)}">
+    <h2>Invoices</h2>
+    <div class="task-list">${invoices.map((invoice) => `<article class="task-row" id="invoice-${esc(invoice.id || invoice.subscription_id || "")}">
+      <div><h3>${money(invoice.amount)} ${esc(invoice.currency || "").toUpperCase()}</h3><span class="muted">${fmtDate(invoice.issued_at)}</span></div>
+      <span class="pill">${esc(invoice.status || "invoice")}</span>
+      ${invoice.external_invoice_url ? `<a class="btn" href="${esc(invoice.external_invoice_url)}">Receipt</a>` : `<span class="muted">No receipt</span>`}
+    </article>`).join("") || `<p class="muted">No invoices yet.</p>`}</div>
+  </section>`;
+}
+
 function fmtDate(value) {
   if (!value) return "";
   return new Date(value).toLocaleDateString();
@@ -2018,7 +2030,7 @@ async function renderAuth(mode) {
           ${isRegister ? `<div class="field"><label>Name</label><input name="name" required></div>` : ""}
           ${isRegister ? `<div class="field"><label>Username</label><input name="username" required pattern="[a-zA-Z0-9_]{3,24}" placeholder="jane_writer"></div>` : ""}
           ${isRegister && !inviteToken ? `<div class="field"><label>Company name</label><input name="company_name" required placeholder="Acme Inc"></div>` : ""}
-          ${isRegister && inviteToken ? `<input type="hidden" name="invite_token" value="${esc(inviteToken)}"><p class="muted">This account will join the company that invited you.</p>` : ""}
+          ${isRegister && inviteToken ? `<input type="hidden" name="invite_token" value="${esc(inviteToken)}"><p class="muted">Create your account first, then review the company invitation from Inbox to accept or decline.</p>` : ""}
           <div class="field"><label>Email</label><input type="email" name="email" required></div>
           <div class="field"><label>Password</label><input type="password" name="password" required minlength="8"></div>
           ${!isRegister ? `<div class="field two-factor-field" hidden><label>Authenticator code</label><input id="twoFactorCode" name="two_factor_code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>` : ""}
@@ -2575,7 +2587,7 @@ async function renderDashboard() {
   const notifications = (notificationData.notifications || []).filter((note) => note.type !== "team_invitation");
   const notificationBinData = await api("/api/users/me/notifications?bin=1").catch(() => ({ notifications: [] }));
   const deletedNotifications = (notificationBinData.notifications || []).filter((note) => note.type !== "team_invitation");
-  state.unreadNotificationCount = unreadNotificationCount(notifications);
+  state.unreadNotificationCount = unreadNotificationCount(notifications) + invitations.length;
   shell("Inbox", `
     <div class="inbox-page">
       <div class="inbox-head">
@@ -2585,7 +2597,7 @@ async function renderDashboard() {
         </div>
         <span id="inboxUnreadSummary" class="pill ${inboxUnreadTotal() ? "warn" : ""}">${esc(badgeCount(inboxUnreadTotal()))} unread</span>
       </div>
-      ${invitationCards(invitations)}
+      <div id="invitationCenterMount">${invitationCards(invitations)}</div>
       <div id="notificationCenterMount">${notificationCards(notifications, deletedNotifications)}</div>
       <section class="panel inbox-filter-panel">
         <div class="inbox-filter-row">
@@ -2606,15 +2618,7 @@ async function renderDashboard() {
       <div id="inboxCommentsMount">${inboxSection("Comments", inboxCommentRows(inboxComments))}</div>
     </div>`);
   state.liveInboxSignature = inboxCommentsLiveSignature(inboxData);
-  document.querySelectorAll("[data-invite-action]").forEach((btn) => btn.addEventListener("click", async () => {
-    try {
-      await api(`/api/invitations/${btn.dataset.inviteId}/${btn.dataset.inviteAction}`, { method: "POST", body: JSON.stringify({}) });
-      await loadMe();
-      await renderDashboard();
-    } catch (error) {
-      setStatus(error.message, true);
-    }
-  }));
+  bindInvitationActions();
   document.querySelectorAll("[data-inbox-mention-filter]").forEach((btn) => btn.addEventListener("click", () => {
     setInboxFilters(btn.dataset.inboxMentionFilter, $("#inboxProjectFilter")?.value || "");
   }));
@@ -2639,6 +2643,18 @@ async function renderDashboard() {
       }
     }, 0);
   }
+}
+
+function bindInvitationActions() {
+  document.querySelectorAll("[data-invite-action]").forEach((btn) => btn.addEventListener("click", async () => {
+    try {
+      await api(`/api/invitations/${btn.dataset.inviteId}/${btn.dataset.inviteAction}`, { method: "POST", body: JSON.stringify({}) });
+      await loadMe();
+      await renderDashboard();
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  }));
 }
 
 function invitationCards(invitations) {
@@ -3027,13 +3043,15 @@ function updateInboxUnreadUI() {
 }
 
 async function loadNotificationSets() {
-  const [activeData, binData] = await Promise.all([
+  const [activeData, binData, invitationData] = await Promise.all([
     api("/api/users/me/notifications").catch(() => ({ notifications: [] })),
     api("/api/users/me/notifications?bin=1").catch(() => ({ notifications: [] })),
+    api("/api/users/me/invitations").catch(() => ({ invitations: [] })),
   ]);
   return {
     notifications: (activeData.notifications || []).filter((note) => note.type !== "team_invitation"),
     deletedNotifications: (binData.notifications || []).filter((note) => note.type !== "team_invitation"),
+    invitations: invitationData.invitations || [],
   };
 }
 
@@ -3041,10 +3059,15 @@ async function refreshNotificationsLive() {
   if (!state.access || state.notificationPollBusy) return;
   state.notificationPollBusy = true;
   try {
-    const { notifications, deletedNotifications } = await loadNotificationSets();
-    state.unreadNotificationCount = unreadNotificationCount(notifications);
+    const { notifications, deletedNotifications, invitations } = await loadNotificationSets();
+    state.unreadNotificationCount = unreadNotificationCount(notifications) + invitations.length;
     updateInboxUnreadUI();
     const mount = $("#notificationCenterMount");
+    const invitationMount = $("#invitationCenterMount");
+    if (path() === "/dashboard" && invitationMount) {
+      invitationMount.innerHTML = invitationCards(invitations);
+      bindInvitationActions();
+    }
     if (path() === "/dashboard" && mount) {
       mount.innerHTML = notificationCards(notifications, deletedNotifications);
       bindNotificationActions();
@@ -3874,9 +3897,12 @@ function clientMemberRows(members, canManageMembers) {
 }
 
 function teamMemberOptionHTML(members = []) {
-  const activeMembers = (members || []).filter((member) => member.status === "active");
-  if (!activeMembers.length) return `<option value="" disabled>No active team members available</option>`;
-  return activeMembers.map((member) => `<option value="${esc(member.id)}">${esc(member.name || member.email)} - @${esc(member.username || "member")}</option>`).join("");
+  const candidates = (members || []).filter((member) => member.status === "active" || member.status === "pending");
+  if (!candidates.length) return `<option value="" disabled>No active or pending invited members available</option>`;
+  return candidates.map((member) => {
+    const status = member.status === "pending" ? " - pending invite" : "";
+    return `<option value="${esc(member.id)}">${esc(member.name || member.email)} - @${esc(member.username || "member")}${esc(status)}</option>`;
+  }).join("");
 }
 
 function memberStaffRole(member) {
@@ -8270,7 +8296,7 @@ async function renderBilling() {
         ${membership.status === "trialing" ? `<p class="muted">Your trial is active until ${esc(usefulBillingDate(membership.trial_ends_at) || "the trial expiry date")}. Upgrade when you are ready to keep access after the trial.</p>` : ""}
         ${pricingCardsHTML(plans)}
       </section>`}
-    <section class="panel" style="margin-top:18px"><h2>Invoices</h2><div class="task-list">${invoices.map((invoice) => `<article class="task-row"><div><h3>${money(invoice.amount)} ${esc(invoice.currency).toUpperCase()}</h3><span class="muted">${fmtDate(invoice.issued_at)}</span></div><span class="pill">${esc(invoice.status)}</span><a class="btn" href="${esc(invoice.external_invoice_url)}">Receipt</a></article>`).join("") || `<p class="muted">No invoices yet.</p>`}</div></section>`);
+    ${billingInvoicesPanelHTML(invoices, { className: "billing-page-invoices" })}`);
   if (!paidMembership) bindPurchaseButtons(renderBilling);
 }
 
@@ -9294,6 +9320,14 @@ async function renderCompanySettings() {
   const pendingInvitationData = await api("/api/users/me/invitations").catch(() => ({ invitations: [] }));
   const invitations = invitationData.invitations || [];
   const pendingInvitations = pendingInvitationData.invitations || [];
+  const showBillingSettings = state.me?.role !== "owner_adm";
+  const settingsMembership = activeWorkspaceMembership();
+  const settingsPlanData = showBillingSettings ? await api("/api/subscriptions/plans").catch(() => ({ plans: settingsMembership.plans || [] })) : { plans: [] };
+  const settingsPlans = settingsPlanData.plans || settingsMembership.plans || [];
+  const settingsBillingTeamID = activeWorkspaceTeamID() || state.team?.id || state.personalTeam?.id || "";
+  const settingsInvoiceData = showBillingSettings && settingsBillingTeamID ? await api(`/api/subscriptions/${settingsBillingTeamID}/invoices`).catch(() => ({ invoices: [] })) : { invoices: [] };
+  const settingsInvoices = settingsInvoiceData.invoices || [];
+  const settingsPaidMembership = currentMembershipIsPaid(settingsMembership);
   const personalCompanyName = personalTeam?.name || `${state.me?.name || "My"}'s Company`;
   const logoMarkup = personalTeam?.logo_url ? `<img src="${esc(personalTeam.logo_url)}" alt="">` : esc((personalCompanyName || "P").slice(0, 1).toUpperCase());
   const profileAvatarMarkup = state.me?.avatar_url ? `<img src="${esc(state.me.avatar_url)}" alt="">` : userInitial();
@@ -9396,6 +9430,24 @@ async function renderCompanySettings() {
           </form>
           <div class="task-list invite-history">${invitationStatusRows(invitations)}</div>
         </section>` : ""}
+      ${showBillingSettings ? `
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Billing</h2>
+              <p class="muted">${settingsPaidMembership ? "Membership details and receipts for this workspace." : "Plans, trial state, approvals, and receipts for this workspace."}</p>
+            </div>
+            <a class="btn compact" href="/settings/billing">${icon("external-link")}Open billing page</a>
+          </div>
+        </section>
+        ${settingsPaidMembership ? billingMembershipDetailsHTML(settingsMembership, settingsPlans) : `
+          <section class="panel paywall-panel">
+            <h2>${settingsMembership.status === "trialing" ? "Trial membership" : "Choose a package"}</h2>
+            ${settingsMembership.status === "trialing" ? `<p class="muted">Your trial is active until ${esc(usefulBillingDate(settingsMembership.trial_ends_at) || "the trial expiry date")}. Upgrade when you are ready to keep access after the trial.</p>` : ""}
+            ${pricingCardsHTML(settingsPlans)}
+          </section>`}
+        ${billingInvoicesPanelHTML(settingsInvoices)}
+      ` : ""}
       <section class="panel">
         <h2>Update Password</h2>
         <div id="passwordUpdatePanel" class="form-grid">
@@ -9455,6 +9507,12 @@ async function renderCompanySettings() {
     </div>`);
 
   $("#settingsHelpBtn")?.addEventListener("click", openHelpChatWidget);
+  if (showBillingSettings && !settingsPaidMembership) {
+    bindPurchaseButtons(async () => {
+      await loadMe();
+      await renderCompanySettings();
+    });
+  }
 
   $("#profilePhotoFile")?.addEventListener("change", async (event) => {
     const file = event.currentTarget.files?.[0];

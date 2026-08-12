@@ -301,9 +301,6 @@ func (s *Server) findOrCreateGoogleUser(ctx context.Context, info googleUserInfo
 			return models.User{}, false, fmt.Errorf("invitation email must match Google account email")
 		}
 		invitation = &loaded
-		teamID = invitation.TeamID
-		role = teamRoleForStaffRole(invitation.StaffRole)
-		staffRole = invitation.StaffRole
 	}
 
 	username, err := s.requestedUsername(ctx, "", info.Name, info.Email)
@@ -319,22 +316,19 @@ func (s *Server) findOrCreateGoogleUser(ctx context.Context, info googleUserInfo
 		return models.User{}, false, fmt.Errorf("could not secure Google account")
 	}
 
-	var team *models.Team
-	if invitation == nil {
-		trialSubID, trialPlan, err := s.createTrialSubscription(ctx, teamID, now)
-		if err != nil {
-			return models.User{}, false, fmt.Errorf("could not create trial subscription")
-		}
-		team = &models.Team{
-			ID:              teamID,
-			Name:            companyName,
-			CompanyEmail:    info.Email,
-			OwnerAdminID:    userID,
-			MemberIDs:       []primitive.ObjectID{userID},
-			SubscriptionID:  trialSubID,
-			SeatLimitCached: trialPlan.SeatLimit,
-			CreatedAt:       now,
-		}
+	trialSubID, trialPlan, err := s.createTrialSubscription(ctx, teamID, now)
+	if err != nil {
+		return models.User{}, false, fmt.Errorf("could not create trial subscription")
+	}
+	team := &models.Team{
+		ID:              teamID,
+		Name:            companyName,
+		CompanyEmail:    info.Email,
+		OwnerAdminID:    userID,
+		MemberIDs:       []primitive.ObjectID{userID},
+		SubscriptionID:  trialSubID,
+		SeatLimitCached: trialPlan.SeatLimit,
+		CreatedAt:       now,
 	}
 
 	user := models.User{
@@ -351,10 +345,8 @@ func (s *Server) findOrCreateGoogleUser(ctx context.Context, info googleUserInfo
 		ThemePreference: "system",
 		CreatedAt:       now,
 	}
-	if team != nil {
-		if _, err := s.store.C("teams").InsertOne(ctx, *team); err != nil {
-			return models.User{}, false, fmt.Errorf("could not create team")
-		}
+	if _, err := s.store.C("teams").InsertOne(ctx, *team); err != nil {
+		return models.User{}, false, fmt.Errorf("could not create team")
 	}
 	if _, err := s.store.C("users").InsertOne(ctx, user); err != nil {
 		if mongo.IsDuplicateKeyError(err) {
@@ -362,17 +354,13 @@ func (s *Server) findOrCreateGoogleUser(ctx context.Context, info googleUserInfo
 		}
 		return models.User{}, false, fmt.Errorf("could not create Google account")
 	}
-	if invitation != nil {
-		respondedAt := time.Now()
-		_, _ = s.store.C("teams").UpdateByID(ctx, invitation.TeamID, bson.M{"$addToSet": bson.M{"member_ids": userID}})
-		_, _ = s.store.C("team_invitations").UpdateByID(ctx, invitation.ID, bson.M{"$set": bson.M{"status": "accepted", "existing_user_id": userID, "responded_at": respondedAt}})
-	} else if err := s.createStarterWorkspace(ctx, teamID, userID, now); err != nil {
+	if err := s.createStarterWorkspace(ctx, teamID, userID, now); err != nil {
 		return models.User{}, false, fmt.Errorf("could not create starter workspace")
 	}
-	registrationTeam := models.Team{}
-	if team != nil {
-		registrationTeam = *team
+	if invitation != nil {
+		s.linkPendingInvitationToNewUser(ctx, *invitation, user)
 	}
+	registrationTeam := *team
 	s.enqueueOwnerRegistrationEmail(ctx, user, registrationTeam, "Google", invitation)
 	return user, true, nil
 }

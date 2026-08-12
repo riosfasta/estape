@@ -403,8 +403,10 @@ func (s *Server) addClientProjectMember(c *gin.Context) {
 		return
 	}
 	if member.TeamID != client.TeamID && !containsObjectID(team.MemberIDs, memberID) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "member must be listed on this team before project access can be granted"})
-		return
+		if !s.hasPendingTeamInvitationForUser(c.Request.Context(), client.TeamID, member) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "member must be invited to this company before project access can be granted"})
+			return
+		}
 	}
 	staffRole := clientAccessStaffRole(req.Role, member)
 	targetRole := "member"
@@ -513,8 +515,10 @@ func (s *Server) addClientWebsiteMember(c *gin.Context) {
 		return
 	}
 	if member.TeamID != site.TeamID && !containsObjectID(team.MemberIDs, memberID) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "member must be invited to this company before domain access can be granted"})
-		return
+		if !s.hasPendingTeamInvitationForUser(c.Request.Context(), site.TeamID, member) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "member must be invited to this company before domain access can be granted"})
+			return
+		}
 	}
 	staffRole := clientAccessStaffRole(req.Role, member)
 	targetRole := "member"
@@ -2197,6 +2201,25 @@ func (s *Server) canManageTeamSilently(ctx context.Context, userCtx middleware.U
 		return true
 	}
 	count, err := s.store.C("teams").CountDocuments(ctx, bson.M{"_id": teamID, "owner_admin_id": userCtx.ID})
+	return err == nil && count > 0
+}
+
+func (s *Server) hasPendingTeamInvitationForUser(ctx context.Context, teamID primitive.ObjectID, user models.User) bool {
+	if teamID.IsZero() || user.ID.IsZero() {
+		return false
+	}
+	filter := bson.M{
+		"team_id":    teamID,
+		"status":     "pending",
+		"expires_at": bson.M{"$gt": time.Now()},
+		"$or": []bson.M{
+			{"existing_user_id": user.ID},
+		},
+	}
+	if email := strings.ToLower(strings.TrimSpace(user.Email)); email != "" {
+		filter["$or"] = append(filter["$or"].([]bson.M), bson.M{"email": email})
+	}
+	count, err := s.store.C("team_invitations").CountDocuments(ctx, filter)
 	return err == nil && count > 0
 }
 

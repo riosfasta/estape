@@ -112,27 +112,20 @@ func (s *Server) register(c *gin.Context) {
 	teamID := primitive.NewObjectID()
 	role := models.RoleTeamAdmin
 	staffRole := "manager"
-	var team *models.Team
-	if invitation != nil {
-		teamID = invitation.TeamID
-		role = teamRoleForStaffRole(invitation.StaffRole)
-		staffRole = invitation.StaffRole
-	} else {
-		trialSubID, trialPlan, err := s.createTrialSubscription(ctx, teamID, now)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create trial subscription"})
-			return
-		}
-		team = &models.Team{
-			ID:              teamID,
-			Name:            companyName,
-			CompanyEmail:    req.Email,
-			OwnerAdminID:    userID,
-			MemberIDs:       []primitive.ObjectID{userID},
-			SubscriptionID:  trialSubID,
-			SeatLimitCached: trialPlan.SeatLimit,
-			CreatedAt:       now,
-		}
+	trialSubID, trialPlan, err := s.createTrialSubscription(ctx, teamID, now)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create trial subscription"})
+		return
+	}
+	team := &models.Team{
+		ID:              teamID,
+		Name:            companyName,
+		CompanyEmail:    req.Email,
+		OwnerAdminID:    userID,
+		MemberIDs:       []primitive.ObjectID{userID},
+		SubscriptionID:  trialSubID,
+		SeatLimitCached: trialPlan.SeatLimit,
+		CreatedAt:       now,
 	}
 	user := models.User{
 		ID:              userID,
@@ -148,11 +141,9 @@ func (s *Server) register(c *gin.Context) {
 		CreatedAt:       now,
 	}
 
-	if team != nil {
-		if _, err := s.store.C("teams").InsertOne(ctx, *team); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create team"})
-			return
-		}
+	if _, err := s.store.C("teams").InsertOne(ctx, *team); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create team"})
+		return
 	}
 	if _, err := s.store.C("users").InsertOne(ctx, user); err != nil {
 		if mongo.IsDuplicateKeyError(err) {
@@ -162,18 +153,14 @@ func (s *Server) register(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create user"})
 		return
 	}
-	if invitation != nil {
-		respondedAt := time.Now()
-		_, _ = s.store.C("teams").UpdateByID(ctx, invitation.TeamID, bson.M{"$addToSet": bson.M{"member_ids": userID}})
-		_, _ = s.store.C("team_invitations").UpdateByID(ctx, invitation.ID, bson.M{"$set": bson.M{"status": "accepted", "existing_user_id": userID, "responded_at": respondedAt}})
-	} else if err := s.createStarterWorkspace(ctx, teamID, userID, now); err != nil {
+	if err := s.createStarterWorkspace(ctx, teamID, userID, now); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create starter workspace"})
 		return
 	}
-	registrationTeam := models.Team{}
-	if team != nil {
-		registrationTeam = *team
+	if invitation != nil {
+		s.linkPendingInvitationToNewUser(ctx, *invitation, user)
 	}
+	registrationTeam := *team
 	s.enqueueOwnerRegistrationEmail(ctx, user, registrationTeam, "Email/password", invitation)
 
 	access, refresh, err := s.issueTokens(ctx, user)
@@ -182,6 +169,21 @@ func (s *Server) register(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"user": user, "access_token": access, "refresh_token": refresh})
+}
+
+func (s *Server) linkPendingInvitationToNewUser(ctx context.Context, invitation models.TeamInvitation, user models.User) {
+	update := bson.M{"existing_user_id": user.ID}
+	if strings.TrimSpace(invitation.Username) == "" && strings.TrimSpace(user.Username) != "" {
+		update["username"] = user.Username
+	}
+	_, _ = s.store.C("team_invitations").UpdateByID(ctx, invitation.ID, bson.M{"$set": update})
+
+	teamName := "the company"
+	var team models.Team
+	if err := s.store.C("teams").FindOne(ctx, bson.M{"_id": invitation.TeamID}).Decode(&team); err == nil && strings.TrimSpace(team.Name) != "" {
+		teamName = team.Name
+	}
+	s.notifyUserIDs(ctx, []primitive.ObjectID{user.ID}, invitation.InvitedBy, "team_invitation", "You were invited to join "+teamName+".", invitation.ID)
 }
 
 func (s *Server) login(c *gin.Context) {
