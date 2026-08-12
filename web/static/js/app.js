@@ -1089,7 +1089,7 @@ function workspaceContextPickerHTML(options = workspaceOptions()) {
   return `<label class="workspace-context-picker">
     <span>View workspace</span>
     <select id="workspaceContextSelect" aria-label="Switch workspace view">
-      ${options.map((option) => `<option value="${esc(option.value)}" ${option.value === state.workspaceContext ? "selected" : ""}>${esc(option.kind === "company" ? `${option.name} - ${option.subtitle}` : option.name)}</option>`).join("")}
+      ${options.map((option) => `<option value="${esc(option.value)}" ${option.value === state.workspaceContext ? "selected" : ""}>${esc(option.name)}</option>`).join("")}
     </select>
   </label>`;
 }
