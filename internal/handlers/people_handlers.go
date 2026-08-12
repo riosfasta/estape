@@ -850,6 +850,16 @@ func (s *Server) notificationTarget(ctx context.Context, note models.Notificatio
 			target["source_type"] = "client_project"
 			target["client_id"] = related.Hex()
 		}
+	case "client_domain_added", "client_domain_role_updated":
+		if !related.IsZero() {
+			var site models.ClientWebsite
+			if s.store.C("client_websites").FindOne(ctx, bson.M{"_id": related}).Decode(&site) == nil {
+				target["url"] = "/projects/" + site.ClientID.Hex() + "/sites/" + site.ID.Hex()
+				target["source_type"] = "client_domain"
+				target["client_id"] = site.ClientID.Hex()
+				target["website_id"] = site.ID.Hex()
+			}
+		}
 	case "bug_assigned", "feedback_mention":
 		if feedbackTarget, ok := s.feedbackNotificationTarget(ctx, related); ok {
 			return feedbackTarget
@@ -1164,6 +1174,51 @@ func (s *Server) enqueueInvitationEmail(ctx context.Context, recipient string, t
 		Recipient: recipient,
 		Type:      "team_invitation",
 		Subject:   "Invitation to join " + teamName,
+		BodyHTML:  body,
+	})
+}
+
+func (s *Server) enqueueClientAccessEmail(ctx context.Context, recipient string, accessKind string, accessName string, staffRole string, linkPath string, updated bool) {
+	if s.mailer == nil {
+		return
+	}
+	recipient = strings.ToLower(strings.TrimSpace(recipient))
+	if recipient == "" || !strings.Contains(recipient, "@") {
+		return
+	}
+	accessKind = strings.ToLower(strings.TrimSpace(accessKind))
+	if accessKind == "" {
+		accessKind = "workspace"
+	}
+	accessName = strings.TrimSpace(accessName)
+	if accessName == "" {
+		accessName = "the selected " + accessKind
+	}
+	roleName := staffRoleDisplayName(staffRole)
+	if roleName == "" {
+		roleName = "Member"
+	}
+	base := strings.TrimRight(strings.TrimSpace(s.cfg.AppURL), "/")
+	link := strings.TrimSpace(linkPath)
+	if link != "" && !strings.HasPrefix(strings.ToLower(link), "http://") && !strings.HasPrefix(strings.ToLower(link), "https://") && base != "" {
+		link = base + "/" + strings.TrimLeft(link, "/")
+	}
+	actionText := "You were added to"
+	subjectAction := "added"
+	if updated {
+		actionText = "Your access was updated for"
+		subjectAction = "updated"
+	}
+	subjectKind := strings.ToUpper(accessKind[:1]) + accessKind[1:]
+	body := `<p>` + html.EscapeString(actionText) + ` <strong>` + html.EscapeString(accessName) + `</strong>.</p>` +
+		`<p>Access type: <strong>` + html.EscapeString(accessKind) + `</strong><br>Role: <strong>` + html.EscapeString(roleName) + `</strong></p>`
+	if link != "" {
+		body += `<p><a href="` + html.EscapeString(link) + `">Open ` + html.EscapeString(accessKind) + `</a></p>`
+	}
+	_ = s.mailer.Enqueue(ctx, models.EmailQueueItem{
+		Recipient: recipient,
+		Type:      "client_access_" + subjectAction,
+		Subject:   subjectKind + " access " + subjectAction + ": " + accessName,
 		BodyHTML:  body,
 	})
 }

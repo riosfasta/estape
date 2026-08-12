@@ -432,6 +432,7 @@ func (s *Server) addClientProjectMember(c *gin.Context) {
 			content = "Your access to " + client.Name + " was updated to " + roleName + "."
 		}
 		s.notifyUserIDs(c.Request.Context(), []primitive.ObjectID{memberID}, userCtx.ID, notificationType, content, client.ID)
+		s.enqueueClientAccessEmail(c.Request.Context(), member.Email, "folder", client.Name, staffRole, "/projects/"+client.ID.Hex(), alreadyHadAccess)
 	}
 	c.JSON(http.StatusCreated, gin.H{"added": true})
 }
@@ -544,6 +545,7 @@ func (s *Server) addClientWebsiteMember(c *gin.Context) {
 			content = "Your access to " + site.Name + " was updated to " + roleName + "."
 		}
 		s.notifyUserIDs(c.Request.Context(), []primitive.ObjectID{memberID}, userCtx.ID, notificationType, content, site.ID)
+		s.enqueueClientAccessEmail(c.Request.Context(), member.Email, "domain", site.Name, staffRole, "/projects/"+site.ClientID.Hex()+"/sites/"+site.ID.Hex(), alreadyHadAccess)
 	}
 	c.JSON(http.StatusCreated, gin.H{"added": true})
 }
