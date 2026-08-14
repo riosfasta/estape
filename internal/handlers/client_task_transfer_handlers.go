@@ -414,6 +414,10 @@ func (s *Server) ensureImportedClientWebsite(ctx context.Context, userCtx middle
 		return existing, nil
 	}
 	now := time.Now()
+	widgetKey, err := s.newClientWebsiteWidgetKey(ctx)
+	if err != nil {
+		return models.ClientWebsite{}, err
+	}
 	site := models.ClientWebsite{
 		ID:        primitive.NewObjectID(),
 		ClientID:  client.ID,
@@ -421,6 +425,7 @@ func (s *Server) ensureImportedClientWebsite(ctx context.Context, userCtx middle
 		Name:      name,
 		URL:       normalizeOptionalURL(source.URL),
 		Details:   strings.TrimSpace(source.Details),
+		WidgetKey: widgetKey,
 		CreatedBy: userCtx.ID,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -500,28 +505,29 @@ func cloneImportedClientTask(source models.ClientTask, client models.ClientProje
 	}
 	assignees := importedTaskAssignees(source.AssigneeIDs, client)
 	task := models.ClientTask{
-		ID:          primitive.NewObjectID(),
-		ClientID:    client.ID,
-		WebsiteID:   site.ID,
-		TabID:       tab.ID,
-		TeamID:      client.TeamID,
-		Type:        taskType,
-		Title:       firstNonEmpty(normalizeClientTaskTitle(source.Title), "Imported task"),
-		Content:     content,
-		URL:         strings.TrimSpace(source.URL),
-		Comment:     normalizeClientTaskContent(source.Comment),
-		PageWidth:   normalizeAnnotationPageDimension(source.PageWidth, 320, 8000),
-		PageHeight:  normalizeAnnotationPageDimension(source.PageHeight, 900, 50000),
-		Attachments: compactStrings(source.Attachments),
-		Checklist:   checklist,
-		Blocks:      blocks,
-		AssigneeIDs: assignees,
-		DueDate:     source.DueDate,
-		Recurrence:  normalizeClientTaskRecurrence(source.Recurrence, source.DueDate),
-		Status:      status,
-		CreatedBy:   actorID,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:            primitive.NewObjectID(),
+		ClientID:      client.ID,
+		WebsiteID:     site.ID,
+		TabID:         tab.ID,
+		TeamID:        client.TeamID,
+		Type:          taskType,
+		Title:         firstNonEmpty(normalizeClientTaskTitle(source.Title), "Imported task"),
+		Content:       content,
+		URL:           strings.TrimSpace(source.URL),
+		Comment:       normalizeClientTaskContent(source.Comment),
+		ScreenshotURL: strings.TrimSpace(source.ScreenshotURL),
+		PageWidth:     normalizeAnnotationPageDimension(source.PageWidth, 320, 8000),
+		PageHeight:    normalizeAnnotationPageDimension(source.PageHeight, 900, 50000),
+		Attachments:   compactStrings(source.Attachments),
+		Checklist:     checklist,
+		Blocks:        blocks,
+		AssigneeIDs:   assignees,
+		DueDate:       source.DueDate,
+		Recurrence:    normalizeClientTaskRecurrence(source.Recurrence, source.DueDate),
+		Status:        status,
+		CreatedBy:     actorID,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 	if source.PinX != nil && source.PinY != nil {
 		x := clampFloat(*source.PinX, 0, 100)

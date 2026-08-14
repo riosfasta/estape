@@ -932,6 +932,89 @@ function bindAttachmentOpeners(root = document) {
   });
 }
 
+function annotationSnapshotHTML(item = {}) {
+  const url = String(item.screenshot_url || "").trim();
+  if (!url) return `<section class="annotation-snapshot empty"><h3>Section snapshot</h3><p class="muted">No section screenshot saved for this annotation yet.</p></section>`;
+  return `<section class="annotation-snapshot">
+    <div class="panel-head compact-panel-head"><h3>Section snapshot</h3><span class="pill">${icon("image")}Saved</span></div>
+    <div class="annotation-snapshot-frame">${attachmentPreviewHTML(url, "Annotation section screenshot", { source: "Snapshot" })}</div>
+  </section>`;
+}
+
+function setAnnotationScreenshotPreview(form, url = "", label = "Section screenshot") {
+  const preview = form?.querySelector("[data-annotation-screenshot-preview]");
+  const input = form?.elements?.screenshot_url;
+  if (input) input.value = String(url || "").trim();
+  if (!preview) return;
+  if (!url) {
+    preview.hidden = true;
+    preview.innerHTML = "";
+    return;
+  }
+  preview.hidden = false;
+  preview.innerHTML = `${attachmentPreviewHTML(url, label, { source: "Snapshot" })}
+    <button class="btn icon quiet" type="button" data-clear-annotation-screenshot title="Remove snapshot">${icon("x")}</button>`;
+  preview.querySelector("[data-clear-annotation-screenshot]")?.addEventListener("click", () => setAnnotationScreenshotPreview(form, ""));
+  bindAttachmentOpeners(preview);
+  icons();
+}
+
+function annotationVisibleCropRect(viewport, options = {}) {
+  const rect = viewport.getBoundingClientRect();
+  const visibleLeft = Math.max(0, rect.left);
+  const visibleTop = Math.max(0, rect.top);
+  const visibleRight = Math.min(window.innerWidth, rect.right);
+  const visibleBottom = Math.min(window.innerHeight, rect.bottom);
+  const visibleWidth = Math.max(1, visibleRight - visibleLeft);
+  const visibleHeight = Math.max(1, visibleBottom - visibleTop);
+  const pinX = Number(options.pinX);
+  const pinY = Number(options.pinY);
+  const focusX = Number.isFinite(pinX) ? rect.left + (rect.width * clampAnnotationPercent(pinX)) / 100 : rect.left + rect.width / 2;
+  const focusY = Number.isFinite(pinY) ? rect.top + (rect.height * clampAnnotationPercent(pinY)) / 100 : rect.top + rect.height / 2;
+  const desiredWidth = Math.min(visibleWidth, Math.max(320, Number(options.width) || 620));
+  const desiredHeight = Math.min(visibleHeight, Math.max(240, Number(options.height) || 460));
+  const left = Math.min(Math.max(focusX - desiredWidth / 2, visibleLeft), visibleRight - desiredWidth);
+  const top = Math.min(Math.max(focusY - desiredHeight / 2, visibleTop), visibleBottom - desiredHeight);
+  return {
+    left: Math.max(0, left),
+    top: Math.max(0, top),
+    width: desiredWidth,
+    height: desiredHeight,
+  };
+}
+
+async function captureAnnotationSectionFile(stage = document, options = {}) {
+  const viewport = stage?.querySelector?.("[data-annotation-viewport]");
+  if (!viewport) throw new Error("Open the annotation page before capturing a screenshot.");
+  if (!navigator.mediaDevices?.getDisplayMedia) throw new Error("Your browser does not support tab screenshot capture. Upload a screenshot instead.");
+  const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+  try {
+    const video = document.createElement("video");
+    video.srcObject = stream;
+    video.muted = true;
+    await video.play();
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    const rect = annotationVisibleCropRect(viewport, options);
+    const scaleX = video.videoWidth / Math.max(1, window.innerWidth);
+    const scaleY = video.videoHeight / Math.max(1, window.innerHeight);
+    const sx = Math.max(0, Math.round(rect.left * scaleX));
+    const sy = Math.max(0, Math.round(rect.top * scaleY));
+    const sw = Math.max(1, Math.min(video.videoWidth - sx, Math.round(rect.width * scaleX)));
+    const sh = Math.max(1, Math.min(video.videoHeight - sy, Math.round(rect.height * scaleY)));
+    const maxWidth = 1600;
+    const ratio = Math.min(1, maxWidth / sw);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(sw * ratio));
+    canvas.height = Math.max(1, Math.round(sh * ratio));
+    canvas.getContext("2d").drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png", 0.92));
+    if (!blob) throw new Error("Could not create screenshot image.");
+    return new File([blob], `annotation-pin-section-${Date.now()}.png`, { type: "image/png" });
+  } finally {
+    stream.getTracks().forEach((track) => track.stop());
+  }
+}
+
 const STAFF_ROLES = [
   { value: "owner", label: "Owner" },
   { value: "client_admin", label: "Client Admin" },
@@ -3742,6 +3825,21 @@ function clientWebsiteRows(websites, canManage = false, canManageMembers = false
   }).join("");
 }
 
+function clientWebsiteWidgetInstallHTML(website = {}, canManage = false) {
+  if (!canManage) return "";
+  const key = String(website.widget_key || "").trim();
+  if (!key) return `<section class="panel widget-install-panel"><div class="panel-head compact-panel-head"><h2>Website capture widget</h2><span class="pill">Preparing key</span></div></section>`;
+  const snippet = `<script src="${location.origin}/widget.js" data-project="${key}" async></script>`;
+  return `<section class="panel widget-install-panel">
+    <div class="panel-head compact-panel-head">
+      <div><h2>Website capture widget</h2><p class="muted">Paste this code inside the &lt;head&gt;...&lt;/head&gt; section on ${esc(website.url || website.name || "the client website")}.</p></div>
+      <button class="btn compact" type="button" id="copyClientWidgetCode">${icon("copy")}Copy code</button>
+    </div>
+    <textarea class="code-textarea" id="clientWidgetInstallCode" readonly>${esc(snippet)}</textarea>
+    <p class="status-line" id="clientWidgetInstallStatus"></p>
+  </section>`;
+}
+
 function clientDocumentRows(documents, canManage) {
   if (!documents.length) return `<p class="muted">No documents yet.</p>`;
   return documents.map((doc) => {
@@ -5126,6 +5224,7 @@ function clientAnnotationTaskDetailHTML(task = {}, statuses = [], usersByID = {}
       <div><span class="muted">Created</span><strong>${esc(fmtDate(task.created_at))}</strong></div>
     </div>
     ${task.comment ? `<h3>Details</h3><p>${chatText(task.comment)}</p>` : ""}
+    ${annotationSnapshotHTML(task)}
     ${taskAttachmentGalleryHTML(task, comments)}
     <section class="feedback-comments">
       <h3>Comments</h3>
@@ -5155,6 +5254,7 @@ function clientTaskAnnotationItems(task = {}) {
     title: task.title,
     url: task.url,
     comment: task.comment || task.content,
+    screenshot_url: task.screenshot_url || "",
     pin_x: task.pin_x,
     pin_y: task.pin_y,
     page_width: task.page_width,
@@ -5171,6 +5271,7 @@ function clientTaskAnnotationItems(task = {}) {
     title: item.title || task.title || `Annotation ${index + 1}`,
     url: item.url || task.url || "",
     comment: item.comment || "",
+    screenshot_url: item.screenshot_url || task.screenshot_url || "",
     attachments: item.attachments || [],
     assignee_ids: item.assignee_ids || task.assignee_ids || [],
     status: item.status || task.status || "todo",
@@ -5835,7 +5936,11 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     body.innerHTML = `${clientAnnotationTaskDetailHTML(annotation, statuses, usersByID, data.comments || [], canManageFolder, { showStatus: false, commentTaskID: taskID, annotationStatusTaskID: taskID })}
       ${taskTimeTrackerHTML(taskID, taskTimeEntries, activeTimeEntry)}`;
     panel.querySelectorAll("[data-client-annotation-item-row]").forEach((row) => row.classList.toggle("active", row.dataset.clientAnnotationItemRow === String(annotation.id)));
-    panel.querySelectorAll("[data-feedback-pin]").forEach((pin) => pin.classList.toggle("highlighted", pin.dataset.feedbackPin === String(annotation.id)));
+    panel.querySelectorAll("[data-feedback-pin]").forEach((pin) => {
+      const active = pin.dataset.feedbackPin === String(annotation.id);
+      pin.classList.toggle("highlighted", active);
+      pin.classList.toggle("expanded", active);
+    });
     panel.querySelector(`[data-feedback-pin="${selectorForID(annotation.id)}"]`)?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
     bindAttachmentOpeners(body);
     bindMentionSuggestions(body);
@@ -5882,7 +5987,7 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     panel.querySelector("#annotationViewerListView")?.removeAttribute("hidden");
     const body = panel.querySelector("#annotationViewerDetailBody");
     if (body) body.innerHTML = "";
-    panel.querySelectorAll("[data-feedback-pin]").forEach((pin) => pin.classList.remove("highlighted"));
+    panel.querySelectorAll("[data-feedback-pin]").forEach((pin) => pin.classList.remove("highlighted", "expanded"));
     panel.querySelectorAll("[data-client-annotation-item-row]").forEach((row) => row.classList.remove("active"));
   });
 
@@ -6726,6 +6831,7 @@ async function renderClientWebsite(clientID, websiteID) {
       <div><h1>${esc(website.name)}</h1><p class="muted">${esc(data.client?.name || "Client")} ${website.url ? " - " + esc(website.url) : ""}</p></div>
       <div class="toolbar"><a class="btn" href="/projects/${esc(clientID)}">${icon("arrow-left")}Client folder</a></div>
     </div>
+    ${clientWebsiteWidgetInstallHTML(website, canManage)}
     <section class="panel">
       <div class="tabs client-tabs">
         ${clientTabNavHTML(data.tabs || [], selectedTab, canManage)}
@@ -6808,11 +6914,21 @@ async function renderClientWebsite(clientID, websiteID) {
                 <input type="hidden" name="pin_y">
                 <input type="hidden" name="page_width">
                 <input type="hidden" name="page_height">
+                <input type="hidden" name="screenshot_url">
                 <div class="field"><label>Title</label><input name="title" maxlength="80" required placeholder="Annotation title"></div>
                 <div class="field"><label>Coordinates</label><input id="clientAnnotationCoordLabel" disabled placeholder="Click the page to place a pin"></div>
                 <div class="field"><label>Status</label>${statusPickerHTML(clientBoardStatuses, "todo", "status")}</div>
                 <label class="feedback-url-field"><span>Page URL</span><input name="url" value="${esc(website.url || "")}" readonly required></label>
                 <div class="field"><label>Assignee</label>${assigneePickerHTML(data.members || [])}</div>
+                <div class="field annotation-screenshot-field">
+                  <label>Section screenshot</label>
+                  <input type="file" name="screenshot_file" accept="image/*" hidden>
+                  <div class="toolbar compact-toolbar">
+                    <button class="btn compact" type="button" id="captureClientAnnotationScreenshotBtn">${icon("camera")}Capture pinned section</button>
+                    <button class="btn compact" type="button" id="uploadClientAnnotationScreenshotBtn">${icon("image-plus")}Upload image</button>
+                  </div>
+                  <div class="annotation-screenshot-preview" id="clientAnnotationScreenshotPreview" data-annotation-screenshot-preview hidden></div>
+                </div>
                 <div class="field"><label>Attachments</label><input type="file" name="attachments" multiple></div>
                 <div class="field"><label>Details</label><textarea name="comment" data-mentionable placeholder="Write annotation details"></textarea></div>
                 <div class="grid-2"><div class="field"><label>Due date</label><input type="date" name="due_date"></div></div>
@@ -6877,6 +6993,7 @@ async function renderClientWebsite(clientID, websiteID) {
     $("#clientAnnotationTaskForm [name='pin_y']").value = "";
     $("#clientAnnotationTaskForm [name='page_width']").value = ANNOTATION_VIEWPORT.width;
     $("#clientAnnotationTaskForm [name='page_height']").value = ANNOTATION_TALL_FALLBACK_HEIGHT;
+    setAnnotationScreenshotPreview($("#clientAnnotationTaskForm"), "");
     $("#clientAnnotationStage").innerHTML = `<div class="annotation-empty"><p class="muted">Fill the page URL, then open the annotation page.</p></div>`;
     $("#clientAnnotationDialog")?.showModal();
     $("#clientAnnotationPageURL")?.focus();
@@ -6952,7 +7069,11 @@ async function renderClientWebsite(clientID, websiteID) {
     icons();
   };
   const highlightClientAnnotationPin = (taskID) => {
-    document.querySelectorAll("[data-feedback-pin]").forEach((pin) => pin.classList.toggle("highlighted", pin.dataset.feedbackPin === taskID));
+    document.querySelectorAll("[data-feedback-pin]").forEach((pin) => {
+      const active = pin.dataset.feedbackPin === taskID;
+      pin.classList.toggle("highlighted", active);
+      pin.classList.toggle("expanded", active);
+    });
     const pin = document.querySelector(`[data-feedback-pin="${selectorForID(taskID)}"]`);
     pin?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
   };
@@ -6963,7 +7084,7 @@ async function renderClientWebsite(clientID, websiteID) {
     $("#clientAnnotationListView")?.removeAttribute("hidden");
     const body = $("#clientAnnotationDetailBody");
     if (body) body.innerHTML = "";
-    document.querySelectorAll("[data-feedback-pin]").forEach((pin) => pin.classList.remove("highlighted"));
+    document.querySelectorAll("[data-feedback-pin]").forEach((pin) => pin.classList.remove("highlighted", "expanded"));
     document.querySelectorAll("[data-client-annotation-item-row]").forEach((row) => row.classList.remove("active"));
   };
   const refreshClientAnnotationComments = async (root, taskID, annotationID) => refreshClientTaskCommentList(root, taskID, clientUsersByID, canManage, (scope) => {
@@ -7203,9 +7324,62 @@ async function renderClientWebsite(clientID, websiteID) {
     });
   };
   bindClientAnnotationClick();
+  $("#captureClientAnnotationScreenshotBtn")?.addEventListener("click", async (event) => {
+    const form = $("#clientAnnotationTaskForm");
+    const stop = setButtonLoading(event.currentTarget, true, "Capturing...");
+    try {
+      if (!form?.elements?.pin_x?.value || !form?.elements?.pin_y?.value) {
+        throw new Error("Click the page first");
+      }
+      setFormStatus(form, "Choose this browser tab when your browser asks what to share.");
+      const file = await captureAnnotationSectionFile($("#clientAnnotationStage"), {
+        pinX: form?.elements?.pin_x?.value,
+        pinY: form?.elements?.pin_y?.value,
+      });
+      const url = await upload(file);
+      setAnnotationScreenshotPreview(form, url, file.name);
+      setFormStatus(form, "Pinned section screenshot captured.");
+    } catch (error) {
+      setFormStatus(form, error.message || "Could not capture screenshot.", true);
+    } finally {
+      stop();
+    }
+  });
+  $("#uploadClientAnnotationScreenshotBtn")?.addEventListener("click", () => $("#clientAnnotationTaskForm")?.elements.screenshot_file?.click());
+  $("#clientAnnotationTaskForm")?.elements.screenshot_file?.addEventListener("change", async (event) => {
+    const form = $("#clientAnnotationTaskForm");
+    const file = event.currentTarget.files?.[0];
+    if (!file) return;
+    try {
+      setFormStatus(form, "Uploading section screenshot...");
+      const url = await upload(file);
+      setAnnotationScreenshotPreview(form, url, file.name);
+      setFormStatus(form, "Section screenshot uploaded.");
+    } catch (error) {
+      setFormStatus(form, error.message || "Could not upload screenshot.", true);
+    } finally {
+      event.currentTarget.value = "";
+    }
+  });
   $("#clientAnnotationStage")?.addEventListener("click", (event) => {
     const pin = event.target.closest("[data-feedback-pin]");
     if (pin) openClientAnnotationDetail(pin.dataset.feedbackPin);
+  });
+  $("#copyClientWidgetCode")?.addEventListener("click", async (event) => {
+    const code = $("#clientWidgetInstallCode")?.value || "";
+    const line = $("#clientWidgetInstallStatus");
+    try {
+      await navigator.clipboard.writeText(code);
+      if (line) line.textContent = "Widget code copied.";
+      const stop = setButtonLoading(event.currentTarget, true, "Copied");
+      setTimeout(stop, 900);
+    } catch (error) {
+      $("#clientWidgetInstallCode")?.select();
+      if (line) {
+        line.textContent = "Select and copy the widget code manually.";
+        line.classList.add("error");
+      }
+    }
   });
   $("#clientTabForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -7301,6 +7475,7 @@ async function renderClientWebsite(clientID, websiteID) {
       body.assignee_ids = selectedAssigneeIDs(form);
       body.recurrence = recurrencePayloadFromForm(form);
       body.attachments = [];
+      body.screenshot_url = String(body.screenshot_url || "").trim();
       body.page_width = Number(body.page_width || currentClientAnnotationPageWidth || ANNOTATION_VIEWPORT.width);
       body.page_height = Number(body.page_height || currentClientAnnotationPageHeight || ANNOTATION_TALL_FALLBACK_HEIGHT);
       if (!String(body.url || "").startsWith("https://")) {
@@ -7311,6 +7486,16 @@ async function renderClientWebsite(clientID, websiteID) {
       }
       body.pin_x = Number(body.pin_x);
       body.pin_y = Number(body.pin_y);
+      if (!body.screenshot_url) {
+        try {
+          setFormStatus(form, "Capturing the pinned section...");
+          const screenshotFile = await captureAnnotationSectionFile($("#clientAnnotationStage"), { pinX: body.pin_x, pinY: body.pin_y });
+          body.screenshot_url = await upload(screenshotFile);
+          setAnnotationScreenshotPreview(form, body.screenshot_url, screenshotFile.name);
+        } catch (captureError) {
+          console.warn("Could not auto-capture annotation screenshot", captureError);
+        }
+      }
       for (const file of Array.from(form.attachments?.files || [])) {
         body.attachments.push(await upload(file));
       }
@@ -7318,6 +7503,7 @@ async function renderClientWebsite(clientID, websiteID) {
         title: body.title,
         url: body.url,
         comment: body.comment,
+        screenshot_url: body.screenshot_url,
         pin_x: body.pin_x,
         pin_y: body.pin_y,
         page_width: body.page_width,
@@ -7350,6 +7536,7 @@ async function renderClientWebsite(clientID, websiteID) {
       form.elements.page_height.value = currentClientAnnotationPageHeight;
       form.elements.pin_x.value = "";
       form.elements.pin_y.value = "";
+      setAnnotationScreenshotPreview(form, "");
       $("#clientAnnotationCoordLabel").value = "";
       renderClientAnnotationList();
       renderClientAnnotationPins();
@@ -8199,7 +8386,11 @@ async function renderAnnotate(id) {
   };
   bindAnnotationDeviceControls(stage, { onChange: () => renderPins() });
   const highlightFeedbackPin = (bugID) => {
-    document.querySelectorAll("[data-feedback-pin]").forEach((pin) => pin.classList.toggle("highlighted", pin.dataset.feedbackPin === bugID));
+    document.querySelectorAll("[data-feedback-pin]").forEach((pin) => {
+      const active = pin.dataset.feedbackPin === bugID;
+      pin.classList.toggle("highlighted", active);
+      pin.classList.toggle("expanded", active);
+    });
     const pin = document.querySelector(`[data-feedback-pin="${selectorForID(bugID)}"]`);
     pin?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
   };
@@ -8215,7 +8406,7 @@ async function renderAnnotate(id) {
     $("#feedbackListView")?.removeAttribute("hidden");
     const body = $("#feedbackSidebarDetailBody");
     if (body) body.innerHTML = "";
-    document.querySelectorAll("[data-feedback-pin]").forEach((pin) => pin.classList.remove("highlighted"));
+    document.querySelectorAll("[data-feedback-pin]").forEach((pin) => pin.classList.remove("highlighted", "expanded"));
     document.querySelectorAll("[data-feedback-row]").forEach((row) => row.classList.remove("active"));
   });
   stage?.addEventListener("click", (event) => {

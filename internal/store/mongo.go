@@ -84,6 +84,11 @@ func (s *Store) CreateIndexes(ctx context.Context) error {
 		"websites": {
 			{Keys: bson.D{{Key: "team_id", Value: 1}}},
 		},
+		"client_websites": {
+			{Keys: bson.D{{Key: "widget_key", Value: 1}}, Options: mongomodels.Index().SetUnique(true).SetSparse(true)},
+			{Keys: bson.D{{Key: "client_id", Value: 1}}},
+			{Keys: bson.D{{Key: "team_id", Value: 1}}},
+		},
 		"static_pages": {
 			{Keys: bson.D{{Key: "slug", Value: 1}}, Options: mongomodels.Index().SetUnique(true)},
 		},

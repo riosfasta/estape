@@ -325,6 +325,7 @@ func (s *Server) cleanupUserUploadedReferences(ctx context.Context, userID primi
 		{"site_settings", "favicon_url"},
 		{"websites", "screenshot_url"},
 		{"bugs", "screenshot_url"},
+		{"client_tasks", "screenshot_url"},
 	} {
 		if _, err := s.store.C(spec.Collection).UpdateMany(ctx, bson.M{spec.Field: urlFilter}, bson.M{"$unset": bson.M{spec.Field: ""}}); err != nil {
 			return err
@@ -349,6 +350,15 @@ func (s *Server) cleanupUserUploadedReferences(ctx context.Context, userID primi
 		return err
 	}
 	if _, err := s.store.C("client_tasks").UpdateMany(ctx, bson.M{"annotations.attachments": urlFilter}, bson.M{"$pull": bson.M{"annotations.$[].attachments": urlFilter}}); err != nil {
+		return err
+	}
+	screenshotOptions := options.Update().SetArrayFilters(options.ArrayFilters{Filters: []interface{}{bson.M{"annotation.screenshot_url": urlFilter}}})
+	if _, err := s.store.C("client_tasks").UpdateMany(
+		ctx,
+		bson.M{"annotations.screenshot_url": urlFilter},
+		bson.M{"$unset": bson.M{"annotations.$[annotation].screenshot_url": ""}},
+		screenshotOptions,
+	); err != nil {
 		return err
 	}
 	if err := s.cleanupStaticPageUploadReferences(ctx, pattern); err != nil {

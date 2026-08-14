@@ -693,6 +693,11 @@ func (s *Server) createClientWebsite(c *gin.Context) {
 	}
 	userCtx, _ := currentUser(c)
 	now := time.Now()
+	widgetKey, err := s.newClientWebsiteWidgetKey(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create website widget key"})
+		return
+	}
 	site := models.ClientWebsite{
 		ID:        primitive.NewObjectID(),
 		ClientID:  client.ID,
@@ -700,6 +705,7 @@ func (s *Server) createClientWebsite(c *gin.Context) {
 		Name:      name,
 		URL:       normalizeOptionalURL(req.URL),
 		Details:   strings.TrimSpace(req.Details),
+		WidgetKey: widgetKey,
 		CreatedBy: userCtx.ID,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -725,6 +731,10 @@ func (s *Server) getClientWebsite(c *gin.Context) {
 	}
 	site, ok := s.loadClientWebsiteForAccess(c, websiteID, false)
 	if !ok {
+		return
+	}
+	if _, err := s.ensureClientWebsiteWidgetKey(c.Request.Context(), &site); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare website widget"})
 		return
 	}
 	client, ok := s.loadClientProjectForAccess(c, site.ClientID, false)
@@ -1060,23 +1070,24 @@ func (s *Server) createClientTask(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Type        string                        `json:"type"`
-		Title       string                        `json:"title"`
-		Status      string                        `json:"status"`
-		Content     string                        `json:"content"`
-		URL         string                        `json:"url"`
-		Comment     string                        `json:"comment"`
-		PinX        *float64                      `json:"pin_x"`
-		PinY        *float64                      `json:"pin_y"`
-		PageWidth   int                           `json:"page_width"`
-		PageHeight  int                           `json:"page_height"`
-		Annotations []models.ClientTaskAnnotation `json:"annotations"`
-		Attachments []string                      `json:"attachments"`
-		Checklist   []models.ChecklistItem        `json:"checklist"`
-		Blocks      []models.ClientTaskBlock      `json:"blocks"`
-		AssigneeIDs []string                      `json:"assignee_ids"`
-		DueDate     string                        `json:"due_date"`
-		Recurrence  models.ClientTaskRecurrence   `json:"recurrence"`
+		Type          string                        `json:"type"`
+		Title         string                        `json:"title"`
+		Status        string                        `json:"status"`
+		Content       string                        `json:"content"`
+		URL           string                        `json:"url"`
+		Comment       string                        `json:"comment"`
+		ScreenshotURL string                        `json:"screenshot_url"`
+		PinX          *float64                      `json:"pin_x"`
+		PinY          *float64                      `json:"pin_y"`
+		PageWidth     int                           `json:"page_width"`
+		PageHeight    int                           `json:"page_height"`
+		Annotations   []models.ClientTaskAnnotation `json:"annotations"`
+		Attachments   []string                      `json:"attachments"`
+		Checklist     []models.ChecklistItem        `json:"checklist"`
+		Blocks        []models.ClientTaskBlock      `json:"blocks"`
+		AssigneeIDs   []string                      `json:"assignee_ids"`
+		DueDate       string                        `json:"due_date"`
+		Recurrence    models.ClientTaskRecurrence   `json:"recurrence"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task body"})
@@ -1153,6 +1164,7 @@ func (s *Server) createClientTask(c *gin.Context) {
 		}
 	}
 	comment := normalizeClientTaskContent(req.Comment)
+	screenshotURL := strings.TrimSpace(req.ScreenshotURL)
 	if taskType == "annotation" {
 		if comment == "" {
 			comment = content
@@ -1179,16 +1191,17 @@ func (s *Server) createClientTask(c *gin.Context) {
 	annotations := []models.ClientTaskAnnotation{}
 	if taskType == "annotation" {
 		initialAnnotation := models.ClientTaskAnnotation{
-			Title:       title,
-			URL:         taskURL,
-			Comment:     comment,
-			PinX:        pinX,
-			PinY:        pinY,
-			PageWidth:   pageWidth,
-			PageHeight:  pageHeight,
-			Attachments: attachments,
-			AssigneeIDs: assigneeIDs,
-			Status:      status,
+			Title:         title,
+			URL:           taskURL,
+			Comment:       comment,
+			ScreenshotURL: screenshotURL,
+			PinX:          pinX,
+			PinY:          pinY,
+			PageWidth:     pageWidth,
+			PageHeight:    pageHeight,
+			Attachments:   attachments,
+			AssigneeIDs:   assigneeIDs,
+			Status:        status,
 		}
 		sourceAnnotations := req.Annotations
 		if len(sourceAnnotations) == 0 {
@@ -1197,31 +1210,32 @@ func (s *Server) createClientTask(c *gin.Context) {
 		annotations = normalizeClientTaskAnnotations(sourceAnnotations, normalizeClientTaskStatuses(tab.Statuses), userCtx.ID, now)
 	}
 	task := models.ClientTask{
-		ID:          primitive.NewObjectID(),
-		ClientID:    tab.ClientID,
-		WebsiteID:   tab.WebsiteID,
-		TabID:       tab.ID,
-		TeamID:      tab.TeamID,
-		Type:        taskType,
-		Title:       title,
-		Content:     content,
-		URL:         taskURL,
-		Comment:     comment,
-		PinX:        pinX,
-		PinY:        pinY,
-		PageWidth:   pageWidth,
-		PageHeight:  pageHeight,
-		Annotations: annotations,
-		Attachments: attachments,
-		Checklist:   checklist,
-		Blocks:      blocks,
-		AssigneeIDs: assigneeIDs,
-		DueDate:     dueDate,
-		Recurrence:  normalizeClientTaskRecurrence(req.Recurrence, dueDate),
-		Status:      status,
-		CreatedBy:   userCtx.ID,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:            primitive.NewObjectID(),
+		ClientID:      tab.ClientID,
+		WebsiteID:     tab.WebsiteID,
+		TabID:         tab.ID,
+		TeamID:        tab.TeamID,
+		Type:          taskType,
+		Title:         title,
+		Content:       content,
+		URL:           taskURL,
+		Comment:       comment,
+		ScreenshotURL: screenshotURL,
+		PinX:          pinX,
+		PinY:          pinY,
+		PageWidth:     pageWidth,
+		PageHeight:    pageHeight,
+		Annotations:   annotations,
+		Attachments:   attachments,
+		Checklist:     checklist,
+		Blocks:        blocks,
+		AssigneeIDs:   assigneeIDs,
+		DueDate:       dueDate,
+		Recurrence:    normalizeClientTaskRecurrence(req.Recurrence, dueDate),
+		Status:        status,
+		CreatedBy:     userCtx.ID,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 	if _, err := s.store.C("client_tasks").InsertOne(c.Request.Context(), task); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create task"})
@@ -1456,27 +1470,28 @@ func (s *Server) updateClientTask(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Title       *string                        `json:"title"`
-		Content     *string                        `json:"content"`
-		URL         *string                        `json:"url"`
-		Comment     *string                        `json:"comment"`
-		Status      *string                        `json:"status"`
-		PageWidth   *int                           `json:"page_width"`
-		PageHeight  *int                           `json:"page_height"`
-		Annotations *[]models.ClientTaskAnnotation `json:"annotations"`
-		Attachments []string                       `json:"attachments"`
-		Checklist   []models.ChecklistItem         `json:"checklist"`
-		Blocks      []models.ClientTaskBlock       `json:"blocks"`
-		AssigneeIDs []string                       `json:"assignee_ids"`
-		DueDate     *string                        `json:"due_date"`
-		Recurrence  *models.ClientTaskRecurrence   `json:"recurrence"`
+		Title         *string                        `json:"title"`
+		Content       *string                        `json:"content"`
+		URL           *string                        `json:"url"`
+		Comment       *string                        `json:"comment"`
+		ScreenshotURL *string                        `json:"screenshot_url"`
+		Status        *string                        `json:"status"`
+		PageWidth     *int                           `json:"page_width"`
+		PageHeight    *int                           `json:"page_height"`
+		Annotations   *[]models.ClientTaskAnnotation `json:"annotations"`
+		Attachments   []string                       `json:"attachments"`
+		Checklist     []models.ChecklistItem         `json:"checklist"`
+		Blocks        []models.ClientTaskBlock       `json:"blocks"`
+		AssigneeIDs   []string                       `json:"assignee_ids"`
+		DueDate       *string                        `json:"due_date"`
+		Recurrence    *models.ClientTaskRecurrence   `json:"recurrence"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task update"})
 		return
 	}
 	userCtx, _ := currentUser(c)
-	hasContentChanges := req.Title != nil || req.Content != nil || req.URL != nil || req.Comment != nil || req.Attachments != nil || req.Annotations != nil
+	hasContentChanges := req.Title != nil || req.Content != nil || req.URL != nil || req.Comment != nil || req.ScreenshotURL != nil || req.Attachments != nil || req.Annotations != nil
 	if hasContentChanges && !s.canManageClientTask(c.Request.Context(), userCtx, task) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "only the task creator or a folder admin can edit task wording"})
 		return
@@ -1515,6 +1530,9 @@ func (s *Server) updateClientTask(c *gin.Context) {
 	}
 	if req.Comment != nil {
 		set["comment"] = normalizeClientTaskContent(*req.Comment)
+	}
+	if task.Type == "annotation" && req.ScreenshotURL != nil {
+		set["screenshot_url"] = strings.TrimSpace(*req.ScreenshotURL)
 	}
 	if req.Status != nil {
 		status := normalizeClientTaskStatus(*req.Status)
@@ -2545,20 +2563,21 @@ func normalizeClientTaskAnnotations(values []models.ClientTaskAnnotation, status
 			createdAt = now
 		}
 		out = append(out, models.ClientTaskAnnotation{
-			ID:          id,
-			Title:       title,
-			URL:         url,
-			Comment:     comment,
-			PinX:        &x,
-			PinY:        &y,
-			PageWidth:   normalizeAnnotationPageDimension(item.PageWidth, 320, 8000),
-			PageHeight:  normalizeAnnotationPageDimension(item.PageHeight, 900, 50000),
-			Attachments: compactStrings(item.Attachments),
-			AssigneeIDs: uniqueObjectIDs(item.AssigneeIDs),
-			Status:      status,
-			CreatedBy:   createdBy,
-			CreatedAt:   createdAt,
-			UpdatedAt:   now,
+			ID:            id,
+			Title:         title,
+			URL:           url,
+			Comment:       comment,
+			ScreenshotURL: strings.TrimSpace(item.ScreenshotURL),
+			PinX:          &x,
+			PinY:          &y,
+			PageWidth:     normalizeAnnotationPageDimension(item.PageWidth, 320, 8000),
+			PageHeight:    normalizeAnnotationPageDimension(item.PageHeight, 900, 50000),
+			Attachments:   compactStrings(item.Attachments),
+			AssigneeIDs:   uniqueObjectIDs(item.AssigneeIDs),
+			Status:        status,
+			CreatedBy:     createdBy,
+			CreatedAt:     createdAt,
+			UpdatedAt:     now,
 		})
 		if len(out) >= 300 {
 			break

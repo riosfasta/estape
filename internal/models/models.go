@@ -138,6 +138,7 @@ type ClientWebsite struct {
 	Name           string               `bson:"name" json:"name"`
 	URL            string               `bson:"url,omitempty" json:"url,omitempty"`
 	Details        string               `bson:"details,omitempty" json:"details,omitempty"`
+	WidgetKey      string               `bson:"widget_key,omitempty" json:"widget_key,omitempty"`
 	MemberIDs      []primitive.ObjectID `bson:"member_ids,omitempty" json:"member_ids,omitempty"`
 	ClientAdminIDs []primitive.ObjectID `bson:"client_admin_ids,omitempty" json:"client_admin_ids,omitempty"`
 	MemberRoles    map[string]string    `bson:"member_roles,omitempty" json:"member_roles,omitempty"`
@@ -192,6 +193,7 @@ type ClientTask struct {
 	Content         string                 `bson:"content,omitempty" json:"content,omitempty"`
 	URL             string                 `bson:"url,omitempty" json:"url,omitempty"`
 	Comment         string                 `bson:"comment,omitempty" json:"comment,omitempty"`
+	ScreenshotURL   string                 `bson:"screenshot_url,omitempty" json:"screenshot_url,omitempty"`
 	PinX            *float64               `bson:"pin_x,omitempty" json:"pin_x,omitempty"`
 	PinY            *float64               `bson:"pin_y,omitempty" json:"pin_y,omitempty"`
 	PageWidth       int                    `bson:"page_width,omitempty" json:"page_width,omitempty"`
@@ -212,20 +214,21 @@ type ClientTask struct {
 }
 
 type ClientTaskAnnotation struct {
-	ID          primitive.ObjectID   `bson:"id,omitempty" json:"id"`
-	Title       string               `bson:"title" json:"title"`
-	URL         string               `bson:"url,omitempty" json:"url,omitempty"`
-	Comment     string               `bson:"comment,omitempty" json:"comment,omitempty"`
-	PinX        *float64             `bson:"pin_x,omitempty" json:"pin_x,omitempty"`
-	PinY        *float64             `bson:"pin_y,omitempty" json:"pin_y,omitempty"`
-	PageWidth   int                  `bson:"page_width,omitempty" json:"page_width,omitempty"`
-	PageHeight  int                  `bson:"page_height,omitempty" json:"page_height,omitempty"`
-	Attachments []string             `bson:"attachments,omitempty" json:"attachments,omitempty"`
-	AssigneeIDs []primitive.ObjectID `bson:"assignee_ids,omitempty" json:"assignee_ids,omitempty"`
-	Status      string               `bson:"status,omitempty" json:"status,omitempty"`
-	CreatedBy   primitive.ObjectID   `bson:"created_by,omitempty" json:"created_by,omitempty"`
-	CreatedAt   time.Time            `bson:"created_at,omitempty" json:"created_at,omitempty"`
-	UpdatedAt   time.Time            `bson:"updated_at,omitempty" json:"updated_at,omitempty"`
+	ID            primitive.ObjectID   `bson:"id,omitempty" json:"id"`
+	Title         string               `bson:"title" json:"title"`
+	URL           string               `bson:"url,omitempty" json:"url,omitempty"`
+	Comment       string               `bson:"comment,omitempty" json:"comment,omitempty"`
+	ScreenshotURL string               `bson:"screenshot_url,omitempty" json:"screenshot_url,omitempty"`
+	PinX          *float64             `bson:"pin_x,omitempty" json:"pin_x,omitempty"`
+	PinY          *float64             `bson:"pin_y,omitempty" json:"pin_y,omitempty"`
+	PageWidth     int                  `bson:"page_width,omitempty" json:"page_width,omitempty"`
+	PageHeight    int                  `bson:"page_height,omitempty" json:"page_height,omitempty"`
+	Attachments   []string             `bson:"attachments,omitempty" json:"attachments,omitempty"`
+	AssigneeIDs   []primitive.ObjectID `bson:"assignee_ids,omitempty" json:"assignee_ids,omitempty"`
+	Status        string               `bson:"status,omitempty" json:"status,omitempty"`
+	CreatedBy     primitive.ObjectID   `bson:"created_by,omitempty" json:"created_by,omitempty"`
+	CreatedAt     time.Time            `bson:"created_at,omitempty" json:"created_at,omitempty"`
+	UpdatedAt     time.Time            `bson:"updated_at,omitempty" json:"updated_at,omitempty"`
 }
 
 type ClientTaskBlock struct {

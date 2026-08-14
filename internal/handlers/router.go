@@ -80,6 +80,7 @@ func (s *Server) Router() *gin.Engine {
 	router.GET("/reports/time", s.appPage)
 	router.GET("/ws/chat", s.chatWebSocket)
 	router.GET("/ws/live", s.liveWebSocket)
+	router.GET("/widget.js", s.widgetScript)
 
 	api := router.Group("/api")
 	api.POST("/auth/register", s.register)
@@ -94,6 +95,8 @@ func (s *Server) Router() *gin.Engine {
 	api.GET("/paypal/return", s.payPalCheckoutReturn)
 	api.GET("/paypal/cancel", s.payPalCheckoutCancel)
 	api.POST("/webhooks/paypal", s.paymentWebhook("paypal"))
+	api.OPTIONS("/widget/annotations", s.widgetOptions)
+	api.POST("/widget/annotations", s.createWidgetAnnotation)
 
 	authed := api.Group("")
 	authed.Use(middleware.AuthRequired(s.tokens), s.requireActiveUser())
