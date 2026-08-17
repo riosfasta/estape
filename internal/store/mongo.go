@@ -255,6 +255,7 @@ func (s *Store) seedSettings(ctx context.Context, cfg config.Config, now time.Ti
 		CompanyContact:          "support@bugmega.local",
 		OwnerName:               cfg.OwnerName,
 		CompanyAddress:          "Set your company address in Admin Settings",
+		TimeZone:                "UTC",
 		GoogleSigninEnabled:     cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "",
 		GoogleClientID:          cfg.GoogleClientID,
 		GoogleClientSecret:      cfg.GoogleClientSecret,

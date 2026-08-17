@@ -64,6 +64,7 @@ func (s *Server) widgetSession(c *gin.Context) {
 		"logged_in": true,
 		"user":      user,
 		"members":   s.widgetAssignableMembers(c.Request.Context(), client, site),
+		"pins":      s.widgetAnnotationPins(c.Request.Context(), site, c.Query("url")),
 	})
 }
 
@@ -330,6 +331,76 @@ func (s *Server) widgetAssignableMembers(ctx context.Context, client models.Clie
 		})
 	}
 	return rows
+}
+
+func (s *Server) widgetAnnotationPins(ctx context.Context, site models.ClientWebsite, pageURL string) []gin.H {
+	pageURL = normalizeWidgetPageURL(pageURL)
+	if pageURL == "" {
+		return []gin.H{}
+	}
+	filter := bson.M{
+		"website_id": site.ID,
+		"type":       "annotation",
+	}
+	cursor, err := s.store.C("client_tasks").Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}).SetLimit(200))
+	if err != nil {
+		return []gin.H{}
+	}
+	defer cursor.Close(ctx)
+	rows := []gin.H{}
+	for cursor.Next(ctx) {
+		var task models.ClientTask
+		if cursor.Decode(&task) != nil {
+			continue
+		}
+		if len(task.Annotations) > 0 {
+			for _, annotation := range task.Annotations {
+				if normalizeWidgetPageURL(annotation.URL) != pageURL || annotation.PinX == nil || annotation.PinY == nil {
+					continue
+				}
+				rows = append(rows, gin.H{
+					"id":          annotation.ID.Hex(),
+					"task_id":     task.ID.Hex(),
+					"title":       annotation.Title,
+					"pin_x":       *annotation.PinX,
+					"pin_y":       *annotation.PinY,
+					"page_width":  annotation.PageWidth,
+					"page_height": annotation.PageHeight,
+					"created_at":  annotation.CreatedAt,
+				})
+			}
+			continue
+		}
+		if normalizeWidgetPageURL(task.URL) != pageURL || task.PinX == nil || task.PinY == nil {
+			continue
+		}
+		rows = append(rows, gin.H{
+			"id":          task.ID.Hex(),
+			"task_id":     task.ID.Hex(),
+			"title":       task.Title,
+			"pin_x":       *task.PinX,
+			"pin_y":       *task.PinY,
+			"page_width":  task.PageWidth,
+			"page_height": task.PageHeight,
+			"created_at":  task.CreatedAt,
+		})
+	}
+	return rows
+}
+
+func normalizeWidgetPageURL(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || strings.TrimSpace(parsed.Scheme) == "" || strings.TrimSpace(parsed.Host) == "" {
+		return ""
+	}
+	parsed.Fragment = ""
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+	return strings.TrimRight(parsed.String(), "/")
 }
 
 func (s *Server) newClientWebsiteWidgetKey(ctx context.Context) (string, error) {

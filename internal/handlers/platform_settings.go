@@ -25,6 +25,7 @@ type siteSettingsUpdateRequest struct {
 	LogoURL                  string              `json:"logo_url"`
 	FaviconURL               string              `json:"favicon_url"`
 	SupportPhone             string              `json:"support_phone"`
+	TimeZone                 string              `json:"time_zone"`
 	GoogleSigninEnabled      bool                `json:"google_signin_enabled"`
 	GoogleClientID           string              `json:"google_client_id"`
 	GoogleClientSecret       string              `json:"google_client_secret"`
@@ -80,6 +81,7 @@ func (s *Server) defaultSiteSettings(now time.Time) models.SiteSettings {
 		CompanyContact:      "support@bugmega.local",
 		OwnerName:           s.cfg.OwnerName,
 		CompanyAddress:      "Set your company address in Admin Settings",
+		TimeZone:            "UTC",
 		GoogleSigninEnabled: s.cfg.GoogleClientID != "" && s.cfg.GoogleClientSecret != "",
 		GoogleClientID:      s.cfg.GoogleClientID,
 		GoogleClientSecret:  s.cfg.GoogleClientSecret,
@@ -142,6 +144,7 @@ func (s *Server) settingsWithConfigFallback(settings models.SiteSettings) models
 	if strings.TrimSpace(settings.OwnerName) == "" {
 		settings.OwnerName = s.cfg.OwnerName
 	}
+	settings.TimeZone = normalizeSiteTimeZone(settings.TimeZone)
 	if strings.TrimSpace(settings.GoogleClientID) == "" {
 		settings.GoogleClientID = s.cfg.GoogleClientID
 	}
@@ -229,6 +232,7 @@ func (s *Server) sanitizedSiteSettings(settings models.SiteSettings) gin.H {
 		"logo_url":                  settings.LogoURL,
 		"favicon_url":               settings.FaviconURL,
 		"support_phone":             settings.SupportPhone,
+		"time_zone":                 settings.TimeZone,
 		"google_signin_enabled":     settings.GoogleSigninEnabled,
 		"google_client_id":          settings.GoogleClientID,
 		"google_redirect_url":       settings.GoogleRedirectURL,
@@ -281,6 +285,7 @@ func (s *Server) publicPlatformSettings(ctx context.Context) gin.H {
 		"logo_url":         settings.LogoURL,
 		"favicon_url":      settings.FaviconURL,
 		"support_phone":    settings.SupportPhone,
+		"time_zone":        settings.TimeZone,
 		"public_nav":       s.publicNavSettingsPayload(settings),
 		"public_nav_items": settings.PublicNavItems,
 		"social_links":     normalizeSocialLinks(settings.SocialLinks),
@@ -395,6 +400,17 @@ func cleanOptionalHexColor(value string) (string, bool) {
 		return "", false
 	}
 	return strings.ToLower(value), true
+}
+
+func normalizeSiteTimeZone(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "UTC"
+	}
+	if _, err := time.LoadLocation(value); err != nil {
+		return "UTC"
+	}
+	return value
 }
 
 func normalizeSocialLinks(items []models.SocialLink) []models.SocialLink {

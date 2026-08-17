@@ -1110,6 +1110,14 @@ func (s *Server) updateSettings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "owner notification email must be a valid email address"})
 		return
 	}
+	timeZone := strings.TrimSpace(req.TimeZone)
+	if timeZone == "" {
+		timeZone = "UTC"
+	}
+	if _, err := time.LoadLocation(timeZone); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "time zone must be a valid IANA time zone like America/New_York or Asia/Bangkok"})
+		return
+	}
 	colorFields := map[string]string{
 		"theme_primary_color":        req.ThemePrimaryColor,
 		"theme_primary_strong_color": req.ThemePrimaryStrongColor,
@@ -1129,6 +1137,7 @@ func (s *Server) updateSettings(c *gin.Context) {
 		"logo_url":                  strings.TrimSpace(req.LogoURL),
 		"favicon_url":               strings.TrimSpace(req.FaviconURL),
 		"support_phone":             strings.TrimSpace(req.SupportPhone),
+		"time_zone":                 timeZone,
 		"social_links":              normalizeSocialLinks(req.SocialLinks),
 		"google_signin_enabled":     req.GoogleSigninEnabled,
 		"google_client_id":          strings.TrimSpace(req.GoogleClientID),

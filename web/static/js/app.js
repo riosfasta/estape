@@ -1696,6 +1696,42 @@ function fmtDate(value) {
   return new Date(value).toLocaleDateString();
 }
 
+function appTimeZone() {
+  const configured = String(state.platformSettings?.time_zone || "").trim();
+  if (configured) return configured;
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+function fmtDateTimeInTimeZone(value, timeZone = appTimeZone()) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      month: "2-digit",
+      day: "2-digit",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "2-digit",
+      day: "2-digit",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(date);
+  }
+}
+
+function fmtDateTime(value) {
+  return fmtDateTimeInTimeZone(value, appTimeZone());
+}
+
 function fmtDayMonthYear(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -3627,7 +3663,7 @@ function bindInboxTabs() {
 
 function inboxTime(value) {
   if (!value) return "Now";
-  return new Date(value).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return fmtDateTime(value) || "Now";
 }
 
 function inboxRows(tasks, websites = [], quiet = false) {
@@ -5161,7 +5197,7 @@ function feedbackBugDetailHTML(bug = {}, statuses = [], usersByID = {}) {
     <label class="feedback-url-field"><span>Page URL</span><input value="${esc(bug.page_url || "No page URL")}" readonly></label>
     <div class="feedback-detail-grid">
       <div><span class="muted">Assignee</span>${assignees.length ? `<div class="assignee-avatars">${assignees.map((user) => userChip(user)).join("")}</div>` : `<strong>Unassigned</strong>`}</div>
-      <div><span class="muted">Created</span><strong>${esc(fmtDate(bug.created_at))}</strong></div>
+      <div><span class="muted">Created</span><strong>${esc(fmtDateTime(bug.created_at))}</strong></div>
     </div>
     ${bug.description ? `<h3>Details</h3><p>${chatText(bug.description)}</p>` : ""}
     ${bug.attachments?.length ? `<h3>Attachments</h3><div class="task-attachment-gallery">${bug.attachments.map((url) => attachmentPreviewHTML(url, "", { source: "Feedback" })).join("")}</div>` : ""}
@@ -5269,7 +5305,7 @@ function clientAnnotationTaskDetailHTML(task = {}, statuses = [], usersByID = {}
     <label class="feedback-url-field"><span>Page URL</span><input value="${esc(task.url || "No page URL")}" readonly></label>
     <div class="feedback-detail-grid">
       <div><span class="muted">Assignee</span>${assignees.length ? `<div class="assignee-avatars">${assignees.map((user) => userChip(user)).join("")}</div>` : `<strong>Unassigned</strong>`}</div>
-      <div><span class="muted">Created</span><strong>${esc(fmtDate(task.created_at))}</strong></div>
+      <div><span class="muted">Created</span><strong>${esc(fmtDateTime(task.created_at))}</strong></div>
     </div>
     ${task.comment ? `<h3>Details</h3><p>${chatText(task.comment)}</p>` : ""}
     ${annotationSnapshotHTML(task)}
@@ -5581,7 +5617,7 @@ function clientTaskBoardHTML(tasks, tab, members, canManage, canManageStatuses =
           <div class="client-task-card-meta">
             ${statusBadgeHTML(status, "status-badge status-pill")}
             ${taskCompletionBadgeHTML(task)}
-            <span class="pill">${esc(fmtDate(task.created_at))}</span>
+            <span class="pill">${esc(fmtDateTime(task.created_at))}</span>
             ${dueInfo.text ? `<button class="pill warn due-count" type="button" data-due-calendar="${esc(dueInfo.date || task.due_date)}">${icon("calendar-days")}${esc(dueInfo.text)}</button>` : ""}
             ${assigneeAvatarsHTML(task.assignee_ids || [], usersByID)}
           </div>
@@ -6272,7 +6308,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
           ${statusPickerHTML(statuses, task.status || "todo", "status", "", { canManageStatuses, tabID: data.tab?.id })}
           <span class="pill">${esc(task.type || "description")}</span>
           ${taskCompletionBadgeHTML(task)}
-          <span class="pill">${icon("calendar-days")}${esc(fmtDate(task.created_at))}</span>
+          <span class="pill">${icon("calendar-days")}${esc(fmtDateTime(task.created_at))}</span>
           <span class="pill warn due-edit-pill"><button class="due-icon-btn" type="button" data-due-edit-open title="Change due date">${icon("calendar-days")}</button><button class="due-date-text-btn" type="button" data-due-edit-open><span data-due-edit-label>${esc(dueInfo.text || "No due date")}</span></button><input class="due-edit-input" type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}" title="Due date"></span>
           ${assigneePickerHTML(data.members || [], task.assignee_ids || [])}
           <span class="status-line"></span>
@@ -6280,7 +6316,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
           ${statusBadgeHTML(statuses.find((item) => item.value === (task.status || "todo")) || statuses[0], "status-badge status-pill")}
           <span class="pill">${esc(task.type || "description")}</span>
           ${taskCompletionBadgeHTML(task)}
-          <span class="pill">${icon("calendar-days")}${esc(fmtDate(task.created_at))}</span>
+          <span class="pill">${icon("calendar-days")}${esc(fmtDateTime(task.created_at))}</span>
           ${dueInfo.text ? `<button class="pill warn due-count" type="button" data-due-calendar="${esc(dueInfo.date || task.due_date)}">${icon("calendar-days")}${esc(dueInfo.text)}</button>` : ""}
           ${assigneeAvatarsHTML(task.assignee_ids || [], usersByID)}
         </div>`}
@@ -7366,7 +7402,7 @@ async function renderClientWebsite(clientID, websiteID) {
       form.elements.pin_x.value = x.toFixed(2);
       form.elements.pin_y.value = y.toFixed(2);
       $("#clientAnnotationCoordLabel").value = `${x.toFixed(1)}%, ${y.toFixed(1)}%`;
-      renderClientAnnotationPins(annotationPinHTML({ x, y, target_page_width: currentClientAnnotationPageWidth, target_page_height: currentClientAnnotationPageHeight, label: "New", title: "New annotation" }));
+      renderClientAnnotationPins(annotationPinHTML({ x, y, target_page_width: currentClientAnnotationPageWidth, target_page_height: currentClientAnnotationPageHeight, label: String(clientAnnotationsForPage().length + 1), title: "New annotation" }));
       $("#clientAnnotationTaskForm textarea[name='comment']")?.focus();
       icons();
     });
@@ -7755,7 +7791,7 @@ function assignedTaskRowHTML(task, context) {
     tab.title,
     status.label,
     dueInfo.text,
-    fmtDate(task.created_at),
+    fmtDateTime(task.created_at),
   ].filter(Boolean).join(" ").toLowerCase();
   return `<div class="assigned-task-row"
       data-assigned-task
@@ -7768,7 +7804,7 @@ function assignedTaskRowHTML(task, context) {
       <span class="assigned-task-title" title="${esc(compactClientTaskTitle(task.title) || "Untitled task")}">
         <strong>${esc(compactClientTaskTitle(task.title) || "Untitled task")}</strong>
       </span>
-      <time>${esc(fmtDate(task.created_at))}</time>
+      <time>${esc(fmtDateTime(task.created_at))}</time>
       <span class="assigned-task-due ${dueBucket === "overdue" ? "overdue" : ""}">${icon("calendar-days")}${esc(dueText)}</span>
       <span class="assigned-task-assignees">${assigneeAvatarsHTML(task.assignee_ids || [], context.usersByID) || `<span class="muted">Unassigned</span>`}</span>
       <span class="assigned-task-category">${icon(task.type === "annotation" ? "map-pin" : "file-text")}${esc(categoryLabel)}</span>
@@ -8469,7 +8505,7 @@ async function renderAnnotate(id) {
     $("#coordLabel").value = `${x.toFixed(1)}%, ${y.toFixed(1)}%`;
     const targetWidth = Number(viewport?.dataset.annotationWidth || ANNOTATION_VIEWPORT.width);
     const targetHeight = Number(viewport?.dataset.annotationHeight || ANNOTATION_VIEWPORT.height);
-    renderPins(annotationPinHTML({ x, y, target_page_width: targetWidth, target_page_height: targetHeight, label: "New", title: "New pin" }));
+    renderPins(annotationPinHTML({ x, y, target_page_width: targetWidth, target_page_height: targetHeight, label: String(bugs.length + 1), title: "New pin" }));
     icons();
   });
   $("#bugForm").addEventListener("submit", async (event) => {
@@ -8813,8 +8849,8 @@ function adminUserDetailHTML(data = {}) {
       ${adminMiniRows(workspaceProjects, "No workspace projects found.", (project) => `<article><strong>${esc(project.name || "Workspace project")}</strong><span>${project.list_ids?.length || 0} lists</span><span>Created ${esc(fmtDate(project.created_at))}</span></article>`)}
     </section>
     <section class="admin-detail-section"><h3>Tasks</h3>
-      ${adminMiniRows(clientTasks, "No domain tasks found.", (task) => `<article><strong>${esc(task.title || "Task")}</strong><span>${esc(task.status || "todo")} - ${esc(task.type || "description")}</span><span>${task.due_date ? `Due ${esc(fmtDate(task.due_date))}` : "No due date"} - Updated ${esc(fmtDate(task.updated_at))}</span></article>`)}
-      ${adminMiniRows(workspaceTasks, "No workspace tasks found.", (task) => `<article><strong>${esc(task.title || "Task")}</strong><span>${esc(task.status || "todo")} - ${esc(task.priority || "Normal")}</span><span>${task.due_date ? `Due ${esc(fmtDate(task.due_date))}` : "No due date"} - Updated ${esc(fmtDate(task.updated_at))}</span></article>`)}
+      ${adminMiniRows(clientTasks, "No domain tasks found.", (task) => `<article><strong>${esc(task.title || "Task")}</strong><span>${esc(task.status || "todo")} - ${esc(task.type || "description")}</span><span>${task.due_date ? `Due ${esc(fmtDate(task.due_date))}` : "No due date"} - Updated ${esc(fmtDateTime(task.updated_at))}</span></article>`)}
+      ${adminMiniRows(workspaceTasks, "No workspace tasks found.", (task) => `<article><strong>${esc(task.title || "Task")}</strong><span>${esc(task.status || "todo")} - ${esc(task.priority || "Normal")}</span><span>${task.due_date ? `Due ${esc(fmtDate(task.due_date))}` : "No due date"} - Updated ${esc(fmtDateTime(task.updated_at))}</span></article>`)}
     </section>`;
 }
 
@@ -9291,6 +9327,50 @@ function collectSocialLinks(form) {
   })).filter((item) => item.label && item.url);
 }
 
+function supportedTimeZones() {
+  const preferred = [
+    "UTC",
+    "Asia/Bangkok",
+    "Asia/Jakarta",
+    "Asia/Singapore",
+    "Asia/Tokyo",
+    "Australia/Sydney",
+    "Europe/London",
+    "Europe/Paris",
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Los_Angeles",
+  ];
+  let browserZones = [];
+  try {
+    browserZones = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
+  } catch {
+    browserZones = [];
+  }
+  return [...new Set([...preferred, ...browserZones])].sort((a, b) => a.localeCompare(b));
+}
+
+function timeZoneOptionLabel(zone) {
+  try {
+    const sample = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone,
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZoneName: "short",
+    }).format(new Date());
+    return `${zone} (${sample})`;
+  } catch {
+    return zone;
+  }
+}
+
+function timeZoneOptionsHTML(selected = "UTC") {
+  const value = selected || "UTC";
+  return [...new Set([value, ...supportedTimeZones()])].map((zone) => `<option value="${esc(zone)}" ${zone === value ? "selected" : ""}>${esc(timeZoneOptionLabel(zone))}</option>`).join("");
+}
+
 async function renderSettings() {
   const settings = (await api("/api/admin/settings")).settings;
   const colorDefaults = {
@@ -9330,6 +9410,7 @@ async function renderSettings() {
     <section class="panel platform-settings-panel">
       <div class="settings-tabs" role="tablist">
         <button class="active" type="button" data-settings-tab="identity">${icon("building-2")}Identity</button>
+        <button type="button" data-settings-tab="localization">${icon("clock")}Time zone</button>
         <button type="button" data-settings-tab="google">${icon("key-round")}Google sign in</button>
         <button type="button" data-settings-tab="smtp">${icon("mail")}SMTP mail</button>
         <button type="button" data-settings-tab="notifications">${icon("bell")}Notifications</button>
@@ -9356,6 +9437,17 @@ async function renderSettings() {
             ${platformAssetField("Favicon", "favicon_url", "platformFaviconFile", "platformFaviconPreview", settings.favicon_url || "", "F")}
           </div>
           ${socialLinksBuilderHTML(settings.social_links || [])}
+        </section>
+        <section data-settings-panel="localization" class="settings-tab-section" hidden>
+          <div class="settings-provider">
+            <h2>Platform time zone</h2>
+            <p class="muted">Task, comment, reply, notification, and activity timestamps use this timezone and show AM/PM time.</p>
+            <div class="field">
+              <label>Time zone</label>
+              <select name="time_zone" id="settingsTimeZoneSelect">${timeZoneOptionsHTML(settings.time_zone || "UTC")}</select>
+            </div>
+            <p class="muted">Preview: <span id="settingsTimeZonePreview">${esc(fmtDateTimeInTimeZone(new Date().toISOString(), settings.time_zone || "UTC"))}</span></p>
+          </div>
         </section>
         <section data-settings-panel="google" class="settings-tab-section" hidden>
           <label class="check-row"><input type="checkbox" name="google_signin_enabled" ${settings.google_signin_enabled ? "checked" : ""}> Enable Google sign in and registration</label>
@@ -9445,6 +9537,10 @@ async function renderSettings() {
       panel.hidden = panel.dataset.settingsPanel !== tab;
     });
   }));
+  $("#settingsTimeZoneSelect")?.addEventListener("change", (event) => {
+    const preview = $("#settingsTimeZonePreview");
+    if (preview) preview.textContent = fmtDateTimeInTimeZone(new Date().toISOString(), event.currentTarget.value);
+  });
   document.querySelectorAll(".color-setting-field input[type='color']").forEach((input) => {
     const textInput = document.querySelector(`[data-color-text="${selectorEscape(input.name)}"]`);
     input.addEventListener("input", () => {

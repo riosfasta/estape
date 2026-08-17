@@ -473,6 +473,7 @@ type SiteSettings struct {
 	LogoURL                 string             `bson:"logo_url,omitempty" json:"logo_url,omitempty"`
 	FaviconURL              string             `bson:"favicon_url,omitempty" json:"favicon_url,omitempty"`
 	SupportPhone            string             `bson:"support_phone,omitempty" json:"support_phone,omitempty"`
+	TimeZone                string             `bson:"time_zone,omitempty" json:"time_zone,omitempty"`
 	GoogleSigninEnabled     bool               `bson:"google_signin_enabled,omitempty" json:"google_signin_enabled"`
 	GoogleClientID          string             `bson:"google_client_id,omitempty" json:"google_client_id,omitempty"`
 	GoogleClientSecret      string             `bson:"google_client_secret,omitempty" json:"-"`

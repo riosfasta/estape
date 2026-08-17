@@ -24,6 +24,8 @@
   var state = {
     selecting: false,
     point: null,
+    draftPin: null,
+    pins: [],
     screenshot: "",
     captureError: "",
     session: null
@@ -52,8 +54,9 @@
       ".bugmega-muted{font-size:12px;color:#64736e;line-height:1.4}.bugmega-status{font-size:12px;margin-top:8px;color:#64736e}.bugmega-status.error{color:#c73636}.bugmega-status.success{color:#087c67}" +
       ".bugmega-preview{width:100%;max-height:180px;object-fit:cover;border:1px solid #d8e1dd;border-radius:8px;background:#eef5f2;margin:8px 0;display:none}" +
       ".bugmega-preview.active{display:block}" +
-      ".bugmega-pin{position:fixed;z-index:2147482999;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:#ef4444;color:#fff;display:none;align-items:center;justify-content:center;font-size:14px;font-weight:900;box-shadow:0 0 0 4px rgba(239,68,68,.18),0 8px 20px rgba(0,0,0,.24);pointer-events:none}" +
-      ".bugmega-pin.active{display:flex}" +
+      ".bugmega-pin-layer{position:absolute;left:0;top:0;z-index:2147482999;pointer-events:none}" +
+      ".bugmega-pin{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:#ef4444;color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;box-shadow:0 0 0 4px rgba(239,68,68,.18),0 8px 20px rgba(0,0,0,.24);pointer-events:none}" +
+      ".bugmega-pin.draft{background:#f97316}" +
       ".bugmega-select-banner{position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:2147483001;background:#10201c;color:#fff;border-radius:999px;padding:10px 14px;font-size:13px;font-weight:800;box-shadow:0 14px 38px rgba(0,0,0,.24);display:none}" +
       ".bugmega-select-banner.active{display:block}" +
       "body.bugmega-selecting,body.bugmega-selecting *{cursor:crosshair!important}";
@@ -104,7 +107,6 @@
     root.className = "bugmega-widget";
     root.innerHTML =
       '<button class="bugmega-feedback-button" type="button" id="bugmegaStart"><img src="' + esc(iconURL) + '" alt="" aria-hidden="true"><span>Feedback</span></button>' +
-      '<div class="bugmega-pin" id="bugmegaPin">1</div>' +
       '<div class="bugmega-select-banner" id="bugmegaSelectBanner">Click the exact area you want to report</div>' +
       '<section class="bugmega-panel" id="bugmegaPanel" aria-live="polite">' +
         '<div class="bugmega-head"><strong>Send feedback</strong><button class="bugmega-close" type="button" id="bugmegaClose" aria-label="Close">x</button></div>' +
@@ -117,12 +119,56 @@
         '<div class="bugmega-status" id="bugmegaStatus"></div>' +
       '</section>';
     document.body.appendChild(root);
+    var pinLayer = document.createElement("div");
+    pinLayer.className = "bugmega-pin-layer";
+    pinLayer.id = "bugmegaPinLayer";
+    document.body.appendChild(pinLayer);
+    renderPins();
 
     document.getElementById("bugmegaStart").addEventListener("click", startSelecting);
     document.getElementById("bugmegaReselect").addEventListener("click", startSelecting);
     document.getElementById("bugmegaClose").addEventListener("click", closePanel);
     document.getElementById("bugmegaSubmit").addEventListener("click", submitFeedback);
     document.addEventListener("click", handleDocumentClick, true);
+    window.addEventListener("resize", renderPins);
+    window.addEventListener("load", renderPins);
+  }
+
+  function pageDimensions() {
+    return {
+      width: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0, window.innerWidth),
+      height: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0, window.innerHeight)
+    };
+  }
+
+  function normalizePin(raw) {
+    raw = raw || {};
+    var dimensions = pageDimensions();
+    var pinX = Number(raw.pin_x != null ? raw.pin_x : raw.pinX);
+    var pinY = Number(raw.pin_y != null ? raw.pin_y : raw.pinY);
+    if (!Number.isFinite(pinX) && Number.isFinite(Number(raw.pageX))) pinX = Number(raw.pageX) / Math.max(1, dimensions.width) * 100;
+    if (!Number.isFinite(pinY) && Number.isFinite(Number(raw.pageY))) pinY = Number(raw.pageY) / Math.max(1, dimensions.height) * 100;
+    return {
+      id: raw.id || raw.annotation_id || "",
+      title: raw.title || "Annotation pin",
+      pinX: Math.max(0, Math.min(100, Number.isFinite(pinX) ? pinX : 0)),
+      pinY: Math.max(0, Math.min(100, Number.isFinite(pinY) ? pinY : 0)),
+      draft: Boolean(raw.draft)
+    };
+  }
+
+  function renderPins() {
+    var layer = document.getElementById("bugmegaPinLayer");
+    if (!layer) return;
+    var dimensions = pageDimensions();
+    var pins = state.pins.slice();
+    if (state.draftPin) pins.push(state.draftPin);
+    layer.innerHTML = pins.map(function (pin, index) {
+      var normalized = normalizePin(pin);
+      var left = normalized.pinX / 100 * dimensions.width;
+      var top = normalized.pinY / 100 * dimensions.height;
+      return '<div class="bugmega-pin' + (normalized.draft ? ' draft' : '') + '" style="left:' + left + 'px;top:' + top + 'px" title="' + esc(normalized.title) + '">' + esc(index + 1) + '</div>';
+    }).join("");
   }
 
   function startSelecting(event) {
@@ -130,6 +176,9 @@
       event.preventDefault();
       event.stopPropagation();
     }
+    state.point = null;
+    state.draftPin = null;
+    renderPins();
     state.selecting = true;
     document.body.classList.add("bugmega-selecting");
     document.getElementById("bugmegaSelectBanner").classList.add("active");
@@ -138,9 +187,12 @@
 
   function closePanel() {
     state.selecting = false;
+    state.point = null;
+    state.draftPin = null;
     document.body.classList.remove("bugmega-selecting");
     document.getElementById("bugmegaSelectBanner").classList.remove("active");
     document.getElementById("bugmegaPanel").classList.remove("active");
+    renderPins();
   }
 
   function handleDocumentClick(event) {
@@ -155,22 +207,21 @@
     state.selecting = false;
     document.body.classList.remove("bugmega-selecting");
     document.getElementById("bugmegaSelectBanner").classList.remove("active");
-    var pageWidth = Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0, window.innerWidth);
-    var pageHeight = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0, window.innerHeight);
+    var dimensions = pageDimensions();
     state.point = {
       clientX: event.clientX,
       clientY: event.clientY,
       pageX: event.pageX,
       pageY: event.pageY,
-      pinX: Math.max(0, Math.min(100, event.pageX / Math.max(1, pageWidth) * 100)),
-      pinY: Math.max(0, Math.min(100, event.pageY / Math.max(1, pageHeight) * 100)),
-      pageWidth: pageWidth,
-      pageHeight: pageHeight
+      pinX: Math.max(0, Math.min(100, event.pageX / Math.max(1, dimensions.width) * 100)),
+      pinY: Math.max(0, Math.min(100, event.pageY / Math.max(1, dimensions.height) * 100)),
+      pageWidth: dimensions.width,
+      pageHeight: dimensions.height,
+      title: "New annotation",
+      draft: true
     };
-    var pin = document.getElementById("bugmegaPin");
-    pin.style.left = event.clientX + "px";
-    pin.style.top = event.clientY + "px";
-    pin.classList.add("active");
+    state.draftPin = state.point;
+    renderPins();
     document.getElementById("bugmegaPanel").classList.add("active");
     setStatus("Capturing the section around the pin...");
     captureSection(state.point).then(function (dataURL) {
@@ -287,6 +338,17 @@
       });
       var data = await response.json().catch(function () { return {}; });
       if (!response.ok) throw new Error(data.error || "Could not send feedback.");
+      if (state.draftPin) {
+        state.pins.push({
+          id: data.annotation_id || "",
+          title: title || comment || "Website feedback",
+          pinX: state.draftPin.pinX,
+          pinY: state.draftPin.pinY
+        });
+      }
+      state.point = null;
+      state.draftPin = null;
+      renderPins();
       setStatus("Feedback sent. Thank you.", "success");
       document.getElementById("bugmegaTitle").value = "";
       document.getElementById("bugmegaComment").value = "";
@@ -301,7 +363,7 @@
 
   async function loadSession() {
     try {
-      var response = await fetch(apiBase + "/api/widget/session?site_key=" + encodeURIComponent(siteKey), {
+      var response = await fetch(apiBase + "/api/widget/session?site_key=" + encodeURIComponent(siteKey) + "&url=" + encodeURIComponent(window.location.href), {
         method: "GET",
         mode: "cors",
         credentials: "include"
@@ -317,6 +379,7 @@
     loadSession().then(function (session) {
       if (!session || !session.user) return;
       state.session = session;
+      state.pins = Array.isArray(session.pins) ? session.pins.map(normalizePin) : [];
       render();
     });
   }
