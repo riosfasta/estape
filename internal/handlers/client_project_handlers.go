@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -720,8 +721,16 @@ func (s *Server) createClientWebsite(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create default task board"})
 		return
 	}
+	configTab := defaultClientConfigTab(site, userCtx.ID, now)
+	if _, err := s.store.C("client_tabs").InsertOne(c.Request.Context(), configTab); err != nil {
+		_, _ = s.store.C("client_tabs").DeleteMany(c.Request.Context(), bson.M{"website_id": site.ID})
+		_, _ = s.store.C("client_websites").DeleteOne(c.Request.Context(), bson.M{"_id": site.ID})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create website config tab"})
+		return
+	}
 	s.broadcastClientTabChanged(c.Request.Context(), defaultTab, userCtx.ID, "client_tab_created")
-	c.JSON(http.StatusCreated, gin.H{"website": site, "tab": defaultTab})
+	s.broadcastClientTabChanged(c.Request.Context(), configTab, userCtx.ID, "client_tab_created")
+	c.JSON(http.StatusCreated, gin.H{"website": site, "tab": defaultTab, "tabs": []models.ClientTab{defaultTab, configTab}})
 }
 
 func (s *Server) getClientWebsite(c *gin.Context) {
@@ -735,6 +744,10 @@ func (s *Server) getClientWebsite(c *gin.Context) {
 	}
 	if _, err := s.ensureClientWebsiteWidgetKey(c.Request.Context(), &site); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare website widget"})
+		return
+	}
+	if _, err := s.ensureClientWebsiteConfigTab(c.Request.Context(), site); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare website config tab"})
 		return
 	}
 	client, ok := s.loadClientProjectForAccess(c, site.ClientID, false)
@@ -1046,6 +1059,10 @@ func (s *Server) deleteClientTabStatus(c *gin.Context) {
 func (s *Server) deleteClientTab(c *gin.Context) {
 	tab, ok := s.loadClientTabForAccess(c, true)
 	if !ok {
+		return
+	}
+	if tab.Type == "config" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "the Config tab is protected and cannot be deleted"})
 		return
 	}
 	s.deleteClientTaskNotificationsForFilter(c.Request.Context(), bson.M{"tab_id": tab.ID})
@@ -2895,6 +2912,40 @@ func defaultClientTaskBoardTab(site models.ClientWebsite, actorID primitive.Obje
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
+}
+
+func defaultClientConfigTab(site models.ClientWebsite, actorID primitive.ObjectID, now time.Time) models.ClientTab {
+	return models.ClientTab{
+		ID:        primitive.NewObjectID(),
+		ClientID:  site.ClientID,
+		WebsiteID: site.ID,
+		TeamID:    site.TeamID,
+		Type:      "config",
+		Title:     "Config",
+		CreatedBy: actorID,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+}
+
+func (s *Server) ensureClientWebsiteConfigTab(ctx context.Context, site models.ClientWebsite) (models.ClientTab, error) {
+	var tab models.ClientTab
+	err := s.store.C("client_tabs").FindOne(
+		ctx,
+		bson.M{"website_id": site.ID, "type": "config"},
+		options.FindOne().SetSort(bson.D{{Key: "created_at", Value: 1}}),
+	).Decode(&tab)
+	if err == nil {
+		return tab, nil
+	}
+	if err != mongo.ErrNoDocuments {
+		return models.ClientTab{}, err
+	}
+	tab = defaultClientConfigTab(site, site.CreatedBy, time.Now())
+	if _, err := s.store.C("client_tabs").InsertOne(ctx, tab); err != nil {
+		return models.ClientTab{}, err
+	}
+	return tab, nil
 }
 
 func normalizeClientTaskStatus(value string) string {

@@ -3910,7 +3910,12 @@ function clientWebsiteRows(websites, canManage = false, canManageMembers = false
 }
 
 function clientWebsiteWidgetInstallHTML(website = {}, canManage = false) {
-  if (!canManage) return "";
+  if (!canManage) {
+    return `<section class="panel widget-install-panel">
+      <div class="panel-head compact-panel-head"><h2>Website capture widget</h2><span class="pill">Protected</span></div>
+      <p class="muted">Only admins can manage this website widget configuration.</p>
+    </section>`;
+  }
   const key = String(website.widget_key || "").trim();
   if (!key) return `<section class="panel widget-install-panel"><div class="panel-head compact-panel-head"><h2>Website capture widget</h2><span class="pill">Preparing key</span></div></section>`;
   const snippet = `<script src="${location.origin}/widget.js" data-project="${key}" async></script>`;
@@ -6540,12 +6545,13 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
 function clientTabNavHTML(tabs, selectedTab, canManage) {
   return (tabs || []).map((tab) => {
     const active = selectedTab?.id === tab.id;
+    const protectedTab = tab.type === "config";
     return `<span class="client-tab-item ${active ? "active" : ""} ${canManage ? "has-actions" : ""}" data-client-tab-item>
       <button class="client-tab-link ${active ? "active" : ""}" type="button" data-client-tab-link="${esc(tab.id)}">${esc(tab.title)}</button>
       ${canManage ? `<button class="client-tab-menu-trigger" type="button" data-client-tab-menu-trigger aria-label="Tab options"></button>
         <div class="client-tab-menu" data-client-tab-menu hidden>
           <button type="button" data-edit-client-tab="${esc(tab.id)}">${icon("pencil")}Edit tab</button>
-          <button class="danger-text" type="button" data-delete-client-tab="${esc(tab.id)}">${icon("trash-2")}Delete tab</button>
+          ${protectedTab ? `<span class="client-tab-menu-note">${icon("lock")}Protected tab</span>` : `<button class="danger-text" type="button" data-delete-client-tab="${esc(tab.id)}">${icon("trash-2")}Delete tab</button>`}
         </div>` : ""}
     </span>`;
   }).join("");
@@ -6556,6 +6562,9 @@ function clientTabContentHTML(tab, data) {
   const canManageStatuses = Boolean(data.can_manage_statuses);
   const canUpdateProgress = Boolean(data.can_update_progress || canManage);
   if (!tab) return `<section class="panel"><p class="muted">Add a tab to this website.</p></section>`;
+  if (tab.type === "config") {
+    return clientWebsiteWidgetInstallHTML(data.website || {}, canManage);
+  }
   if (tab.type === "doc_list") {
     return `<section class="panel">
       <div class="panel-head"><h2>${esc(tab.title)}</h2>${canManage ? `<button class="btn primary compact" id="addWebsiteDocBtn">${icon("plus")}Document</button>` : ""}</div>
@@ -6915,7 +6924,6 @@ async function renderClientWebsite(clientID, websiteID) {
       <div><h1>${esc(website.name)}</h1><p class="muted">${esc(data.client?.name || "Client")} ${website.url ? " - " + esc(website.url) : ""}</p></div>
       <div class="toolbar"><a class="btn" href="/projects/${esc(clientID)}">${icon("arrow-left")}Client folder</a></div>
     </div>
-    ${clientWebsiteWidgetInstallHTML(website, canManage)}
     <section class="panel">
       <div class="tabs client-tabs">
         ${clientTabNavHTML(data.tabs || [], selectedTab, canManage)}

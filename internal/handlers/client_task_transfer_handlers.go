@@ -410,6 +410,9 @@ func (s *Server) ensureImportedClientWebsite(ctx context.Context, userCtx middle
 	}
 	var existing models.ClientWebsite
 	if err := s.store.C("client_websites").FindOne(ctx, bson.M{"client_id": client.ID, "name": name}).Decode(&existing); err == nil {
+		if _, err := s.ensureClientWebsiteConfigTab(ctx, existing); err != nil {
+			return models.ClientWebsite{}, err
+		}
 		cache[source.ID] = existing
 		return existing, nil
 	}
@@ -431,6 +434,10 @@ func (s *Server) ensureImportedClientWebsite(ctx context.Context, userCtx middle
 		UpdatedAt: now,
 	}
 	if _, err := s.store.C("client_websites").InsertOne(ctx, site); err != nil {
+		return models.ClientWebsite{}, err
+	}
+	if _, err := s.ensureClientWebsiteConfigTab(ctx, site); err != nil {
+		_, _ = s.store.C("client_websites").DeleteOne(ctx, bson.M{"_id": site.ID})
 		return models.ClientWebsite{}, err
 	}
 	cache[source.ID] = site

@@ -3171,6 +3171,20 @@ button.inbox-row {
 .client-tabs .client-tab-menu button:hover {
   background: var(--bg-tertiary);
 }
+.client-tabs .client-tab-menu .client-tab-menu-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+}
+.client-tabs .client-tab-menu .client-tab-menu-note svg {
+  width: 15px;
+  height: 15px;
+}
 .client-tabs .client-tab-menu .danger-text {
   color: var(--danger);
 }
