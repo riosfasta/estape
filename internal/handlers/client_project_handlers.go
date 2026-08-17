@@ -1061,7 +1061,7 @@ func (s *Server) deleteClientTab(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if tab.Type == "config" {
+	if isClientConfigTab(tab) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "the Config tab is protected and cannot be deleted"})
 		return
 	}
@@ -2928,6 +2928,10 @@ func defaultClientConfigTab(site models.ClientWebsite, actorID primitive.ObjectI
 	}
 }
 
+func isClientConfigTab(tab models.ClientTab) bool {
+	return tab.Type == "config" || strings.EqualFold(strings.TrimSpace(tab.Title), "Config")
+}
+
 func (s *Server) ensureClientWebsiteConfigTab(ctx context.Context, site models.ClientWebsite) (models.ClientTab, error) {
 	var tab models.ClientTab
 	err := s.store.C("client_tabs").FindOne(
@@ -2936,6 +2940,26 @@ func (s *Server) ensureClientWebsiteConfigTab(ctx context.Context, site models.C
 		options.FindOne().SetSort(bson.D{{Key: "created_at", Value: 1}}),
 	).Decode(&tab)
 	if err == nil {
+		return tab, nil
+	}
+	if err != mongo.ErrNoDocuments {
+		return models.ClientTab{}, err
+	}
+	err = s.store.C("client_tabs").FindOne(
+		ctx,
+		bson.M{"website_id": site.ID, "title": primitive.Regex{Pattern: "^config$", Options: "i"}},
+		options.FindOne().SetSort(bson.D{{Key: "created_at", Value: 1}}),
+	).Decode(&tab)
+	if err == nil {
+		if tab.Type != "config" || strings.TrimSpace(tab.Content) != "" {
+			now := time.Now()
+			if _, updateErr := s.store.C("client_tabs").UpdateByID(ctx, tab.ID, bson.M{"$set": bson.M{"type": "config", "content": "", "updated_at": now}}); updateErr != nil {
+				return models.ClientTab{}, updateErr
+			}
+			tab.Type = "config"
+			tab.Content = ""
+			tab.UpdatedAt = now
+		}
 		return tab, nil
 	}
 	if err != mongo.ErrNoDocuments {

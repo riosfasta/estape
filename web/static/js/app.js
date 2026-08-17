@@ -6545,7 +6545,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
 function clientTabNavHTML(tabs, selectedTab, canManage) {
   return (tabs || []).map((tab) => {
     const active = selectedTab?.id === tab.id;
-    const protectedTab = tab.type === "config";
+    const protectedTab = isClientConfigTab(tab);
     return `<span class="client-tab-item ${active ? "active" : ""} ${canManage ? "has-actions" : ""}" data-client-tab-item>
       <button class="client-tab-link ${active ? "active" : ""}" type="button" data-client-tab-link="${esc(tab.id)}">${esc(tab.title)}</button>
       ${canManage ? `<button class="client-tab-menu-trigger" type="button" data-client-tab-menu-trigger aria-label="Tab options"></button>
@@ -6557,12 +6557,16 @@ function clientTabNavHTML(tabs, selectedTab, canManage) {
   }).join("");
 }
 
+function isClientConfigTab(tab = {}) {
+  return tab.type === "config" || String(tab.title || "").trim().toLowerCase() === "config";
+}
+
 function clientTabContentHTML(tab, data) {
   const canManage = data.can_manage;
   const canManageStatuses = Boolean(data.can_manage_statuses);
   const canUpdateProgress = Boolean(data.can_update_progress || canManage);
   if (!tab) return `<section class="panel"><p class="muted">Add a tab to this website.</p></section>`;
-  if (tab.type === "config") {
+  if (isClientConfigTab(tab)) {
     return clientWebsiteWidgetInstallHTML(data.website || {}, canManage);
   }
   if (tab.type === "doc_list") {
