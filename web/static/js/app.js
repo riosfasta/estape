@@ -8,10 +8,33 @@ function readStoredObject(key) {
 }
 
 const WORKSPACE_CONTEXT_KEY = "bugmega_workspace_context";
+const AUTH_ACCESS_KEY = "bugmega_access";
+const AUTH_REFRESH_KEY = "bugmega_refresh";
+const AUTH_REMEMBER_KEY = "bugmega_remember_me";
+
+function readStoredToken(key) {
+  return localStorage.getItem(key) || sessionStorage.getItem(key) || "";
+}
+
+function authRememberPreference() {
+  const saved = localStorage.getItem(AUTH_REMEMBER_KEY);
+  if (saved === "1") return true;
+  if (saved === "0") return false;
+  if (localStorage.getItem(AUTH_ACCESS_KEY) || localStorage.getItem(AUTH_REFRESH_KEY)) return true;
+  if (sessionStorage.getItem(AUTH_ACCESS_KEY) || sessionStorage.getItem(AUTH_REFRESH_KEY)) return false;
+  return true;
+}
+
+function clearStoredTokens() {
+  localStorage.removeItem(AUTH_ACCESS_KEY);
+  localStorage.removeItem(AUTH_REFRESH_KEY);
+  sessionStorage.removeItem(AUTH_ACCESS_KEY);
+  sessionStorage.removeItem(AUTH_REFRESH_KEY);
+}
 
 const state = {
-  access: localStorage.getItem("bugmega_access") || "",
-  refresh: localStorage.getItem("bugmega_refresh") || "",
+  access: readStoredToken(AUTH_ACCESS_KEY),
+  refresh: readStoredToken(AUTH_REFRESH_KEY),
   me: null,
   team: null,
   personalTeam: null,
@@ -32,6 +55,7 @@ const state = {
   liveReconnectTimer: null,
   liveRefreshTimer: null,
   liveReconnectDelay: 1500,
+  sessionCookieSynced: false,
   adminUsersRefreshTimer: null,
   liveTaskSignature: "",
   liveWebsiteSignature: "",
@@ -1988,21 +2012,40 @@ async function downloadAuthenticatedFile(url, fallbackFilename = "download.pdf")
   setTimeout(() => URL.revokeObjectURL(objectURL), 1500);
 }
 
-function storeTokens(access, refresh) {
+function storeTokens(access, refresh, remember = authRememberPreference()) {
   state.access = access;
   state.refresh = refresh;
-  localStorage.setItem("bugmega_access", access);
-  localStorage.setItem("bugmega_refresh", refresh);
+  clearStoredTokens();
+  localStorage.setItem(AUTH_REMEMBER_KEY, remember ? "1" : "0");
+  const storage = remember ? localStorage : sessionStorage;
+  storage.setItem(AUTH_ACCESS_KEY, access);
+  storage.setItem(AUTH_REFRESH_KEY, refresh);
 }
 
 function logout() {
   stopNotificationPolling();
   stopLivePolling();
-  localStorage.removeItem("bugmega_access");
-  localStorage.removeItem("bugmega_refresh");
+  fetch("/api/auth/logout", { method: "POST", keepalive: true }).catch(() => {});
+  clearStoredTokens();
   state.access = "";
   state.refresh = "";
   window.location.href = "/login";
+}
+
+async function syncSessionCookie() {
+  if (!state.access || state.sessionCookieSynced) return;
+  state.sessionCookieSynced = true;
+  try {
+    const res = await fetch("/api/auth/session-cookie", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + state.access },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.access_token && data.refresh_token) storeTokens(data.access_token, data.refresh_token);
+  } catch {
+    // The app can still work with the Authorization header; the widget just waits for a valid cookie.
+  }
 }
 
 async function loadMe() {
@@ -2018,6 +2061,7 @@ async function loadMe() {
   state.membership = data.membership || null;
   state.platformSettings = data.platform_settings || null;
   state.unreadCommentCount = Number(data.unread_comment_count || 0);
+  syncSessionCookie();
   const clientData = await api("/api/client-projects").catch(() => ({ clients: [], websites: [] }));
   state.clientProjects = clientData.clients || [];
   state.clientWebsites = clientData.websites || [];
@@ -2102,6 +2146,7 @@ async function renderAuth(mode) {
   const inviteToken = new URLSearchParams(location.search).get("invite") || "";
   const platformName = state.platformSettings?.site_name || "bugmega";
   const googleEnabled = state.platformSettings?.google_signin_enabled === true;
+  const rememberDefault = authRememberPreference();
   app.innerHTML = `
     <div class="auth-wrap">
       <section class="auth-box">
@@ -2117,6 +2162,7 @@ async function renderAuth(mode) {
           <div class="field"><label>Email</label><input type="email" name="email" required></div>
           <div class="field"><label>Password</label><input type="password" name="password" required minlength="8"></div>
           ${!isRegister ? `<div class="field two-factor-field" hidden><label>Authenticator code</label><input id="twoFactorCode" name="two_factor_code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>` : ""}
+          ${!isRegister ? `<label class="check-row auth-remember-row"><input type="checkbox" name="remember_me" value="1" ${rememberDefault ? "checked" : ""}> Remember me</label>` : ""}
           <button class="btn primary" type="submit" id="authSubmitBtn">${icon(isRegister ? "user-plus" : "log-in")}${isRegister ? "Create account" : "Login"}</button>
           <p class="status-line"></p>
         </form>
@@ -2128,6 +2174,8 @@ async function renderAuth(mode) {
     event.preventDefault();
     const authForm = event.currentTarget;
     const form = Object.fromEntries(new FormData(authForm).entries());
+    const rememberMe = isRegister ? true : Boolean(form.remember_me);
+    delete form.remember_me;
     if (isRegister && form.company_name) form.workspace_name = form.company_name;
     try {
       const data = await api(isRegister ? "/api/auth/register" : "/api/auth/login", { method: "POST", body: JSON.stringify(form) });
@@ -2144,7 +2192,7 @@ async function renderAuth(mode) {
         setStatus("Enter your authenticator code");
         return;
       }
-      storeTokens(data.access_token, data.refresh_token);
+      storeTokens(data.access_token, data.refresh_token, rememberMe);
       window.location.href = "/dashboard";
     } catch (error) {
       setStatus(error.message, true);
@@ -3832,7 +3880,7 @@ function clientWebsiteWidgetInstallHTML(website = {}, canManage = false) {
   const snippet = `<script src="${location.origin}/widget.js" data-project="${key}" async></script>`;
   return `<section class="panel widget-install-panel">
     <div class="panel-head compact-panel-head">
-      <div><h2>Website capture widget</h2><p class="muted">Paste this code inside the &lt;head&gt;...&lt;/head&gt; section on ${esc(website.url || website.name || "the client website")}.</p></div>
+      <div><h2>Website capture widget</h2><p class="muted">Paste this code inside the &lt;head&gt;...&lt;/head&gt; section on ${esc(website.url || website.name || "the client website")}. The button appears only for signed-in BugMega users with domain access.</p></div>
       <button class="btn compact" type="button" id="copyClientWidgetCode">${icon("copy")}Copy code</button>
     </div>
     <textarea class="code-textarea" id="clientWidgetInstallCode" readonly>${esc(snippet)}</textarea>
@@ -11545,6 +11593,18 @@ async function route(options = {}) {
     if (path() === "/login") {
       stopNotificationPolling();
       stopLivePolling();
+      if (state.access) {
+        try {
+          await loadMe();
+          window.location.replace("/dashboard");
+          return;
+        } catch {
+          clearStoredTokens();
+          state.access = "";
+          state.refresh = "";
+          state.me = null;
+        }
+      }
       return renderAuth("login");
     }
     if (path() === "/register") {

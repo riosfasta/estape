@@ -168,6 +168,7 @@ func (s *Server) register(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not issue tokens"})
 		return
 	}
+	s.setSessionCookies(c, access, refresh)
 	c.JSON(http.StatusCreated, gin.H{"user": user, "access_token": access, "refresh_token": refresh})
 }
 
@@ -224,6 +225,7 @@ func (s *Server) login(c *gin.Context) {
 		return
 	}
 	_, _ = s.store.C("users").UpdateByID(c.Request.Context(), user.ID, bson.M{"$set": bson.M{"last_active_at": time.Now()}})
+	s.setSessionCookies(c, access, refresh)
 	c.JSON(http.StatusOK, gin.H{"user": user, "access_token": access, "refresh_token": refresh})
 }
 
@@ -250,6 +252,32 @@ func (s *Server) refresh(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not issue tokens"})
 		return
 	}
+	s.setSessionCookies(c, access, refresh)
+	c.JSON(http.StatusOK, gin.H{"access_token": access, "refresh_token": refresh})
+}
+
+func (s *Server) logout(c *gin.Context) {
+	s.clearSessionCookies(c)
+	c.JSON(http.StatusOK, gin.H{"logged_out": true})
+}
+
+func (s *Server) syncSessionCookie(c *gin.Context) {
+	userCtx, _ := currentUser(c)
+	user, err := s.loadUser(c.Request.Context(), userCtx.ID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	if user.Status != models.StatusActive {
+		c.JSON(http.StatusForbidden, gin.H{"error": "user account is not active"})
+		return
+	}
+	access, refresh, err := s.issueTokens(c.Request.Context(), user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not refresh session"})
+		return
+	}
+	s.setSessionCookies(c, access, refresh)
 	c.JSON(http.StatusOK, gin.H{"access_token": access, "refresh_token": refresh})
 }
 
@@ -576,6 +604,7 @@ func (s *Server) updatePassword(c *gin.Context) {
 		return
 	}
 	s.audit(c.Request.Context(), user.ID, "user.password.updated", "user", user.ID)
+	s.setSessionCookies(c, access, refresh)
 	c.JSON(http.StatusOK, gin.H{"updated": true, "access_token": access, "refresh_token": refresh})
 }
 
@@ -808,6 +837,51 @@ func (s *Server) issueTokens(ctx context.Context, user models.User) (string, str
 	}
 	_, err = s.store.C("users").UpdateByID(ctx, user.ID, bson.M{"$set": bson.M{"refresh_token_hash": hash}})
 	return access, refresh, err
+}
+
+func (s *Server) setSessionCookies(c *gin.Context, access string, refresh string) {
+	secure := strings.HasPrefix(strings.ToLower(strings.TrimSpace(s.cfg.AppURL)), "https://")
+	sameSite := http.SameSiteLaxMode
+	if secure {
+		sameSite = http.SameSiteNoneMode
+	}
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "access_token",
+		Value:    access,
+		Path:     "/",
+		MaxAge:   int((20 * time.Minute).Seconds()),
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: sameSite,
+	})
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    refresh,
+		Path:     "/",
+		MaxAge:   int((30 * 24 * time.Hour).Seconds()),
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: sameSite,
+	})
+}
+
+func (s *Server) clearSessionCookies(c *gin.Context) {
+	secure := strings.HasPrefix(strings.ToLower(strings.TrimSpace(s.cfg.AppURL)), "https://")
+	sameSite := http.SameSiteLaxMode
+	if secure {
+		sameSite = http.SameSiteNoneMode
+	}
+	for _, name := range []string{"access_token", "refresh_token"} {
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   secure,
+			SameSite: sameSite,
+		})
+	}
 }
 
 func (s *Server) createTrialSubscription(ctx context.Context, teamID primitive.ObjectID, now time.Time) (primitive.ObjectID, models.Plan, error) {

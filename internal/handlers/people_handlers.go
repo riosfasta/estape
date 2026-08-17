@@ -561,6 +561,7 @@ func (s *Server) leaveCompany(c *gin.Context) {
 		return
 	}
 	s.audit(c.Request.Context(), user.ID, "team.member.left", "team", companyTeamID)
+	s.setSessionCookies(c, access, refresh)
 	c.JSON(http.StatusOK, gin.H{"left": true, "team": personalTeam, "user": user, "access_token": access, "refresh_token": refresh})
 }
 

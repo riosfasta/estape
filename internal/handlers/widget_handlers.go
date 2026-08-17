@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"bugmark/internal/auth"
+	"bugmark/internal/middleware"
 	"bugmark/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -24,311 +26,45 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-const widgetScriptBody = `(function () {
-  if (window.BugMegaFeedbackWidget) return;
-  window.BugMegaFeedbackWidget = true;
-
-  var script = document.currentScript;
-  if (!script) {
-    var scripts = document.getElementsByTagName("script");
-    for (var i = scripts.length - 1; i >= 0; i--) {
-      if ((scripts[i].src || "").indexOf("/widget.js") !== -1) {
-        script = scripts[i];
-        break;
-      }
-    }
-  }
-  if (!script) return;
-
-  var scriptURL = new URL(script.src, window.location.href);
-  var apiBase = scriptURL.origin;
-  var siteKey = script.getAttribute("data-project") || script.getAttribute("data-site") || script.getAttribute("data-key") || scriptURL.searchParams.get("key") || "";
-  if (!siteKey) {
-    console.warn("BugMega widget: missing data-project key.");
-    return;
-  }
-
-  var html2canvasPromise = null;
-  var state = {
-    selecting: false,
-    point: null,
-    screenshot: "",
-    captureError: ""
-  };
-
-  function addStyles() {
-    if (document.getElementById("bugmega-widget-styles")) return;
-    var style = document.createElement("style");
-    style.id = "bugmega-widget-styles";
-    style.textContent =
-      ".bugmega-widget *{box-sizing:border-box;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}" +
-      ".bugmega-widget{position:fixed;right:22px;bottom:22px;z-index:2147483000;color:#10201c}" +
-      ".bugmega-feedback-button{border:0;border-radius:999px;background:#08a88a;color:#fff;padding:12px 16px;font-weight:800;font-size:14px;box-shadow:0 16px 44px rgba(0,0,0,.22);cursor:pointer}" +
-      ".bugmega-panel{position:fixed;right:22px;bottom:78px;width:min(380px,calc(100vw - 32px));max-height:calc(100vh - 110px);overflow:auto;background:#fff;border:1px solid rgba(0,0,0,.14);border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.28);padding:16px;display:none}" +
-      ".bugmega-panel.active{display:block}" +
-      ".bugmega-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}" +
-      ".bugmega-head strong{font-size:17px;color:#10201c}" +
-      ".bugmega-close{border:0;background:transparent;font-size:24px;line-height:1;cursor:pointer;color:#5d6b66}" +
-      ".bugmega-field{display:block;margin:10px 0}.bugmega-field span{display:block;font-size:12px;font-weight:800;color:#52635d;margin-bottom:5px}" +
-      ".bugmega-field input,.bugmega-field textarea{width:100%;border:1px solid #cdd9d5;border-radius:8px;padding:9px 10px;font-size:14px;color:#10201c;background:#fff}" +
-      ".bugmega-field textarea{min-height:92px;resize:vertical}" +
-      ".bugmega-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}" +
-      ".bugmega-primary{border:0;border-radius:8px;background:#08a88a;color:#fff;padding:10px 14px;font-weight:800;cursor:pointer}" +
-      ".bugmega-secondary{border:1px solid #cdd9d5;border-radius:8px;background:#fff;color:#10201c;padding:9px 12px;font-weight:700;cursor:pointer}" +
-      ".bugmega-muted{font-size:12px;color:#64736e;line-height:1.4}.bugmega-status{font-size:12px;margin-top:8px;color:#64736e}.bugmega-status.error{color:#c73636}.bugmega-status.success{color:#087c67}" +
-      ".bugmega-preview{width:100%;max-height:180px;object-fit:cover;border:1px solid #d8e1dd;border-radius:8px;background:#eef5f2;margin:8px 0;display:none}" +
-      ".bugmega-preview.active{display:block}" +
-      ".bugmega-pin{position:fixed;z-index:2147482999;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:#ef4444;color:#fff;display:none;align-items:center;justify-content:center;font-size:14px;font-weight:900;box-shadow:0 0 0 4px rgba(239,68,68,.18),0 8px 20px rgba(0,0,0,.24);pointer-events:none}" +
-      ".bugmega-pin.active{display:flex}" +
-      ".bugmega-select-banner{position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:2147483001;background:#10201c;color:#fff;border-radius:999px;padding:10px 14px;font-size:13px;font-weight:800;box-shadow:0 14px 38px rgba(0,0,0,.24);display:none}" +
-      ".bugmega-select-banner.active{display:block}" +
-      "body.bugmega-selecting,body.bugmega-selecting *{cursor:crosshair!important}";
-    document.head.appendChild(style);
-  }
-
-  function esc(value) {
-    return String(value || "").replace(/[&<>"']/g, function (char) {
-      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[char];
-    });
-  }
-
-  function closestWidget(target) {
-    return target && target.closest && target.closest(".bugmega-widget, .bugmega-panel, .bugmega-select-banner");
-  }
-
-  function setStatus(text, type) {
-    var status = document.getElementById("bugmegaStatus");
-    if (!status) return;
-    status.className = "bugmega-status" + (type ? " " + type : "");
-    status.textContent = text || "";
-  }
-
-  function setPreview(dataURL) {
-    var preview = document.getElementById("bugmegaPreview");
-    if (!preview) return;
-    if (!dataURL) {
-      preview.classList.remove("active");
-      preview.removeAttribute("src");
-      return;
-    }
-    preview.src = dataURL;
-    preview.classList.add("active");
-  }
-
-  function render() {
-    addStyles();
-    var root = document.createElement("div");
-    root.className = "bugmega-widget";
-    root.innerHTML =
-      '<button class="bugmega-feedback-button" type="button" id="bugmegaStart">Website feedback</button>' +
-      '<div class="bugmega-pin" id="bugmegaPin">1</div>' +
-      '<div class="bugmega-select-banner" id="bugmegaSelectBanner">Click the exact area you want to report</div>' +
-      '<section class="bugmega-panel" id="bugmegaPanel" aria-live="polite">' +
-        '<div class="bugmega-head"><strong>Send feedback</strong><button class="bugmega-close" type="button" id="bugmegaClose" aria-label="Close">×</button></div>' +
-        '<p class="bugmega-muted">Click a spot on the page, then add a short title and details.</p>' +
-        '<img class="bugmega-preview" id="bugmegaPreview" alt="Captured section preview">' +
-        '<label class="bugmega-field"><span>Title</span><input id="bugmegaTitle" maxlength="80" placeholder="What needs attention?"></label>' +
-        '<label class="bugmega-field"><span>Details</span><textarea id="bugmegaComment" placeholder="Describe the issue"></textarea></label>' +
-        '<label class="bugmega-field"><span>Your name, optional</span><input id="bugmegaName" autocomplete="name"></label>' +
-        '<label class="bugmega-field"><span>Your email, optional</span><input id="bugmegaEmail" type="email" autocomplete="email"></label>' +
-        '<div class="bugmega-toolbar"><button class="bugmega-primary" type="button" id="bugmegaSubmit">Send feedback</button><button class="bugmega-secondary" type="button" id="bugmegaReselect">Move pin</button></div>' +
-        '<div class="bugmega-status" id="bugmegaStatus"></div>' +
-      '</section>';
-    document.body.appendChild(root);
-
-    document.getElementById("bugmegaStart").addEventListener("click", startSelecting);
-    document.getElementById("bugmegaReselect").addEventListener("click", startSelecting);
-    document.getElementById("bugmegaClose").addEventListener("click", closePanel);
-    document.getElementById("bugmegaSubmit").addEventListener("click", submitFeedback);
-    document.addEventListener("click", handleDocumentClick, true);
-  }
-
-  function startSelecting(event) {
-    if (event) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-    state.selecting = true;
-    document.body.classList.add("bugmega-selecting");
-    document.getElementById("bugmegaSelectBanner").classList.add("active");
-    setStatus("Click the page where the issue appears.");
-  }
-
-  function closePanel() {
-    state.selecting = false;
-    document.body.classList.remove("bugmega-selecting");
-    document.getElementById("bugmegaSelectBanner").classList.remove("active");
-    document.getElementById("bugmegaPanel").classList.remove("active");
-  }
-
-  function handleDocumentClick(event) {
-    if (!state.selecting) return;
-    if (closestWidget(event.target)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    choosePoint(event);
-  }
-
-  function choosePoint(event) {
-    state.selecting = false;
-    document.body.classList.remove("bugmega-selecting");
-    document.getElementById("bugmegaSelectBanner").classList.remove("active");
-    var pageWidth = Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0, window.innerWidth);
-    var pageHeight = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0, window.innerHeight);
-    state.point = {
-      clientX: event.clientX,
-      clientY: event.clientY,
-      pageX: event.pageX,
-      pageY: event.pageY,
-      pinX: Math.max(0, Math.min(100, event.pageX / Math.max(1, pageWidth) * 100)),
-      pinY: Math.max(0, Math.min(100, event.pageY / Math.max(1, pageHeight) * 100)),
-      pageWidth: pageWidth,
-      pageHeight: pageHeight
-    };
-    var pin = document.getElementById("bugmegaPin");
-    pin.style.left = event.clientX + "px";
-    pin.style.top = event.clientY + "px";
-    pin.classList.add("active");
-    document.getElementById("bugmegaPanel").classList.add("active");
-    setStatus("Capturing the section around the pin...");
-    captureSection(state.point).then(function (dataURL) {
-      state.screenshot = dataURL || "";
-      state.captureError = "";
-      setPreview(state.screenshot);
-      setStatus(state.screenshot ? "Section captured automatically." : "Pin saved. Screenshot was not available on this page.");
-      document.getElementById("bugmegaTitle").focus();
-    }).catch(function (error) {
-      state.screenshot = "";
-      state.captureError = error && error.message ? error.message : "Could not capture this page.";
-      setPreview("");
-      setStatus("Pin saved. Screenshot was not available on this page.", "error");
-      document.getElementById("bugmegaTitle").focus();
-    });
-  }
-
-  function loadHtml2Canvas() {
-    if (window.html2canvas) return Promise.resolve(window.html2canvas);
-    if (html2canvasPromise) return html2canvasPromise;
-    html2canvasPromise = new Promise(function (resolve, reject) {
-      var loader = document.createElement("script");
-      loader.src = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
-      loader.async = true;
-      loader.crossOrigin = "anonymous";
-      loader.onload = function () {
-        if (window.html2canvas) resolve(window.html2canvas);
-        else reject(new Error("Capture helper did not load."));
-      };
-      loader.onerror = function () {
-        reject(new Error("Capture helper did not load."));
-      };
-      document.head.appendChild(loader);
-    });
-    return html2canvasPromise;
-  }
-
-  function clamp(value, min, max) {
-    return Math.min(Math.max(value, min), max);
-  }
-
-  async function captureSection(point) {
-    var html2canvas = await loadHtml2Canvas();
-    var cropWidth = Math.min(760, window.innerWidth);
-    var cropHeight = Math.min(560, window.innerHeight);
-    var left = clamp(point.clientX - cropWidth / 2, 0, Math.max(0, window.innerWidth - cropWidth));
-    var top = clamp(point.clientY - cropHeight / 2, 0, Math.max(0, window.innerHeight - cropHeight));
-    var root = document.querySelector(".bugmega-widget");
-    var previousVisibility = root ? root.style.visibility : "";
-    if (root) root.style.visibility = "hidden";
-    await new Promise(function (resolve) { requestAnimationFrame(resolve); });
-    try {
-      var canvas = await html2canvas(document.documentElement, {
-        backgroundColor: getComputedStyle(document.body || document.documentElement).backgroundColor || "#ffffff",
-        useCORS: true,
-        allowTaint: false,
-        logging: false,
-        scale: Math.min(2, window.devicePixelRatio || 1),
-        x: window.scrollX + left,
-        y: window.scrollY + top,
-        width: cropWidth,
-        height: cropHeight,
-        windowWidth: Math.max(document.documentElement.scrollWidth, window.innerWidth),
-        windowHeight: Math.max(document.documentElement.scrollHeight, window.innerHeight),
-        scrollX: -window.scrollX,
-        scrollY: -window.scrollY
-      });
-      return canvas.toDataURL("image/png", 0.92);
-    } finally {
-      if (root) root.style.visibility = previousVisibility;
-    }
-  }
-
-  async function submitFeedback() {
-    if (!state.point) {
-      startSelecting();
-      return;
-    }
-    var button = document.getElementById("bugmegaSubmit");
-    var title = document.getElementById("bugmegaTitle").value.trim();
-    var comment = document.getElementById("bugmegaComment").value.trim();
-    var reporterName = document.getElementById("bugmegaName").value.trim();
-    var reporterEmail = document.getElementById("bugmegaEmail").value.trim();
-    button.disabled = true;
-    button.textContent = "Sending...";
-    setStatus("Sending feedback...");
-    try {
-      var response = await fetch(apiBase + "/api/widget/annotations", {
-        method: "POST",
-        mode: "cors",
-        credentials: "omit",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          site_key: siteKey,
-          url: window.location.href,
-          title: title,
-          comment: comment,
-          reporter_name: reporterName,
-          reporter_email: reporterEmail,
-          screenshot_data: state.screenshot || "",
-          capture_error: state.captureError || "",
-          pin_x: state.point.pinX,
-          pin_y: state.point.pinY,
-          page_width: state.point.pageWidth,
-          page_height: state.point.pageHeight,
-          viewport_width: window.innerWidth,
-          viewport_height: window.innerHeight
-        })
-      });
-      var data = await response.json().catch(function () { return {}; });
-      if (!response.ok) throw new Error(data.error || "Could not send feedback.");
-      setStatus("Feedback sent. Thank you.", "success");
-      document.getElementById("bugmegaTitle").value = "";
-      document.getElementById("bugmegaComment").value = "";
-      setTimeout(closePanel, 1200);
-    } catch (error) {
-      setStatus(error && error.message ? error.message : "Could not send feedback.", "error");
-    } finally {
-      button.disabled = false;
-      button.textContent = "Send feedback";
-    }
-  }
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", render);
-  } else {
-    render();
-  }
-})();`
-
 func (s *Server) widgetScript(c *gin.Context) {
 	c.Header("Content-Type", "application/javascript; charset=utf-8")
 	c.Header("Cache-Control", "public, max-age=300")
 	c.Header("Access-Control-Allow-Origin", "*")
-	c.String(http.StatusOK, widgetScriptBody)
+	c.File("web/static/js/widget.js")
 }
 
 func (s *Server) widgetOptions(c *gin.Context) {
 	s.setWidgetCORS(c)
 	c.Status(http.StatusNoContent)
+}
+
+func (s *Server) widgetSession(c *gin.Context) {
+	s.setWidgetCORS(c)
+	user, ok := s.widgetAuthenticatedUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"logged_in": false})
+		return
+	}
+	site, ok := s.widgetWebsiteForRequest(c)
+	if !ok {
+		return
+	}
+	userCtx := middleware.UserContext{ID: user.ID, Role: user.Role, TeamID: user.TeamID}
+	if !s.canAccessClientWebsite(c.Request.Context(), userCtx, site) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "you do not have access to this domain"})
+		return
+	}
+	if _, _, membership := s.teamMembership(c.Request.Context(), site.TeamID); membership != "active" && membership != "trialing" {
+		c.JSON(http.StatusPaymentRequired, gin.H{"error": "membership required", "code": "membership_required"})
+		return
+	}
+	var client models.ClientProject
+	_ = s.store.C("client_projects").FindOne(c.Request.Context(), bson.M{"_id": site.ClientID}).Decode(&client)
+	c.JSON(http.StatusOK, gin.H{
+		"logged_in": true,
+		"user":      user,
+		"members":   s.widgetAssignableMembers(c.Request.Context(), client, site),
+	})
 }
 
 func (s *Server) createWidgetAnnotation(c *gin.Context) {
@@ -341,6 +77,7 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 		Comment        string   `json:"comment"`
 		ReporterName   string   `json:"reporter_name"`
 		ReporterEmail  string   `json:"reporter_email"`
+		AssigneeIDs    []string `json:"assignee_ids"`
 		ScreenshotData string   `json:"screenshot_data"`
 		CaptureError   string   `json:"capture_error"`
 		PinX           *float64 `json:"pin_x"`
@@ -354,18 +91,22 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid feedback body"})
 		return
 	}
-	siteKey := strings.TrimSpace(req.SiteKey)
-	if siteKey == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "widget key is required"})
+	user, ok := s.widgetAuthenticatedUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in to BugMega before using website feedback"})
 		return
 	}
-	var site models.ClientWebsite
-	if err := s.store.C("client_websites").FindOne(c.Request.Context(), bson.M{"widget_key": siteKey}).Decode(&site); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "website widget was not found"})
+	site, ok := s.loadWidgetWebsiteByKey(c, req.SiteKey)
+	if !ok {
 		return
 	}
 	if !widgetOriginAllowed(site.URL, c.GetHeader("Origin")) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "this website is not allowed to submit feedback for this domain"})
+		return
+	}
+	userCtx := middleware.UserContext{ID: user.ID, Role: user.Role, TeamID: user.TeamID}
+	if !s.canAccessClientWebsite(c.Request.Context(), userCtx, site) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "you do not have access to this domain"})
 		return
 	}
 	if _, _, membership := s.teamMembership(c.Request.Context(), site.TeamID); membership != "active" && membership != "trialing" {
@@ -383,6 +124,20 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 	if req.PinX == nil || req.PinY == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "pin position is required"})
 		return
+	}
+	var client models.ClientProject
+	_ = s.store.C("client_projects").FindOne(c.Request.Context(), bson.M{"_id": site.ClientID}).Decode(&client)
+	assigneeIDs, err := objectIDsFromStrings(req.AssigneeIDs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid assignee id"})
+		return
+	}
+	allowedAssignees := allowedClientTaskAssignees(client, site)
+	for _, assigneeID := range assigneeIDs {
+		if !containsObjectID(allowedAssignees, assigneeID) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "assignee must have access to this domain"})
+			return
+		}
 	}
 	title := normalizeClientTaskTitle(req.Title)
 	comment := normalizeClientTaskContent(req.Comment)
@@ -407,7 +162,7 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 	}
 	screenshotURL := ""
 	if strings.TrimSpace(req.ScreenshotData) != "" {
-		url, err := s.saveWidgetScreenshot(site.CreatedBy, req.ScreenshotData)
+		url, err := s.saveWidgetScreenshot(user.ID, req.ScreenshotData)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -446,9 +201,9 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 		PageWidth:     pageWidth,
 		PageHeight:    pageHeight,
 		Attachments:   []string{},
-		AssigneeIDs:   []primitive.ObjectID{},
+		AssigneeIDs:   assigneeIDs,
 		Status:        status,
-		CreatedBy:     site.CreatedBy,
+		CreatedBy:     user.ID,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
@@ -472,9 +227,9 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 		Attachments:   []string{},
 		Checklist:     []models.ChecklistItem{},
 		Blocks:        []models.ClientTaskBlock{},
-		AssigneeIDs:   []primitive.ObjectID{},
+		AssigneeIDs:   assigneeIDs,
 		Status:        status,
-		CreatedBy:     site.CreatedBy,
+		CreatedBy:     user.ID,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
@@ -482,9 +237,10 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create feedback task"})
 		return
 	}
-	s.recordClientTaskLog(c.Request.Context(), task, site.CreatedBy, "created_task", "received website widget feedback")
-	s.notifyUserIDs(c.Request.Context(), s.clientWebsiteLiveRecipients(c.Request.Context(), site), primitive.NilObjectID, "client_task_updated", "New website feedback submitted: "+task.Title, task.ID)
-	s.broadcastClientTaskChanged(c.Request.Context(), task, primitive.NilObjectID, "client_task_created")
+	s.recordClientTaskLog(c.Request.Context(), task, user.ID, "created_task", "created this annotation from the website widget")
+	s.notifyClientTaskAssignees(c.Request.Context(), task)
+	s.notifyUserIDs(c.Request.Context(), s.clientWebsiteLiveRecipients(c.Request.Context(), site), user.ID, "client_task_updated", firstNonEmpty(user.Name, user.Username, user.Email, "Someone")+" submitted website feedback: "+task.Title, task.ID)
+	s.broadcastClientTaskChanged(c.Request.Context(), task, user.ID, "client_task_created")
 	c.JSON(http.StatusCreated, gin.H{"task_id": task.ID.Hex(), "annotation_id": annotation.ID.Hex(), "screenshot_url": screenshotURL})
 }
 
@@ -495,10 +251,85 @@ func (s *Server) setWidgetCORS(c *gin.Context) {
 	} else {
 		c.Header("Access-Control-Allow-Origin", origin)
 		c.Header("Vary", "Origin")
+		c.Header("Access-Control-Allow-Credentials", "true")
 	}
-	c.Header("Access-Control-Allow-Methods", "POST, OPTIONS")
+	c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 	c.Header("Access-Control-Allow-Headers", "Content-Type")
 	c.Header("Access-Control-Max-Age", "600")
+}
+
+func (s *Server) widgetWebsiteForRequest(c *gin.Context) (models.ClientWebsite, bool) {
+	return s.loadWidgetWebsiteByKey(c, c.Query("site_key"))
+}
+
+func (s *Server) loadWidgetWebsiteByKey(c *gin.Context, value string) (models.ClientWebsite, bool) {
+	siteKey := strings.TrimSpace(value)
+	if siteKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "widget key is required"})
+		return models.ClientWebsite{}, false
+	}
+	var site models.ClientWebsite
+	if err := s.store.C("client_websites").FindOne(c.Request.Context(), bson.M{"widget_key": siteKey}).Decode(&site); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "website widget was not found"})
+		return models.ClientWebsite{}, false
+	}
+	if !widgetOriginAllowed(site.URL, c.GetHeader("Origin")) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "this website is not allowed to use this widget"})
+		return models.ClientWebsite{}, false
+	}
+	return site, true
+}
+
+func (s *Server) widgetAuthenticatedUser(c *gin.Context) (models.User, bool) {
+	if cookie, err := c.Cookie("access_token"); err == nil && strings.TrimSpace(cookie) != "" {
+		if claims, err := s.tokens.ParseAccessToken(strings.TrimSpace(cookie)); err == nil {
+			if userID, err := primitive.ObjectIDFromHex(claims.Subject); err == nil {
+				if user, err := s.loadUser(c.Request.Context(), userID); err == nil && user.Status == models.StatusActive {
+					return user, true
+				}
+			}
+		}
+	}
+	if cookie, err := c.Cookie("refresh_token"); err == nil && strings.TrimSpace(cookie) != "" {
+		var user models.User
+		err := s.store.C("users").FindOne(c.Request.Context(), bson.M{"refresh_token_hash": auth.HashToken(strings.TrimSpace(cookie))}).Decode(&user)
+		if err == nil && user.Status == models.StatusActive {
+			access, refresh, err := s.issueTokens(c.Request.Context(), user)
+			if err == nil {
+				s.setSessionCookies(c, access, refresh)
+				return user, true
+			}
+		}
+	}
+	return models.User{}, false
+}
+
+func (s *Server) widgetAssignableMembers(ctx context.Context, client models.ClientProject, site models.ClientWebsite) []gin.H {
+	allowedIDs := allowedClientTaskAssignees(client, site)
+	if len(allowedIDs) == 0 {
+		return []gin.H{}
+	}
+	cursor, err := s.store.C("users").Find(ctx, bson.M{"_id": bson.M{"$in": allowedIDs}, "status": models.StatusActive}, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
+	if err != nil {
+		return []gin.H{}
+	}
+	defer cursor.Close(ctx)
+	rows := []gin.H{}
+	for cursor.Next(ctx) {
+		var user models.User
+		if cursor.Decode(&user) != nil {
+			continue
+		}
+		rows = append(rows, gin.H{
+			"id":         user.ID.Hex(),
+			"name":       user.Name,
+			"username":   user.Username,
+			"email":      user.Email,
+			"avatar_url": user.AvatarURL,
+			"staff_role": user.StaffRole,
+		})
+	}
+	return rows
 }
 
 func (s *Server) newClientWebsiteWidgetKey(ctx context.Context) (string, error) {

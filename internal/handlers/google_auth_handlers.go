@@ -188,6 +188,7 @@ func (s *Server) googleAuthVerifyTwoFactor(c *gin.Context) {
 		return
 	}
 	_, _ = s.store.C("users").UpdateByID(c.Request.Context(), user.ID, bson.M{"$set": bson.M{"last_active_at": time.Now()}})
+	s.setSessionCookies(c, access, refresh)
 	c.JSON(http.StatusOK, gin.H{"access_token": access, "refresh_token": refresh})
 }
 
@@ -444,6 +445,7 @@ func (s *Server) verifyGooglePayload(raw string, out interface{}) error {
 }
 
 func (s *Server) socialAuthSuccess(c *gin.Context, access string, refresh string, created bool) {
+	s.setSessionCookies(c, access, refresh)
 	accessJSON, _ := json.Marshal(access)
 	refreshJSON, _ := json.Marshal(refresh)
 	message := "Signing you in..."
