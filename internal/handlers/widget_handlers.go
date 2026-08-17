@@ -49,8 +49,13 @@ func (s *Server) widgetSession(c *gin.Context) {
 	if !ok {
 		return
 	}
+	var client models.ClientProject
+	if err := s.store.C("client_projects").FindOne(c.Request.Context(), bson.M{"_id": site.ClientID}).Decode(&client); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "client folder not found"})
+		return
+	}
 	userCtx := middleware.UserContext{ID: user.ID, Role: user.Role, TeamID: user.TeamID}
-	if !s.canAccessClientWebsite(c.Request.Context(), userCtx, site) {
+	if !s.canUseWidgetForWebsite(c.Request.Context(), userCtx, user, client, site) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "you do not have access to this domain"})
 		return
 	}
@@ -58,8 +63,6 @@ func (s *Server) widgetSession(c *gin.Context) {
 		c.JSON(http.StatusPaymentRequired, gin.H{"error": "membership required", "code": "membership_required"})
 		return
 	}
-	var client models.ClientProject
-	_ = s.store.C("client_projects").FindOne(c.Request.Context(), bson.M{"_id": site.ClientID}).Decode(&client)
 	c.JSON(http.StatusOK, gin.H{
 		"logged_in": true,
 		"user":      user,
@@ -105,8 +108,13 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "this website is not allowed to submit feedback for this domain"})
 		return
 	}
+	var client models.ClientProject
+	if err := s.store.C("client_projects").FindOne(c.Request.Context(), bson.M{"_id": site.ClientID}).Decode(&client); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "client folder not found"})
+		return
+	}
 	userCtx := middleware.UserContext{ID: user.ID, Role: user.Role, TeamID: user.TeamID}
-	if !s.canAccessClientWebsite(c.Request.Context(), userCtx, site) {
+	if !s.canUseWidgetForWebsite(c.Request.Context(), userCtx, user, client, site) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "you do not have access to this domain"})
 		return
 	}
@@ -126,14 +134,12 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "pin position is required"})
 		return
 	}
-	var client models.ClientProject
-	_ = s.store.C("client_projects").FindOne(c.Request.Context(), bson.M{"_id": site.ClientID}).Decode(&client)
 	assigneeIDs, err := objectIDsFromStrings(req.AssigneeIDs)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid assignee id"})
 		return
 	}
-	allowedAssignees := allowedClientTaskAssignees(client, site)
+	allowedAssignees := s.widgetAllowedAssigneeIDs(c.Request.Context(), client, site)
 	for _, assigneeID := range assigneeIDs {
 		if !containsObjectID(allowedAssignees, assigneeID) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "assignee must have access to this domain"})
@@ -305,8 +311,67 @@ func (s *Server) widgetAuthenticatedUser(c *gin.Context) (models.User, bool) {
 	return models.User{}, false
 }
 
+func (s *Server) canUseWidgetForWebsite(ctx context.Context, userCtx middleware.UserContext, user models.User, client models.ClientProject, site models.ClientWebsite) bool {
+	if user.ID.IsZero() || user.Status != models.StatusActive {
+		return false
+	}
+	if s.canManageClientProject(ctx, userCtx, client) ||
+		containsObjectID(client.MemberIDs, user.ID) ||
+		containsObjectID(client.ClientAdminIDs, user.ID) ||
+		containsObjectID(site.MemberIDs, user.ID) ||
+		containsObjectID(site.ClientAdminIDs, user.ID) ||
+		site.CreatedBy == user.ID ||
+		client.CreatedBy == user.ID {
+		return true
+	}
+	return s.isActiveWidgetTeamMember(ctx, site.TeamID, user)
+}
+
+func (s *Server) isActiveWidgetTeamMember(ctx context.Context, teamID primitive.ObjectID, user models.User) bool {
+	if teamID.IsZero() || user.ID.IsZero() || user.Status != models.StatusActive {
+		return false
+	}
+	if user.TeamID == teamID {
+		return true
+	}
+	var team models.Team
+	if err := s.store.C("teams").FindOne(ctx, bson.M{"_id": teamID}).Decode(&team); err != nil {
+		return false
+	}
+	return team.OwnerAdminID == user.ID || containsObjectID(team.MemberIDs, user.ID)
+}
+
+func (s *Server) widgetAllowedAssigneeIDs(ctx context.Context, client models.ClientProject, site models.ClientWebsite) []primitive.ObjectID {
+	ids := allowedClientTaskAssignees(client, site)
+	ids = append(ids, s.widgetTeamMemberIDs(ctx, site.TeamID)...)
+	return uniqueObjectIDs(ids)
+}
+
+func (s *Server) widgetTeamMemberIDs(ctx context.Context, teamID primitive.ObjectID) []primitive.ObjectID {
+	if teamID.IsZero() {
+		return []primitive.ObjectID{}
+	}
+	ids := []primitive.ObjectID{}
+	var team models.Team
+	if err := s.store.C("teams").FindOne(ctx, bson.M{"_id": teamID}).Decode(&team); err == nil {
+		ids = append(ids, team.OwnerAdminID)
+		ids = append(ids, team.MemberIDs...)
+	}
+	cursor, err := s.store.C("users").Find(ctx, bson.M{"team_id": teamID, "status": models.StatusActive}, options.Find().SetProjection(bson.M{"_id": 1}))
+	if err == nil {
+		defer cursor.Close(ctx)
+		for cursor.Next(ctx) {
+			var user models.User
+			if cursor.Decode(&user) == nil {
+				ids = append(ids, user.ID)
+			}
+		}
+	}
+	return uniqueObjectIDs(ids)
+}
+
 func (s *Server) widgetAssignableMembers(ctx context.Context, client models.ClientProject, site models.ClientWebsite) []gin.H {
-	allowedIDs := allowedClientTaskAssignees(client, site)
+	allowedIDs := s.widgetAllowedAssigneeIDs(ctx, client, site)
 	if len(allowedIDs) == 0 {
 		return []gin.H{}
 	}
