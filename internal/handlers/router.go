@@ -136,6 +136,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.DELETE("/teams/:id/invitations/:inviteId", s.cancelTeamInvitation)
 	authed.DELETE("/teams/:id/invitations/:inviteId/remove", s.removeTeamInvitation)
 	authed.POST("/teams/:id/members", s.addTeamMember)
+	authed.GET("/teams/:id/members/:userId/tasks", s.listTeamMemberClientTasks)
 	authed.PATCH("/teams/:id/members/:userId", s.updateTeamMember)
 	authed.DELETE("/teams/:id/members/:userId", s.removeTeamMember)
 	authed.POST("/invitations/:id/:action", s.respondInvitation)

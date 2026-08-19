@@ -1277,6 +1277,77 @@ textarea { min-height: 94px; resize: vertical; }
 .task-list { display: grid; gap: 10px; }
 .task-row { padding: 14px; display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; }
 .task-row h3 { margin: 0; font-size: 16px; }
+.team-member-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.team-member-tasks-dialog {
+  width: min(980px, calc(100vw - 32px));
+}
+.team-member-task-panel {
+  display: grid;
+  gap: 16px;
+}
+.team-member-task-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+.team-member-task-head h2 {
+  margin: 0;
+  font-size: 19px;
+}
+.team-member-task-list {
+  display: grid;
+  gap: 8px;
+}
+.team-member-task-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(130px, 180px) minmax(130px, 180px) 150px;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+.team-member-task-row:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.team-member-task-row span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 750;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.team-member-task-row svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+.team-member-task-title {
+  color: var(--text-primary) !important;
+  font-weight: 850 !important;
+}
+.team-member-task-due.warn { color: var(--warning) !important; }
+.team-member-task-due.danger { color: var(--danger) !important; }
+.team-member-task-due.muted { color: var(--text-secondary) !important; }
 .performance-summary .metric,
 .performance-metric {
   min-height: 104px;
@@ -5419,6 +5490,8 @@ dialog::backdrop { background: rgba(0, 0, 0, .34); }
     opacity: 1;
   }
   .task-row { grid-template-columns: 1fr; }
+  .team-member-actions { justify-content: flex-start; }
+  .team-member-task-row { grid-template-columns: 1fr; }
   .assigned-task-filters,
   .assigned-task-filters label,
   .assigned-task-filters .assigned-search {

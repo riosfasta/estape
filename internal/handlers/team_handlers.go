@@ -12,6 +12,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func (s *Server) getTeam(c *gin.Context) {
@@ -111,6 +112,134 @@ func (s *Server) getTeam(c *gin.Context) {
 		seenMembers[pendingMember.ID] = true
 	}
 	c.JSON(http.StatusOK, gin.H{"team": team, "members": members})
+}
+
+func (s *Server) listTeamMemberClientTasks(c *gin.Context) {
+	teamID, ok := objectIDParam(c, "id")
+	if !ok || !s.canAccessTeam(c, teamID) {
+		return
+	}
+	memberID, ok := objectIDParam(c, "userId")
+	if !ok {
+		return
+	}
+	var team models.Team
+	if err := s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": teamID}).Decode(&team); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "team not found"})
+		return
+	}
+	var member models.User
+	if err := s.store.C("users").FindOne(c.Request.Context(), bson.M{"_id": memberID}).Decode(&member); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "member not found"})
+		return
+	}
+	if member.TeamID != teamID && team.OwnerAdminID != memberID && !containsObjectID(team.MemberIDs, memberID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "member is not listed in this team"})
+		return
+	}
+
+	userCtx, _ := currentUser(c)
+	if user, err := s.loadUser(c.Request.Context(), userCtx.ID); err == nil {
+		if user.Status != models.StatusActive {
+			c.JSON(http.StatusForbidden, gin.H{"error": "user account is not active"})
+			return
+		}
+		userCtx.Role = user.Role
+		userCtx.TeamID = user.TeamID
+	}
+	access := s.clientAccessSets(c.Request.Context(), userCtx)
+	clientFilter := bson.M{"team_id": teamID}
+	if !s.canManageTeamSilently(c.Request.Context(), userCtx, teamID) && userCtx.Role != models.RoleOwnerAdmin {
+		clientIDs := uniqueObjectIDs(append(append([]primitive.ObjectID{}, access.FullClientIDs...), access.DomainClientIDs...))
+		if len(clientIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{"member": member, "tasks": []models.ClientTask{}, "clients": []models.ClientProject{}, "websites": []models.ClientWebsite{}, "tabs": []models.ClientTab{}})
+			return
+		}
+		clientFilter["_id"] = bson.M{"$in": clientIDs}
+	}
+
+	clientCursor, err := s.store.C("client_projects").Find(c.Request.Context(), clientFilter, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load client folders"})
+		return
+	}
+	defer clientCursor.Close(c.Request.Context())
+	clients := []models.ClientProject{}
+	if err := clientCursor.All(c.Request.Context(), &clients); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not decode client folders"})
+		return
+	}
+
+	clientIDs := []primitive.ObjectID{}
+	for _, client := range clients {
+		if !client.ID.IsZero() {
+			clientIDs = append(clientIDs, client.ID)
+		}
+	}
+	clientIDs = uniqueObjectIDs(clientIDs)
+	if len(clientIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{"member": member, "tasks": []models.ClientTask{}, "clients": clients, "websites": []models.ClientWebsite{}, "tabs": []models.ClientTab{}})
+		return
+	}
+
+	taskAccessFilter := s.clientTaskAccessFilter(c.Request.Context(), userCtx, clientIDs)
+	taskFilter := bson.M{"$and": []bson.M{taskAccessFilter, {"team_id": teamID}, {"assignee_ids": memberID}}}
+	taskCursor, err := s.store.C("client_tasks").Find(c.Request.Context(), taskFilter, options.Find().SetSort(bson.D{{Key: "due_date", Value: 1}, {Key: "created_at", Value: -1}}))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load member tasks"})
+		return
+	}
+	defer taskCursor.Close(c.Request.Context())
+	tasks := []models.ClientTask{}
+	if err := taskCursor.All(c.Request.Context(), &tasks); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not decode member tasks"})
+		return
+	}
+
+	websiteIDs := []primitive.ObjectID{}
+	tabIDs := []primitive.ObjectID{}
+	for _, task := range tasks {
+		if !task.WebsiteID.IsZero() {
+			websiteIDs = append(websiteIDs, task.WebsiteID)
+		}
+		if !task.TabID.IsZero() {
+			tabIDs = append(tabIDs, task.TabID)
+		}
+	}
+	websites := []models.ClientWebsite{}
+	if websiteIDs = uniqueObjectIDs(websiteIDs); len(websiteIDs) > 0 {
+		siteCursor, err := s.store.C("client_websites").Find(c.Request.Context(), bson.M{"_id": bson.M{"$in": websiteIDs}}, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load domains"})
+			return
+		}
+		defer siteCursor.Close(c.Request.Context())
+		if err := siteCursor.All(c.Request.Context(), &websites); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not decode domains"})
+			return
+		}
+	}
+	tabs := []models.ClientTab{}
+	if tabIDs = uniqueObjectIDs(tabIDs); len(tabIDs) > 0 {
+		tabCursor, err := s.store.C("client_tabs").Find(c.Request.Context(), bson.M{"_id": bson.M{"$in": tabIDs}}, options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load task boards"})
+			return
+		}
+		defer tabCursor.Close(c.Request.Context())
+		if err := tabCursor.All(c.Request.Context(), &tabs); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not decode task boards"})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"member":   member,
+		"tasks":    tasks,
+		"clients":  clients,
+		"websites": websites,
+		"tabs":     tabs,
+	})
 }
 
 func (s *Server) updateTeamProfile(c *gin.Context) {

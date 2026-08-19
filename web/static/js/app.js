@@ -3749,7 +3749,10 @@ function teamMemberRows(members, canManageTeam) {
     const statusText = hasLeft ? "left company" : (isSuspended ? "blocked" : (member.status || "active"));
     return `<article class="task-row">
       <div><h3>${esc(member.name)}</h3><span class="muted">@${esc(member.username || "pending")} · ${esc(member.email)}</span></div>
-      <span class="pill ${isSuspended || hasLeft ? "danger" : ""}">${esc(statusText)}</span>
+      <div class="team-member-actions">
+        <span class="pill ${isSuspended || hasLeft ? "danger" : ""}">${esc(statusText)}</span>
+        ${member.id && !hasLeft ? `<button class="btn compact" type="button" data-team-member-tasks="${esc(member.id)}">${icon("list-checks")}Tasks</button>` : ""}
+      </div>
       ${canManageMember ? `
         <details class="row-menu">
           <summary class="btn icon quiet" title="Manage staff">${icon("more-horizontal")}</summary>
@@ -3761,6 +3764,71 @@ function teamMemberRows(members, canManageTeam) {
         </details>` : ""}
     </article>`;
   }).join("");
+}
+
+function teamMemberTaskRowHTML(task = {}, clientsByID = {}, websitesByID = {}) {
+  const client = clientsByID[task.client_id] || {};
+  const website = websitesByID[task.website_id] || {};
+  const dueInfo = taskDueInfo(task);
+  const dueBucket = assignedTaskDueBucket(task);
+  const dueDate = dueInfo.date || task.due_date || "";
+  const dueText = dueDate ? `${fmtDate(dueDate)}${dueInfo.label ? " - " + dueInfo.label : ""}` : "No due date";
+  const dueClass = dueBucket === "overdue" ? "danger" : (dueBucket === "today" || dueBucket === "next7" ? "warn" : (dueBucket === "no_due" ? "muted" : ""));
+  const title = compactClientTaskTitle(task.title) || "Untitled task";
+  return `<button class="team-member-task-row" type="button" data-open-team-member-task="${esc(task.id)}">
+    <span class="team-member-task-title" title="${esc(title)}">${esc(title)}</span>
+    <span title="${esc(client.name || "Project folder")}">${icon("folder")} ${esc(client.name || "Project folder")}</span>
+    <span title="${esc(website.name || "Website")}">${icon("globe-2")} ${esc(website.name || "Website")}</span>
+    <span class="team-member-task-due ${dueClass}">${icon("calendar-days")} ${esc(dueText)}</span>
+  </button>`;
+}
+
+function teamMemberTasksHTML(data = {}) {
+  const member = data.member || {};
+  const tasks = data.tasks || [];
+  const clientsByID = assignedIndexByID(data.clients || []);
+  const websitesByID = assignedIndexByID(data.websites || []);
+  const labelName = member.name || member.username || member.email || "Member";
+  return `<div class="team-member-task-panel">
+    <header class="team-member-task-head">
+      ${userChip(member)}
+      <div>
+        <h2>${esc(labelName)}</h2>
+        <p class="muted">@${esc(member.username || "member")} - ${esc(tasks.length)} assigned task${tasks.length === 1 ? "" : "s"}</p>
+      </div>
+    </header>
+    <div class="team-member-task-list">
+      ${tasks.length ? tasks.map((task) => teamMemberTaskRowHTML(task, clientsByID, websitesByID)).join("") : `<p class="muted">No assigned tasks for this member.</p>`}
+    </div>
+  </div>`;
+}
+
+async function openTeamMemberTasks(teamID, memberID, trigger = null) {
+  const dialog = $("#teamMemberTasksDialog");
+  const body = $("#teamMemberTasksBody");
+  if (!dialog || !body || !teamID || !memberID) return;
+  const stopButton = setButtonLoading(trigger, true, "Loading...");
+  body.innerHTML = `<div class="task-panel-loader" role="status" aria-live="polite">
+    <span class="inline-spinner" aria-hidden="true"></span>
+    <span>Loading assigned tasks...</span>
+  </div>`;
+  dialog.showModal();
+  try {
+    const data = await api(`/api/teams/${teamID}/members/${memberID}/tasks`);
+    body.innerHTML = teamMemberTasksHTML(data);
+    body.querySelectorAll("[data-open-team-member-task]").forEach((btn) => btn.addEventListener("click", async () => {
+      dialog.close();
+      await openClientTaskWithProgress(btn.dataset.openTeamMemberTask, "", btn);
+    }));
+    icons();
+  } catch (error) {
+    body.innerHTML = `<div class="task-panel-loader task-panel-error">
+      <strong>Could not load assigned tasks</strong>
+      <span>${esc(error.message || "Request failed")}</span>
+    </div>`;
+  } finally {
+    stopButton();
+  }
 }
 
 async function renderTeam() {
@@ -3798,6 +3866,10 @@ async function renderTeam() {
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="memberEditDialog">Cancel</button></div>
         <p class="status-line"></p>
       </form>
+    </dialog>
+    <dialog id="teamMemberTasksDialog" class="modal team-member-tasks-dialog">
+      <div class="modal-head"><h2>Assigned Tasks</h2><button class="btn icon quiet" type="button" data-close-dialog="teamMemberTasksDialog" title="Close">${icon("x")}</button></div>
+      <div id="teamMemberTasksBody"></div>
     </dialog>`);
   const membersByID = Object.fromEntries(members.map((member) => [member.id, member]));
   $("#inviteForm")?.addEventListener("submit", async (event) => {
@@ -3810,6 +3882,9 @@ async function renderTeam() {
       setFormStatus(form, error.message, true);
     }
   });
+  document.querySelectorAll("[data-team-member-tasks]").forEach((btn) => btn.addEventListener("click", () => {
+    openTeamMemberTasks(teamID, btn.dataset.teamMemberTasks, btn);
+  }));
   document.querySelectorAll("[data-edit-member]").forEach((btn) => btn.addEventListener("click", () => {
     const member = membersByID[btn.dataset.editMember];
     const form = $("#memberEditForm");
