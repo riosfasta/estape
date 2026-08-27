@@ -1161,7 +1161,7 @@ h1, h2, h3,
   border-radius: var(--radius);
   box-shadow: 0 8px 22px rgba(24, 35, 31, .05);
 }
-.panel { padding: 18px; }
+.panel { padding: 18px; margin-top:20px; }
 .widget-install-panel {
   display: grid;
   gap: 10px;
