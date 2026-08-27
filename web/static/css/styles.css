@@ -739,7 +739,7 @@ body.annotation-viewer-open .sidebar-toggle {
   padding: 0 10px;
   border-radius: var(--radius);
   color: var(--text-secondary);
-  font-weight: 700;
+  font-weight: 500;
   font-size: 15px;
   min-width: 0;
 }
@@ -748,7 +748,7 @@ body.annotation-viewer-open .sidebar-toggle {
   min-height: 32px;
   margin-left: 21px;
   padding-left: 12px;
-  font-weight: 650;
+  font-weight: 500;
   font-size: 14px;
   border-left: 1px solid var(--border-color);
 }
