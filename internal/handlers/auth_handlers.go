@@ -139,22 +139,23 @@ func (s *Server) register(c *gin.Context) {
 	verificationHash := auth.HashToken(verificationPlain)
 
 	user := models.User{
-		ID:                     userID,
-		Name:                   req.Name,
-		Email:                  req.Email,
-		Username:               username,
-		PasswordHash:           hash,
-		Role:                   role,
-		StaffRole:              staffRole,
-		TeamID:                 teamID,
-		Status:                 models.StatusActive,
-		ThemePreference:        "system",
-		EmailVerified:          false,
-		EmailVerificationToken: verificationHash,
+		ID:                      userID,
+		Name:                    req.Name,
+		Email:                   req.Email,
+		Username:                username,
+		PasswordHash:            hash,
+		Role:                    role,
+		StaffRole:               staffRole,
+		TeamID:                  teamID,
+		Status:                  models.StatusActive,
+		ThemePreference:         "system",
+		EmailVerified:           false,
+		EmailVerificationToken:  verificationHash,
 		EmailVerificationSentAt: &now,
-		AuthProvider:           "email",
-		CreatedAt:              now,
+		AuthProvider:            "email",
+		CreatedAt:               now,
 	}
+	clientIP := s.prepareRegistrationMeta(c, &user)
 
 	if _, err := s.store.C("teams").InsertOne(ctx, *team); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create team"})
@@ -168,6 +169,7 @@ func (s *Server) register(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create user"})
 		return
 	}
+	s.enrichRegistrationMeta(user.ID, clientIP)
 	if err := s.createStarterWorkspace(ctx, teamID, userID, now); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create starter workspace"})
 		return

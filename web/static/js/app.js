@@ -9028,7 +9028,25 @@ function adminPaymentMethodsText(user = {}) {
 }
 
 function adminUserSearchText(user = {}) {
-  return [user.name, user.email, user.username, user.role, user.staff_role, user.team?.name, user.plan?.name, user.membership_status, adminPaymentMethodsText(user)].filter(Boolean).join(" ").toLowerCase();
+  return [user.name, user.email, user.username, user.role, user.staff_role, user.team?.name, user.plan?.name, user.membership_status, adminPaymentMethodsText(user), user.registration_ip, user.registration_country, user.registration_country_code, user.registration_city, user.registration_network_name, user.auth_provider].filter(Boolean).join(" ").toLowerCase();
+}
+
+function flagEmojiForCountry(code) {
+  const c = String(code || "").toUpperCase().trim();
+  if (!c || c.length !== 2 || c === "XX") return "";
+  try {
+    const offset = 127397;
+    return String.fromCodePoint(c.codePointAt(0) + offset) + String.fromCodePoint(c.codePointAt(1) + offset);
+  } catch (_) {
+    return "";
+  }
+}
+
+function authProviderLabel(provider) {
+  if (!provider) return "Email / Password";
+  if (provider === "google") return "Google";
+  if (provider === "email") return "Email";
+  return String(provider);
 }
 
 function adminUserProtectedHTML(user = {}) {
@@ -9040,6 +9058,12 @@ function adminUserRowHTML(user = {}) {
   const planName = user.plan?.id && user.plan.id !== NIL_OBJECT_ID ? user.plan.name : "No plan";
   const expiryText = user.membership_expires_at ? `Expires ${fmtDate(user.membership_expires_at)}` : user.trial_ends_at ? `Trial ends ${fmtDate(user.trial_ends_at)}` : "No expiry date";
   const paymentText = adminPaymentMethodsText(user);
+  const flag = flagEmojiForCountry(user.registration_country_code);
+  const locationText = [flag, user.registration_city || user.registration_country || ""].filter(Boolean).join(" ") || "No location";
+  const providerPill = user.auth_provider === "google" ? `<span class="pill" title="Signed up via Google OAuth">G&nbsp;Google</span>` : `<span class="pill" title="Signed up via email/password">✉️&nbsp;${esc(authProviderLabel(user.auth_provider))}</span>`;
+  const ipPill = user.registration_ip ? `<span class="pill" title="Registration IP address">${icon("wifi")}${esc(user.registration_ip)}</span>` : "";
+  const netPill = user.registration_network_name ? `<span class="pill" title="Registration network / ISP" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${icon("globe")}${esc(String(user.registration_network_name).replace(/^AS\d+\s*/, ""))}</span>` : "";
+  const locPill = (flag || user.registration_country) ? `<span class="pill" title="Registration location">${locationText.trim()}</span>` : "";
   return `<article class="admin-user-row" data-admin-user-row data-user-id="${esc(user.id)}" data-level="${esc(user.role || "")}" data-membership="${esc(membership)}" data-payment="${esc(paymentText.toLowerCase())}" data-search="${esc(adminUserSearchText(user))}">
     <div class="admin-user-identity">
       ${userChip(user)}
@@ -9053,6 +9077,10 @@ function adminUserRowHTML(user = {}) {
       <span class="pill">${esc(staffRoleLabel(user.staff_role) || "No staff role")}</span>
       <span class="pill ${user.status === "suspended" ? "danger" : user.status === "pending_approval" ? "warn" : ""}">${esc(user.status || "unknown")}</span>
       <span class="pill ${adminMembershipClass(membership)}">${esc(adminMembershipLabel(membership))}</span>
+      ${providerPill}
+      ${locPill}
+      ${ipPill}
+      ${netPill}
     </div>
     <div class="admin-user-membership">
       <strong>${esc(planName)}</strong>
@@ -9113,9 +9141,19 @@ function adminUserDetailHTML(data = {}) {
       ${adminStatHTML("Payment methods", adminPaymentMethodsText(user))}
       ${adminStatHTML("Registered", fmtDate(user.created_at))}
       ${adminStatHTML("Last active", user.last_active_at ? fmtDate(user.last_active_at) : "No activity yet")}
+      ${adminStatHTML("Sign-up method", authProviderLabel(user.auth_provider))}
       ${adminStatHTML("2FA", user.two_factor_enabled ? "Enabled" : "Not enabled")}
       ${adminStatHTML("Tasks", String(clientTasks.length + workspaceTasks.length))}
     </div>
+    <section class="admin-detail-section"><h3>Sign-up location &amp; network</h3>
+      <div class="admin-detail-stats">
+        ${adminStatHTML("Registration IP", user.registration_ip || "Not recorded")}
+        ${adminStatHTML("Country", (flagEmojiForCountry(user.registration_country_code) ? `${flagEmojiForCountry(user.registration_country_code)} ` : "") + (user.registration_country || "Unknown"))}
+        ${adminStatHTML("City", user.registration_city || "Unknown")}
+        ${adminStatHTML("Timezone", user.registration_timezone || "Unknown")}
+        ${adminStatHTML("Network / ISP", user.registration_network_name || "Unknown")}
+      </div>
+    </section>
     <section class="admin-detail-section"><h3>Membership and payment</h3>
       ${adminMiniRows(subs, "No subscriptions found.", (sub) => {
         const plan = plansByID[sub.plan_id] || {};

@@ -122,7 +122,7 @@ func (s *Server) googleAuthCallback(c *gin.Context) {
 	if s.googleAccountNeedsRegistration(c.Request.Context(), info.Email) && !s.allowRegistrationAttempt(c) {
 		return
 	}
-	user, created, err := s.findOrCreateGoogleUser(c.Request.Context(), info, state)
+	user, created, err := s.findOrCreateGoogleUser(c, info, state)
 	if err != nil {
 		s.socialAuthError(c, err.Error())
 		return
@@ -265,7 +265,8 @@ func (s *Server) fetchGoogleUserInfo(ctx context.Context, code string, oauthConf
 	return info, nil
 }
 
-func (s *Server) findOrCreateGoogleUser(ctx context.Context, info googleUserInfo, state googleOAuthState) (models.User, bool, error) {
+func (s *Server) findOrCreateGoogleUser(c *gin.Context, info googleUserInfo, state googleOAuthState) (models.User, bool, error) {
+	ctx := c.Request.Context()
 	var existing models.User
 	err := s.store.C("users").FindOne(ctx, bson.M{"email": info.Email}).Decode(&existing)
 	if err == nil {
@@ -348,6 +349,7 @@ func (s *Server) findOrCreateGoogleUser(ctx context.Context, info googleUserInfo
 		AuthProvider:            "google",
 		CreatedAt:               now,
 	}
+	clientIP := s.prepareRegistrationMeta(c, &user)
 	if _, err := s.store.C("teams").InsertOne(ctx, *team); err != nil {
 		return models.User{}, false, fmt.Errorf("could not create team")
 	}
@@ -357,6 +359,7 @@ func (s *Server) findOrCreateGoogleUser(ctx context.Context, info googleUserInfo
 		}
 		return models.User{}, false, fmt.Errorf("could not create Google account")
 	}
+	s.enrichRegistrationMeta(user.ID, clientIP)
 	if err := s.createStarterWorkspace(ctx, teamID, userID, now); err != nil {
 		return models.User{}, false, fmt.Errorf("could not create starter workspace")
 	}

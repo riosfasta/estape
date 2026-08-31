@@ -42,6 +42,12 @@ type User struct {
 	EmailVerificationToken  string             `bson:"email_verification_token,omitempty" json:"-"`
 	EmailVerificationSentAt *time.Time         `bson:"email_verification_sent_at,omitempty" json:"-"`
 	AuthProvider            string             `bson:"auth_provider,omitempty" json:"auth_provider,omitempty"`
+	RegistrationIP          string             `bson:"registration_ip,omitempty" json:"registration_ip,omitempty"`
+	RegistrationCountry     string             `bson:"registration_country,omitempty" json:"registration_country,omitempty"`
+	RegistrationCountryCode string             `bson:"registration_country_code,omitempty" json:"registration_country_code,omitempty"`
+	RegistrationCity        string             `bson:"registration_city,omitempty" json:"registration_city,omitempty"`
+	RegistrationNetworkName string             `bson:"registration_network_name,omitempty" json:"registration_network_name,omitempty"`
+	RegistrationTimezone    string             `bson:"registration_timezone,omitempty" json:"registration_timezone,omitempty"`
 	CreatedAt               time.Time          `bson:"created_at" json:"created_at"`
 	LastActiveAt            time.Time          `bson:"last_active_at,omitempty" json:"last_active_at,omitempty"`
 }
