@@ -24,22 +24,26 @@ const (
 )
 
 type User struct {
-	ID               primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	Name             string             `bson:"name" json:"name"`
-	Email            string             `bson:"email" json:"email"`
-	Username         string             `bson:"username,omitempty" json:"username,omitempty"`
-	PasswordHash     string             `bson:"password_hash" json:"-"`
-	RefreshTokenHash string             `bson:"refresh_token_hash,omitempty" json:"-"`
-	Role             Role               `bson:"role" json:"role"`
-	StaffRole        string             `bson:"staff_role,omitempty" json:"staff_role,omitempty"`
-	TeamID           primitive.ObjectID `bson:"team_id,omitempty" json:"team_id,omitempty"`
-	Status           UserStatus         `bson:"status" json:"status"`
-	AvatarURL        string             `bson:"avatar_url,omitempty" json:"avatar_url,omitempty"`
-	ThemePreference  string             `bson:"theme_preference" json:"theme_preference"`
-	TwoFactorEnabled bool               `bson:"two_factor_enabled,omitempty" json:"two_factor_enabled"`
-	TwoFactorSecret  string             `bson:"two_factor_secret,omitempty" json:"-"`
-	CreatedAt        time.Time          `bson:"created_at" json:"created_at"`
-	LastActiveAt     time.Time          `bson:"last_active_at,omitempty" json:"last_active_at,omitempty"`
+	ID                      primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	Name                    string             `bson:"name" json:"name"`
+	Email                   string             `bson:"email" json:"email"`
+	Username                string             `bson:"username,omitempty" json:"username,omitempty"`
+	PasswordHash            string             `bson:"password_hash" json:"-"`
+	RefreshTokenHash        string             `bson:"refresh_token_hash,omitempty" json:"-"`
+	Role                    Role               `bson:"role" json:"role"`
+	StaffRole               string             `bson:"staff_role,omitempty" json:"staff_role,omitempty"`
+	TeamID                  primitive.ObjectID `bson:"team_id,omitempty" json:"team_id,omitempty"`
+	Status                  UserStatus         `bson:"status" json:"status"`
+	AvatarURL               string             `bson:"avatar_url,omitempty" json:"avatar_url,omitempty"`
+	ThemePreference         string             `bson:"theme_preference" json:"theme_preference"`
+	TwoFactorEnabled        bool               `bson:"two_factor_enabled,omitempty" json:"two_factor_enabled"`
+	TwoFactorSecret         string             `bson:"two_factor_secret,omitempty" json:"-"`
+	EmailVerified           bool               `bson:"email_verified,omitempty" json:"email_verified"`
+	EmailVerificationToken  string             `bson:"email_verification_token,omitempty" json:"-"`
+	EmailVerificationSentAt *time.Time         `bson:"email_verification_sent_at,omitempty" json:"-"`
+	AuthProvider            string             `bson:"auth_provider,omitempty" json:"auth_provider,omitempty"`
+	CreatedAt               time.Time          `bson:"created_at" json:"created_at"`
+	LastActiveAt            time.Time          `bson:"last_active_at,omitempty" json:"last_active_at,omitempty"`
 }
 
 type Team struct {

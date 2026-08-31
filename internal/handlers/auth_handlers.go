@@ -8,6 +8,7 @@ import (
 	"html"
 	"math/big"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,9 +36,11 @@ type registerRequest struct {
 }
 
 const (
-	passwordUpdateOTPPurpose  = "password_update"
-	passwordUpdateOTPMinutes  = 10
-	passwordUpdateMaxAttempts = 5
+	passwordUpdateOTPPurpose      = "password_update"
+	passwordUpdateOTPMinutes      = 10
+	passwordUpdateMaxAttempts     = 5
+	emailVerificationTokenHours   = 24
+	emailVerificationResendCooldown = 60
 )
 
 func (s *Server) register(c *gin.Context) {
@@ -127,18 +130,30 @@ func (s *Server) register(c *gin.Context) {
 		SeatLimitCached: trialPlan.SeatLimit,
 		CreatedAt:       now,
 	}
+
+	verificationPlain, err := randomToken()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create email verification token"})
+		return
+	}
+	verificationHash := auth.HashToken(verificationPlain)
+
 	user := models.User{
-		ID:              userID,
-		Name:            req.Name,
-		Email:           req.Email,
-		Username:        username,
-		PasswordHash:    hash,
-		Role:            role,
-		StaffRole:       staffRole,
-		TeamID:          teamID,
-		Status:          models.StatusActive,
-		ThemePreference: "system",
-		CreatedAt:       now,
+		ID:                     userID,
+		Name:                   req.Name,
+		Email:                  req.Email,
+		Username:               username,
+		PasswordHash:           hash,
+		Role:                   role,
+		StaffRole:              staffRole,
+		TeamID:                 teamID,
+		Status:                 models.StatusActive,
+		ThemePreference:        "system",
+		EmailVerified:          false,
+		EmailVerificationToken: verificationHash,
+		EmailVerificationSentAt: &now,
+		AuthProvider:           "email",
+		CreatedAt:              now,
 	}
 
 	if _, err := s.store.C("teams").InsertOne(ctx, *team); err != nil {
@@ -163,13 +178,27 @@ func (s *Server) register(c *gin.Context) {
 	registrationTeam := *team
 	s.enqueueOwnerRegistrationEmail(ctx, user, registrationTeam, "Email/password", invitation)
 
-	access, refresh, err := s.issueTokens(ctx, user)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not issue tokens"})
+	if s.mailer != nil && s.mailer.CanSend(ctx) {
+		if err := s.enqueueVerificationEmail(ctx, user, verificationPlain); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not send verification email"})
+			return
+		}
+		c.JSON(http.StatusCreated, gin.H{
+			"user":                  user,
+			"email_verification_required": true,
+			"message":               "Registration successful. Please check your email to verify your account.",
+			"masked_email":          maskEmail(user.Email),
+		})
 		return
 	}
-	s.setSessionCookies(c, access, refresh)
-	c.JSON(http.StatusCreated, gin.H{"user": user, "access_token": access, "refresh_token": refresh})
+
+	c.JSON(http.StatusCreated, gin.H{
+		"user":                  user,
+		"email_verification_required": true,
+		"message":               "Registration successful. A verification email will be sent once SMTP is configured by the platform owner.",
+		"masked_email":          maskEmail(user.Email),
+		"smtp_not_configured":   true,
+	})
 }
 
 func (s *Server) linkPendingInvitationToNewUser(ctx context.Context, invitation models.TeamInvitation, user models.User) {
@@ -209,6 +238,14 @@ func (s *Server) login(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "account is suspended"})
 		return
 	}
+	if !user.EmailVerified {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":                    "Please verify your email address before signing in.",
+			"email_verification_required": true,
+			"masked_email":             maskEmail(user.Email),
+		})
+		return
+	}
 	if user.TwoFactorEnabled {
 		if strings.TrimSpace(req.TwoFactorCode) == "" {
 			c.JSON(http.StatusOK, gin.H{"two_factor_required": true})
@@ -243,8 +280,17 @@ func (s *Server) refresh(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh token"})
 		return
 	}
+	s.ensureUserIdentity(c.Request.Context(), &user)
 	if user.Status == models.StatusSuspended {
 		c.JSON(http.StatusForbidden, gin.H{"error": "account is suspended"})
+		return
+	}
+	if !user.EmailVerified {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":                    "Please verify your email address first.",
+			"email_verification_required": true,
+			"masked_email":             maskEmail(user.Email),
+		})
 		return
 	}
 	access, refresh, err := s.issueTokens(c.Request.Context(), user)
@@ -268,8 +314,17 @@ func (s *Server) syncSessionCookie(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
+	s.ensureUserIdentity(c.Request.Context(), &user)
 	if user.Status != models.StatusActive {
 		c.JSON(http.StatusForbidden, gin.H{"error": "user account is not active"})
+		return
+	}
+	if !user.EmailVerified {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":                        "Please verify your email address first.",
+			"email_verification_required": true,
+			"masked_email":                 maskEmail(user.Email),
+		})
 		return
 	}
 	access, refresh, err := s.issueTokens(c.Request.Context(), user)
@@ -713,6 +768,156 @@ func maskEmail(email string) string {
 		return string(localRunes[0]) + "***@" + parts[1]
 	}
 	return string(localRunes[0]) + "***" + string(localRunes[len(localRunes)-1]) + "@" + parts[1]
+}
+
+func (s *Server) enqueueVerificationEmail(ctx context.Context, user models.User, plainToken string) error {
+	if s.mailer == nil {
+		return fmt.Errorf("email service is not configured")
+	}
+	appName := firstNonEmpty(s.cfg.AppName, "bugmega")
+	appURL := strings.TrimRight(strings.TrimSpace(s.cfg.AppURL), "/")
+	name := firstNonEmpty(user.Name, user.Username, user.Email, "there")
+	verifyURL := appURL + "/verify-email?token=" + url.QueryEscape(plainToken) + "&uid=" + user.ID.Hex()
+	expiresAt := time.Now().Add(emailVerificationTokenHours * time.Hour)
+	body := `<p>Hello ` + html.EscapeString(name) + `,</p>` +
+		`<p>Thanks for registering at ` + html.EscapeString(appName) + `! Please confirm your email address by clicking the link below:</p>` +
+		`<p style="margin:20px 0;"><a href="` + html.EscapeString(verifyURL) + `" style="display:inline-block;padding:12px 22px;background:#39c2a9;color:#fff;text-decoration:none;border-radius:8px;font-weight:800;">Verify my email</a></p>` +
+		`<p>This link expires at ` + html.EscapeString(expiresAt.Format("Jan 2, 2006 3:04 PM MST")) + `.</p>` +
+		`<p>If you did not create an account, you can safely ignore this email.</p>`
+	return s.mailer.Enqueue(ctx, models.EmailQueueItem{
+		Recipient: strings.ToLower(strings.TrimSpace(user.Email)),
+		Type:      "email_verification",
+		Subject:   "Verify your " + appName + " email",
+		BodyHTML:  body,
+	})
+}
+
+func (s *Server) verifyEmail(c *gin.Context) {
+	ctx := c.Request.Context()
+	uidStr := strings.TrimSpace(c.Query("uid"))
+	plainToken := strings.TrimSpace(c.Query("token"))
+
+	if plainToken == "" || uidStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "verification token and user id are required"})
+		return
+	}
+	userID, err := primitive.ObjectIDFromHex(uidStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid verification link"})
+		return
+	}
+	var user models.User
+	if err := s.store.C("users").FindOne(ctx, bson.M{"_id": userID}).Decode(&user); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "invalid verification link"})
+		return
+	}
+	if user.EmailVerified {
+		c.JSON(http.StatusOK, gin.H{
+			"already_verified": true,
+			"message":          "Your email was already verified. You may now sign in.",
+		})
+		return
+	}
+	if strings.TrimSpace(user.EmailVerificationToken) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no pending verification for this account"})
+		return
+	}
+	if user.EmailVerificationSentAt != nil {
+		expiresAt := user.EmailVerificationSentAt.Add(emailVerificationTokenHours * time.Hour)
+		if time.Now().After(expiresAt) {
+			c.JSON(http.StatusGone, gin.H{
+				"error":   "This verification link has expired. Please request a new one.",
+				"expired": true,
+			})
+			return
+		}
+	}
+	if auth.HashToken(plainToken) != user.EmailVerificationToken {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid verification token"})
+		return
+	}
+	now := time.Now()
+	_, err = s.store.C("users").UpdateByID(ctx, user.ID, bson.M{
+		"$set":   bson.M{"email_verified": true, "email_verification_sent_at": nil, "last_active_at": now},
+		"$unset": bson.M{"email_verification_token": ""},
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not verify email"})
+		return
+	}
+	user.EmailVerified = true
+	access, refresh, err := s.issueTokens(ctx, user)
+	if err == nil {
+		s.setSessionCookies(c, access, refresh)
+		c.JSON(http.StatusOK, gin.H{
+			"verified":     true,
+			"message":      "Email verified successfully. Welcome!",
+			"access_token": access,
+			"refresh_token": refresh,
+			"user":         user,
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"verified": true,
+		"message":  "Email verified successfully. You may now sign in.",
+	})
+}
+
+func (s *Server) resendVerificationEmail(c *gin.Context) {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Email) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email is required"})
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	ctx := c.Request.Context()
+	var user models.User
+	if err := s.store.C("users").FindOne(ctx, bson.M{"email": email}).Decode(&user); err != nil {
+		c.JSON(http.StatusOK, gin.H{"sent": true, "masked_email": maskEmail(email)})
+		return
+	}
+	if user.EmailVerified {
+		c.JSON(http.StatusOK, gin.H{"already_verified": true, "message": "This email is already verified."})
+		return
+	}
+	if user.EmailVerificationSentAt != nil && time.Since(*user.EmailVerificationSentAt) < emailVerificationResendCooldown*time.Second {
+		remaining := emailVerificationResendCooldown - int(time.Since(*user.EmailVerificationSentAt).Seconds())
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error":            "Please wait a moment before requesting another email.",
+			"retry_in_seconds": remaining,
+		})
+		return
+	}
+	if s.mailer == nil || !s.mailer.CanSend(ctx) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "SMTP email is not configured. Ask the platform owner to set up SMTP mail first."})
+		return
+	}
+	plainToken, err := randomToken()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create verification token"})
+		return
+	}
+	hash := auth.HashToken(plainToken)
+	now := time.Now()
+	set := bson.M{
+		"email_verification_token":    hash,
+		"email_verification_sent_at":  now,
+	}
+	_, _ = s.store.C("users").UpdateByID(ctx, user.ID, bson.M{"$set": set})
+	user.EmailVerificationToken = hash
+	user.EmailVerificationSentAt = &now
+	if err := s.enqueueVerificationEmail(ctx, user, plainToken); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"sent":         true,
+		"masked_email": maskEmail(email),
+		"expires_in_hours": emailVerificationTokenHours,
+	})
 }
 
 func (s *Server) setupTwoFactor(c *gin.Context) {

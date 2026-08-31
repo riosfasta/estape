@@ -187,6 +187,14 @@ func (s *Server) ensureUserIdentity(ctx context.Context, user *models.User) {
 		user.StaffRole = role
 		set["staff_role"] = role
 	}
+	if !user.EmailVerified && strings.TrimSpace(user.EmailVerificationToken) == "" && strings.TrimSpace(user.AuthProvider) == "" {
+		user.EmailVerified = true
+		set["email_verified"] = true
+	}
+	if strings.TrimSpace(user.AuthProvider) == "google" && !user.EmailVerified {
+		user.EmailVerified = true
+		set["email_verified"] = true
+	}
 	if len(set) > 0 {
 		_, _ = s.store.C("users").UpdateByID(ctx, user.ID, bson.M{"$set": set})
 	}

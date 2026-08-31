@@ -333,18 +333,20 @@ func (s *Server) findOrCreateGoogleUser(ctx context.Context, info googleUserInfo
 	}
 
 	user := models.User{
-		ID:              userID,
-		Name:            info.Name,
-		Email:           info.Email,
-		Username:        username,
-		PasswordHash:    hash,
-		Role:            role,
-		StaffRole:       staffRole,
-		TeamID:          teamID,
-		Status:          models.StatusActive,
-		AvatarURL:       strings.TrimSpace(info.Picture),
-		ThemePreference: "system",
-		CreatedAt:       now,
+		ID:                      userID,
+		Name:                    info.Name,
+		Email:                   info.Email,
+		Username:                username,
+		PasswordHash:            hash,
+		Role:                    role,
+		StaffRole:               staffRole,
+		TeamID:                  teamID,
+		Status:                  models.StatusActive,
+		AvatarURL:               strings.TrimSpace(info.Picture),
+		ThemePreference:         "system",
+		EmailVerified:           true,
+		AuthProvider:            "google",
+		CreatedAt:               now,
 	}
 	if _, err := s.store.C("teams").InsertOne(ctx, *team); err != nil {
 		return models.User{}, false, fmt.Errorf("could not create team")

@@ -57,6 +57,7 @@ func (s *Server) Router() *gin.Engine {
 	router.GET("/p/:slug", s.publicStaticPage)
 	router.GET("/login", s.appPage)
 	router.GET("/register", s.appPage)
+	router.GET("/verify-email", s.appPage)
 	router.GET("/dashboard", s.appPage)
 	router.GET("/team", s.appPage)
 	router.GET("/tasks", s.appPage)
@@ -90,6 +91,8 @@ func (s *Server) Router() *gin.Engine {
 	api.GET("/auth/google/start", s.googleAuthStart)
 	api.GET("/auth/google/callback", s.googleAuthCallback)
 	api.POST("/auth/google/verify-2fa", s.googleAuthVerifyTwoFactor)
+	api.GET("/auth/verify-email", s.verifyEmail)
+	api.POST("/auth/resend-verification", s.resendVerificationEmail)
 	api.GET("/platform-settings", s.getPublicPlatformSettings)
 	api.GET("/subscriptions/plans", s.listPlans)
 	api.GET("/pages/:slug", s.getPublicPage)
@@ -471,8 +474,17 @@ func (s *Server) requireActiveUser() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
 			return
 		}
+		s.ensureUserIdentity(c.Request.Context(), &user)
 		if user.Status == models.StatusSuspended {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "account is suspended"})
+			return
+		}
+		if !user.EmailVerified {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error":                        "Please verify your email address to access this resource.",
+				"email_verification_required": true,
+				"masked_email":                 maskEmail(user.Email),
+			})
 			return
 		}
 		c.Next()

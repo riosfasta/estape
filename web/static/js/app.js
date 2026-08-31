@@ -2195,7 +2195,11 @@ async function renderAuth(mode) {
           ${isRegister ? `<div class="field"><label>Username</label><input name="username" required pattern="[a-zA-Z0-9_]{3,24}" placeholder="jane_writer"></div>` : ""}
           ${isRegister && !inviteToken ? `<div class="field"><label>Company name</label><input name="company_name" required placeholder="Acme Inc"></div>` : ""}
           ${isRegister && inviteToken ? `<input type="hidden" name="invite_token" value="${esc(inviteToken)}"><p class="muted">Create your account first, then review the company invitation from Inbox to accept or decline.</p>` : ""}
-          <div class="field"><label>Email</label><input type="email" name="email" required></div>
+          <div class="field" id="registerEmailField">
+            <label>Email ${isRegister ? `<span class="muted" style="font-weight:400;font-size:0.85em;opacity:0.8;">— you must verify this to sign in</span>` : ""}</label>
+            <input type="email" name="email" required ${isRegister ? `placeholder="you@real-email.com" autocomplete="email" tabindex="0"` : ""}>
+            ${isRegister ? `<p class="hint-line email-hint" id="registerEmailHint" hidden style="margin:6px 0 0 0;padding:8px 10px;border:1px solid #ffe8b4;background:#fff8e1;color:#8a5f00;border-radius:6px;font-size:0.85em;line-height:1.4;">${icon("alert-triangle")}<strong>Use a real email you can access.</strong><br>We'll send a verification link here — you <em>won't</em> be able to sign in until you click it. (Tip: sign up with Google above to skip this.)</p>` : ""}
+          </div>
           <div class="field"><label>Password</label><input type="password" name="password" required minlength="8"></div>
           ${!isRegister ? `<div class="field two-factor-field" hidden><label>Authenticator code</label><input id="twoFactorCode" name="two_factor_code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>` : ""}
           ${!isRegister ? `<label class="check-row auth-remember-row"><input type="checkbox" name="remember_me" value="1" ${rememberDefault ? "checked" : ""}> Remember me</label>` : ""}
@@ -2206,6 +2210,20 @@ async function renderAuth(mode) {
       </section>
     </div>`;
   icons();
+  if (isRegister) {
+    const emailWrap = document.getElementById("registerEmailField");
+    const emailHint = document.getElementById("registerEmailHint");
+    const emailInput = emailWrap?.querySelector('input[name="email"]');
+    const showHint = () => { if (emailHint) { emailHint.hidden = false; icons(); } };
+    if (emailInput) {
+      emailInput.addEventListener("focus", showHint);
+      emailInput.addEventListener("mouseenter", showHint);
+      emailInput.addEventListener("input", showHint);
+      emailInput.addEventListener("pointerenter", showHint);
+      emailInput.addEventListener("click", showHint);
+      emailWrap.addEventListener("mouseenter", showHint);
+    }
+  }
   $("#authForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const authForm = event.currentTarget;
@@ -2228,12 +2246,191 @@ async function renderAuth(mode) {
         setStatus("Enter your authenticator code");
         return;
       }
+      if (data.email_verification_required) {
+        return renderEmailVerificationPending(data.masked_email || form.email, data.message || "Please verify your email before signing in.", data.smtp_not_configured);
+      }
       storeTokens(data.access_token, data.refresh_token, rememberMe);
       window.location.href = "/dashboard";
     } catch (error) {
+      if (error.body?.email_verification_required) {
+        return renderEmailVerificationPending(error.body.masked_email || form.email, error.message || "Please verify your email before signing in.");
+      }
       setStatus(error.message, true);
     }
   });
+}
+
+function renderEmailVerificationPending(maskedEmail, message = "Please check your email to verify your account.", smtpNotConfigured = false, initialEmail = "") {
+  const platformName = state.platformSettings?.site_name || "bugmega";
+  let emailForResend = initialEmail || (maskedEmail ? "" : "");
+  let cooldownTimer = null;
+  const draw = (opts = {}) => {
+    const disabledAttr = opts.resendDisabled ? `disabled` : ``;
+    const resendMsg = opts.cooldownSeconds ? ` (wait ${opts.cooldownSeconds}s)` : "";
+    const smtpNotice = smtpNotConfigured ? `<div class="notice muted" style="margin-top:14px;padding:12px;border:1px solid var(--border);border-radius:8px;">Note: SMTP email is not configured yet. The platform owner must set up SMTP in Admin &rarr; Settings before verification emails can be delivered.</div>` : ``;
+    const emailField = !maskedEmail ? `<div class="field"><label>Your account email</label><input type="email" name="resend_email" required value="${esc(emailForResend)}" placeholder="you@example.com"></div>` : `<p class="muted">We sent a verification link to <strong>${esc(maskedEmail)}</strong>. Can't find it? You can request a new one below.</p>`;
+    app.innerHTML = `
+      <div class="auth-wrap">
+        <section class="auth-box">
+          <a class="brand" href="/"><span class="brand-mark">${esc(platformName.slice(0, 1) || "P")}</span>${esc(platformName)}</a>
+          <h1>Verify your email</h1>
+          <p>${esc(message)}</p>
+          ${emailField}
+          <form id="resendForm" class="form-grid" style="margin-top:12px;">
+            <button class="btn primary" type="submit" id="resendBtn" ${disabledAttr}>${icon("mail")}Resend verification email${resendMsg}</button>
+            <p class="status-line"></p>
+            ${smtpNotice}
+          </form>
+          <p class="muted" style="margin-top:14px;"><a class="text-link" href="/login">Back to login</a></p>
+        </section>
+      </div>`;
+    icons();
+    const resendForm = $("#resendForm");
+    if (resendForm) {
+      resendForm.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const fd = Object.fromEntries(new FormData(ev.currentTarget).entries());
+        const email = fd.resend_email || (maskedEmail ? "" : emailForResend);
+        if (!maskedEmail && !email) {
+          setStatus("Please enter your email address.", true);
+          return;
+        }
+        setButtonLoading($("#resendBtn"), true, "Sending...");
+        try {
+          const payload = { email: email || maskedEmail.replace(/\*\*\*/g, "") };
+          if (!payload.email || payload.email.includes("***")) {
+            payload.email = prompt("Enter your email to resend the verification link:") || "";
+            if (!payload.email) return;
+          }
+          const data = await api("/api/auth/resend-verification", { method: "POST", body: JSON.stringify(payload) });
+          if (data.already_verified) {
+            app.innerHTML = `<div class="auth-wrap"><section class="auth-box"><h1>Email already verified</h1><p>${esc(data.message || "Your email is verified. You can now sign in.")}</p><p><a class="btn primary" href="/login">${icon("log-in")}Go to login</a></p></section></div>`;
+            icons();
+            return;
+          }
+          setStatus(data.sent ? "Verification email sent. Please check your inbox." : "Verification email queued.");
+          if (maskedEmail) maskedEmail = data.masked_email || maskedEmail;
+          if (!maskedEmail && data.masked_email) maskedEmail = data.masked_email;
+          let remaining = 60;
+          if (cooldownTimer) clearInterval(cooldownTimer);
+          cooldownTimer = setInterval(() => {
+            remaining--;
+            draw({ cooldownSeconds: remaining, resendDisabled: remaining > 0 });
+            if (remaining <= 0) {
+              clearInterval(cooldownTimer);
+              cooldownTimer = null;
+              draw();
+            }
+          }, 1000);
+          draw({ cooldownSeconds: remaining, resendDisabled: true });
+        } catch (err) {
+          setStatus(err.message, true);
+          setButtonLoading($("#resendBtn"), false);
+          draw();
+        }
+      });
+    }
+  };
+  draw();
+}
+
+async function renderVerifyEmailPage() {
+  const platformName = state.platformSettings?.site_name || "bugmega";
+  stopNotificationPolling();
+  stopLivePolling();
+  if (!state.platformSettings) {
+    const platform = await api("/api/platform-settings").catch(() => ({ settings: {} }));
+    state.platformSettings = platform.settings || {};
+    applyPlatformTheme(state.platformSettings);
+    applyPlatformFavicon(state.platformSettings);
+  }
+  const params = new URLSearchParams(location.search);
+  const token = params.get("token");
+  const uid = params.get("uid");
+  if (!token || !uid) {
+    return renderEmailVerificationPending("", "Enter your email to request a verification link.", false, "");
+  }
+  app.innerHTML = `
+    <div class="auth-wrap">
+      <section class="auth-box">
+        <a class="brand" href="/"><span class="brand-mark">${esc(platformName.slice(0, 1) || "P")}</span>${esc(platformName)}</a>
+        <h1>Verifying your email</h1>
+        <div class="route-loading-card" style="display:flex;gap:12px;align-items:center;padding:16px 0;">
+          <span class="route-loading-spinner" aria-hidden="true"></span>
+          <span class="muted">Confirming your verification link...</span>
+        </div>
+        <p class="status-line"></p>
+      </section>
+    </div>`;
+  icons();
+  try {
+    const qs = new URLSearchParams({ token, uid }).toString();
+    const data = await api(`/api/auth/verify-email?${qs}`);
+    if (data.already_verified) {
+      app.innerHTML = `
+        <div class="auth-wrap">
+          <section class="auth-box">
+            <a class="brand" href="/"><span class="brand-mark">${esc(platformName.slice(0, 1) || "P")}</span>${esc(platformName)}</a>
+            <h1>Email already verified</h1>
+            <p>${esc(data.message || "Your email was already confirmed.")}</p>
+            <p><a class="btn primary" href="/login">${icon("log-in")}Go to login</a></p>
+          </section>
+        </div>`;
+      icons();
+      return;
+    }
+    if (data.verified && data.access_token) {
+      storeTokens(data.access_token, data.refresh_token, true);
+      app.innerHTML = `
+        <div class="auth-wrap">
+          <section class="auth-box">
+            <a class="brand" href="/"><span class="brand-mark">${esc(platformName.slice(0, 1) || "P")}</span>${esc(platformName)}</a>
+            <h1>Email verified!</h1>
+            <p>${esc(data.message || "Your email has been confirmed. Welcome!")}</p>
+            <p><a class="btn primary" href="/dashboard">${icon("layout-dashboard")}Open dashboard</a></p>
+          </section>
+        </div>`;
+      icons();
+      setTimeout(() => { window.location.href = "/dashboard"; }, 800);
+      return;
+    }
+    app.innerHTML = `
+      <div class="auth-wrap">
+        <section class="auth-box">
+          <a class="brand" href="/"><span class="brand-mark">${esc(platformName.slice(0, 1) || "P")}</span>${esc(platformName)}</a>
+          <h1>Email verified</h1>
+          <p>${esc(data.message || "Your email has been confirmed.")}</p>
+          <p><a class="btn primary" href="/login">${icon("log-in")}Go to login</a></p>
+        </section>
+      </div>`;
+    icons();
+  } catch (error) {
+    const body = error.body || {};
+    if (body.expired) {
+      app.innerHTML = `
+        <div class="auth-wrap">
+          <section class="auth-box">
+            <a class="brand" href="/"><span class="brand-mark">${esc(platformName.slice(0, 1) || "P")}</span>${esc(platformName)}</a>
+            <h1>Verification link expired</h1>
+            <p>${esc(error.message)}</p>
+            <p><a class="btn primary" href="/login">${icon("log-in")}Go to login</a> or request a new verification email below.</p>
+          </section>
+        </div>`;
+      icons();
+      setTimeout(() => renderEmailVerificationPending("", "This verification link has expired. Request a new one below.", false, ""), 1200);
+      return;
+    }
+    app.innerHTML = `
+      <div class="auth-wrap">
+        <section class="auth-box">
+          <a class="brand" href="/"><span class="brand-mark">${esc(platformName.slice(0, 1) || "P")}</span>${esc(platformName)}</a>
+          <h1>Could not verify email</h1>
+          <p class="status-line" style="color:var(--danger);">${esc(error.message)}</p>
+          <p><a class="btn primary" href="/login">${icon("log-in")}Back to login</a></p>
+        </section>
+      </div>`;
+    icons();
+  }
 }
 
 function navLink(href, label, iconName) {
@@ -2260,7 +2457,7 @@ function workspaceChild(href, label, iconName, badge = "") {
 function isRoutableAppURL(url) {
   if (url.origin !== window.location.origin) return false;
   const pathname = url.pathname.replace(/\/+$/, "") || "/";
-  if (pathname === "/login" || pathname === "/register") return true;
+  if (pathname === "/login" || pathname === "/register" || pathname === "/verify-email") return true;
   return [
     "/dashboard",
     "/chat",
@@ -11766,6 +11963,17 @@ function renderRouteError(error) {
     logout();
     return;
   }
+  if (error.body?.email_verification_required) {
+    clearStoredTokens();
+    state.access = "";
+    state.refresh = "";
+    state.me = null;
+    const masked = error.body.masked_email || "";
+    const params = new URLSearchParams();
+    if (masked) params.set("hint", masked);
+    window.location.href = "/verify-email" + (params.toString() ? `?${params.toString()}` : "");
+    return;
+  }
   app.innerHTML = `<div class="auth-wrap"><section class="auth-box"><h1>Something needs attention</h1><p class="muted">${esc(error.message)}</p><p><a class="btn primary" href="/dashboard">Retry</a></p></section></div>`;
 }
 
@@ -11794,6 +12002,11 @@ async function route(options = {}) {
       stopNotificationPolling();
       stopLivePolling();
       return renderAuth("register");
+    }
+    if (path() === "/verify-email") {
+      stopNotificationPolling();
+      stopLivePolling();
+      return renderVerifyEmailPage();
     }
     if (!state.access) {
       stopNotificationPolling();
