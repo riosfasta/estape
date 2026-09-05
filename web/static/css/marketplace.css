@@ -37,8 +37,11 @@
 .market-share { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
 .market-share .field { flex: 1 1 260px; min-width: 0; }
 .market-share input { width: 100%; min-width: 0; }
-.market-share-photo { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.market-share-trigger { width: 32px; height: 32px; min-height: 32px; padding: 6px; border-radius: 50%; }
+.market-profile-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.marketplace .market-person .market-avatar { width: 76px; height: 76px; min-width: 76px; max-width: 76px; min-height: 76px; max-height: 76px; flex: 0 0 76px; aspect-ratio: 1; object-fit: cover; border-radius: 50%; }
+.marketplace .market-talent .market-avatar { width: 56px; height: 56px; min-width: 56px; max-width: 56px; min-height: 56px; max-height: 56px; flex-basis: 56px; }
+.market-profile-actions .market-share-trigger { display: inline-flex; align-items: center; gap: 6px; width: auto; min-height: 30px; padding: 4px 9px; border-radius: 6px; font-size: 12px; }
+.market-share-trigger svg { flex: 0 0 18px; width: 18px; height: 18px; }
 .market-share-dialog { width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 22px; }
 .market-share-dialog .modal-head h2 { margin: 0; font-size: 20px; }
 .market-share-dialog .market-share .field { flex-basis: 100%; }
