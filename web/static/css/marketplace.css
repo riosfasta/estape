@@ -38,3 +38,6 @@
 .market-share .field { flex: 1 1 260px; min-width: 0; }
 .market-share input { width: 100%; min-width: 0; }
 @media (max-width: 640px) { .market-share .field { flex-basis: 100%; } }
+
+.market-connect-users { display: grid; gap: 12px; max-height: 360px; overflow: auto; padding: 12px 4px; margin: 12px 0; }
+.market-connect-users > label { border-bottom: 1px solid var(--border-color, #8883); padding: 8px; }

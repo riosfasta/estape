@@ -8,7 +8,8 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
   const empty = (text) => `<p class="market-empty">${esc(text)}</p>`;
   const photo = (p) => p.photo ? `<img class="market-avatar" src="${esc(p.photo)}" alt="${esc(p.name)}" loading="lazy">` : `<span class="market-avatar market-initial">${esc((p.name || "?")[0])}</span>`;
   const skillsValue = (form) => [...form.querySelectorAll('[name="skill"]:checked')].map(x => x.value).concat(String(new FormData(form).get("custom_skills") || "").split(","));
-  const notice = `<p class="market-notice">Freelancing is free: no monthly subscription. Receive 100 Connects every Monday at 00:00 UTC; each bid uses 10. Unused Connects do not roll over. Premium subscriptions apply to bug reporting only.</p>`;
+  let connectsPolicy = { amount: 100, period: "weekly" };
+  const notice = () => `<p class="market-notice">Freelancing is free: no monthly subscription. Receive ${connectsPolicy.amount} Connects ${connectsPolicy.period === "monthly" ? "on the first of each month" : "every Monday"} at 00:00 UTC; each bid uses 10. Unused Connects do not roll over. Premium subscriptions apply to bug reporting only.</p>`;
   const post = (url, body = {}) => api(url, { method: "POST", body: JSON.stringify(body) });
   let skillCatalog = [];
   const countryCodes = "AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW".split(" ");
@@ -64,7 +65,8 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
   }
   async function dashboard() {
     const data = await api("/api/marketplace/me"); const p = data.profile;
-    page("My profile", `${heading("YOUR MARKETPLACE PROFILE", "Build your next opportunity", "Hire talent, find work, and grow your reputation.", `<a class="btn" href="/marketplace/jobs">My jobs & offers</a><a class="btn primary" href="/find-jobs">Find work</a>`)}${notice}
+    connectsPolicy = data.connects_policy || connectsPolicy;
+    page("My profile", `${heading("YOUR MARKETPLACE PROFILE", "Build your next opportunity", "Hire talent, find work, and grow your reputation.", `<a class="btn" href="/marketplace/jobs">My jobs & offers</a><a class="btn primary" href="/find-jobs">Find work</a>`)}${notice()}
       <section class="panel market-profile-summary"><div class="market-person">${photo(p)}<div><h2>${esc(p.name)}</h2><p>${esc(p.title || "Add your professional title")}</p><span class="muted">${esc(p.location || "Add location")}${p.country ? ", " + esc(regionNames.of(p.country)) : ""}</span></div>${badge(p.public ? "Public profile" : "Private draft")}</div>${stats(p)}${chips(p.skills)}<p class="market-bio">${esc(p.bio)}</p></section>
       ${shareProfile(p)}
       <div class="market-columns"><section class="panel"><h2>Profile details</h2><p class="muted">Complete these details and submit an ID before applying or hiring. Public profiles are visible to visitors.</p>
@@ -74,7 +76,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
       <label class="market-check"><input type="checkbox" name="public" ${p.public ? "checked" : ""}><span>Make my profile public and shareable (also listed in the freelancer directory)</span></label>
       <label class="market-check"><input type="checkbox" name="consent" ${p.public ? "checked" : ""}><span>I agree that the platform may display my profile photo, display name, bio, skills, city/country, availability, job counts and reviews across its pages, including the homepage, directory and job pages. I have read the <a href="/marketplace/privacy" target="_blank" rel="noopener">marketplace privacy policy</a>. My ID image stays private.</span></label>
       <p class="muted">Uncheck “Publish my profile” and save to withdraw public-display consent and hide your profile. Existing contracts and payment records remain.</p><button type="submit" class="btn primary">Save profile</button></form></section>
-      <aside><section class="panel"><h2>Your Connects</h2><div class="market-large">${p.connects}<small> / 100</small></div><p>10 Connects per bid. Invited offers cost no Connects.</p><p class="muted">Resets ${esc(date(data.connects_reset_at))}. No rollover.</p></section>
+      <aside><section class="panel"><h2>Your Connects</h2><div class="market-large">${p.connects}<small> available</small></div><p>${connectsPolicy.amount} Connects ${connectsPolicy.period}. 10 per bid. Invited offers cost none.</p><p class="muted">Resets ${esc(date(data.connects_reset_at))}. The balance, including manual grants, resets to the allowance. No rollover.</p></section>
       <section class="panel"><h2>Identity verification</h2>${badge(p.identity_status)}<p class="muted">Upload a readable government ID as a JPEG or PNG, up to 5 MB. Only you and the platform owner can view it. Submission permits applying; an approved verification is required for withdrawal.</p>
       <form id="marketIdentity" class="market-form"><label class="field">ID card image<input type="file" name="file" accept="image/jpeg,image/png" required></label><label class="market-check"><input type="checkbox" name="consent" required><span>I acknowledge private identity processing for verification, fraud prevention and payout validation under the <a href="/marketplace/privacy" target="_blank" rel="noopener">privacy policy</a>.</span></label><button class="btn" type="submit">Submit ID for review</button></form>
       ${p.identity_status !== "not_submitted" ? `<div class="toolbar"><button class="btn" id="viewMyIdentity">View my ID</button><button class="btn" id="deleteMyIdentity">Remove ID</button></div>` : ""}</section>
@@ -125,7 +127,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
   }
   async function findJobs() {
     const params = new URLSearchParams(location.search); const data = await api(`/api/marketplace/jobs?${params}`);
-    page("Find jobs", `${heading("DO WORK THAT FITS YOU", "Your next project starts here", "Browse open fixed-price jobs and send a proposal.", '<a class="btn" href="/marketplace/jobs">My jobs & offers</a>')}${notice}<form id="marketJobSearch" class="panel market-filters"><label class="field">Search jobs<input name="q" value="${esc(params.get("q") || "")}" maxlength="100" placeholder="Website, design, marketing..."></label><label class="field">Skill<input name="skill" value="${esc(params.get("skill") || "")}" placeholder="Any skill"></label><button class="btn primary" type="submit">Search jobs</button></form>${jobCards(data.jobs)}${pagination(data, params)}`);
+    page("Find jobs", `${heading("DO WORK THAT FITS YOU", "Your next project starts here", "Browse open fixed-price jobs and send a proposal.", '<a class="btn" href="/marketplace/jobs">My jobs & offers</a>')}${notice()}<form id="marketJobSearch" class="panel market-filters"><label class="field">Search jobs<input name="q" value="${esc(params.get("q") || "")}" maxlength="100" placeholder="Website, design, marketing..."></label><label class="field">Skill<input name="skill" value="${esc(params.get("skill") || "")}" placeholder="Any skill"></label><button class="btn primary" type="submit">Search jobs</button></form>${jobCards(data.jobs)}${pagination(data, params)}`);
     bindForm("#marketJobSearch", async form => { location.href = "/find-jobs?" + new URLSearchParams(new FormData(form)); });
   }
   async function myJobs() {
@@ -168,19 +170,71 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     bindForm("#marketTransfer", async form => { const v = Object.fromEntries(new FormData(form)); await post("/api/marketplace/transfers", { kind: v.kind, amount: cents(v.amount), destination: v.destination, accept_fees: !!v.accept_fees }); await wallet(); message("Request queued for owner settlement. The requested amount is held out of your available balance."); });
     bindButtons("[data-capture]", async b => { await post(`/api/marketplace/topup/${b.dataset.capture}/capture`); await wallet(); message("Payment verified."); });
   }
+  let connectSearch = "", connectPage = 1;
+  const connectSelection = new Set();
+  let grantRequestID = "";
+  let grantPayload = "";
+  function connectsAdminHTML(data) {
+    return `<section class="panel"><h2>Connects allowance & reset schedule</h2>
+      <form id="connectsPolicy" class="market-form"><div class="grid-2">
+      <label class="field">Free Connects per reset<input name="amount" type="number" min="0" max="100000" step="1" value="${data.policy.amount}" required></label>
+      <label class="field">Reset schedule<select name="period"><option value="weekly" ${data.policy.period === "weekly" ? "selected" : ""}>Weekly — Monday, 00:00 UTC</option><option value="monthly" ${data.policy.period === "monthly" ? "selected" : ""}>Monthly — first day, 00:00 UTC</option></select></label></div>
+      <p class="muted">Existing balances stay unchanged until the next boundary on the selected schedule. At reset, the whole balance is replaced with this allowance, including any unused manual grants. New users receive this allowance immediately. Set 0 to disable free refills.</p>
+      <button type="submit" class="btn primary">Save Connects policy</button></form></section>
+      <section class="panel"><h2>Give Connects to users</h2><p>Select one user for an individual grant, or up to 200 for a bulk grant. The amount is added to each user's balance.</p>
+      <form id="connectsSearch" class="market-filters"><label class="field">Find users by name or email<input name="q" maxlength="100" value="${esc(connectSearch)}"></label><button class="btn" type="submit">Search users</button></form>
+      <div class="toolbar"><button class="btn" type="button" id="connectsSelectPage">Select this page</button><button class="btn" type="button" id="connectsClear">Clear selection</button><span id="connectsSelectedCount">${connectSelection.size} selected</span></div>
+      <div class="market-connect-users">${data.users.map(u => `<label class="market-check"><input type="checkbox" data-connect-user="${esc(u.id)}" ${connectSelection.has(u.id) ? "checked" : ""}><span><strong>${esc(u.name || u.email)}</strong><br><small>${esc(u.email)}</small></span></label>`).join("") || empty("No matching users.")}</div>
+      <div class="toolbar">${data.page > 1 ? '<button class="btn" type="button" data-connect-page="-1">Previous</button>' : ""}<span>Page ${data.page}</span>${data.has_more ? '<button class="btn" type="button" data-connect-page="1">Next</button>' : ""}</div>
+      <form id="connectsGrant" class="market-form"><label class="field">Connects to add per selected user<input name="amount" type="number" min="1" max="100000" step="1" required></label><label class="field">Reason<input name="reason" minlength="3" maxlength="500" required placeholder="Promotion, support adjustment, bonus..."></label><p class="muted">Manual grants expire at the next scheduled reset. A bulk grant succeeds for all selected users or none.</p><button type="submit" class="btn primary">Give Connects to selected users</button></form></section>
+      <section class="panel"><h2>Recent manual grants</h2>${data.grants.length ? `<div class="market-table-wrap"><table><thead><tr><th>Date</th><th>Users</th><th>Connects each</th><th>Reason</th></tr></thead><tbody>${data.grants.map(g => `<tr><td>${esc(date(g.created_at))}</td><td><details><summary>${g.user_ids.length} users</summary>${g.user_ids.map(id => `<div>${esc(id)}</div>`).join("")}</details></td><td>${Number(g.amount)}</td><td>${esc(g.reason)}</td></tr>`).join("")}</tbody></table></div>` : empty("No manual grants yet.")}</section>`;
+  }
+  function bindConnectsAdmin(data) {
+    const updateSelection = () => {
+      $("#connectsSelectedCount").textContent = `${connectSelection.size} selected`;
+      document.querySelectorAll("[data-connect-user]").forEach(input => { input.checked = connectSelection.has(input.dataset.connectUser); });
+    };
+    document.querySelectorAll("[data-connect-user]").forEach(input => input.addEventListener("change", () => {
+      if (input.checked && connectSelection.size >= 200) { input.checked = false; message("Select up to 200 users per grant.", true); return; }
+      if (input.checked) connectSelection.add(input.dataset.connectUser); else connectSelection.delete(input.dataset.connectUser);
+      updateSelection();
+    }));
+    bindButtons("#connectsSelectPage", () => { for (const u of data.users) { if (connectSelection.size >= 200) break; connectSelection.add(u.id); } updateSelection(); });
+    bindButtons("#connectsClear", () => { connectSelection.clear(); updateSelection(); });
+    bindButtons("[data-connect-page]", async button => { connectPage += Number(button.dataset.connectPage); await admin(); });
+    bindForm("#connectsSearch", async form => { connectSearch = new FormData(form).get("q").trim(); connectPage = 1; await admin(); });
+    bindForm("#connectsPolicy", async form => {
+      const v = Object.fromEntries(new FormData(form));
+      await api("/api/marketplace/admin/connects/policy", { method: "PUT", body: JSON.stringify({ amount: Number(v.amount), period: v.period }) });
+      await admin(); message("Connects policy saved. Existing balances change at the next scheduled reset.");
+    });
+    bindForm("#connectsGrant", async form => {
+      if (!connectSelection.size) throw new Error("Select at least one user.");
+      const v = Object.fromEntries(new FormData(form));
+      const payload = { user_ids: [...connectSelection].sort(), amount: Number(v.amount), reason: v.reason };
+      const signature = JSON.stringify(payload);
+      if (signature !== grantPayload) { grantPayload = signature; grantRequestID = crypto.randomUUID(); }
+      const result = await post("/api/marketplace/admin/connects/grants", { ...payload, request_id: grantRequestID });
+      connectSelection.clear(); grantPayload = ""; grantRequestID = "";
+      await admin(); message(`Added ${result.amount_each} Connects each to ${result.granted} users.`);
+    });
+  }
   async function admin() {
-    const data = await api("/api/marketplace/admin");
+    const [data, connects] = await Promise.all([api("/api/marketplace/admin"), api("/api/marketplace/admin/connects?" + new URLSearchParams({ q: connectSearch, page: connectPage }))]);
     page("Marketplace administration", `${heading("PLATFORM OWNER", "Marketplace administration", "Review identity submissions and settle refund / withdrawal requests.")}<section class="panel"><h2>Platform commission earned</h2><strong class="market-large">${money(data.commission)}</strong><p class="muted">5% of approved job payments. Commission is recorded at approval.</p></section>
+      ${connectsAdminHTML(connects)}
       <h2>Identity review</h2>${data.profiles.map(p => `<article class="panel"><div class="toolbar"><strong>${esc(p.name)}</strong><span>${esc(p.id)}</span><button class="btn" data-id-view="${p.id}">View private ID</button><button class="btn primary" data-id-review="${p.id}" data-revision="${p.identity_revision}" data-status="verified">Approve verification</button><button class="btn" data-id-review="${p.id}" data-revision="${p.identity_revision}" data-status="rejected">Reject</button></div></article>`).join("") || empty("No IDs waiting for review.")}
       <h2>Settlement queue</h2><p class="market-notice">Send payments through your payment provider before marking them paid. Verify identity for withdrawals and return refunds to the original payment method. Record the actual transaction fee and a unique payment reference. This screen records settlement; it does not send money.</p>
       ${data.transfers.map(t => `<section class="panel"><h3>${esc(t.kind)} · ${money(t.amount)}</h3><p>User: ${esc(t.user_id)}</p><p>Destination / reference: ${esc(t.destination)}</p><p>Requested: ${esc(date(t.created_at))}</p><form class="market-settlement market-form" data-transfer="${t.id}"><label class="field">Actual transaction fee (USD)<input type="number" name="fee" min="0" max="${(t.amount - 1) / 100}" step="0.01" value="0" required></label><label class="field">Completed payment reference<input name="reference" minlength="5" maxlength="200" required></label><label class="market-check"><input type="checkbox" required><span>I have verified the recipient and sent the requested amount minus the recorded fee.</span></label><button class="btn primary" type="submit">Record as paid</button><button class="btn" type="button" data-reject-transfer="${t.id}">Reject & restore balance</button></form></section>`).join("") || empty("No pending settlement requests.")}`);
+    bindConnectsAdmin(connects);
     bindButtons("[data-id-view]", b => showIdentity(b.dataset.idView));
     bindButtons("[data-id-review]", async b => { await post(`/api/marketplace/admin/identity/${b.dataset.idReview}`, { status: b.dataset.status, revision: b.dataset.revision }); await admin(); });
     document.querySelectorAll(".market-settlement").forEach((form, i) => { form.id = `marketSettlement${i}`; bindForm(`#${form.id}`, async f => { const v = Object.fromEntries(new FormData(f)); await post(`/api/marketplace/admin/transfers/${f.dataset.transfer}`, { status: "paid", reference: v.reference, fee: cents(v.fee) }); await admin(); }); });
     bindButtons("[data-reject-transfer]", async b => { await post(`/api/marketplace/admin/transfers/${b.dataset.rejectTransfer}`, { status: "rejected", fee: 0 }); await admin(); });
   }
   async function render(path) {
-    if (!skillCatalog.length) skillCatalog = (await api("/api/marketplace/skills")).skills;
+    const catalog = await api("/api/marketplace/skills");
+    skillCatalog = catalog.skills; connectsPolicy = catalog.connects_policy || connectsPolicy;
     if (path === "/freelancers") return directory();
     if (path.startsWith("/freelancers/")) return publicProfile(path.split("/")[2]);
     if (path === "/find-jobs") return findJobs();

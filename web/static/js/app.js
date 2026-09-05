@@ -1,4 +1,4 @@
-import { createMarketplace } from "/static/js/marketplace.js?v=20260905-2";
+import { createMarketplace } from "/static/js/marketplace.js?v=20260905-3";
 function readStoredObject(key) {
   try {
     const parsed = JSON.parse(localStorage.getItem(key) || "{}");

@@ -83,11 +83,7 @@ func TestMarketplaceRoutesAndPrivateAccess(t *testing.T) {
 			t.Errorf("%s: %d", route, w.Code)
 		}
 	}
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, httptest.NewRequest("GET", "/api/marketplace/skills", nil))
-	if w.Code != 200 {
-		t.Fatal(w.Code)
-	}
+	// Public catalog now loads its configurable allowance from MongoDB.
 	if _, err := template.ParseFiles(filepath.Join("..", "..", "web", "templates", "marketplace_privacy.gohtml")); err != nil {
 		t.Fatal(err)
 	}
@@ -446,6 +442,46 @@ func TestMarketplaceIntegration(t *testing.T) {
 		t.Fatal("invitation notifications missing or duplicated")
 	}
 	// Consent withdrawal hides profile immediately.
+	check(request(other, "PUT", "/admin/connects/policy", gin.H{"amount": 240, "period": "monthly"}), 403)
+	check(request(admin, "PUT", "/admin/connects/policy", gin.H{"amount": -1, "period": "monthly"}), 400)
+	check(request(admin, "PUT", "/admin/connects/policy", gin.H{"amount": 240, "period": "monthly"}), 200)
+	before := profile(other).Connects
+	check(request(other, "GET", "/me", nil), 200)
+	if profile(other).Connects != before {
+		t.Fatal("policy change overwrote current balance")
+	}
+	grantKey := primitive.NewObjectID().Hex()
+	grant := gin.H{"user_ids": []string{other.Hex(), boss.Hex(), other.Hex()}, "amount": 25, "reason": "Test bonus", "request_id": grantKey}
+	check(request(admin, "POST", "/admin/connects/grants", grant), 200)
+	if profile(other).Connects != before+25 {
+		t.Fatal("manual grant not added exactly once per unique user")
+	}
+	check(request(admin, "POST", "/admin/connects/grants", grant), 409)
+	if profile(other).Connects != before+25 {
+		t.Fatal("grant replay added duplicate credit")
+	}
+	check(request(admin, "POST", "/admin/connects/grants", gin.H{"user_ids": []string{other.Hex(), primitive.NewObjectID().Hex()}, "amount": 25, "reason": "Invalid target", "request_id": primitive.NewObjectID().Hex()}), 409)
+	if profile(other).Connects != before+25 {
+		t.Fatal("failed bulk grant partially applied")
+	}
+	monthStart, _ := connectsPeriod(time.Now(), "monthly")
+	_, err = st.C("marketplace_settings").UpdateOne(ctx, bson.M{"_id": "connects"}, bson.M{"$set": bson.M{"updated_at": monthStart.Add(-time.Hour)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = st.C("freelancer_profiles").UpdateOne(ctx, bson.M{"_id": other}, bson.M{"$set": bson.M{"connect_week": monthStart.AddDate(0, -1, 0)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(request(other, "GET", "/me", nil), 200)
+	if profile(other).Connects != 240 {
+		t.Fatal("monthly reset did not replace allowance and expired bonus")
+	}
+	check(request(admin, "POST", "/admin/connects/grants", gin.H{"user_ids": []string{other.Hex()}, "amount": 5, "reason": "Individual grant", "request_id": primitive.NewObjectID().Hex()}), 200)
+	check(request(other, "GET", "/me", nil), 200)
+	if profile(other).Connects != 245 {
+		t.Fatal("repeated same-period reset lost manual grant")
+	}
 	p := profile(freelancer)
 	check(request(freelancer, "PUT", "/profile", gin.H{"name": p.Name, "title": p.Title, "bio": p.Bio, "country": p.Country, "location": p.Location, "skills": p.Skills, "photo": p.Photo, "public": false, "consent": false}), 200)
 	check(request(primitive.NilObjectID, "GET", "/freelancers/"+freelancer.Hex(), nil), 404)

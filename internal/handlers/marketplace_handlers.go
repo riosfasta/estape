@@ -82,7 +82,11 @@ func (s *Server) marketplaceRoutes(router *gin.Engine, api, authed *gin.RouterGr
 	}
 	router.GET("/marketplace/privacy", s.marketplacePrivacy)
 	api.GET("/marketplace/skills", func(c *gin.Context) {
-		c.JSON(200, gin.H{"skills": freelancerSkills, "connect_cost": proposalConnectCost, "consent_version": marketplaceConsentVersion})
+		policy, err := s.loadConnectsPolicy(c.Request.Context())
+		if marketplaceError(c, err) {
+			return
+		}
+		c.JSON(200, gin.H{"connects_policy": policy, "skills": freelancerSkills, "connect_cost": proposalConnectCost, "consent_version": marketplaceConsentVersion})
 	})
 	api.GET("/marketplace/freelancers", s.marketplaceFreelancers)
 	api.GET("/marketplace/freelancers/:id", s.marketplacePublicProfile)
@@ -102,6 +106,9 @@ func (s *Server) marketplaceRoutes(router *gin.Engine, api, authed *gin.RouterGr
 	authed.POST("/marketplace/topup/:id/capture", s.marketplaceCaptureTopup)
 	authed.POST("/marketplace/transfers", s.marketplaceRequestTransfer)
 	authed.GET("/marketplace/admin", s.marketplaceAdmin)
+	authed.GET("/marketplace/admin/connects", s.adminConnects)
+	authed.PUT("/marketplace/admin/connects/policy", s.saveConnectsPolicy)
+	authed.POST("/marketplace/admin/connects/grants", s.grantConnects)
 	authed.POST("/marketplace/admin/identity/:id", s.marketplaceReviewIdentity)
 	authed.POST("/marketplace/admin/transfers/:id", s.marketplaceSettleTransfer)
 }
@@ -158,11 +165,19 @@ func (s *Server) ensureMarketplaceProfile(ctx context.Context, id primitive.Obje
 		return err
 	}
 	now := time.Now().UTC()
-	_, err = s.store.C("freelancer_profiles").UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$setOnInsert": models.FreelancerProfile{ID: id, Name: user.Name, Skills: []string{}, IdentityStatus: "not_submitted", Connects: 100, ConnectWeek: marketplaceWeek(now), UpdatedAt: now}}, options.Update().SetUpsert(true))
+	policy, err := s.loadConnectsPolicy(ctx)
 	if err != nil {
 		return err
 	}
-	_, err = s.store.C("freelancer_profiles").UpdateOne(ctx, bson.M{"_id": id, "connect_week": bson.M{"$lt": marketplaceWeek(now)}}, bson.M{"$set": bson.M{"connects": 100, "connect_week": marketplaceWeek(now)}})
+	start, _ := connectsPeriod(now, policy.Period)
+	_, err = s.store.C("freelancer_profiles").UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$setOnInsert": models.FreelancerProfile{ID: id, Name: user.Name, Skills: []string{}, IdentityStatus: "not_submitted", Connects: policy.Amount, ConnectWeek: start, UpdatedAt: now}}, options.Update().SetUpsert(true))
+	if err != nil {
+		return err
+	}
+	if !start.After(policy.UpdatedAt) {
+		return nil
+	}
+	_, err = s.store.C("freelancer_profiles").UpdateOne(ctx, bson.M{"_id": id, "connect_week": bson.M{"$lt": start}}, bson.M{"$set": bson.M{"connects": policy.Amount, "connect_week": start}})
 	return err
 }
 
@@ -194,7 +209,12 @@ func (s *Server) marketplaceMe(c *gin.Context) {
 	if marketplaceError(c, cur.All(ctx, &proposals)) {
 		return
 	}
-	c.JSON(200, gin.H{"profile": profile, "jobs": jobs, "proposals": proposals, "connect_cost": proposalConnectCost, "connects_reset_at": marketplaceWeek(time.Now()).AddDate(0, 0, 7)})
+	policy, err := s.loadConnectsPolicy(ctx)
+	if marketplaceError(c, err) {
+		return
+	}
+	_, nextReset := connectsPeriod(time.Now(), policy.Period)
+	c.JSON(200, gin.H{"connects_policy": policy, "profile": profile, "jobs": jobs, "proposals": proposals, "connect_cost": proposalConnectCost, "connects_reset_at": nextReset})
 }
 
 func (s *Server) marketplaceSaveProfile(c *gin.Context) {
@@ -621,7 +641,7 @@ func (s *Server) marketplacePropose(c *gin.Context) {
 				return err
 			}
 			if result.ModifiedCount != 1 {
-				return marketInvalid("Not enough Connects. You receive 100 every Monday at 00:00 UTC")
+				return marketInvalid("Not enough Connects. Check your profile for the allowance and next reset date")
 			}
 		}
 		// Write the job too, serializing proposal submission against hire/cancellation.

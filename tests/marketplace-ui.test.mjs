@@ -23,6 +23,7 @@ const fixtures = {
   "/api/marketplace/jobs": { jobs: [job], page: 1, has_more: false },
   [`/api/marketplace/jobs/${jobID}`]: { job, proposals: [] },
   "/api/marketplace/wallet": { wallet: {}, transfers: [], earnings: [] },
+  "/api/marketplace/admin/connects": { policy: { amount: 100, period: "weekly" }, users: [], grants: [], page: 1, has_more: false },
   "/api/marketplace/admin": { commission: 500, profiles: [], transfers: [] },
 };
 

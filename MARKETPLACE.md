@@ -21,7 +21,7 @@ Old dashboard links containing task/inbox filters redirect to `/inbox`. Notifica
 
 ## Rules and accounting
 
-- Users receive a balance of 100 Connects at the start of each UTC week (Monday 00:00), refreshed lazily on profile access or proposal submission. No rollover. Each bid costs 10. Invitations cost none. One bid/invitation per freelancer per job prevents duplicates.
+- The owner configures the free Connect allowance and weekly (Monday 00:00 UTC) or monthly (first day 00:00 UTC) resets in `/admin/marketplace`. Default: 100 weekly. Balances reset lazily on profile access or proposal submission. Policy changes take effect at the next selected boundary; new profiles receive the current allowance immediately. Manual grants support 1?200 selected users, require a reason, and add to the balance until its next reset. Grant history is audited; a unique request ID prevents duplicate credits. No rollover. Each bid costs 10. Invitations cost none. One bid/invitation per freelancer per job prevents duplicates.
 - Employers need available deposits covering the budget to publish. Publication does not reserve money; hiring atomically rechecks and reserves the accepted proposal price. An accepted invitation still requires the employer's final hire action.
 - One active marketplace job per freelancer. Concurrent hires serialize on the job, profile and employer wallet. Availability returns after approval.
 - Approval requires submitted work and a 1–5 employer rating. It releases reserved funds, records a 5% commission rounded to the nearest cent, and creates net earnings held for exactly 168 hours. Employer ratings come only from approved jobs.

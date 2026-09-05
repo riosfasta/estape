@@ -363,5 +363,9 @@ func (s *Server) marketplaceSettleTransfer(c *gin.Context) {
 func (s *Server) marketplacePrivacy(c *gin.Context) {
 	settings, _ := s.loadSiteSettings(c.Request.Context())
 	settings = s.settingsWithConfigFallback(settings)
-	c.HTML(200, "marketplace_privacy.gohtml", s.withPublicPageChrome(settings, gin.H{"Title": "Marketplace privacy and payment terms", "Year": time.Now().Year(), "Version": marketplaceConsentVersion}))
+	policy, err := s.loadConnectsPolicy(c.Request.Context())
+	if marketplaceError(c, err) {
+		return
+	}
+	c.HTML(200, "marketplace_privacy.gohtml", s.withPublicPageChrome(settings, gin.H{"Title": "Marketplace privacy and payment terms", "Year": time.Now().Year(), "Version": marketplaceConsentVersion, "ConnectsAmount": policy.Amount, "ConnectsPeriod": policy.Period}))
 }
