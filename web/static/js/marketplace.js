@@ -144,15 +144,48 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     return media;
   }
 
-  async function showIdentity(id) {
+  async function showIdentity(id, reviewProfile = null, onReviewed = null) {
     const response = await fetch(`/api/marketplace/identity/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${state.access}` } });
     if (!response.ok) throw new Error("Unable to load private ID image");
     const url = URL.createObjectURL(await response.blob());
     const dialog = document.createElement("dialog"); dialog.className = "modal market-id-dialog";
-    dialog.innerHTML = `<h2>Private identity document</h2><img alt="Private identity document"><button class="btn" type="button">Close</button>`;
+    dialog.innerHTML = `<h2>Private identity document</h2>${reviewProfile ? `<p><strong>${esc(reviewProfile.name)}</strong> · ${esc(reviewProfile.id)}</p><p>Check that the document is readable and matches the profile before approving.</p>` : ""}<img alt="Private identity document"><p data-identity-status role="status" aria-live="polite"></p><div class="toolbar">${reviewProfile ? '<button class="btn primary" type="button" data-identity-decision="verified">Approve ID</button><button class="btn danger" type="button" data-identity-decision="rejected">Decline ID</button>' : ""}<button class="btn" type="button" data-identity-close>Close</button></div>`;
     dialog.querySelector("img").src = url; document.body.append(dialog);
     dialog.addEventListener("close", () => { URL.revokeObjectURL(url); dialog.remove(); }, { once: true });
-    dialog.querySelector("button").onclick = () => dialog.close(); dialog.showModal();
+    let saving = false;
+    dialog.querySelector("[data-identity-close]").onclick = () => { if (!saving) dialog.close(); };
+    dialog.addEventListener("cancel", event => { if (saving) event.preventDefault(); });
+    dialog.querySelectorAll("[data-identity-decision]").forEach(button => {
+      button.onclick = async () => {
+        if (saving) return;
+        saving = true;
+        dialog.querySelectorAll("button").forEach(control => { control.disabled = true; });
+        const status = button.dataset.identityDecision;
+        try {
+          await post(`/api/marketplace/admin/identity/${encodeURIComponent(id)}`, { status, revision: reviewProfile.identity_revision });
+          dialog.close();
+          await onReviewed?.(status);
+        } catch (error) { dialog.querySelector("[data-identity-status]").textContent = error.message; }
+        finally { saving = false; dialog.querySelectorAll("button").forEach(control => { control.disabled = false; }); }
+      };
+    });
+    dialog.showModal();
+  }
+
+  async function identityReviews() {
+    if (state.me?.role !== "owner_adm") {
+      page("ID verification", '<section class="panel"><h1>Platform owner access required</h1><p>Only the platform owner can view and review private ID documents.</p></section>');
+      return;
+    }
+    const data = await api("/api/marketplace/admin/identity");
+    page("ID verification", `${heading("PLATFORM OWNER", "ID verification", "Review submitted ID cards and approve or decline verification.", '<a class="btn" href="/admin/marketplace">Marketplace administration</a><button class="btn" id="refreshIdentityQueue">Refresh queue</button>')}
+      <section class="panel"><h2>${Number(data.total || 0)} pending ID submissions</h2><p>Open the private document to review it. Approval enables identity-verified withdrawals once earnings are eligible. Declined users can submit a new image from their profile.</p>${data.total > data.profiles.length ? `<p>Showing the oldest ${data.profiles.length} submissions. More appear as you finish reviews.</p>` : ""}</section>
+      ${data.profiles.map(p => `<article class="panel"><div class="market-person">${photo(p)}<div><h2>${esc(p.name || "Unnamed account")}</h2><p>${esc(p.title || "")}</p><p class="muted">${esc(p.location || "")}${p.country ? ", " + esc(regionNames.of(p.country)) : ""}</p><small>Account: ${esc(p.id)}</small></div>${badge("pending")}</div><div class="toolbar"><button class="btn primary" type="button" data-review-identity="${esc(p.id)}">Review ID · Approve / Decline</button></div></article>`).join("") || '<section class="panel"><h2>No IDs waiting for review</h2><p>Users appear here after they crop their ID image, accept private processing and click “Submit ID for review” on their profile. Selecting a file or saving profile details alone does not submit an ID.</p></section>'}`);
+    bindButtons("#refreshIdentityQueue", identityReviews);
+    bindButtons("[data-review-identity]", button => {
+      const profile = data.profiles.find(p => p.id === button.dataset.reviewIdentity);
+      return showIdentity(profile.id, profile, async status => { await identityReviews(); message(status === "verified" ? "ID approved. The user's profile is now verified." : "ID declined. The user can submit a replacement image."); });
+    });
   }
   async function directory() {
     const params = new URLSearchParams(location.search); const data = await api(`/api/marketplace/freelancers?${params}`);
@@ -273,6 +306,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
   async function admin() {
     const [data, connects] = await Promise.all([api("/api/marketplace/admin"), api("/api/marketplace/admin/connects?" + new URLSearchParams({ q: connectSearch, page: connectPage }))]);
     page("Marketplace administration", `${heading("PLATFORM OWNER", "Marketplace administration", "Review identity submissions and settle refund / withdrawal requests.")}<section class="panel"><h2>Platform commission earned</h2><strong class="market-large">${money(data.commission)}</strong><p class="muted">5% of approved job payments. Commission is recorded at approval.</p></section>
+      <section class="panel"><h2>ID verification</h2><p>${data.profiles.length} ID submissions in the current review queue.</p><a class="btn primary" href="/admin/identity">Review IDs · Approve / Decline</a></section>
       ${connectsAdminHTML(connects)}
       <h2>Identity review</h2>${data.profiles.map(p => `<article class="panel"><div class="toolbar"><strong>${esc(p.name)}</strong><span>${esc(p.id)}</span><button class="btn" data-id-view="${p.id}">View private ID</button><button class="btn primary" data-id-review="${p.id}" data-revision="${p.identity_revision}" data-status="verified">Approve verification</button><button class="btn" data-id-review="${p.id}" data-revision="${p.identity_revision}" data-status="rejected">Reject</button></div></article>`).join("") || empty("No IDs waiting for review.")}
       <h2>Settlement queue</h2><p class="market-notice">Send payments through your payment provider before marking them paid. Verify identity for withdrawals and return refunds to the original payment method. Record the actual transaction fee and a unique payment reference. This screen records settlement; it does not send money.</p>
@@ -420,6 +454,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
   }
 
   async function render(path) {
+    if (path === "/admin/identity") return identityReviews();
     const catalog = await api("/api/marketplace/skills");
     skillCatalog = catalog.skills; connectsPolicy = catalog.connects_policy || connectsPolicy;
     if (path === "/freelancers") return directory();

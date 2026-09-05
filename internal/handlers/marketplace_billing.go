@@ -272,6 +272,29 @@ func (s *Server) marketplaceAdmin(c *gin.Context) {
 	c.JSON(200, gin.H{"transfers": transfers, "profiles": pending, "commission": total})
 }
 
+func (s *Server) marketplaceIdentityQueue(c *gin.Context) {
+	if !s.marketplaceOwner(c) {
+		return
+	}
+	ctx := c.Request.Context()
+	// A separate queue keeps identity review independent of payments and Connects.
+	filter := bson.M{"identity_status": "pending"}
+	cursor, err := s.store.C("freelancer_profiles").Find(ctx, filter, options.Find().SetLimit(200).SetSort(bson.D{{Key: "identity_revision", Value: 1}, {Key: "_id", Value: 1}}))
+	if marketplaceError(c, err) {
+		return
+	}
+	defer cursor.Close(ctx)
+	profiles := []models.FreelancerProfile{}
+	if marketplaceError(c, cursor.All(ctx, &profiles)) {
+		return
+	}
+	total, err := s.store.C("freelancer_profiles").CountDocuments(ctx, filter)
+	if marketplaceError(c, err) {
+		return
+	}
+	c.JSON(200, gin.H{"profiles": profiles, "total": total})
+}
+
 func (s *Server) marketplaceReviewIdentity(c *gin.Context) {
 	if !s.marketplaceOwner(c) {
 		return

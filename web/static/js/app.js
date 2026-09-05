@@ -1,6 +1,6 @@
 import { cropMarketplaceImage, imagePreviewURL } from "/static/js/marketplace-image.js?v=20260905-1";
 import { openEmbeddedCheckout } from "/static/js/checkout.js?v=20260905-1";
-import { createMarketplace } from "/static/js/marketplace.js?v=20260905-7";
+import { createMarketplace } from "/static/js/marketplace.js?v=20260905-8";
 function readStoredObject(key) {
   try {
     const parsed = JSON.parse(localStorage.getItem(key) || "{}");
@@ -2828,6 +2828,7 @@ function shell(title, html) {
             <p class="nav-kicker">Owner</p>
             ${workspaceLink("/admin/users", "Manage users", "users")}
             ${workspaceLink("/admin/marketplace", "Marketplace", "briefcase")}
+            ${workspaceLink("/admin/identity", "ID verification", "shield-check")}
             ${workspaceChild("/admin/plans", "Pricing plans", "badge-dollar-sign")}
             ${workspaceChild("/admin/pages", "Pages", "file-pen")}
             ${workspaceChild("/admin/settings", "Settings", "settings")}
@@ -12089,7 +12090,7 @@ async function route(options = {}) {
       if (["task_id", "comment_id", "mention", "project_id"].some(key => legacy.has(key))) { location.replace("/inbox" + location.search); return; }
     }
     if (path() === "/inbox") return await renderDashboard();
-    if (["/dashboard", "/wallet", "/marketplace/jobs", "/admin/marketplace"].includes(path()) || path().startsWith("/marketplace/jobs/")) return await marketplace.render(path());
+    if (["/dashboard", "/wallet", "/marketplace/jobs", "/admin/marketplace", "/admin/identity"].includes(path()) || path().startsWith("/marketplace/jobs/")) return await marketplace.render(path());
     if (path() === "/team") {
       if (await guardPaidFeaturePage("staff management")) await renderTeam();
       return;

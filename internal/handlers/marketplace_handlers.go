@@ -75,7 +75,7 @@ func (s *Server) marketplaceRoutes(router *gin.Engine, api, authed *gin.RouterGr
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 		c.Next()
 	})
-	for _, path := range []string{"/inbox", "/freelancers", "/freelancers/:id", "/find-jobs", "/marketplace/jobs/:id", "/marketplace/jobs", "/wallet", "/admin/marketplace"} {
+	for _, path := range []string{"/inbox", "/freelancers", "/freelancers/:id", "/find-jobs", "/marketplace/jobs/:id", "/marketplace/jobs", "/wallet", "/admin/marketplace", "/admin/identity"} {
 		router.GET(path, s.appPage)
 	}
 	router.GET("/marketplace/privacy", s.marketplacePrivacy)
@@ -105,6 +105,7 @@ func (s *Server) marketplaceRoutes(router *gin.Engine, api, authed *gin.RouterGr
 	authed.POST("/marketplace/topup/:id/capture", s.marketplaceCaptureTopup)
 	authed.POST("/marketplace/transfers", s.marketplaceRequestTransfer)
 	authed.GET("/marketplace/admin", s.marketplaceAdmin)
+	authed.GET("/marketplace/admin/identity", s.marketplaceIdentityQueue)
 	authed.GET("/marketplace/admin/connects", s.adminConnects)
 	authed.PUT("/marketplace/admin/connects/policy", s.saveConnectsPolicy)
 	authed.POST("/marketplace/admin/connects/grants", s.grantConnects)

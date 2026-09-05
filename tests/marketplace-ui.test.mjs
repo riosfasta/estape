@@ -44,9 +44,10 @@ const fixtures = {
   "/api/marketplace/wallet": { wallet: {}, transfers: [], earnings: [] },
   "/api/marketplace/admin/connects": { policy: { amount: 100, period: "weekly" }, users: [], grants: [], page: 1, has_more: false },
   "/api/marketplace/admin": { commission: 500, profiles: [], transfers: [] },
+  "/api/marketplace/admin/identity": { total: 0, profiles: [] },
 };
 
-async function render(path, authenticated = true, overrides = {}) {
+async function render(path, authenticated = true, overrides = {}, role = "users_admin") {
   globalThis.document = { querySelector: () => null, querySelectorAll: () => [] };
   globalThis.location = { search: "", pathname: path, origin: "https://example.test" };
   let html = "";
@@ -54,7 +55,7 @@ async function render(path, authenticated = true, overrides = {}) {
   const app = { set innerHTML(value) { html = value; } };
   const market = createMarketplace({
     api: async url => { requests.push(url); const key = url.split("?")[0]; assert.ok(key in fixtures, `Unexpected API request ${url}`); return overrides[key] || fixtures[key]; },
-    state: { me: authenticated ? { id: userID } : null },
+    state: { me: authenticated ? { id: userID, role } : null },
     shell: (_title, content) => { html = content; }, app,
     esc: v => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"),
     icons: () => {}, uploadResizedImage: () => { throw new Error("Unexpected upload"); },
@@ -88,6 +89,23 @@ test("anonymous directory, profile and job search need no private API", async ()
       assert.ok(html.includes("without logging in or registering"));
     }
   }
+});
+
+test("owner identity queue exposes review controls without loading payment or Connects APIs", async () => {
+  const populated = await render("/admin/identity", true, {
+    "/api/marketplace/admin/identity": { total: 1, profiles: [{ ...profile, identity_status: "pending", identity_revision: "000000000000000000000003" }] },
+  }, "owner_adm");
+  assert.match(populated.html, /1 pending ID submissions/);
+  assert.match(populated.html, /Review ID · Approve \/ Decline/);
+  assert.deepEqual(populated.requests, ["/api/marketplace/admin/identity"]);
+  const empty = await render("/admin/identity", true, {
+    "/api/marketplace/admin/identity": { total: 0, profiles: [] },
+  }, "owner_adm");
+  assert.match(empty.html, /No IDs waiting for review/);
+  assert.match(empty.html, /Submit ID for review/);
+  const restricted = await render("/admin/identity");
+  assert.match(restricted.html, /Platform owner access required/);
+  assert.deepEqual(restricted.requests, []);
 });
 
 test("new profile consent is unchecked and financial terms are visible", async () => {
