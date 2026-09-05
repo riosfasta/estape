@@ -266,7 +266,7 @@ func (s *Server) marketplaceSaveProfile(c *gin.Context) {
 	set := bson.M{"name": req.Name, "title": req.Title, "bio": req.Bio, "country": req.Country, "location": req.Location, "skills": skills, "photo": req.Photo, "public": req.Public, "updated_at": time.Now().UTC()}
 	if req.Availability != nil {
 		switch *req.Availability {
-		case "available", "busy", "running_project":
+		case "available", "busy", "running_project", "on_break":
 		default:
 			marketplaceError(c, marketInvalid("Choose a valid availability"))
 			return
@@ -355,10 +355,10 @@ func (s *Server) marketplaceFreelancers(c *gin.Context) {
 	case "":
 	case "available":
 		filter["active_jobs"] = 0
-		filter["availability"] = bson.M{"$nin": []string{"busy", "running_project"}}
-	case "busy":
+		filter["availability"] = bson.M{"$nin": []string{"busy", "running_project", "on_break"}}
+	case "busy", "on_break":
 		filter["active_jobs"] = 0
-		filter["availability"] = "busy"
+		filter["availability"] = availability
 	case "running_project":
 		filter["$or"] = []bson.M{{"active_jobs": bson.M{"$gt": 0}}, {"availability": "running_project"}}
 	default:
@@ -796,7 +796,7 @@ func (s *Server) marketplaceProposalAction(c *gin.Context) {
 		if _, err := s.marketplaceReady(sc, p.FreelancerID, true); err != nil {
 			return err
 		}
-		result, err := s.store.C("freelancer_profiles").UpdateOne(sc, bson.M{"_id": p.FreelancerID, "active_jobs": 0, "availability": bson.M{"$nin": []string{"busy", "running_project"}}}, bson.M{"$inc": bson.M{"active_jobs": 1}})
+		result, err := s.store.C("freelancer_profiles").UpdateOne(sc, bson.M{"_id": p.FreelancerID, "active_jobs": 0, "availability": bson.M{"$nin": []string{"busy", "running_project", "on_break"}}}, bson.M{"$inc": bson.M{"active_jobs": 1}})
 		if err != nil {
 			return err
 		}

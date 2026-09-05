@@ -52,7 +52,7 @@ func TestYouTubePortfolioLinks(t *testing.T) {
 }
 
 func TestFreelancerEffectiveAvailability(t *testing.T) {
-	for _, state := range []string{"", "available", "busy", "running_project"} {
+	for _, state := range []string{"", "available", "busy", "running_project", "on_break"} {
 		profile := models.FreelancerProfile{Availability: state}
 		expected := state
 		if expected == "" {

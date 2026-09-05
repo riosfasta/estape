@@ -132,7 +132,7 @@ func freelancerAvailability(p models.FreelancerProfile) string {
 	if p.ActiveJobs > 0 {
 		return "running_project"
 	}
-	if p.Availability == "busy" || p.Availability == "running_project" {
+	if p.Availability == "on_break" || p.Availability == "busy" || p.Availability == "running_project" {
 		return p.Availability
 	}
 	return "available"

@@ -37,6 +37,12 @@
 .market-share { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
 .market-share .field { flex: 1 1 260px; min-width: 0; }
 .market-share input { width: 100%; min-width: 0; }
+.market-share-photo { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.market-share-trigger { width: 32px; height: 32px; min-height: 32px; padding: 6px; border-radius: 50%; }
+.market-share-dialog { width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 22px; }
+.market-share-dialog .modal-head h2 { margin: 0; font-size: 20px; }
+.market-share-dialog .market-share .field { flex-basis: 100%; }
+.market-share-dialog #marketShareStatus { margin-bottom: 0; font-size: 13px; }
 @media (max-width: 640px) { .market-share .field { flex-basis: 100%; } }
 
 .market-connect-users { display: grid; gap: 12px; max-height: 360px; overflow: auto; padding: 12px 4px; margin: 12px 0; }
