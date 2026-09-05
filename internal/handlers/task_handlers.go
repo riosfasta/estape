@@ -403,7 +403,7 @@ func (s *Server) globalSearch(c *gin.Context) {
 						"title":       firstNonEmpty(task.Title, "Untitled task"),
 						"snippet":     searchSnippet(query, firstNonEmpty(task.Description, task.Title)),
 						"context":     contextLabel,
-						"url":         "/dashboard?task_id=" + task.ID.Hex() + "&source_type=task",
+						"url":         "/inbox?task_id=" + task.ID.Hex() + "&source_type=task",
 						"created_at":  task.UpdatedAt,
 					},
 				})
@@ -427,7 +427,7 @@ func (s *Server) globalSearch(c *gin.Context) {
 						"author_name":    firstNonEmpty(author.Name, author.Username, author.Email),
 						"mention_me":     mentionMe,
 						"mention_others": mentionOthers,
-						"url":            "/dashboard?task_id=" + task.ID.Hex() + "&comment_id=" + comment.ID.Hex() + "&source_type=task",
+						"url":            "/inbox?task_id=" + task.ID.Hex() + "&comment_id=" + comment.ID.Hex() + "&source_type=task",
 						"created_at":     comment.CreatedAt,
 					},
 				})

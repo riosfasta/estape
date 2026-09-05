@@ -105,6 +105,7 @@ func (s *Server) Router() *gin.Engine {
 
 	authed := api.Group("")
 	authed.Use(middleware.AuthRequired(s.tokens), s.requireActiveUser())
+	s.marketplaceRoutes(router, api, authed)
 	authed.POST("/auth/session-cookie", s.syncSessionCookie)
 	authed.GET("/users/me", s.me)
 	authed.PATCH("/users/me", s.updateMyProfile)
@@ -316,6 +317,15 @@ func publicVisibleNavItems(items []models.PublicNavItem) []models.PublicNavItem 
 	if len(items) == 0 {
 		items = defaultPublicNavItems()
 	}
+	hasFreelancers := false
+	for _, item := range items {
+		if item.URL == "/freelancers" && item.Visible {
+			hasFreelancers = true
+		}
+	}
+	if !hasFreelancers {
+		items = append(append([]models.PublicNavItem{}, items...), models.PublicNavItem{ID: "freelancers", Label: "Find freelancers", URL: "/freelancers", Visible: true, Order: 2})
+	}
 	out := []models.PublicNavItem{}
 	for _, item := range items {
 		if item.Visible && strings.TrimSpace(item.Label) != "" && strings.TrimSpace(item.URL) != "" {
@@ -481,9 +491,9 @@ func (s *Server) requireActiveUser() gin.HandlerFunc {
 		}
 		if !user.EmailVerified {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-				"error":                        "Please verify your email address to access this resource.",
+				"error":                       "Please verify your email address to access this resource.",
 				"email_verification_required": true,
-				"masked_email":                 maskEmail(user.Email),
+				"masked_email":                maskEmail(user.Email),
 			})
 			return
 		}

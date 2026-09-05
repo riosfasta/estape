@@ -46,6 +46,21 @@ func (s *Store) C(name string) *mongo.Collection {
 
 func (s *Store) CreateIndexes(ctx context.Context) error {
 	indexes := map[string][]mongo.IndexModel{
+		"marketplace_proposals": {
+			{Keys: bson.D{{Key: "job_id", Value: 1}, {Key: "freelancer_id", Value: 1}}, Options: mongomodels.Index().SetUnique(true)},
+			{Keys: bson.D{{Key: "freelancer_id", Value: 1}, {Key: "created_at", Value: -1}}},
+		},
+		"freelancer_profiles": {{Keys: bson.D{{Key: "public", Value: 1}, {Key: "country", Value: 1}, {Key: "rating", Value: -1}}}},
+		"marketplace_jobs": {
+			{Keys: bson.D{{Key: "status", Value: 1}, {Key: "created_at", Value: -1}}},
+			{Keys: bson.D{{Key: "owner_id", Value: 1}}},
+			{Keys: bson.D{{Key: "freelancer_id", Value: 1}}},
+		},
+		"marketplace_transfers": {
+			{Keys: bson.D{{Key: "external_id", Value: 1}}, Options: mongomodels.Index().SetUnique(true).SetSparse(true)},
+			{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "created_at", Value: -1}}},
+		},
+		"marketplace_earnings": {{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "status", Value: 1}, {Key: "available_at", Value: 1}}}},
 		"users": {
 			{Keys: bson.D{{Key: "email", Value: 1}}, Options: mongomodels.Index().SetUnique(true)},
 			{Keys: bson.D{{Key: "username", Value: 1}}, Options: mongomodels.Index().SetUnique(true).SetSparse(true)},

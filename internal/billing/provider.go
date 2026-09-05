@@ -204,7 +204,11 @@ func (p PayPalProvider) CaptureCheckout(ctx context.Context, req CheckoutRequest
 	}
 	endpoint := apiBase + "/v2/checkout/orders/" + url.PathEscape(orderID) + "/capture"
 	if err := p.postJSON(ctx, endpoint, token, requestID("paypal-capture", orderID), map[string]interface{}{}, &response); err != nil {
-		return PaymentCapture{}, err
+		// A previous capture can succeed even when its response or our database
+		// commit is lost. Read the existing order before treating a retry as failed.
+		if lookupErr := p.getJSON(ctx, apiBase+"/v2/checkout/orders/"+url.PathEscape(orderID), token, &response); lookupErr != nil || response.Status != "COMPLETED" {
+			return PaymentCapture{}, err
+		}
 	}
 	captureID := ""
 	captureStatus := ""
@@ -248,7 +252,25 @@ func (p PayPalProvider) HandleWebhook(_ context.Context, body []byte, _ map[stri
 }
 
 func (p PayPalProvider) RefundPayment(_ context.Context, _ string) error {
-	return nil
+	return errors.New("automatic refunds are not implemented; use verified owner settlement")
+}
+
+func (p PayPalProvider) getJSON(ctx context.Context, endpoint, token string, out interface{}) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	resp, err := p.httpClient().Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return errors.New("paypal order lookup failed")
+	}
+	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out)
 }
 
 func (p PayPalProvider) accessToken(ctx context.Context, req CheckoutRequest) (string, string, error) {

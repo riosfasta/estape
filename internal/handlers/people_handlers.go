@@ -362,7 +362,7 @@ func (s *Server) createTeamInvitation(c *gin.Context) {
 	}
 	if !existingUserID.IsZero() {
 		s.notifyUserIDs(c.Request.Context(), []primitive.ObjectID{existingUserID}, userCtx.ID, "team_invitation", "You were invited to join "+team.Name+".", invitation.ID)
-		s.enqueueInvitationEmail(c.Request.Context(), email, team.Name, staffRole, s.cfg.AppURL+"/dashboard")
+		s.enqueueInvitationEmail(c.Request.Context(), email, team.Name, staffRole, s.cfg.AppURL+"/inbox")
 	} else {
 		s.enqueueInvitationEmail(c.Request.Context(), email, team.Name, staffRole, s.cfg.AppURL+"/register?invite="+token)
 	}
@@ -805,8 +805,12 @@ func (s *Server) openMyNotification(c *gin.Context) {
 
 func (s *Server) notificationTarget(ctx context.Context, note models.Notification) gin.H {
 	related := note.RelatedID
-	target := gin.H{"url": "/dashboard", "source_type": "notification"}
+	target := gin.H{"url": "/inbox", "source_type": "notification"}
 	switch note.Type {
+	case "marketplace_job":
+		target["url"] = "/marketplace/jobs/" + related.Hex()
+	case "marketplace_wallet":
+		target["url"] = "/wallet"
 	case "admin_message", "chat_message", "chat_ended", "support_chat_created":
 		if !related.IsZero() {
 			target["url"] = "/chat?id=" + related.Hex()
@@ -823,7 +827,7 @@ func (s *Server) notificationTarget(ctx context.Context, note models.Notificatio
 		}
 	case "task_assigned", "task_updated", "task_comment", "task_mention":
 		if !related.IsZero() {
-			target["url"] = "/dashboard?task_id=" + related.Hex() + "&source_type=task"
+			target["url"] = "/inbox?task_id=" + related.Hex() + "&source_type=task"
 			target["source_type"] = "task"
 			target["task_id"] = related.Hex()
 		}
@@ -896,7 +900,7 @@ func (s *Server) taskCommentNotificationTarget(ctx context.Context, related prim
 	var task models.Task
 	if s.store.C("tasks").FindOne(ctx, bson.M{"comments.id": related}).Decode(&task) == nil {
 		return gin.H{
-			"url":         "/dashboard?task_id=" + task.ID.Hex() + "&comment_id=" + related.Hex() + "&source_type=task",
+			"url":         "/inbox?task_id=" + task.ID.Hex() + "&comment_id=" + related.Hex() + "&source_type=task",
 			"source_type": "task",
 			"task_id":     task.ID.Hex(),
 			"comment_id":  related.Hex(),
@@ -904,7 +908,7 @@ func (s *Server) taskCommentNotificationTarget(ctx context.Context, related prim
 	}
 	if s.store.C("tasks").FindOne(ctx, bson.M{"_id": related}).Decode(&task) == nil {
 		return gin.H{
-			"url":         "/dashboard?task_id=" + task.ID.Hex() + "&source_type=task",
+			"url":         "/inbox?task_id=" + task.ID.Hex() + "&source_type=task",
 			"source_type": "task",
 			"task_id":     task.ID.Hex(),
 		}, true

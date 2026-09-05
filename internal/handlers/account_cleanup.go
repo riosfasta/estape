@@ -12,6 +12,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -43,6 +44,9 @@ func (s *Server) deleteUserUploadFolder(userID primitive.ObjectID) error {
 }
 
 func (s *Server) cleanupDeletedUser(ctx context.Context, user models.User) error {
+	if err := s.cleanupMarketplaceUser(ctx, user.ID); err != nil {
+		return err
+	}
 	ownedTeams, err := s.ownedTeamsForDeletedUser(ctx, user.ID)
 	if err != nil {
 		return err
@@ -69,6 +73,43 @@ func (s *Server) cleanupDeletedUser(ctx context.Context, user models.User) error
 	}
 	s.deleteLocalUploadFile(user.AvatarURL)
 	return s.deleteUserUploadFolder(user.ID)
+}
+
+func (s *Server) cleanupMarketplaceUser(ctx context.Context, id primitive.ObjectID) error {
+	return s.marketplaceTransaction(ctx, func(sc mongo.SessionContext) error {
+		var wallet models.MarketplaceWallet
+		err := s.store.C("marketplace_wallets").FindOne(sc, bson.M{"_id": id}).Decode(&wallet)
+		if err != nil && err != mongo.ErrNoDocuments {
+			return err
+		}
+		if wallet.Deposits != 0 || wallet.Earnings != 0 || wallet.Pending != 0 || wallet.Reserved != 0 {
+			return errors.New("settle marketplace funds before deleting this account")
+		}
+		count, err := s.store.C("marketplace_transfers").CountDocuments(sc, bson.M{"user_id": id, "status": bson.M{"$in": []string{"requested", "pending", "creating"}}})
+		if err != nil {
+			return err
+		}
+		if count > 0 {
+			return errors.New("resolve pending marketplace payments before deleting this account")
+		}
+		count, err = s.store.C("marketplace_jobs").CountDocuments(sc, bson.M{"$or": []bson.M{{"owner_id": id}, {"freelancer_id": id}}, "status": bson.M{"$in": []string{"hired", "submitted"}}})
+		if err != nil {
+			return err
+		}
+		if count > 0 {
+			return errors.New("complete active marketplace contracts before deleting this account")
+		}
+		_, err = s.store.C("marketplace_jobs").UpdateMany(sc, bson.M{"owner_id": id, "status": "open"}, bson.M{"$set": bson.M{"status": "cancelled"}})
+		if err != nil {
+			return err
+		}
+		for _, collection := range []string{"freelancer_profiles", "marketplace_identity"} {
+			if _, err := s.store.C(collection).DeleteOne(sc, bson.M{"_id": id}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Server) ownedTeamsForDeletedUser(ctx context.Context, userID primitive.ObjectID) ([]models.Team, error) {

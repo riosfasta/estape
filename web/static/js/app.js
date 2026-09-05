@@ -1,3 +1,4 @@
+import { createMarketplace } from "/static/js/marketplace.js?v=20260905-1";
 function readStoredObject(key) {
   try {
     const parsed = JSON.parse(localStorage.getItem(key) || "{}");
@@ -1539,6 +1540,7 @@ function trialNoticeKey() {
 }
 
 function showTrialNoticeOnce() {
+  if (!path().startsWith("/websites")) return;
   if (!trialActiveForWorkspace()) return;
   const key = trialNoticeKey();
   if (sessionStorage.getItem(key) === "1") return;
@@ -1547,7 +1549,7 @@ function showTrialNoticeOnce() {
   const trialEnds = membership.trial_ends_at ? ` Trial ends ${fmtDate(membership.trial_ends_at)}.` : "";
   document.body.insertAdjacentHTML("beforeend", `<dialog id="trialNoticeDialog" class="modal compact-modal">
     <div class="modal-head"><h2>Enjoy your trial</h2><button class="btn icon quiet" type="button" data-close-dialog="trialNoticeDialog" title="Close">${icon("x")}</button></div>
-    <p class="muted">Your workspace has full access during the 14-day trial.${esc(trialEnds)}</p>
+    <p class="muted">Your premium bug reporting trial lasts 14 days. Freelancing and hiring have no monthly subscription.${esc(trialEnds)}</p>
     <div class="toolbar"><button class="btn primary" type="button" id="trialUpgradeBtn">Upgrade</button><button class="btn" type="button" data-close-dialog="trialNoticeDialog">Continue</button></div>
   </dialog>`);
   bindDialogCloseButtons(document);
@@ -1624,6 +1626,7 @@ async function renderMembershipPaywall(feature = "workspace features") {
 }
 
 async function guardPaidFeaturePage(feature) {
+  if (!["website feedback", "annotations"].includes(feature)) return true;
   if (paidFeatureAllowed()) {
     setTimeout(showTrialNoticeOnce, 0);
     return true;
@@ -2459,7 +2462,7 @@ function isRoutableAppURL(url) {
   const pathname = url.pathname.replace(/\/+$/, "") || "/";
   if (pathname === "/login" || pathname === "/register" || pathname === "/verify-email") return true;
   return [
-    "/dashboard",
+    "/dashboard", "/inbox", "/freelancers", "/find-jobs", "/marketplace/jobs", "/wallet",
     "/chat",
     "/team",
     "/tasks",
@@ -2705,8 +2708,8 @@ async function openCommandSearchResult(result = {}) {
     await openClientTaskWithProgress(taskID, commentID);
     return;
   }
-  const target = result.url || `/dashboard?task_id=${encodeURIComponent(taskID)}${commentID ? `&comment_id=${encodeURIComponent(commentID)}` : ""}&source_type=task`;
-  if (path() !== "/dashboard") {
+  const target = result.url || `/inbox?task_id=${encodeURIComponent(taskID)}${commentID ? `&comment_id=${encodeURIComponent(commentID)}` : ""}&source_type=task`;
+  if (path() !== "/inbox") {
     window.location.href = target;
     return;
   }
@@ -2793,7 +2796,12 @@ function shell(title, html) {
         ${workspaceContextPickerHTML(workspaceOptionList)}
         <nav class="workspace-menu">
           <p class="nav-kicker">Home</p>
-          ${workspaceLink("/dashboard", "Inbox", "inbox", badgeCount(inboxUnreadTotal()))}
+          ${workspaceLink("/dashboard", "My profile", "user")}
+          ${workspaceLink("/freelancers", "Find freelancers", "users")}
+          ${workspaceLink("/find-jobs", "Find jobs", "search")}
+          ${workspaceLink("/marketplace/jobs", "My jobs & offers", "briefcase")}
+          ${workspaceLink("/wallet", "Wallet", "wallet")}
+          ${workspaceLink("/inbox", "Inbox", "inbox", badgeCount(inboxUnreadTotal()))}
           ${workspaceLink("/chat", "Chat", "messages-square")}
           ${workspaceLink("/team", "Team", "users")}
           <div class="nav-group">
@@ -2811,6 +2819,7 @@ function shell(title, html) {
           ${state.me?.role === "owner_adm" ? `
             <p class="nav-kicker">Owner</p>
             ${workspaceLink("/admin/users", "Manage users", "users")}
+            ${workspaceLink("/admin/marketplace", "Marketplace", "briefcase")}
             ${workspaceChild("/admin/plans", "Pricing plans", "badge-dollar-sign")}
             ${workspaceChild("/admin/pages", "Pages", "file-pen")}
             ${workspaceChild("/admin/settings", "Settings", "settings")}
@@ -3178,7 +3187,7 @@ function notificationTaskTargetFromURL(url) {
     if (parsed.pathname === "/tasks") {
       return { source_type: "client_task", task_id: taskID, comment_id: commentID, url: parsed.pathname + parsed.search };
     }
-    if (parsed.pathname === "/dashboard") {
+    if (parsed.pathname === "/inbox" || parsed.pathname === "/dashboard") {
       return { source_type: "task", task_id: taskID, comment_id: commentID, url: parsed.pathname + parsed.search };
     }
   } catch {
@@ -3378,7 +3387,7 @@ function setInboxFilters(mention, projectID) {
   const params = new URLSearchParams();
   if (mention && mention !== "all") params.set("mention", mention);
   if (projectID) params.set("project_id", projectID);
-  window.location.href = `/dashboard${params.toString() ? "?" + params.toString() : ""}`;
+  window.location.href = `/inbox${params.toString() ? "?" + params.toString() : ""}`;
 }
 
 function updateInboxBadge(count) {
@@ -3388,7 +3397,7 @@ function updateInboxBadge(count) {
 
 function updateInboxUnreadUI() {
   const total = inboxUnreadTotal();
-  const link = document.querySelector('.workspace-menu a[href="/dashboard"]');
+  const link = document.querySelector('.workspace-menu a[href="/inbox"]');
   let badge = link?.querySelector(".unread-badge");
   if (total > 0 && !badge && link) {
     badge = document.createElement("strong");
@@ -3428,11 +3437,11 @@ async function refreshNotificationsLive() {
     updateInboxUnreadUI();
     const mount = $("#notificationCenterMount");
     const invitationMount = $("#invitationCenterMount");
-    if (path() === "/dashboard" && invitationMount) {
+    if (path() === "/inbox" && invitationMount) {
       invitationMount.innerHTML = invitationCards(invitations);
       bindInvitationActions();
     }
-    if (path() === "/dashboard" && mount) {
+    if (path() === "/inbox" && mount) {
       mount.innerHTML = notificationCards(notifications, deletedNotifications);
       bindNotificationActions();
       icons();
@@ -3589,8 +3598,8 @@ function livePanelRefreshBlocked(panel) {
 
 async function refreshInboxCommentsLive() {
   const params = new URLSearchParams(location.search);
-  const mentionFilter = path() === "/dashboard" ? (params.get("mention") || "all") : "all";
-  const projectFilter = path() === "/dashboard" ? (params.get("project_id") || "") : "";
+  const mentionFilter = path() === "/inbox" ? (params.get("mention") || "all") : "all";
+  const projectFilter = path() === "/inbox" ? (params.get("project_id") || "") : "";
   const inboxParams = new URLSearchParams({ mention: mentionFilter });
   if (projectFilter) inboxParams.set("project_id", projectFilter);
   const data = await api(`/api/inbox/comments?${inboxParams.toString()}`).catch(() => null);
@@ -3598,7 +3607,7 @@ async function refreshInboxCommentsLive() {
   state.unreadCommentCount = Number(data.unread_count || 0);
   updateInboxUnreadUI();
   const signature = inboxCommentsLiveSignature(data);
-  if (path() === "/dashboard") {
+  if (path() === "/inbox") {
     const mount = $("#inboxCommentsMount");
     if (mount && signature !== state.liveInboxSignature) {
       mount.innerHTML = inboxSection("Comments", inboxCommentRows(data.comments || []));
@@ -8847,12 +8856,13 @@ async function renderBilling() {
   const invoices = billingTeamID ? ((await api(`/api/subscriptions/${billingTeamID}/invoices`)).invoices || []) : [];
   const paidMembership = currentMembershipIsPaid(membership);
   shell("Billing", `
-    <div class="page-title"><div><h1>Billing</h1><p class="muted">${paidMembership ? "Membership details and receipts." : "Plans, trial state, approvals, and receipts."}</p></div></div>
+    <div class="page-title"><div><h1>Premium bug reporting</h1><p class="muted">${paidMembership ? "Membership details and receipts." : "Plans, trial state, approvals, and receipts."}</p></div></div>
+    <p class="market-notice">Subscriptions and the 14-day trial apply to premium bug reporting only. Freelancing and hiring have no monthly subscription. <a href="/wallet">Manage hiring balance and earnings</a>.</p>
     ${paymentNotice}
     ${paidMembership ? billingMembershipDetailsHTML(membership, plans) : `
       <section class="panel paywall-panel">
         <h2>${membership.status === "trialing" ? "Trial membership" : "Choose a package"}</h2>
-        ${membership.status === "trialing" ? `<p class="muted">Your trial is active until ${esc(usefulBillingDate(membership.trial_ends_at) || "the trial expiry date")}. Upgrade when you are ready to keep access after the trial.</p>` : ""}
+        ${membership.status === "trialing" ? `<p class="muted">Your premium bug reporting trial is active until ${esc(usefulBillingDate(membership.trial_ends_at) || "the trial expiry date")}. Upgrade when you are ready to keep access after the trial.</p>` : ""}
         ${pricingCardsHTML(plans)}
       </section>`}
     ${billingInvoicesPanelHTML(invoices, { className: "billing-page-invoices" })}`);
@@ -12046,6 +12056,10 @@ async function route(options = {}) {
       stopLivePolling();
       return renderVerifyEmailPage();
     }
+    if (path() === "/freelancers" || path().startsWith("/freelancers/") || path() === "/find-jobs") {
+      if (state.access) await loadMe();
+      return await marketplace.render(path());
+    }
     if (!state.access) {
       stopNotificationPolling();
       stopLivePolling();
@@ -12059,7 +12073,12 @@ async function route(options = {}) {
     const matchClientProject = path().match(/^\/projects\/([^/]+)$/);
     const matchAnnotate = path().match(/^\/websites\/([^/]+)\/annotate/);
     const matchPageEdit = path().match(/^\/admin\/pages\/([^/]+)\/edit/);
-    if (path() === "/dashboard") return await renderDashboard();
+    if (path() === "/dashboard" && location.search) {
+      const legacy = new URLSearchParams(location.search);
+      if (["task_id", "comment_id", "mention", "project_id"].some(key => legacy.has(key))) { location.replace("/inbox" + location.search); return; }
+    }
+    if (path() === "/inbox") return await renderDashboard();
+    if (["/dashboard", "/wallet", "/marketplace/jobs", "/admin/marketplace"].includes(path()) || path().startsWith("/marketplace/jobs/")) return await marketplace.render(path());
     if (path() === "/team") {
       if (await guardPaidFeaturePage("staff management")) await renderTeam();
       return;
@@ -12109,7 +12128,7 @@ async function route(options = {}) {
     if (path() === "/admin/plans") return await renderPlansAdmin();
     if (path() === "/admin/pages") return await renderPages();
     if (matchPageEdit) return await renderPageEditor(matchPageEdit[1]);
-    return await renderDashboard();
+    return await marketplace.render("/dashboard");
   } catch (error) {
     renderRouteError(error);
   } finally {
@@ -12117,5 +12136,6 @@ async function route(options = {}) {
   }
 }
 
+const marketplace = createMarketplace({ api, state, shell, app, esc, icons, uploadResizedImage });
 bindAppNavigation();
 route().catch(renderRouteError);

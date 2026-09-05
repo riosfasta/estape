@@ -126,6 +126,9 @@ func (s *Server) membershipAccessPayload(ctx context.Context, teamID primitive.O
 }
 
 func (s *Server) requireTeamFeatureAccess(c *gin.Context, teamID primitive.ObjectID, feature string) bool {
+	if feature != "website feedback" && feature != "annotations" {
+		return true
+	}
 	userCtx, ok := currentUser(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
