@@ -28,7 +28,7 @@ const fixtures = {
 
 async function render(path, authenticated = true, overrides = {}) {
   globalThis.document = { querySelector: () => null, querySelectorAll: () => [] };
-  globalThis.location = { search: "", pathname: path };
+  globalThis.location = { search: "", pathname: path, origin: "https://example.test" };
   let html = "";
   const requests = [];
   const app = { set innerHTML(value) { html = value; } };
@@ -62,6 +62,11 @@ test("anonymous directory, profile and job search need no private API", async ()
     assert.ok(html.includes("Join for free"));
     assert.ok(!requests.includes("/api/marketplace/me"));
     assert.ok(!html.includes("marketProfile"));
+    if (path === `/freelancers/${userID}`) {
+      assert.ok(html.includes(`https://example.test/freelancers/${userID}`));
+      assert.ok(html.includes('id="marketCopyProfile"'));
+      assert.ok(html.includes("without logging in or registering"));
+    }
   }
 });
 
@@ -72,6 +77,12 @@ test("new profile consent is unchecked and financial terms are visible", async (
   assert.ok(html.includes("marketplace/privacy"));
   assert.ok(html.includes("100 Connects"));
   assert.ok(html.includes("95%"));
+  assert.ok(!html.includes('id="marketCopyProfile"'), "private draft must not offer an active public link");
+  const published = await render("/dashboard", true, {
+    "/api/marketplace/me": { ...fixtures["/api/marketplace/me"], profile: { ...profile, public: true } },
+  });
+  assert.ok(published.html.includes(`https://example.test/freelancers/${userID}`));
+  assert.ok(published.html.includes('id="marketCopyProfile"'));
 });
 
 test("strangers do not see job delivery controls or private work", async () => {

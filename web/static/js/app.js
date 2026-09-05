@@ -1,4 +1,4 @@
-import { createMarketplace } from "/static/js/marketplace.js?v=20260905-1";
+import { createMarketplace } from "/static/js/marketplace.js?v=20260905-2";
 function readStoredObject(key) {
   try {
     const parsed = JSON.parse(localStorage.getItem(key) || "{}");
@@ -12057,7 +12057,9 @@ async function route(options = {}) {
       return renderVerifyEmailPage();
     }
     if (path() === "/freelancers" || path().startsWith("/freelancers/") || path() === "/find-jobs") {
-      if (state.access) await loadMe();
+      if (state.access) {
+        try { await loadMe(); } catch { state.me = null; }
+      }
       return await marketplace.render(path());
     }
     if (!state.access) {
