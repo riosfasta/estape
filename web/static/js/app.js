@@ -1,5 +1,6 @@
+import { cropMarketplaceImage, imagePreviewURL } from "/static/js/marketplace-image.js?v=20260905-1";
 import { openEmbeddedCheckout } from "/static/js/checkout.js?v=20260905-1";
-import { createMarketplace } from "/static/js/marketplace.js?v=20260905-6";
+import { createMarketplace } from "/static/js/marketplace.js?v=20260905-7";
 function readStoredObject(key) {
   try {
     const parsed = JSON.parse(localStorage.getItem(key) || "{}");
@@ -12146,6 +12147,6 @@ async function route(options = {}) {
   }
 }
 
-const marketplace = createMarketplace({ api, state, shell, app, esc, icons, uploadResizedImage, openEmbeddedCheckout });
+const marketplace = createMarketplace({ api, state, shell, app, esc, icons, uploadResizedImage, openEmbeddedCheckout, cropMarketplaceImage, imagePreviewURL });
 bindAppNavigation();
 route().catch(renderRouteError);

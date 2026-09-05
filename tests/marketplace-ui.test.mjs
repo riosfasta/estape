@@ -14,6 +14,25 @@ const profile = {
   location: "Jakarta", country: "ID", skills: ["PHP", "Custom skill"], photo: "", identity_status: "pending",
   public: false, connects: 100, rating_count: 0, finished_jobs: 0, published_jobs: 0, active_jobs: 0, available: true,
 };
+
+test("profile shows crop previews, portfolio links and manual availability", async () => {
+  profile.portfolio_photos = ["/uploads/users/example/work.jpg"];
+  profile.youtube_urls = ["https://www.youtube.com/watch?v=dQw4w9WgXcQ"];
+  profile.availability = "busy";
+  try {
+    const own = await render("/dashboard");
+    assert.match(own.html, /marketPhotoPreview/);
+    assert.match(own.html, /marketIdentityPreview/);
+    assert.match(own.html, /max 500 KB/);
+    assert.match(own.html, /value="busy" selected/);
+    assert.match(own.html, /In a running project/);
+    const publicView = await render(`/freelancers/${userID}`, false);
+    assert.match(publicView.html, /Project portfolio/);
+    assert.match(publicView.html, /Watch project video 1 on YouTube/);
+    assert.match(publicView.html, /work\.jpg/);
+    assert.ok(!publicView.html.includes("marketIdentityPreview"));
+  } finally { delete profile.portfolio_photos; delete profile.youtube_urls; delete profile.availability; }
+});
 const job = { id: jobID, owner_id: userID, title: "Build a website", description: "Create a responsive website with reusable components.", budget: 10000, skills: ["PHP"], status: "open", owner_name: "Employer" };
 const fixtures = {
   "/api/marketplace/skills": { skills: ["PHP", "Golang"] },

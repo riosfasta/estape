@@ -6,6 +6,9 @@ import (
 )
 
 type FreelancerProfile struct {
+	Availability     string             `bson:"availability,omitempty" json:"availability"`
+	PortfolioPhotos  []string           `bson:"portfolio_photos,omitempty" json:"portfolio_photos"`
+	YouTubeURLs      []string           `bson:"youtube_urls,omitempty" json:"youtube_urls"`
 	ID               primitive.ObjectID `bson:"_id" json:"id"`
 	Name             string             `bson:"name" json:"name"`
 	Title            string             `bson:"title" json:"title"`

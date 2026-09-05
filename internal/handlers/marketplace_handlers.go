@@ -1,10 +1,8 @@
 package handlers
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"image"
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
@@ -93,6 +91,7 @@ func (s *Server) marketplaceRoutes(router *gin.Engine, api, authed *gin.RouterGr
 	api.GET("/marketplace/jobs", s.marketplaceJobs)
 	authed.GET("/marketplace/me", s.marketplaceMe)
 	authed.PUT("/marketplace/profile", s.marketplaceSaveProfile)
+	authed.POST("/marketplace/media", s.marketplaceUploadMedia)
 	authed.POST("/marketplace/identity", s.marketplaceUploadIdentity)
 	authed.DELETE("/marketplace/identity", s.marketplaceDeleteIdentity)
 	authed.GET("/marketplace/identity/:id", s.marketplaceReadIdentity)
@@ -220,15 +219,18 @@ func (s *Server) marketplaceMe(c *gin.Context) {
 func (s *Server) marketplaceSaveProfile(c *gin.Context) {
 	user, _ := currentUser(c)
 	var req struct {
-		Name     string   `json:"name"`
-		Title    string   `json:"title"`
-		Bio      string   `json:"bio"`
-		Country  string   `json:"country"`
-		Location string   `json:"location"`
-		Skills   []string `json:"skills"`
-		Photo    string   `json:"photo"`
-		Public   bool     `json:"public"`
-		Consent  bool     `json:"consent"`
+		Availability    *string   `json:"availability"`
+		PortfolioPhotos *[]string `json:"portfolio_photos"`
+		YouTubeURLs     *[]string `json:"youtube_urls"`
+		Name            string    `json:"name"`
+		Title           string    `json:"title"`
+		Bio             string    `json:"bio"`
+		Country         string    `json:"country"`
+		Location        string    `json:"location"`
+		Skills          []string  `json:"skills"`
+		Photo           string    `json:"photo"`
+		Public          bool      `json:"public"`
+		Consent         bool      `json:"consent"`
 	}
 	if c.ShouldBindJSON(&req) != nil {
 		marketplaceError(c, marketInvalid("Invalid profile"))
@@ -261,6 +263,54 @@ func (s *Server) marketplaceSaveProfile(c *gin.Context) {
 		return
 	}
 	set := bson.M{"name": req.Name, "title": req.Title, "bio": req.Bio, "country": req.Country, "location": req.Location, "skills": skills, "photo": req.Photo, "public": req.Public, "updated_at": time.Now().UTC()}
+	if req.Availability != nil {
+		switch *req.Availability {
+		case "available", "busy", "running_project":
+		default:
+			marketplaceError(c, marketInvalid("Choose a valid availability"))
+			return
+		}
+		set["availability"] = *req.Availability
+	}
+	var current models.FreelancerProfile
+	if marketplaceError(c, s.store.C("freelancer_profiles").FindOne(ctx, bson.M{"_id": user.ID}).Decode(&current)) {
+		return
+	}
+	if req.Photo != "" && req.Photo != current.Photo {
+		if err := s.validateMarketplaceMediaURL(user.ID, req.Photo); err != nil {
+			marketplaceError(c, marketInvalid(err.Error()))
+			return
+		}
+	}
+	if req.PortfolioPhotos != nil {
+		if len(*req.PortfolioPhotos) > 12 {
+			marketplaceError(c, marketInvalid("Add up to 12 project photos"))
+			return
+		}
+		for _, photo := range *req.PortfolioPhotos {
+			if err := s.validateMarketplaceMediaURL(user.ID, photo); err != nil {
+				marketplaceError(c, marketInvalid(err.Error()))
+				return
+			}
+		}
+		set["portfolio_photos"] = *req.PortfolioPhotos
+	}
+	if req.YouTubeURLs != nil {
+		if len(*req.YouTubeURLs) > 6 {
+			marketplaceError(c, marketInvalid("Add up to 6 YouTube videos"))
+			return
+		}
+		videos := []string{}
+		for _, raw := range *req.YouTubeURLs {
+			video, err := normalizeYouTubeURL(raw)
+			if err != nil {
+				marketplaceError(c, marketInvalid(err.Error()))
+				return
+			}
+			videos = append(videos, video)
+		}
+		set["youtube_urls"] = videos
+	}
 	if req.Public {
 		set["consent_version"] = marketplaceConsentVersion
 		set["consent_at"] = time.Now().UTC()
@@ -284,7 +334,7 @@ func validMarketplaceCountry(code string) bool {
 }
 
 func publicFreelancer(p models.FreelancerProfile) gin.H {
-	return gin.H{"id": p.ID, "name": p.Name, "title": p.Title, "bio": p.Bio, "country": p.Country, "location": p.Location, "skills": p.Skills, "photo": p.Photo, "rating": p.Rating, "rating_count": p.RatingCount, "finished_jobs": p.FinishedJobs, "published_jobs": p.PublishedJobs, "available": p.ActiveJobs == 0, "verified": p.IdentityStatus == "verified"}
+	return gin.H{"id": p.ID, "name": p.Name, "title": p.Title, "bio": p.Bio, "country": p.Country, "location": p.Location, "skills": p.Skills, "photo": p.Photo, "rating": p.Rating, "rating_count": p.RatingCount, "finished_jobs": p.FinishedJobs, "published_jobs": p.PublishedJobs, "available": freelancerAvailability(p) == "available", "availability": freelancerAvailability(p), "portfolio_photos": p.PortfolioPhotos, "youtube_urls": p.YouTubeURLs, "verified": p.IdentityStatus == "verified"}
 }
 
 func (s *Server) marketplaceFreelancers(c *gin.Context) {
@@ -296,8 +346,23 @@ func (s *Server) marketplaceFreelancers(c *gin.Context) {
 	if country := strings.ToUpper(c.Query("country")); country != "" {
 		filter["country"] = country
 	}
+	availability := c.Query("availability")
 	if c.Query("available") == "true" {
+		availability = "available"
+	}
+	switch availability {
+	case "":
+	case "available":
 		filter["active_jobs"] = 0
+		filter["availability"] = bson.M{"$nin": []string{"busy", "running_project"}}
+	case "busy":
+		filter["active_jobs"] = 0
+		filter["availability"] = "busy"
+	case "running_project":
+		filter["$or"] = []bson.M{{"active_jobs": bson.M{"$gt": 0}}, {"availability": "running_project"}}
+	default:
+		marketplaceError(c, marketInvalid("Invalid availability"))
+		return
 	}
 	if rating := c.Query("rating"); rating != "" {
 		n, err := strconv.ParseFloat(rating, 64)
@@ -381,10 +446,10 @@ func (s *Server) marketplacePublicProfile(c *gin.Context) {
 func (s *Server) marketplaceUploadIdentity(c *gin.Context) {
 	user, _ := currentUser(c)
 	ctx := c.Request.Context()
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 6<<20)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20)
 	file, err := c.FormFile("file")
 	if err != nil {
-		marketplaceError(c, marketInvalid("Choose a JPEG or PNG ID image under 5 MB"))
+		marketplaceError(c, marketInvalid("Choose a JPG, JPEG, PNG or WebP ID image up to 500 KB"))
 		return
 	}
 	if c.Request.MultipartForm != nil {
@@ -395,18 +460,12 @@ func (s *Server) marketplaceUploadIdentity(c *gin.Context) {
 		return
 	}
 	defer stream.Close()
-	data, err := io.ReadAll(io.LimitReader(stream, (5<<20)+1))
-	if err != nil || len(data) > 5<<20 {
-		marketplaceError(c, marketInvalid("ID image must be under 5 MB"))
+	data, err := io.ReadAll(io.LimitReader(stream, marketplaceImageLimit+1))
+	if marketplaceError(c, err) {
 		return
 	}
-	info, kind, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil || (kind != "jpeg" && kind != "png") || info.Width > 10000 || info.Height > 10000 || info.Width < 100 || info.Height < 100 || int64(info.Width)*int64(info.Height) > 16000000 {
-		marketplaceError(c, marketInvalid("Invalid JPEG/PNG ID image"))
-		return
-	}
-	if _, _, err := image.Decode(bytes.NewReader(data)); err != nil {
-		marketplaceError(c, marketInvalid("ID image is incomplete or corrupt"))
+	if _, err := validateMarketplaceImage(data); err != nil {
+		marketplaceError(c, marketInvalid(err.Error()))
 		return
 	}
 	if c.PostForm("consent") != "true" {
@@ -658,7 +717,7 @@ func (s *Server) marketplacePropose(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		if p.ActiveJobs > 0 {
+		if freelancerAvailability(p) != "available" {
 			return marketInvalid("Freelancer is currently working on a job")
 		}
 		proposal.Name = p.Name
@@ -736,7 +795,7 @@ func (s *Server) marketplaceProposalAction(c *gin.Context) {
 		if _, err := s.marketplaceReady(sc, p.FreelancerID, true); err != nil {
 			return err
 		}
-		result, err := s.store.C("freelancer_profiles").UpdateOne(sc, bson.M{"_id": p.FreelancerID, "active_jobs": 0}, bson.M{"$inc": bson.M{"active_jobs": 1}})
+		result, err := s.store.C("freelancer_profiles").UpdateOne(sc, bson.M{"_id": p.FreelancerID, "active_jobs": 0, "availability": bson.M{"$nin": []string{"busy", "running_project"}}}, bson.M{"$inc": bson.M{"active_jobs": 1}})
 		if err != nil {
 			return err
 		}
