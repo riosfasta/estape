@@ -2,11 +2,49 @@ package billing
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 )
+
+func TestPayPalCheckoutSendsReconciliationReference(t *testing.T) {
+	ref := "BM-TOPUP-000000000000000000000001-000000000000000000000002"
+	created := false
+	provider := PayPalProvider{client: &http.Client{Transport: paypalTestTransport(func(req *http.Request) (*http.Response, error) {
+		body := `{"access_token":"test-token"}`
+		if req.URL.Path == "/v2/checkout/orders" {
+			created = true
+			var payload struct {
+				Units []struct {
+					CustomID    string `json:"custom_id"`
+					InvoiceID   string `json:"invoice_id"`
+					Description string `json:"description"`
+				} `json:"purchase_units"`
+			}
+			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if len(payload.Units) != 1 || payload.Units[0].CustomID != ref || payload.Units[0].InvoiceID != ref || !strings.HasPrefix(payload.Units[0].Description, ref) {
+				t.Fatalf("missing payment reference: %+v", payload)
+			}
+			if len(payload.Units[0].Description) > 127 {
+				t.Fatal("description exceeds PayPal limit")
+			}
+			body = `{"id":"test-order","status":"CREATED","links":[{"rel":"approve","href":"https://www.sandbox.paypal.com/checkoutnow?token=test-order"}]}`
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}}
+	_, err := provider.CreateCheckout(context.Background(), CheckoutRequest{
+		ClientID: "test", ClientSecret: "test", Amount: 1000, Currency: "USD",
+		ReturnURL: "https://bugmega.test/return", CancelURL: "https://bugmega.test/cancel",
+		CustomID: ref, InvoiceID: ref, Description: ref + " | " + strings.Repeat("Long plan name ", 20),
+	})
+	if err != nil || !created {
+		t.Fatalf("checkout failed: %v", err)
+	}
+}
 
 type paypalTestTransport func(*http.Request) (*http.Response, error)
 

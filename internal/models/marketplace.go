@@ -72,13 +72,14 @@ type MarketplaceWallet struct {
 }
 
 type MarketplaceTransfer struct {
-	ID          primitive.ObjectID `bson:"_id" json:"id"`
-	UserID      primitive.ObjectID `bson:"user_id" json:"user_id"`
-	Kind        string             `bson:"kind" json:"kind"`
-	Amount      int64              `bson:"amount" json:"amount"`
-	Fee         int64              `bson:"fee" json:"fee"`
-	Status      string             `bson:"status" json:"status"`
-	ExternalID  string             `bson:"external_id,omitempty" json:"external_id,omitempty"`
-	Destination string             `bson:"destination,omitempty" json:"destination,omitempty"`
-	CreatedAt   time.Time          `bson:"created_at" json:"created_at"`
+	PaymentReference string             `bson:"payment_reference,omitempty" json:"payment_reference,omitempty"`
+	ID               primitive.ObjectID `bson:"_id" json:"id"`
+	UserID           primitive.ObjectID `bson:"user_id" json:"user_id"`
+	Kind             string             `bson:"kind" json:"kind"`
+	Amount           int64              `bson:"amount" json:"amount"`
+	Fee              int64              `bson:"fee" json:"fee"`
+	Status           string             `bson:"status" json:"status"`
+	ExternalID       string             `bson:"external_id,omitempty" json:"external_id,omitempty"`
+	Destination      string             `bson:"destination,omitempty" json:"destination,omitempty"`
+	CreatedAt        time.Time          `bson:"created_at" json:"created_at"`
 }

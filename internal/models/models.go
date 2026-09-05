@@ -65,6 +65,8 @@ type Team struct {
 }
 
 type Subscription struct {
+	PaymentReference      string             `bson:"payment_reference,omitempty" json:"payment_reference,omitempty"`
+	CheckoutAmount        int64              `bson:"checkout_amount,omitempty" json:"checkout_amount,omitempty"`
 	ID                    primitive.ObjectID `bson:"_id,omitempty" json:"id"`
 	TeamID                primitive.ObjectID `bson:"team_id" json:"team_id"`
 	PlanID                primitive.ObjectID `bson:"plan_id" json:"plan_id"`
@@ -99,6 +101,7 @@ type Plan struct {
 }
 
 type Invoice struct {
+	PaymentReference   string             `bson:"payment_reference,omitempty" json:"payment_reference,omitempty"`
 	ID                 primitive.ObjectID `bson:"_id,omitempty" json:"id"`
 	TeamID             primitive.ObjectID `bson:"team_id" json:"team_id"`
 	SubscriptionID     primitive.ObjectID `bson:"subscription_id" json:"subscription_id"`

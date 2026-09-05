@@ -1,4 +1,5 @@
-import { createMarketplace } from "/static/js/marketplace.js?v=20260905-3";
+import { openEmbeddedCheckout } from "/static/js/checkout.js?v=20260905-1";
+import { createMarketplace } from "/static/js/marketplace.js?v=20260905-5";
 function readStoredObject(key) {
   try {
     const parsed = JSON.parse(localStorage.getItem(key) || "{}");
@@ -1393,7 +1394,7 @@ function ensurePurchaseCartDialog() {
   if (dialog) return dialog;
   document.body.insertAdjacentHTML("beforeend", `<dialog id="purchaseCartDialog" class="modal checkout-cart-modal">
     <div class="modal-head">
-      <div><h2>Checkout cart</h2><p class="muted">Review your package before PayPal checkout.</p></div>
+      <div><h2>Checkout cart</h2><p class="muted">Review your package, then choose a secure payment method.</p></div>
       <button class="btn icon quiet" type="button" data-close-dialog="purchaseCartDialog" title="Close">${icon("x")}</button>
     </div>
     <div class="form-grid">
@@ -1404,7 +1405,7 @@ function ensurePurchaseCartDialog() {
       </div>
       <section class="panel soft-panel" id="purchaseCartSummary"></section>
       <div class="toolbar">
-        <button class="btn primary" id="purchaseCartCheckout" type="button">Checkout with PayPal</button>
+        <button class="btn primary" id="purchaseCartCheckout" type="button">Continue to payment</button>
         <button class="btn" type="button" data-close-dialog="purchaseCartDialog">Continue browsing</button>
       </div>
       <p class="status-line" id="purchaseCartStatus"></p>
@@ -1486,7 +1487,7 @@ async function checkoutPurchaseCart() {
   const cart = state.purchaseCart;
   if (!cart?.plan_id) return;
   const button = $("#purchaseCartCheckout");
-  const previous = button?.textContent || "Checkout with PayPal";
+  const previous = button?.textContent || "Continue to payment";
   if (button) {
     button.disabled = true;
     button.textContent = "Checking out...";
@@ -1502,12 +1503,18 @@ async function checkoutPurchaseCart() {
         quantity: Math.max(1, Number(cart.quantity || 1)),
       }),
     });
-    if (data.checkout?.url) {
-      setPurchaseCartStatus("Redirecting to PayPal...");
-      window.location.href = data.checkout.url;
-      return;
-    }
-    setPurchaseCartStatus("PayPal checkout was created, but the approval URL was missing.", true);
+    if (!data.checkout?.external_id) throw new Error("PayPal did not return a checkout order.");
+    $("#purchaseCartDialog")?.close();
+    await openEmbeddedCheckout({
+      api,
+      title: cart.plans.find(plan => plan.id === cart.plan_id)?.name || "Premium bug reporting",
+      description: `${cart.quantity || 1} x ${cart.billing_period || "monthly"} package. One-time payment for premium bug reporting; no automatic renewal.`,
+      amount: data.amount,
+      orderID: data.checkout.external_id,
+      captureURL: `/api/subscriptions/${encodeURIComponent(data.subscription.id)}/capture`,
+      fallbackURL: data.checkout.url,
+      onSuccess: async () => { await loadMe(); await cart.onDone?.(); window.location.href = "/settings/billing?payment=success"; },
+    });
   } catch (error) {
     setPurchaseCartStatus(error.message, true);
   } finally {
@@ -1687,7 +1694,7 @@ function billingInvoicesPanelHTML(invoices = [], options = {}) {
   return `<section class="panel billing-invoices-panel ${esc(className)}">
     <h2>Invoices</h2>
     <div class="task-list">${invoices.map((invoice) => `<article class="task-row" id="invoice-${esc(invoice.id || invoice.subscription_id || "")}">
-      <div><h3>${money(invoice.amount)} ${esc(invoice.currency || "").toUpperCase()}</h3><span class="muted">${fmtDate(invoice.issued_at)}</span></div>
+      <div><h3>${money(invoice.amount)} ${esc(invoice.currency || "").toUpperCase()}</h3><span class="muted">${fmtDate(invoice.issued_at)}</span>${invoice.payment_reference ? `<small style="display:block;overflow-wrap:anywhere">Reference: ${esc(invoice.payment_reference)}</small>` : ""}</div>
       <span class="pill">${esc(invoice.status || "invoice")}</span>
       ${invoice.external_invoice_url ? `<a class="btn" href="${esc(invoice.external_invoice_url)}">Receipt</a>` : `<span class="muted">No receipt</span>`}
     </article>`).join("") || `<p class="muted">No invoices yet.</p>`}</div>
@@ -9170,7 +9177,7 @@ function adminUserDetailHTML(data = {}) {
         const status = adminMembershipLabel(sub.expires_at && new Date(sub.expires_at) < new Date() ? "expired" : sub.status);
         return `<article><strong>${esc(plan.name || "Unknown plan")}</strong><span>${esc(status)} - ${esc(sub.payment_provider || "No payment provider")}</span><span>Started ${esc(fmtDate(sub.started_at))}${sub.expires_at ? ` - Expires ${esc(fmtDate(sub.expires_at))}` : ""}${sub.trial_ends_at ? ` - Trial ends ${esc(fmtDate(sub.trial_ends_at))}` : ""}</span><span>${sub.external_transaction_id ? `Transaction ${esc(sub.external_transaction_id)}` : "No transaction ID"}</span></article>`;
       })}
-      ${adminMiniRows(invoices, "No invoices found.", (invoice) => `<article><strong>${esc(money(invoice.amount))} ${esc(String(invoice.currency || "USD").toUpperCase())}</strong><span>${esc(invoice.status || "unknown")} - ${esc(invoice.payment_provider || "No provider")}</span><span>${esc(fmtDate(invoice.issued_at))}${invoice.external_invoice_url ? ` - <a class="text-link" href="${esc(invoice.external_invoice_url)}" target="_blank" rel="noopener noreferrer">Receipt</a>` : ""}</span></article>`)}
+      ${adminMiniRows(invoices, "No invoices found.", (invoice) => `<article><strong>${esc(money(invoice.amount))} ${esc(String(invoice.currency || "USD").toUpperCase())}</strong><span>${esc(invoice.status || "unknown")} - ${esc(invoice.payment_provider || "No provider")}</span>${invoice.payment_reference ? `<span style="overflow-wrap:anywhere">Reference: ${esc(invoice.payment_reference)}</span>` : ""}<span>${esc(fmtDate(invoice.issued_at))}${invoice.external_invoice_url ? ` - <a class="text-link" href="${esc(invoice.external_invoice_url)}" target="_blank" rel="noopener noreferrer">Receipt</a>` : ""}</span></article>`)}
     </section>
     <section class="admin-detail-section"><h3>Companies and workspaces</h3>
       ${adminMiniRows(teams, "No teams found.", (team) => `<article><strong>${esc(team.name || "Unnamed workspace")}</strong><span>${esc(team.company_email || "No company email")} - ${team.member_ids?.length || 0} members</span><span>Created ${esc(fmtDate(team.created_at))}</span></article>`)}
@@ -12138,6 +12145,6 @@ async function route(options = {}) {
   }
 }
 
-const marketplace = createMarketplace({ api, state, shell, app, esc, icons, uploadResizedImage });
+const marketplace = createMarketplace({ api, state, shell, app, esc, icons, uploadResizedImage, openEmbeddedCheckout });
 bindAppNavigation();
 route().catch(renderRouteError);

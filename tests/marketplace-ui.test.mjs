@@ -93,3 +93,28 @@ test("strangers do not see job delivery controls or private work", async () => {
   assert.ok(!html.includes('id="marketApprove"'));
   assert.ok(!html.includes('id="marketDeliver"'));
 });
+
+test("configured monthly allowance appears in user notices", async () => {
+  for (const path of ["/dashboard", "/find-jobs"]) {
+    const { html } = await render(path, true, {
+      "/api/marketplace/skills": { skills: ["PHP"], connects_policy: { amount: 250, period: "monthly" } },
+    });
+    assert.ok(html.includes("250 Connects on the first of each month"));
+    assert.ok(!html.includes("100 Connects every Monday"));
+  }
+});
+
+test("owner can choose monthly resets and select users for manual grants", async () => {
+  const { html } = await render("/admin/marketplace", true, {
+    "/api/marketplace/admin/connects": {
+      policy: { amount: 250, period: "monthly" },
+      users: [{ id: userID, name: "Selected user", email: "person@example.test" }],
+      grants: [], page: 1, has_more: true,
+    },
+  });
+  assert.match(html, /value="monthly" selected/);
+  assert.ok(html.includes(`data-connect-user="${userID}"`));
+  assert.ok(html.includes('id="connectsGrant"'));
+  assert.ok(html.includes("person@example.test"));
+  assert.ok(html.includes("Select this page"));
+});

@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -428,16 +429,12 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 	seatCount := teamSeatCount(team)
 	amount := planBillingAmount(plan, seatCount, period, quantity)
 	now := time.Now()
-	_, _ = s.store.C("subscriptions").UpdateMany(
-		c.Request.Context(),
-		bson.M{"team_id": userCtx.TeamID, "status": "pending_payment"},
-		bson.M{"$set": bson.M{"status": "cancelled", "expires_at": now}},
-	)
 	sub := models.Subscription{
 		ID:              primitive.NewObjectID(),
 		TeamID:          userCtx.TeamID,
 		PlanID:          plan.ID,
 		Status:          "pending_payment",
+		CheckoutAmount:  amount,
 		BillingPeriod:   period,
 		BillingQuantity: quantity,
 		PaymentProvider: provider.Name(),
@@ -445,6 +442,7 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 		StartedAt:       now,
 		CreatedAt:       now,
 	}
+	sub.PaymentReference = paymentReference("PLAN", sub.BuyerID, sub.ID)
 	if _, err := s.store.C("subscriptions").InsertOne(c.Request.Context(), sub); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create subscription"})
 		return
@@ -459,9 +457,9 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 	checkoutReq.PlanID = plan.ID.Hex()
 	checkoutReq.Amount = amount
 	checkoutReq.Currency = "usd"
-	checkoutReq.CustomID = sub.ID.Hex()
-	checkoutReq.InvoiceID = "bugmega-" + sub.ID.Hex()
-	checkoutReq.Description = fmt.Sprintf("%s %s package", plan.Name, period)
+	checkoutReq.CustomID = sub.PaymentReference
+	checkoutReq.InvoiceID = sub.PaymentReference
+	checkoutReq.Description = sub.PaymentReference + " | " + fmt.Sprintf("%s %s package", plan.Name, period)
 	checkoutReq.ReturnURL = s.payPalReturnURL(sub.ID)
 	checkoutReq.CancelURL = s.payPalCancelURL(sub.ID)
 	session, err := provider.CreateCheckout(c.Request.Context(), checkoutReq)
@@ -592,32 +590,19 @@ func (s *Server) activatePaidPayPalSubscription(ctx context.Context, sub models.
 	}
 	period := normalizedBillingPeriod(sub.BillingPeriod)
 	quantity := normalizedBillingQuantity(sub.BillingQuantity)
-	amount := planBillingAmount(plan, teamSeatCount(team), period, quantity)
-	if capture.Amount != amount || !strings.EqualFold(firstNonEmpty(capture.Currency, "USD"), "USD") {
-		return models.Invoice{}, errors.New("paypal captured amount does not match checkout")
+	amount, err := validateSubscriptionCapture(sub, capture, planBillingAmount(plan, teamSeatCount(team), period, quantity))
+	if err != nil {
+		return models.Invoice{}, err
 	}
 	now := time.Now()
 	expires := billingExpiry(now, period, quantity)
 	transactionID := firstNonEmpty(capture.ExternalID, sub.ExternalTransactionID)
 
-	if _, err := s.store.C("subscriptions").UpdateByID(ctx, sub.ID, bson.M{"$set": bson.M{
-		"status":                  "active",
-		"billing_period":          period,
-		"billing_quantity":        quantity,
-		"external_transaction_id": transactionID,
-		"started_at":              now,
-		"expires_at":              expires,
-	}}); err != nil {
-		return models.Invoice{}, err
-	}
-	if _, err := s.store.C("teams").UpdateByID(ctx, sub.TeamID, bson.M{"$set": bson.M{"subscription_id": sub.ID, "seat_limit_cached": plan.SeatLimit}}); err != nil {
-		return models.Invoice{}, err
-	}
-
 	invoice := models.Invoice{
 		ID:                 primitive.NewObjectID(),
 		TeamID:             sub.TeamID,
 		SubscriptionID:     sub.ID,
+		PaymentReference:   sub.PaymentReference,
 		Amount:             amount,
 		Currency:           "usd",
 		Status:             "paid",
@@ -625,8 +610,45 @@ func (s *Server) activatePaidPayPalSubscription(ctx context.Context, sub models.
 		ExternalInvoiceURL: s.appAbsoluteURL("/settings/billing#invoice-" + sub.ID.Hex()),
 		IssuedAt:           now,
 	}
-	if _, err := s.store.C("invoices").InsertOne(ctx, invoice); err != nil {
+
+	activated := false
+	err = s.marketplaceTransaction(ctx, func(sc mongo.SessionContext) error {
+		activated = false
+		var existing models.Invoice
+		err := s.store.C("invoices").FindOne(sc, bson.M{"subscription_id": sub.ID, "status": "paid"}).Decode(&existing)
+		if err == nil {
+			invoice = existing
+			return nil
+		}
+		if !errors.Is(err, mongo.ErrNoDocuments) {
+			return err
+		}
+		if _, err := s.store.C("subscriptions").UpdateByID(sc, sub.ID, bson.M{"$set": bson.M{
+			"status":                  "active",
+			"billing_period":          period,
+			"billing_quantity":        quantity,
+			"external_transaction_id": transactionID,
+			"started_at":              now,
+			"expires_at":              expires,
+		}}); err != nil {
+			return err
+		}
+		if _, err := s.store.C("teams").UpdateByID(sc, sub.TeamID, bson.M{"$set": bson.M{"subscription_id": sub.ID, "seat_limit_cached": plan.SeatLimit}}); err != nil {
+			return err
+		}
+
+		if _, err := s.store.C("invoices").InsertOne(sc, invoice); err != nil {
+			return err
+		}
+
+		activated = true
+		return nil
+	})
+	if err != nil {
 		return models.Invoice{}, err
+	}
+	if !activated {
+		return invoice, nil
 	}
 
 	buyerID := sub.BuyerID

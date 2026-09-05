@@ -98,10 +98,10 @@ func (s *Server) saveConnectsPolicy(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Amount int    `json:"amount"`
+		Amount *int   `json:"amount"`
 		Period string `json:"period"`
 	}
-	if c.ShouldBindJSON(&req) != nil || req.Amount < 0 || req.Amount > 100000 || (req.Period != "weekly" && req.Period != "monthly") {
+	if c.ShouldBindJSON(&req) != nil || req.Amount == nil || *req.Amount < 0 || *req.Amount > 100000 || (req.Period != "weekly" && req.Period != "monthly") {
 		marketplaceError(c, marketInvalid("Choose an allowance from 0 to 100,000 and a weekly or monthly reset"))
 		return
 	}
@@ -111,10 +111,10 @@ func (s *Server) saveConnectsPolicy(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		if old.Amount == req.Amount && old.Period == req.Period {
+		if old.Amount == *req.Amount && old.Period == req.Period {
 			return nil
 		}
-		policy := connectsPolicy{Amount: req.Amount, Period: req.Period, UpdatedAt: time.Now().UTC()}
+		policy := connectsPolicy{Amount: *req.Amount, Period: req.Period, UpdatedAt: time.Now().UTC()}
 		_, err = s.store.C("marketplace_settings").UpdateOne(sc, bson.M{"_id": "connects"}, bson.M{"$set": policy}, options.Update().SetUpsert(true))
 		if err != nil {
 			return err

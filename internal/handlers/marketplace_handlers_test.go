@@ -22,7 +22,6 @@ import (
 	"bugmark/internal/models"
 	"bugmark/internal/store"
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -118,14 +117,7 @@ func TestMarketplaceIntegration(t *testing.T) {
 	}
 	uri := os.Getenv("MARKETPLACE_TEST_URI")
 	if uri == "" {
-		env, err := godotenv.Read(filepath.Join("..", "..", ".env"))
-		if err != nil {
-			t.Fatal("provide MARKETPLACE_TEST_URI or a local .env")
-		}
-		uri = env["MONGO_URI"]
-	}
-	if uri == "" {
-		uri = "mongodb://localhost:27017"
+		t.Fatal("set MARKETPLACE_TEST_URI to an explicitly authorized test MongoDB; .env is never read")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()

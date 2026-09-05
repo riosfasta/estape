@@ -52,7 +52,7 @@ node --check web/static/js/app.js
 node --check web/static/js/marketplace.js
 
 # Optional integration suite: fresh database, fake PayPal, no emails.
-# Uses MARKETPLACE_TEST_URI, or MONGO_URI from the repository .env.
+# Requires MARKETPLACE_TEST_URI pointing to an authorized test MongoDB; never reads .env.
 $env:MARKETPLACE_INTEGRATION='1'
 go test ./internal/handlers -run TestMarketplace -count=1 -v
 ```

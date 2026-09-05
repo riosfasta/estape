@@ -96,14 +96,15 @@ func (s *Server) marketplaceTopup(c *gin.Context) {
 		return
 	}
 	transfer := models.MarketplaceTransfer{ID: primitive.NewObjectID(), UserID: user.ID, Kind: "topup", Amount: req.Amount, Status: "creating", CreatedAt: time.Now().UTC()}
+	transfer.PaymentReference = paymentReference("TOPUP", user.ID, transfer.ID)
 	if _, err = s.store.C("marketplace_transfers").InsertOne(ctx, transfer); marketplaceError(c, err) {
 		return
 	}
 	base.Amount = req.Amount
 	base.Currency = "USD"
-	base.CustomID = "wallet-" + transfer.ID.Hex()
+	base.CustomID = transfer.PaymentReference
 	base.InvoiceID = base.CustomID
-	base.Description = "Refundable hiring balance (transaction costs may apply to refunds)"
+	base.Description = transfer.PaymentReference + " | Hiring balance; refunds less transaction costs"
 	base.ReturnURL = s.appAbsoluteURL("/wallet?topup=" + transfer.ID.Hex())
 	base.CancelURL = s.appAbsoluteURL("/wallet?cancelled=1")
 	checkout, err := provider.CreateCheckout(ctx, base)
@@ -113,7 +114,7 @@ func (s *Server) marketplaceTopup(c *gin.Context) {
 	}
 	_, err = s.store.C("marketplace_transfers").UpdateOne(ctx, bson.M{"_id": transfer.ID}, bson.M{"$set": bson.M{"status": "pending", "external_id": checkout.ExternalID}})
 	if !marketplaceError(c, err) {
-		c.JSON(201, gin.H{"url": checkout.URL})
+		c.JSON(201, gin.H{"url": checkout.URL, "order_id": checkout.ExternalID, "transfer_id": transfer.ID.Hex(), "amount": transfer.Amount})
 	}
 }
 
@@ -191,6 +192,7 @@ func (s *Server) marketplaceRequestTransfer(c *gin.Context) {
 		return
 	}
 	transfer := models.MarketplaceTransfer{ID: primitive.NewObjectID(), UserID: user.ID, Kind: req.Kind, Amount: req.Amount, Destination: strings.TrimSpace(req.Destination), Status: "requested", CreatedAt: time.Now().UTC()}
+	transfer.PaymentReference = paymentReference(strings.ToUpper(req.Kind), user.ID, transfer.ID)
 	err := s.marketplaceTransaction(ctx, func(sc mongo.SessionContext) error {
 		field := "deposits"
 		if req.Kind == "withdrawal" {
