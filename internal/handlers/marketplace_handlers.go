@@ -307,6 +307,14 @@ func (s *Server) marketplaceFreelancers(c *gin.Context) {
 		}
 		filter["rating"] = bson.M{"$gte": n}
 	}
+	if raw := c.Query("finished_jobs"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 || n > 1000000 {
+			marketplaceError(c, marketInvalid("Invalid completed job count"))
+			return
+		}
+		filter["finished_jobs"] = bson.M{"$gte": n}
+	}
 	page, _ := strconv.Atoi(c.Query("page"))
 	if page < 1 {
 		page = 1
@@ -514,10 +522,11 @@ func (s *Server) marketplaceCreateJob(c *gin.Context) {
 	user, _ := currentUser(c)
 	ctx := c.Request.Context()
 	var req struct {
-		Title       string   `json:"title"`
-		Description string   `json:"description"`
-		Skills      []string `json:"skills"`
-		Budget      int64    `json:"budget"`
+		SourceTaskID string   `json:"source_task_id"`
+		Title        string   `json:"title"`
+		Description  string   `json:"description"`
+		Skills       []string `json:"skills"`
+		Budget       int64    `json:"budget"`
 	}
 	if c.ShouldBindJSON(&req) != nil {
 		marketplaceError(c, marketInvalid("Invalid job"))
@@ -531,6 +540,24 @@ func (s *Server) marketplaceCreateJob(c *gin.Context) {
 		return
 	}
 	job := models.MarketplaceJob{ID: primitive.NewObjectID(), OwnerID: user.ID, Title: req.Title, Description: req.Description, Skills: skills, Budget: req.Budget, Status: "open", CreatedAt: time.Now().UTC()}
+	if req.SourceTaskID != "" {
+		id, parseErr := primitive.ObjectIDFromHex(req.SourceTaskID)
+		if parseErr != nil {
+			marketplaceError(c, marketInvalid("Invalid source task"))
+			return
+		}
+		var task models.ClientTask
+		if err := s.store.C("client_tasks").FindOne(ctx, bson.M{"_id": id}).Decode(&task); err != nil || !s.canManageClientTask(ctx, user, task) {
+			c.JSON(403, gin.H{"error": "You cannot offer this task to freelancers"})
+			return
+		}
+		var site models.ClientWebsite
+		if err := s.store.C("client_websites").FindOne(ctx, bson.M{"_id": task.WebsiteID}).Decode(&site); err != nil || !s.canAccessClientWebsite(ctx, user, site) {
+			c.JSON(403, gin.H{"error": "You cannot offer this task to freelancers"})
+			return
+		}
+		job.SourceTaskID = task.ID
+	}
 	err = s.marketplaceTransaction(ctx, func(sc mongo.SessionContext) error {
 		p, err := s.marketplaceReady(sc, user.ID, false)
 		if err != nil {

@@ -31,6 +31,7 @@ type FreelancerProfile struct {
 }
 
 type MarketplaceJob struct {
+	SourceTaskID primitive.ObjectID `bson:"source_task_id,omitempty" json:"-"`
 	ID           primitive.ObjectID `bson:"_id" json:"id"`
 	OwnerID      primitive.ObjectID `bson:"owner_id" json:"owner_id"`
 	OwnerName    string             `bson:"owner_name" json:"owner_name"`

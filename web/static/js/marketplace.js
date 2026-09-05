@@ -232,6 +232,142 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     document.querySelectorAll(".market-settlement").forEach((form, i) => { form.id = `marketSettlement${i}`; bindForm(`#${form.id}`, async f => { const v = Object.fromEntries(new FormData(f)); await post(`/api/marketplace/admin/transfers/${f.dataset.transfer}`, { status: "paid", reference: v.reference, fee: cents(v.fee) }); await admin(); }); });
     bindButtons("[data-reject-transfer]", async b => { await post(`/api/marketplace/admin/transfers/${b.dataset.rejectTransfer}`, { status: "rejected", fee: 0 }); await admin(); });
   }
+  async function openFreelancerHelp({ tasks = [], websiteName = "Website" } = {}) {
+    if (document.querySelector("#freelancerHelpDialog")) return;
+    const dialog = document.createElement("dialog");
+    dialog.id = "freelancerHelpDialog";
+    dialog.className = "modal fh-dialog marketplace";
+    dialog.setAttribute("aria-labelledby", "fhTitle");
+    dialog.innerHTML = `<div class="modal-head"><div><h2 id="fhTitle">Find Freelancer Help</h2><p class="muted">${esc(websiteName)}</p></div><button type="button" class="btn" data-fh-close aria-label="Close freelancer finder">Close</button></div>
+      <details class="market-notice" open><summary>What is Find FH?</summary><p>Find freelancers to help with a task on this board. Review their profiles, then send an offer. They can accept or decline; you make the final hiring decision in <a href="/marketplace/jobs" target="_blank" rel="noopener">My jobs & offers</a>.</p><p>Complete your <a href="/dashboard" target="_blank" rel="noopener">profile</a> and <a href="/wallet" target="_blank" rel="noopener">fund your hiring balance</a> before publishing. Unused balance is refundable less actual transaction costs. Sending an offer does not hire anyone or reserve funds.</p></details>
+      <form class="fh-filters" data-fh-filters>
+        <label class="field">Skill<input name="skill" list="fhSkills" placeholder="Any skill, including custom skills"><datalist id="fhSkills"></datalist></label>
+        <label class="field">Country<select name="country">${countryOptions().replace("Choose country", "Any country")}</select></label>
+        <label class="field">Availability<select name="available"><option value="">Everyone</option><option value="true" selected>Available now</option></select></label>
+        <label class="field">Completed-job rating<select name="rating"><option value="">Any rating</option><option value="3">3+ stars</option><option value="4">4+ stars</option><option value="4.5">4.5+ stars</option><option value="5">5 stars</option></select></label>
+        <label class="field">Completed jobs<select name="finished_jobs"><option value="">Any experience</option><option value="1">1+</option><option value="5">5+</option><option value="10">10+</option><option value="50">50+</option></select></label>
+        <button class="btn primary" type="submit">Apply filters</button>
+      </form>
+      <div class="toolbar fh-results-head"><span data-fh-count></span><div role="group" aria-label="Freelancer display"><button class="btn" type="button" data-fh-view="grid" aria-pressed="true">Grid view</button><button class="btn" type="button" data-fh-view="list" aria-pressed="false">List view</button></div></div>
+      <p data-fh-status role="status" aria-live="polite"></p><div data-fh-results class="fh-results"></div>
+      <div class="toolbar"><button type="button" class="btn" data-fh-prev>Previous</button><span data-fh-page></span><button type="button" class="btn" data-fh-next>Next</button></div>
+      <section class="panel fh-offer" data-fh-offer hidden></section>`;
+    document.body.append(dialog);
+    dialog.showModal();
+    const find = selector => dialog.querySelector(selector);
+    let pageNumber = 1, request = 0, profiles = [], jobs = [], busy = false, closed = false;
+    let view = "grid";
+    try { view = localStorage.getItem("fh-view") === "list" ? "list" : "grid"; } catch {}
+    const status = (text, error = false) => { find("[data-fh-status]").textContent = text; find("[data-fh-status]").className = error ? "market-error" : "muted"; };
+    const close = () => { if (busy) return; closed = true; dialog.close(); dialog.remove(); };
+    find("[data-fh-close]").onclick = close;
+    dialog.addEventListener("cancel", event => { event.preventDefault(); close(); });
+    function setView(value) {
+      view = value;
+      find("[data-fh-results]").classList.toggle("fh-list", view === "list");
+      dialog.querySelectorAll("[data-fh-view]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.fhView === view)));
+      try { localStorage.setItem("fh-view", view); } catch {}
+    }
+    dialog.querySelectorAll("[data-fh-view]").forEach(button => { button.onclick = () => setView(button.dataset.fhView); });
+    setView(view);
+    async function load() {
+      const current = ++request;
+      status("Loading freelancers...");
+      find("[data-fh-prev]").disabled = true;
+      find("[data-fh-next]").disabled = true;
+      const query = new URLSearchParams(new FormData(find("[data-fh-filters]")));
+      query.set("page", pageNumber);
+      try {
+        const data = await api(`/api/marketplace/freelancers?${query}`);
+        if (closed || current !== request) return;
+        profiles = data.freelancers.filter(p => p.id !== state.me?.id);
+        find("[data-fh-count]").textContent = `${profiles.length} freelancers on this page`;
+        find("[data-fh-page]").textContent = `Page ${pageNumber}`;
+        find("[data-fh-prev]").disabled = pageNumber <= 1;
+        find("[data-fh-next]").disabled = !data.has_more;
+        find("[data-fh-results]").innerHTML = profiles.map(p => `<article class="panel fh-person"><div class="market-person">${photo(p)}<div><h3>${esc(p.name)}</h3><p>${esc(p.title)}</p><p class="muted">${esc(p.location)}${p.country ? ", " + esc(regionNames.of(p.country)) : ""}</p></div></div><div class="fh-person-detail"><div class="toolbar">${badge(p.available ? "Available" : "Working")}${p.verified ? badge("ID verified") : ""}</div><p>${p.rating_count ? `${Number(p.rating).toFixed(1)} / 5 from ${Number(p.rating_count)} completed-job reviews` : "No completed-job reviews yet"} · ${Number(p.finished_jobs || 0)} jobs completed</p><p>${esc((p.bio || "").slice(0, 160))}</p>${chips((p.skills || []).slice(0, 8))}</div><div class="toolbar"><a class="btn" href="/freelancers/${esc(p.id)}" target="_blank" rel="noopener">View profile & reviews</a><button type="button" class="btn primary" data-fh-invite="${esc(p.id)}" ${!p.available ? "disabled" : ""}>Offer task</button></div></article>`).join("") || empty("No freelancers match. Try another skill, country or rating.");
+        dialog.querySelectorAll("[data-fh-invite]").forEach(button => { button.onclick = () => { if (!busy) offer(profiles.find(p => p.id === button.dataset.fhInvite)); }; });
+        status("");
+      } catch (error) { if (!closed && current === request) { find("[data-fh-results]").innerHTML = ""; status(error.message, true); } }
+    }
+    find("[data-fh-filters]").onsubmit = event => { event.preventDefault(); pageNumber = 1; load(); };
+    find("[data-fh-prev]").onclick = () => { pageNumber--; load(); };
+    find("[data-fh-next]").onclick = () => { pageNumber++; load(); };
+    function offer(person) {
+      const mount = find("[data-fh-offer]");
+      mount.hidden = false;
+      mount.innerHTML = `<h3>Offer a task to ${esc(person.name)}</h3><form class="market-form" data-fh-send>
+        <label class="field">Task or existing job<select name="source" required><option value="">Choose a task or job</option>${tasks.map(t => `<option value="task:${esc(t.id)}">Board task: ${esc(t.title)}</option>`).join("")}${jobs.map(j => `<option value="job:${esc(j.id)}">Open job: ${esc(j.title)}</option>`).join("")}</select></label>
+        ${!tasks.length && !jobs.length ? '<p>Add a board task or <a href="/marketplace/jobs" target="_blank" rel="noopener">publish a job</a> first.</p>' : ""}
+        <div data-fh-new hidden><label class="field">Public job title<input name="title" minlength="5" maxlength="160"></label><label class="field">Public scope and deliverables<textarea name="description" minlength="30" maxlength="10000" rows="4"></textarea></label><label class="field">Required skills, separated by commas<input name="skills" placeholder="WordPress, PHP, custom skill"></label><label class="market-check"><input type="checkbox" name="publish_consent"><span>I reviewed this description and agree to publish it as an open marketplace job. It contains no private client details or credentials.</span></label></div>
+        <label class="field">Offer price / new job budget (USD)<input name="price" type="number" min="1" max="100000" step="0.01" required></label>
+        <label class="field">Private invitation message<textarea name="message" minlength="20" maxlength="5000" rows="3" required></textarea></label>
+        <button type="submit" class="btn primary">Send offer</button><p data-fh-offer-status role="status" aria-live="polite"></p>
+      </form>`;
+      const form = find("[data-fh-send]");
+      const fields = form.elements;
+      const note = find("[data-fh-offer-status]");
+      fields.message.value = "Hello, I would like your help with this task. Please review the scope and let me know if you are interested.";
+      fields.source.onchange = () => {
+        const isNew = fields.source.value.startsWith("task:");
+        find("[data-fh-new]").hidden = !isNew;
+        for (const name of ["title", "description", "skills", "publish_consent"]) { fields[name].required = isNew; fields[name].disabled = !isNew; }
+        fields.publish_consent.checked = false;
+        if (isNew) {
+          const task = tasks.find(t => "task:" + t.id === fields.source.value);
+          fields.title.value = task?.title || "";
+          // Task content may be rich HTML. Copy plain text only for owner review.
+          const parsed = new DOMParser().parseFromString(task?.content || task?.comment || "", "text/html");
+          fields.description.value = parsed.body.textContent || "";
+          fields.skills.value = find("[data-fh-filters]").elements.skill.value;
+        } else {
+          const job = jobs.find(j => "job:" + j.id === fields.source.value);
+          fields.price.value = job ? (job.budget / 100).toFixed(2) : "";
+        }
+      };
+      fields.source.onchange();
+      form.onsubmit = async event => {
+        event.preventDefault();
+        if (busy || !form.reportValidity()) return;
+        busy = true;
+        form.querySelectorAll("input,select,textarea").forEach(field => { field.disabled = true; });
+        const button = form.querySelector('[type="submit"]');
+        button.disabled = true;
+        find("[data-fh-close]").disabled = true;
+        note.textContent = "Sending offer...";
+        try {
+          const price = cents(fields.price.value);
+          let jobID = fields.source.value.replace(/^job:/, "");
+          if (fields.source.value.startsWith("task:")) {
+            const data = await post("/api/marketplace/jobs", { source_task_id: fields.source.value.slice(5), title: fields.title.value, description: fields.description.value, skills: fields.skills.value.split(","), budget: price });
+            jobID = data.job.id;
+            jobs.push(data.job);
+            // Keep the published job if invitation delivery fails, so retry cannot publish it twice.
+            const option = document.createElement("option");
+            option.value = "job:" + jobID; option.textContent = "Open job: " + data.job.title;
+            fields.source.append(option); fields.source.value = option.value;
+            fields.source.onchange();
+          }
+          await post(`/api/marketplace/jobs/${encodeURIComponent(jobID)}/proposals`, { freelancer_id: person.id, price, message: fields.message.value });
+          mount.innerHTML = `<h3>Offer sent to ${esc(person.name)}</h3><p>Wait for their response, then choose whether to hire and reserve payment.</p><a class="btn primary" href="/marketplace/jobs/${esc(jobID)}" target="_blank" rel="noopener">Track offer & hire</a><p>You can offer this open job to other freelancers using their Offer task button.</p>`;
+        } catch (error) { note.textContent = error.message + " You can retry or check My jobs & offers."; }
+        finally {
+          busy = false; button.disabled = false; find("[data-fh-close]").disabled = false;
+          form.querySelectorAll("input,select,textarea").forEach(field => { field.disabled = false; });
+          const isNew = fields.source.value.startsWith("task:");
+          for (const name of ["title", "description", "skills", "publish_consent"]) fields[name].disabled = !isNew;
+        }
+      };
+      mount.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      fields.source.focus();
+    }
+    const preparations = await Promise.allSettled([api("/api/marketplace/skills"), api("/api/marketplace/me"), load()]);
+    if (closed) return;
+    if (preparations[0].status === "fulfilled") find("#fhSkills").innerHTML = preparations[0].value.skills.map(skill => `<option value="${esc(skill)}"></option>`).join("");
+    if (preparations[1].status === "fulfilled") jobs = preparations[1].value.jobs.filter(j => j.owner_id === state.me?.id && j.status === "open");
+    else status("Freelancers are available to browse. Complete your profile before sending offers.", true);
+  }
+
   async function render(path) {
     const catalog = await api("/api/marketplace/skills");
     skillCatalog = catalog.skills; connectsPolicy = catalog.connects_policy || connectsPolicy;
@@ -244,5 +380,5 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     if (path === "/admin/marketplace") return admin();
     return dashboard();
   }
-  return { render };
+  return { render, openFreelancerHelp };
 }

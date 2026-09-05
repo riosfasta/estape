@@ -1,5 +1,5 @@
 import { openEmbeddedCheckout } from "/static/js/checkout.js?v=20260905-1";
-import { createMarketplace } from "/static/js/marketplace.js?v=20260905-5";
+import { createMarketplace } from "/static/js/marketplace.js?v=20260905-6";
 function readStoredObject(key) {
   try {
     const parsed = JSON.parse(localStorage.getItem(key) || "{}");
@@ -6866,7 +6866,7 @@ function clientTabContentHTML(tab, data) {
   if (tab.type === "task_board") {
     const statuses = clientTaskStatuses(tab, data.tasks || []);
     return `<section class="panel">
-      <div class="panel-head"><h2>${esc(tab.title)}</h2>${canManage ? `<div class="toolbar">${canManageStatuses ? statusPickerHTML(statuses, statuses[0]?.value || "todo", "status_manager", "", { canManageStatuses: true, tabID: tab.id, triggerLabel: "Statuses" }) : ""}<button class="btn primary compact" id="addClientTaskBtn">${icon("plus")}Add task</button></div>` : ""}</div>
+      <div class="panel-head"><h2>${esc(tab.title)}</h2>${canManage ? `<div class="toolbar"><button class="btn compact" id="findFreelancerHelpBtn" title="Find Freelancer Help: find and invite a freelancer to help with a board task">${icon("users")}Find FH</button>${canManageStatuses ? statusPickerHTML(statuses, statuses[0]?.value || "todo", "status_manager", "", { canManageStatuses: true, tabID: tab.id, triggerLabel: "Statuses" }) : ""}<button class="btn primary compact" id="addClientTaskBtn">${icon("plus")}Add task</button></div>` : ""}</div>
       ${clientTaskBoardHTML(data.tasks || [], tab, data.members || [], canManage, canManageStatuses, canUpdateProgress)}
     </section>`;
   }
@@ -7349,6 +7349,7 @@ async function renderClientWebsite(clientID, websiteID) {
   }));
   bindContextActionMenus(app);
   $("#addWebsiteDocBtn")?.addEventListener("click", () => $("#websiteDocumentDialog")?.showModal());
+  $("#findFreelancerHelpBtn")?.addEventListener("click", () => marketplace.openFreelancerHelp({ tasks: (data.tasks || []).filter(task => task.tab_id === selectedTab?.id), websiteName: website.name }));
   $("#addClientTaskBtn")?.addEventListener("click", () => {
     $("#clientTaskForm")?.setAttribute("hidden", "");
     document.querySelector("[data-client-task-choice]")?.removeAttribute("hidden");
