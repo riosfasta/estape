@@ -1464,6 +1464,8 @@ func (s *Server) getClientTask(c *gin.Context) {
 	comments, _ := s.clientTaskComments(c.Request.Context(), task.ID)
 	logs, _ := s.clientTaskLogs(c.Request.Context(), task.ID)
 	members := s.mergeMemberRows(s.clientProjectMembers(c.Request.Context(), client), s.clientWebsiteMembers(c.Request.Context(), website))
+	scopedMembers := s.scopedTaskFreelancers(c.Request.Context(), task.ID)
+	members = s.mergeMemberRows(members, scopedMembers)
 	userCtx, _ := currentUser(c)
 	c.JSON(http.StatusOK, gin.H{
 		"task":                task,
@@ -1474,6 +1476,7 @@ func (s *Server) getClientTask(c *gin.Context) {
 		"logs":                logs,
 		"log_users":           s.clientTaskLogUsers(c.Request.Context(), logs),
 		"members":             members,
+		"scoped_freelancers":  scopedMembers,
 		"can_manage":          s.canManageClientProject(c.Request.Context(), userCtx, client),
 		"can_manage_task":     s.canManageClientTask(c.Request.Context(), userCtx, task),
 		"can_update_progress": true,
@@ -3217,6 +3220,12 @@ func (s *Server) notifyClientTaskCommentMentions(ctx context.Context, task model
 		return nil
 	}
 	allowedIDs := uniqueObjectIDs(append(append([]primitive.ObjectID{}, client.MemberIDs...), client.ClientAdminIDs...))
+	scopedJobs := map[primitive.ObjectID]primitive.ObjectID{}
+	for _, row := range s.scopedTaskFreelancers(ctx, task.ID) {
+		member := row["user"].(models.User)
+		allowedIDs = append(allowedIDs, member.ID)
+		scopedJobs[member.ID] = row["job_id"].(primitive.ObjectID)
+	}
 	if len(allowedIDs) == 0 {
 		return nil
 	}
@@ -3246,6 +3255,11 @@ func (s *Server) notifyClientTaskCommentMentions(ctx context.Context, task model
 			continue
 		}
 		mentionedIDs = append(mentionedIDs, user.ID)
+		if jobID, scoped := scopedJobs[user.ID]; scoped {
+			_ = s.marketplaceNotify(ctx, user.ID, jobID, "marketplace_job", actor+" mentioned you on task "+task.Title+": "+trimForNotification(content))
+			_, _ = s.store.C("marketplace_task_notes").InsertOne(ctx, bson.M{"_id": primitive.NewObjectID(), "job_id": jobID, "task_id": task.ID, "sender_id": actorID, "content": content, "created_at": time.Now().UTC()})
+			continue
+		}
 		s.insertNotification(ctx, models.Notification{
 			ID:        primitive.NewObjectID(),
 			UserID:    user.ID,

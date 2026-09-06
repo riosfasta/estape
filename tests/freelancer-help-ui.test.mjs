@@ -8,9 +8,11 @@ const escape = value => String(value ?? "").replaceAll("&", "&amp;").replaceAll(
 class Element {
   children = new Map(); value = ""; innerHTML = ""; dataset = {}; attributes = {};
   classList = { toggle: (name, value) => { this.attributes[name] = value; } };
-  get elements() { return this.fields ||= Object.fromEntries(["skill", "country", "availability", "rating", "finished_jobs", "source", "title", "description", "skills", "publish_consent", "price", "message"].map(name => [name, new Element()])); }
+  get elements() { return this.fields ||= Object.fromEntries(["skill", "country", "availability", "rating", "finished_jobs", "source", "title", "description", "skills", "publish_consent", "pricing_mode", "price", "message"].map(name => [name, new Element()])); }
   querySelector(key) { if (!this.children.has(key)) this.children.set(key, new Element()); return this.children.get(key); }
   querySelectorAll(key) {
+    if (this.scope && key === "[data-scope-price]") return this.scope.prices;
+    if (this.scope && key === "[data-scope-task]:checked") return this.scope.checks.filter(input => input.checked);
     if (key === "[data-fh-view]") return ["grid", "list"].map(view => { const element = this.querySelector(view); element.dataset.fhView = view; return element; });
     if (key === "[data-fh-invite]") { const element = this.querySelector("invite"); element.dataset.fhInvite = "freelancer"; return [element]; }
     return [];
@@ -64,4 +66,47 @@ test("FH supports filters, list/grid, safe profiles and retrying a task offer wi
     assert.equal(published.description, "Build a responsive page with a contact form.");
     assert.match(dialog.querySelector("[data-fh-offer]").innerHTML, /Track offer & hire/);
   } finally { globalThis.FormData = originalFormData; }
+});
+
+test("domain offer sends only selected tasks and their fixed price breakdown", async () => {
+  let dialog;
+  const originalFormData = globalThis.FormData;
+  globalThis.FormData = class { *[Symbol.iterator]() {} };
+  const requests = [];
+  globalThis.document = { querySelector: () => null, createElement: () => new Element(), body: { append: element => { dialog = element; } } };
+  globalThis.localStorage = { getItem: () => "grid", setItem() {} };
+  globalThis.DOMParser = class { parseFromString(text) { return { body: { textContent: text } }; } };
+  const market = createMarketplace({ esc: escape, state: { me: { id: "owner" } }, api: async (url, options) => {
+    requests.push({ url, options });
+    if (url.includes("/freelancers?")) return { freelancers: [{ id: "freelancer", name: "Developer", skills: [], availability: "running_project" }], page: 1 };
+    if (url.endsWith("/skills")) return { skills: [] };
+    if (url.endsWith("/me")) return { jobs: [] };
+    if (url.endsWith("/jobs")) return { job: { id: "new-job", title: "Domain work", budget: 35000, scope_price_mode: "per_task" } };
+    if (url.endsWith("/proposals")) return { ok: true };
+    throw new Error("Unexpected request: " + url);
+  } });
+  await market.openFreelancerHelp({ websiteID: "site", websiteName: "Example", domainScope: true, tasks: ["a", "b", "c"].map(id => ({ id, title: id })) });
+  globalThis.FormData = originalFormData;
+  dialog.querySelector("invite").onclick();
+  const form = dialog.querySelector("[data-fh-send]");
+  assert.equal(form.elements.source.value, "domain");
+  const checks = [], prices = [];
+  for (const [id, value, checked] of [["a", "100", true], ["b", "250", true], ["c", "900", false]]) {
+    const check = form.querySelector(`[data-scope-task="${id}"]`); check.dataset.scopeTask = id; check.checked = checked; checks.push(check);
+    const price = form.querySelector(`[data-scope-price="${id}"]`); price.dataset.scopePrice = id; price.value = value; price.closest = () => new Element(); prices.push(price);
+  }
+  form.scope = { checks, prices };
+  form.elements.pricing_mode.value = "per_task";
+  form.elements.pricing_mode.onchange();
+  assert.equal(form.elements.price.value, "350.00");
+  assert.equal(prices[2].disabled, true);
+  form.elements.publish_consent.checked = true;
+  await form.onsubmit({ preventDefault() {} });
+  const created = requests.find(r => r.url === "/api/marketplace/jobs");
+  assert.ok(created, dialog.querySelector("[data-fh-offer-status]").textContent);
+  const payload = JSON.parse(created.options.body);
+  assert.equal(payload.scope_website_id, "site");
+  assert.equal(payload.scope_price_mode, "per_task");
+  assert.equal(payload.budget, 35000);
+  assert.deepEqual(payload.scope_tasks, [{ task_id: "a", price: 10000 }, { task_id: "b", price: 25000 }]);
 });

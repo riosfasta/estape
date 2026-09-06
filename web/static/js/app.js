@@ -1,6 +1,6 @@
 import { cropMarketplaceImage, imagePreviewURL } from "/static/js/marketplace-image.js?v=20260905-1";
 import { openEmbeddedCheckout } from "/static/js/checkout.js?v=20260905-1";
-import { createMarketplace } from "/static/js/marketplace.js?v=20260906-4";
+import { createMarketplace } from "/static/js/marketplace.js?v=20260906-5";
 function readStoredObject(key) {
   try {
     const parsed = JSON.parse(localStorage.getItem(key) || "{}");
@@ -1214,7 +1214,8 @@ function bindWorkspaceContextSwitcher() {
   });
 }
 
-async function loadMentionUsers() {
+async function loadMentionUsers(taskID = "") {
+  if (taskID) { const data = await api(`/api/marketplace/tasks/${encodeURIComponent(taskID)}/team`).catch(() => ({ users: [] })); return data.users || []; }
   if (state.mentionUsers) return state.mentionUsers;
   const teamID = activeWorkspaceTeamID();
   const url = teamID ? `/api/users/mentions?team_id=${encodeURIComponent(teamID)}` : "/api/users/mentions";
@@ -1261,7 +1262,7 @@ async function updateMentionSuggestions(input) {
     hideMentionSuggestions();
     return;
   }
-  const users = await loadMentionUsers();
+  const users = await loadMentionUsers(input.dataset.mentionTaskId || "");
   const matches = users
     .filter((user) => {
       const username = (user.username || "").toLowerCase();
@@ -4190,7 +4191,7 @@ function clientWebsiteRows(websites, canManage = false, canManageMembers = false
       ${canManage ? `<div class="context-actions" data-action-menu-wrap>
         <button class="context-menu-trigger" type="button" data-action-menu-trigger aria-label="Website options"></button>
         <div class="context-menu" data-action-menu hidden>
-          <button type="button" data-edit-client-website="${esc(site.id)}">${icon("pencil")}Edit website</button>
+          <button type="button" data-hire-domain="${esc(site.id)}">${icon("users")}Hire freelancer for domain tasks</button><button type="button" data-edit-client-website="${esc(site.id)}">${icon("pencil")}Edit website</button>
           <button class="danger-text" type="button" data-delete-client-website="${esc(site.id)}" data-website-name="${esc(site.name)}">${icon("trash-2")}Delete website</button>
         </div>
       </div>` : ""}
@@ -5612,7 +5613,7 @@ function clientAnnotationTaskDetailHTML(task = {}, statuses = [], usersByID = {}
         <form id="clientTaskCommentForm" class="feedback-comment-form client-comment-form" data-client-annotation-comment-form="${esc(commentTaskID)}">
           <div class="reply-preview" data-client-task-reply-preview hidden></div>
           <div class="attachment-preview" data-client-task-attachment-preview hidden></div>
-          <textarea name="content" data-mentionable placeholder="Comment @username"></textarea>
+          <textarea name="content" data-mentionable data-mention-task-id="${esc(commentTaskID)}" placeholder="Comment @username"></textarea>
           <input type="file" name="attachment" hidden>
           <div class="toolbar compact-toolbar">
             <button class="btn icon quiet" type="button" data-client-comment-emoji title="Add emoji">${icon("smile")}</button>
@@ -5918,7 +5919,7 @@ function clientTaskBoardHTML(tasks, tab, members, canManage, canManageStatuses =
           </div>
           ${(canUpdateTaskProgress || canManageTask) ? `<div class="toolbar compact-toolbar">
             ${canUpdateTaskProgress ? statusPickerHTML(statuses, task.status || "todo", "status", task.id, { canManageStatuses, tabID: tab.id }) : ""}
-            ${canManageTask ? `<button class="btn compact danger" type="button" data-delete-client-task="${esc(task.id)}">${icon("trash-2")}Delete</button>` : ""}
+            ${canManageTask ? `<button class="btn compact" type="button" data-hire-single-task="${esc(task.id)}">${icon("users")}Hire freelancer</button><button class="btn compact danger" type="button" data-delete-client-task="${esc(task.id)}">${icon("trash-2")}Delete</button>` : ""}
           </div>` : ""}
         </article>`;
       }).join("") || `<p class="muted">No tasks.</p>`}
@@ -6243,6 +6244,7 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
       </div>
     </header>
     <div class="client-task-panel-body annotation-viewer-body">
+      ${scopedFreelancerTeamHTML(data)}
       <section class="annotation-stage annotation-viewer-stage" id="clientAnnotationViewerStage">
         ${annotationFrameHTML({
           url: pageURL,
@@ -6264,7 +6266,7 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
           ${statusPickerHTML(statuses, task.status || "todo", "status", "", { canManageStatuses, tabID: data.tab?.id })}
           ${taskCompletionBadgeHTML(task)}
           <span class="pill warn due-edit-pill"><button class="due-icon-btn" type="button" data-due-edit-open title="Change due date">${icon("calendar-days")}</button><button class="due-date-text-btn" type="button" data-due-edit-open><span data-due-edit-label>${esc(taskDueInfo(task).text || "No due date")}</span></button><input class="due-edit-input" type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}" title="Due date"></span>
-          ${assigneePickerHTML(data.members || [], task.assignee_ids || [])}
+          ${assigneePickerHTML((data.members || []).filter(member => member.client_role !== "freelancer"), task.assignee_ids || [])}
           <span class="status-line"></span>
         </form>` : ""}
         <section class="feedback-sidebar-view" id="annotationViewerListView">
@@ -6288,7 +6290,7 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
         <div class="field"><label>Title</label><input name="title" maxlength="80" value="${esc(task.title || "")}" required></div>
         <div class="field"><label>Annotation URL</label><input name="url" value="${esc(pageURL)}" placeholder="https://example.com/page"></div>
         <div class="field"><label>Details</label>${richEditorHTML("comment", task.comment || task.content || "", "Write annotation details")}</div>
-        <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [], task.assignee_ids || [])}</div>
+        <div class="field"><label>Assignment</label>${assigneePickerHTML((data.members || []).filter(member => member.client_role !== "freelancer"), task.assignee_ids || [])}</div>
         <div class="grid-2"><div class="field"><label>Due date</label><input type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}"></div></div>
         ${recurrenceControlsHTML(task.recurrence || {}, task.due_date)}
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="editClientAnnotationTaskDialog">Cancel</button></div>
@@ -6558,6 +6560,12 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
   icons();
 }
 
+function scopedFreelancerTeamHTML(data) {
+  const members = data.scoped_freelancers || [];
+  if (!members.length) return "";
+  return '<section class="panel scoped-task-team"><h3>Freelancers on this task</h3><p class="muted">Task access only. Mention these teammates in the comments below.</p><div class="toolbar">' + members.map(row => '<a class="btn" href="/marketplace/jobs/' + esc(row.job_id) + '">' + esc(row.user.name || row.user.username || "Freelancer") + ' &middot; Chat &amp; shared tasks</a>').join("") + '</div></section>';
+}
+
 async function openClientTaskPanel(taskID, focusCommentID = "") {
   const data = await api(`/api/client-tasks/${taskID}`);
   const task = data.task || {};
@@ -6598,6 +6606,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
       </div>
     </header>
     <div class="client-task-panel-body">
+      ${scopedFreelancerTeamHTML(data)}
       <section class="client-task-detail-main">
         ${canUpdateProgress ? `<form id="clientTaskQuickEditForm" class="task-detail-meta task-detail-meta-form">
           ${statusPickerHTML(statuses, task.status || "todo", "status", "", { canManageStatuses, tabID: data.tab?.id })}
@@ -6605,7 +6614,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
           ${taskCompletionBadgeHTML(task)}
           <span class="pill">${icon("calendar-days")}${esc(fmtDateTime(task.created_at))}</span>
           <span class="pill warn due-edit-pill"><button class="due-icon-btn" type="button" data-due-edit-open title="Change due date">${icon("calendar-days")}</button><button class="due-date-text-btn" type="button" data-due-edit-open><span data-due-edit-label>${esc(dueInfo.text || "No due date")}</span></button><input class="due-edit-input" type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}" title="Due date"></span>
-          ${assigneePickerHTML(data.members || [], task.assignee_ids || [])}
+          ${assigneePickerHTML((data.members || []).filter(member => member.client_role !== "freelancer"), task.assignee_ids || [])}
           <span class="status-line"></span>
         </form>` : `<div class="task-detail-meta">
           ${statusBadgeHTML(statuses.find((item) => item.value === (task.status || "todo")) || statuses[0], "status-badge status-pill")}
@@ -6628,7 +6637,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
           <form id="clientTaskCommentForm" class="client-comment-form">
             <div class="reply-preview" data-client-task-reply-preview hidden></div>
             <div class="attachment-preview" data-client-task-attachment-preview hidden></div>
-            <textarea name="content" data-mentionable placeholder="Comment @username"></textarea>
+            <textarea name="content" data-mentionable data-mention-task-id="${esc(taskID)}" placeholder="Comment @username"></textarea>
             <input type="file" name="attachment" hidden>
             <div class="toolbar compact-toolbar">
               <button class="btn icon quiet" type="button" data-client-comment-emoji title="Add emoji">${icon("smile")}</button>
@@ -6648,7 +6657,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
         <div class="field"><label>Title</label><input name="title" maxlength="80" value="${esc(task.title || "")}" required></div>
         ${task.type === "annotation" ? `<div class="field"><label>Comment</label>${richEditorHTML("comment", taskContent || "", "Write task details")}</div>` : `<div class="field"><label>Task body</label>${contentBlockEditorHTML(taskContentBlocks(task))}</div>`}
         <div class="field" ${task.type === "annotation" ? "" : "hidden"}><label>Annotation URL</label><input name="url" value="${esc(task.url || "")}" placeholder="https://example.com/page"></div>
-        <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [], task.assignee_ids || [])}</div>
+        <div class="field"><label>Assignment</label>${assigneePickerHTML((data.members || []).filter(member => member.client_role !== "freelancer"), task.assignee_ids || [])}</div>
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="editClientTaskDialog">Cancel</button></div>
         <p class="status-line"></p>
       </form>
@@ -7351,7 +7360,7 @@ async function renderClientWebsite(clientID, websiteID) {
   }));
   bindContextActionMenus(app);
   $("#addWebsiteDocBtn")?.addEventListener("click", () => $("#websiteDocumentDialog")?.showModal());
-  $("#findFreelancerHelpBtn")?.addEventListener("click", () => marketplace.openFreelancerHelp({ tasks: (data.tasks || []).filter(task => task.tab_id === selectedTab?.id), websiteName: website.name }));
+  $("#findFreelancerHelpBtn")?.addEventListener("click", () => marketplace.openFreelancerHelp({ tasks: (data.tasks || []).filter(task => task.tab_id === selectedTab?.id), websiteName: website.name, websiteID: website.id }));
   $("#addClientTaskBtn")?.addEventListener("click", () => {
     $("#clientTaskForm")?.setAttribute("hidden", "");
     document.querySelector("[data-client-task-choice]")?.removeAttribute("hidden");
@@ -12149,5 +12158,17 @@ async function route(options = {}) {
 }
 
 const marketplace = createMarketplace({ api, state, shell, app, esc, icons, uploadResizedImage, openEmbeddedCheckout, cropMarketplaceImage, imagePreviewURL });
+app.addEventListener("click", async event => {
+  const button = event.target.closest("[data-hire-domain], [data-hire-single-task]");
+  if (!button || button.disabled) return;
+  event.preventDefault(); event.stopPropagation(); button.disabled = true;
+  try {
+    const single = button.dataset.hireSingleTask;
+    const data = await api(single ? `/api/client-tasks/${encodeURIComponent(single)}` : `/api/client-websites/${encodeURIComponent(button.dataset.hireDomain)}`);
+    if (!(single ? data.can_manage_task : data.can_manage)) throw new Error("You cannot offer these tasks.");
+    await marketplace.openFreelancerHelp({ tasks: single ? [data.task] : data.tasks || [], websiteName: data.website.name, websiteID: data.website.id, domainScope: !single });
+  } catch (error) { window.alert(error.message); }
+  finally { button.disabled = false; }
+});
 bindAppNavigation();
 route().catch(renderRouteError);

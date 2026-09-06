@@ -47,6 +47,23 @@ const fixtures = {
   "/api/marketplace/admin/identity": { total: 0, profiles: [] },
 };
 
+test("invitation participants see private chat and shared task entry points", async () => {
+  const endpoint = `/api/marketplace/jobs/${jobID}`;
+  const proposal = { id: "proposal", freelancer_id: userID, name: "Freelancer", kind: "invitation", status: "offered", price: 10000, message: "Review the scope" };
+  const invited = await render(`/marketplace/jobs/${jobID}`, true, {
+    [endpoint]: { job: { ...job, owner_id: "employer" }, proposals: [proposal], can_view_scope: true },
+  });
+  assert.match(invited.html, /data-work-open/);
+  assert.match(invited.html, /data-chat-freelancer/);
+  assert.match(invited.html, /Accept offer/);
+  assert.ok(!invited.html.includes("marketDeliver"));
+  const stranger = await render(`/marketplace/jobs/${jobID}`, true, {
+    [endpoint]: { job: { ...job, owner_id: "employer" }, proposals: [], can_view_scope: false },
+  });
+  assert.ok(!stranger.html.includes("data-work-open"));
+  assert.ok(!stranger.html.includes("data-chat-freelancer"));
+});
+
 async function render(path, authenticated = true, overrides = {}, role = "users_admin") {
   globalThis.document = { querySelector: () => null, querySelectorAll: () => [] };
   globalThis.location = { search: "", pathname: path, origin: "https://example.test" };

@@ -42,24 +42,44 @@ type PortfolioDetail struct {
 }
 
 type MarketplaceJob struct {
-	SourceTaskID primitive.ObjectID `bson:"source_task_id,omitempty" json:"-"`
+	ScopeTasks     []MarketplaceScopeTask `bson:"scope_tasks,omitempty" json:"-"`
+	ScopeWebsiteID primitive.ObjectID     `bson:"scope_website_id,omitempty" json:"-"`
+	ScopePriceMode string                 `bson:"scope_price_mode,omitempty" json:"scope_price_mode,omitempty"`
+	SourceTaskID   primitive.ObjectID     `bson:"source_task_id,omitempty" json:"-"`
+	ID             primitive.ObjectID     `bson:"_id" json:"id"`
+	OwnerID        primitive.ObjectID     `bson:"owner_id" json:"owner_id"`
+	OwnerName      string                 `bson:"owner_name" json:"owner_name"`
+	FreelancerID   primitive.ObjectID     `bson:"freelancer_id,omitempty" json:"freelancer_id"`
+	Title          string                 `bson:"title" json:"title"`
+	Description    string                 `bson:"description" json:"description"`
+	Skills         []string               `bson:"skills" json:"skills"`
+	Budget         int64                  `bson:"budget" json:"budget"`
+	Price          int64                  `bson:"price" json:"price"`
+	Fee            int64                  `bson:"fee" json:"fee"`
+	Status         string                 `bson:"status" json:"status"`
+	Delivery       string                 `bson:"delivery,omitempty" json:"delivery,omitempty"`
+	Rating         int                    `bson:"rating" json:"rating"`
+	Review         string                 `bson:"review" json:"review"`
+	CreatedAt      time.Time              `bson:"created_at" json:"created_at"`
+	ApprovedAt     *time.Time             `bson:"approved_at,omitempty" json:"approved_at,omitempty"`
+	AvailableAt    *time.Time             `bson:"available_at,omitempty" json:"available_at,omitempty"`
+}
+
+type MarketplaceScopeTask struct {
+	TaskID  primitive.ObjectID `bson:"task_id" json:"task_id"`
+	Title   string             `bson:"title" json:"title"`
+	Content string             `bson:"content" json:"content"`
+	Status  string             `bson:"status" json:"status"`
+	Price   int64              `bson:"price" json:"price"`
+}
+
+type MarketplaceChatMessage struct {
 	ID           primitive.ObjectID `bson:"_id" json:"id"`
-	OwnerID      primitive.ObjectID `bson:"owner_id" json:"owner_id"`
-	OwnerName    string             `bson:"owner_name" json:"owner_name"`
-	FreelancerID primitive.ObjectID `bson:"freelancer_id,omitempty" json:"freelancer_id"`
-	Title        string             `bson:"title" json:"title"`
-	Description  string             `bson:"description" json:"description"`
-	Skills       []string           `bson:"skills" json:"skills"`
-	Budget       int64              `bson:"budget" json:"budget"`
-	Price        int64              `bson:"price" json:"price"`
-	Fee          int64              `bson:"fee" json:"fee"`
-	Status       string             `bson:"status" json:"status"`
-	Delivery     string             `bson:"delivery,omitempty" json:"delivery,omitempty"`
-	Rating       int                `bson:"rating" json:"rating"`
-	Review       string             `bson:"review" json:"review"`
+	JobID        primitive.ObjectID `bson:"job_id" json:"job_id"`
+	FreelancerID primitive.ObjectID `bson:"freelancer_id" json:"freelancer_id"`
+	SenderID     primitive.ObjectID `bson:"sender_id" json:"sender_id"`
+	Content      string             `bson:"content" json:"content"`
 	CreatedAt    time.Time          `bson:"created_at" json:"created_at"`
-	ApprovedAt   *time.Time         `bson:"approved_at,omitempty" json:"approved_at,omitempty"`
-	AvailableAt  *time.Time         `bson:"available_at,omitempty" json:"available_at,omitempty"`
 }
 
 type MarketplaceProposal struct {

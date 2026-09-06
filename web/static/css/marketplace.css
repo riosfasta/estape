@@ -82,3 +82,15 @@
 .market-crop-controls label{display:grid;gap:6px;font-size:13px}
 .market-crop-controls input[type="range"]{width:100%;height:24px;min-height:24px;padding:0;accent-color:var(--accent)}
 @media(max-width:450px){.market-crop-controls{grid-template-columns:1fr}.market-crop-dialog{padding:16px}}
+
+.market-work-dialog,.market-chat-dialog{width:min(900px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;padding:24px}
+.market-chat-dialog{width:min(600px,calc(100vw - 32px))}
+.market-chat-history{max-height:42dvh;overflow:auto;display:grid;gap:12px;margin:16px 0;padding:4px}
+.market-chat-message,.market-work-note{padding:12px 16px;border:1px solid var(--border-color);border-radius:12px;overflow-wrap:anywhere}
+.market-chat-message{max-width:90%;justify-self:start}.market-chat-message.is-mine{justify-self:end;background:var(--bg-tertiary)}
+.market-chat-message small,.market-work-note small{display:block;color:var(--text-muted)}
+.market-work-note{margin-top:12px}.scoped-task-team{grid-column:1/-1}
+.fh-scope-tasks{max-height:300px;overflow:auto;display:grid;gap:10px;margin:12px 0}.fh-scope-row{display:grid;grid-template-columns:1fr 150px;align-items:center;gap:12px;border-bottom:1px solid var(--border-color);padding:10px 0}.fh-scope-row>label{min-width:0}.fh-scope-row input[type=number]{width:100%}
+@media(max-width:550px){.market-work-dialog,.market-chat-dialog{padding:16px}.fh-scope-row{grid-template-columns:1fr}.market-chat-message{max-width:100%}}
+
+.market-chat-dialog [hidden]{display:none!important}

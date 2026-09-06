@@ -98,6 +98,11 @@ func (s *Server) marketplaceRoutes(router *gin.Engine, api, authed *gin.RouterGr
 	authed.GET("/marketplace/jobs/:id", s.marketplaceJob)
 	authed.POST("/marketplace/jobs", s.marketplaceCreateJob)
 	authed.POST("/marketplace/jobs/:id/proposals", s.marketplacePropose)
+	authed.GET("/marketplace/jobs/:id/work", s.marketplaceWork)
+	authed.PATCH("/marketplace/jobs/:id/work/:taskId", s.marketplaceUpdateWork)
+	authed.GET("/marketplace/jobs/:id/chat/:freelancerId", s.marketplaceJobChat)
+	authed.POST("/marketplace/jobs/:id/chat/:freelancerId", s.marketplaceJobChat)
+	authed.GET("/marketplace/tasks/:id/team", s.marketplaceTaskTeam)
 	authed.POST("/marketplace/jobs/:id/:action", s.marketplaceJobAction)
 	authed.POST("/marketplace/proposals/:id/:action", s.marketplaceProposalAction)
 	authed.GET("/marketplace/wallet", s.marketplaceWallet)
@@ -595,11 +600,14 @@ func (s *Server) marketplaceCreateJob(c *gin.Context) {
 	user, _ := currentUser(c)
 	ctx := c.Request.Context()
 	var req struct {
-		SourceTaskID string   `json:"source_task_id"`
-		Title        string   `json:"title"`
-		Description  string   `json:"description"`
-		Skills       []string `json:"skills"`
-		Budget       int64    `json:"budget"`
+		SourceTaskID   string                    `json:"source_task_id"`
+		ScopeTasks     []marketplaceScopeRequest `json:"scope_tasks"`
+		ScopePriceMode string                    `json:"scope_price_mode"`
+		ScopeWebsiteID string                    `json:"scope_website_id"`
+		Title          string                    `json:"title"`
+		Description    string                    `json:"description"`
+		Skills         []string                  `json:"skills"`
+		Budget         int64                     `json:"budget"`
 	}
 	if c.ShouldBindJSON(&req) != nil {
 		marketplaceError(c, marketInvalid("Invalid job"))
@@ -613,24 +621,23 @@ func (s *Server) marketplaceCreateJob(c *gin.Context) {
 		return
 	}
 	job := models.MarketplaceJob{ID: primitive.NewObjectID(), OwnerID: user.ID, Title: req.Title, Description: req.Description, Skills: skills, Budget: req.Budget, Status: "open", CreatedAt: time.Now().UTC()}
-	if req.SourceTaskID != "" {
-		id, parseErr := primitive.ObjectIDFromHex(req.SourceTaskID)
-		if parseErr != nil {
-			marketplaceError(c, marketInvalid("Invalid source task"))
-			return
-		}
-		var task models.ClientTask
-		if err := s.store.C("client_tasks").FindOne(ctx, bson.M{"_id": id}).Decode(&task); err != nil || !s.canManageClientTask(ctx, user, task) {
-			c.JSON(403, gin.H{"error": "You cannot offer this task to freelancers"})
-			return
-		}
-		var site models.ClientWebsite
-		if err := s.store.C("client_websites").FindOne(ctx, bson.M{"_id": task.WebsiteID}).Decode(&site); err != nil || !s.canAccessClientWebsite(ctx, user, site) {
-			c.JSON(403, gin.H{"error": "You cannot offer this task to freelancers"})
-			return
-		}
-		job.SourceTaskID = task.ID
+	if req.SourceTaskID != "" && len(req.ScopeTasks) == 0 {
+		req.ScopeTasks = []marketplaceScopeRequest{{TaskID: req.SourceTaskID}}
 	}
+	if len(req.ScopeTasks) == 0 && (req.ScopeWebsiteID != "" || req.ScopePriceMode != "") {
+		marketplaceError(c, marketInvalid("Select at least one task to share"))
+		return
+	}
+	if len(req.ScopeTasks) > 0 {
+		if req.ScopePriceMode == "" {
+			req.ScopePriceMode = "domain"
+		}
+		if err := s.prepareMarketplaceScope(ctx, user, &job, req.ScopeTasks, req.ScopePriceMode, req.ScopeWebsiteID); err != nil {
+			marketplaceError(c, err)
+			return
+		}
+	}
+
 	err = s.marketplaceTransaction(ctx, func(sc mongo.SessionContext) error {
 		p, err := s.marketplaceReady(sc, user.ID, false)
 		if err != nil {
@@ -680,7 +687,12 @@ func (s *Server) marketplaceJob(c *gin.Context) {
 	if job.OwnerID != user.ID && job.FreelancerID != user.ID {
 		job.Delivery = ""
 	}
-	c.JSON(200, gin.H{"job": job, "proposals": proposals})
+	canViewScope := job.OwnerID == user.ID || job.FreelancerID == user.ID
+	for _, proposal := range proposals {
+		read, _ := scopedJobAccess(job, user.ID, &proposal)
+		canViewScope = canViewScope || read
+	}
+	c.JSON(200, gin.H{"job": job, "proposals": proposals, "has_scope": len(job.ScopeTasks) > 0, "can_view_scope": canViewScope && len(job.ScopeTasks) > 0})
 }
 
 func (s *Server) marketplacePropose(c *gin.Context) {
@@ -731,8 +743,11 @@ func (s *Server) marketplacePropose(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		if freelancerAvailability(p) != "available" {
-			return marketInvalid("Freelancer is currently working on a job")
+		if p.Availability == "busy" || p.Availability == "on_break" {
+			return marketInvalid("Freelancer is busy or off for a break")
+		}
+		if job.ScopePriceMode == "per_task" && req.Price != job.Budget {
+			return marketInvalid("This offer uses fixed per-task prices; its total must match the task budget")
 		}
 		proposal.Name = p.Name
 		if kind == "bid" {
@@ -809,7 +824,7 @@ func (s *Server) marketplaceProposalAction(c *gin.Context) {
 		if _, err := s.marketplaceReady(sc, p.FreelancerID, true); err != nil {
 			return err
 		}
-		result, err := s.store.C("freelancer_profiles").UpdateOne(sc, bson.M{"_id": p.FreelancerID, "active_jobs": 0, "availability": bson.M{"$nin": []string{"busy", "running_project", "on_break"}}}, bson.M{"$inc": bson.M{"active_jobs": 1}})
+		result, err := s.store.C("freelancer_profiles").UpdateOne(sc, bson.M{"_id": p.FreelancerID, "availability": bson.M{"$nin": []string{"busy", "on_break"}}}, bson.M{"$inc": bson.M{"active_jobs": 1}})
 		if err != nil {
 			return err
 		}

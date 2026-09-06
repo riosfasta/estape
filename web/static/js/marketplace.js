@@ -212,7 +212,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     const openJobs = mine?.jobs.filter(j => j.owner_id === state.me.id && j.status === "open") || [];
     page(p.name, `${heading("FREELANCER PROFILE", p.name, p.title, '<a class="btn" href="/freelancers">Browse talent</a>')}<section class="panel"><div class="market-person">${photo(p)}<div><h2>${esc(p.title)}</h2><p>${esc(p.location)}, ${esc(regionNames.of(p.country))}</p>${p.verified ? badge("ID verified") : ""}</div>${profileShareActions(p, true)}</div>${stats(p)}<p class="market-bio">${esc(p.bio)}</p>${chips(p.skills)}</section>${portfolio(p)}
       ${shareProfile(p, true)}
-      ${state.me?.id === id ? '<p><a class="btn" href="/dashboard">Edit my profile</a></p>' : `<section class="panel"><h2>Invite ${esc(p.name)} to a job</h2>${!p.available ? '<p>This freelancer is not available for new work.</p>' : !state.me ? '<a class="btn primary" href="/register">Create an account to hire</a>' : openJobs.length ? `<form id="marketInvite" class="market-form"><label class="field">Your open job<select name="job_id">${openJobs.map(j => `<option value="${esc(j.id)}">${esc(j.title)} · ${money(j.budget)}</option>`).join("")}</select></label><label class="field">Offer price (USD)<input name="price" type="number" min="1" max="100000" step="0.01" required></label><label class="field">Message<textarea name="message" minlength="20" maxlength="5000" required rows="3"></textarea></label><button class="btn primary" type="submit">Send offer</button><p class="muted">The freelancer can accept or decline. You make the final hiring decision after acceptance.</p></form>` : '<p>Publish a job with a funded balance first.</p><a class="btn primary" href="/marketplace/jobs">Create a job</a>'}</section>`}
+      ${state.me?.id === id ? '<p><a class="btn" href="/dashboard">Edit my profile</a></p>' : `<section class="panel"><h2>Invite ${esc(p.name)} to a job</h2>${["busy", "on_break"].includes(p.availability) ? '<p>This freelancer is not available for new work.</p>' : !state.me ? '<a class="btn primary" href="/register">Create an account to hire</a>' : openJobs.length ? `<form id="marketInvite" class="market-form"><label class="field">Your open job<select name="job_id">${openJobs.map(j => `<option value="${esc(j.id)}">${esc(j.title)} · ${money(j.budget)}</option>`).join("")}</select></label><label class="field">Offer price (USD)<input name="price" type="number" min="1" max="100000" step="0.01" required></label><label class="field">Message<textarea name="message" minlength="20" maxlength="5000" required rows="3"></textarea></label><button class="btn primary" type="submit">Send offer</button><p class="muted">The freelancer can accept or decline. You make the final hiring decision after acceptance.</p></form>` : '<p>Publish a job with a funded balance first.</p><a class="btn primary" href="/marketplace/jobs">Create a job</a>'}</section>`}
       <h2>Completed work & reviews</h2>${data.reviews.map(r => `<article class="panel"><h3>${esc(r.title)}</h3><p>${r.rating} / 5 · ${esc(date(r.approved_at))}</p><p>${esc(r.review || "No written review.")}</p></article>`).join("") || empty("No completed jobs yet.")}`);
     bindProfileShare();
     bindForm("#marketInvite", async form => { const v = Object.fromEntries(new FormData(form)); await post(`/api/marketplace/jobs/${v.job_id}/proposals`, { freelancer_id: id, price: cents(v.price), message: v.message }); message("Offer sent. Track their response in My jobs & offers."); form.reset(); });
@@ -233,18 +233,79 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     const data = await api(`/api/marketplace/jobs/${id}`); const j = data.job; const owner = state.me.id === j.owner_id; const hired = state.me.id === j.freelancer_id;
     const me = await api("/api/marketplace/me");
     const ownProposal = data.proposals.find(p => p.freelancer_id === state.me.id);
-    page(j.title, `${heading("FIXED-PRICE PROJECT", j.title, `Published by ${j.owner_name}`, '<a class="btn" href="/marketplace/jobs">My jobs</a>')}<section class="panel"><div class="toolbar"><strong class="market-large">${money(j.price || j.budget)}</strong>${badge(j.status)}</div><p class="market-bio">${esc(j.description)}</p>${chips(j.skills)}<p class="muted">${owner ? "Your reserved payment is released on approval." : "Platform commission: 5%. You receive " + money((j.price || j.budget) - Math.round((j.price || j.budget) * .05)) + "."} Earnings unlock seven days after employer approval.</p>${j.available_at ? `<p>Withdrawal eligibility: ${esc(date(j.available_at))}</p>` : ""}${owner && j.status === "open" ? '<a class="btn primary" href="/freelancers">Find freelancers to invite</a> <button class="btn" data-job-action="cancel">Cancel open job</button>' : ""}</section>
-      ${!owner && j.status === "open" && !ownProposal ? `<section class="panel"><h2>Send a proposal</h2><p>You have ${me.profile.connects} Connects. This bid costs 10 Connects. One proposal per job.</p><form id="marketBid" class="market-form"><label class="field">Your fixed price (USD)<input name="price" type="number" min="1" max="100000" step="0.01" value="${j.budget / 100}" required></label><label class="field">Explain your approach<textarea name="message" minlength="20" maxlength="5000" rows="4" required></textarea></label><button class="btn primary" type="submit" ${me.profile.connects < 10 ? "disabled" : ""}>Submit bid · 10 Connects</button></form></section>` : ""}
-      ${data.proposals.length ? `<h2>${owner ? "Applicants & invited freelancers" : "Your proposal / invitation"}</h2>${data.proposals.map(p => `<article class="panel"><div class="toolbar"><a href="/freelancers/${esc(p.freelancer_id)}"><strong>${esc(p.name)}</strong></a>${badge(p.kind)}${badge(p.status)}<strong>${money(p.price)}</strong></div><p class="market-bio">${esc(p.message)}</p><div class="toolbar">${!owner && p.status === "offered" && j.status === "open" ? `<button class="btn primary" data-proposal="${p.id}" data-action="accept">Accept offer</button><button class="btn" data-proposal="${p.id}" data-action="decline">Decline offer</button>` : ""}${owner && j.status === "open" && ["submitted", "accepted"].includes(p.status) ? `<button class="btn primary" data-proposal="${p.id}" data-action="hire">Hire & reserve ${money(p.price)}</button>` : ""}</div></article>`).join("")}` : ""}
+    page(j.title, `${heading("FIXED-PRICE PROJECT", j.title, `Published by ${j.owner_name}`, '<a class="btn" href="/marketplace/jobs">My jobs</a>')}<section class="panel"><div class="toolbar"><strong class="market-large">${money(j.price || j.budget)}</strong>${badge(j.status)}</div><p class="market-bio">${esc(j.description)}</p>${chips(j.skills)}<p class="muted">${owner ? "Your reserved payment is released on approval." : "Platform commission: 5%. You receive " + money((j.price || j.budget) - Math.round((j.price || j.budget) * .05)) + "."} Earnings unlock seven days after employer approval.</p>${j.available_at ? `<p>Withdrawal eligibility: ${esc(date(j.available_at))}</p>` : ""}${data.can_view_scope ? '<button class="btn primary" data-work-open>View shared tasks & team</button>' : ""}${owner && j.status === "open" ? '<a class="btn primary" href="/freelancers">Find freelancers to invite</a> <button class="btn" data-job-action="cancel">Cancel open job</button>' : ""}</section>
+      ${!owner && j.status === "open" && !ownProposal ? `<section class="panel"><h2>Send a proposal</h2><p>You have ${me.profile.connects} Connects. This bid costs 10 Connects. One proposal per job.</p><form id="marketBid" class="market-form"><label class="field">Your fixed price (USD)<input name="price" type="number" min="1" max="100000" step="0.01" value="${j.budget / 100}" ${j.scope_price_mode === "per_task" ? "readonly" : ""} required></label><label class="field">Explain your approach<textarea name="message" minlength="20" maxlength="5000" rows="4" required></textarea></label><button class="btn primary" type="submit" ${me.profile.connects < 10 ? "disabled" : ""}>Submit bid · 10 Connects</button></form></section>` : ""}
+      ${data.proposals.length ? `<h2>${owner ? "Applicants & invited freelancers" : "Your proposal / invitation"}</h2>${data.proposals.map(p => `<article class="panel"><div class="toolbar"><a href="/freelancers/${esc(p.freelancer_id)}"><strong>${esc(p.name)}</strong></a>${badge(p.kind)}${badge(p.status)}<strong>${money(p.price)}</strong></div><p class="market-bio">${esc(p.message)}</p><div class="toolbar"><button class="btn" data-chat-freelancer="${esc(p.freelancer_id)}">Chat</button>${!owner && p.status === "offered" && j.status === "open" ? `<button class="btn primary" data-proposal="${p.id}" data-action="accept">Accept offer</button><button class="btn" data-proposal="${p.id}" data-action="decline">Decline offer</button>` : ""}${owner && j.status === "open" && ["submitted", "accepted"].includes(p.status) ? `<button class="btn primary" data-proposal="${p.id}" data-action="hire">Hire & reserve ${money(p.price)}</button>` : ""}</div></article>`).join("")}` : ""}
       ${hired && j.status === "hired" ? `<section class="panel"><h2>Submit completed work</h2><form id="marketDeliver" class="market-form"><label class="field">Deliverables and access instructions<textarea name="delivery" rows="5" minlength="20" maxlength="10000" required>${esc(j.delivery || "")}</textarea></label><button class="btn primary" type="submit">Submit for approval</button></form></section>` : ""}
       ${(owner || hired) && j.delivery ? `<section class="panel"><h2>Submitted work</h2><p class="market-bio">${esc(j.delivery)}</p></section>` : ""}
       ${owner && j.status === "submitted" ? `<section class="panel"><h2>Review & approve</h2><form id="marketApprove" class="market-form"><label class="field">Rating<select name="rating" required><option value="">Choose rating</option>${[5, 4, 3, 2, 1].map(r => `<option value="${r}">${r} / 5</option>`).join("")}</select></label><label class="field">Public review<textarea name="review" maxlength="2000" rows="3"></textarea></label><p>Approval releases ${money(j.price)} from your reserved funds. The freelancer receives ${money(j.price - Math.round(j.price * .05))} after the 5% fee, held for seven days.</p><button class="btn primary" type="submit">Approve work & payment</button><button class="btn" type="button" data-job-action="revise">Request changes</button></form></section>` : ""}${j.status === "completed" ? `<section class="panel"><h2>Employer review · ${j.rating} / 5</h2><p>${esc(j.review || "No written review.")}</p></section>` : ""}`);
     bindForm("#marketBid", async form => { const v = Object.fromEntries(new FormData(form)); await post(`/api/marketplace/jobs/${id}/proposals`, { price: cents(v.price), message: v.message }); await jobDetail(id); message("Proposal submitted."); });
     bindForm("#marketDeliver", async form => { await post(`/api/marketplace/jobs/${id}/submit`, Object.fromEntries(new FormData(form))); await jobDetail(id); });
     bindForm("#marketApprove", async form => { const v = Object.fromEntries(new FormData(form)); await post(`/api/marketplace/jobs/${id}/approve`, { rating: Number(v.rating), review: v.review }); await jobDetail(id); });
+    bindButtons("[data-work-open]", async () => { await openJobWork(id); });
+    bindButtons("[data-chat-freelancer]", async b => { await openJobChat(id, b.dataset.chatFreelancer); });
     bindButtons("[data-proposal]", async b => { await post(`/api/marketplace/proposals/${b.dataset.proposal}/${b.dataset.action}`); await jobDetail(id); });
     bindButtons("[data-job-action]", async b => { await post(`/api/marketplace/jobs/${id}/${b.dataset.jobAction}`); await jobDetail(id); });
   }
+  const readableScope = value => new DOMParser().parseFromString(value || "", "text/html").body.textContent || "";
+
+  async function openJobWork(jobID) {
+    const dialog = document.createElement("dialog"); dialog.className = "modal market-work-dialog marketplace";
+    document.body.append(dialog); dialog.showModal();
+    const close = () => { dialog.close(); dialog.remove(); };
+    dialog.addEventListener("cancel", event => { event.preventDefault(); close(); });
+    async function draw() {
+      try {
+        const data = await api(`/api/marketplace/jobs/${encodeURIComponent(jobID)}/work`);
+        if (!dialog.isConnected) return;
+        const names = Object.fromEntries(data.team.map(member => [member.id, member.name]));
+        dialog.innerHTML = `<div class="modal-head"><h2>Shared tasks & team</h2><button class="btn" type="button" data-work-close>Close</button></div><p>${data.can_update ? "You are part of this task team. Update progress and post work notes below." : "Read-only scope. Task updates unlock only after the employer hires you. Acceptance alone does not grant edit access."}</p><p>${data.price_mode === "per_task" ? "Fixed per-task prices" : "One price for this scope"}: <strong>${money(data.agreed_price || data.budget)}</strong>. Payment is approved for the complete contract.</p><section class="panel"><h3>Team for these tasks</h3>${data.team.map(member => `<span class="market-badge">${esc(member.name)}${member.username ? " @" + esc(member.username) : ""} · ${esc(member.role)}</span>`).join(" ")}</section>
+          ${data.tasks.map(task => `<section class="panel"><h3>${esc(task.title)}</h3>${task.price ? `<strong>${money(task.price)}</strong>` : ""}<p class="market-bio">${esc(readableScope(task.content))}</p><p>Status: ${esc(task.status)}</p>${task.unavailable ? '<p>This task has been removed. Contact the employer.</p>' : data.can_update ? `<form class="market-form" data-work-task="${esc(task.task_id)}"><label class="field">Progress<select name="status">${task.statuses.map(status => `<option value="${esc(status)}" ${status === task.status ? "selected" : ""}>${esc(status.replaceAll("_", " "))}</option>`).join("")}</select></label><label class="field">Work note<textarea name="note" rows="3" maxlength="5000" placeholder="Progress, questions, or delivery notes for this task"></textarea></label><button class="btn primary" type="submit">Update task</button><p class="status-line" role="status"></p></form>` : ""}<div>${(task.comments || []).map(note => `<article class="market-work-note"><strong>${esc(names[note.sender_id] || "Task teammate")}</strong><small>${esc(date(note.created_at))}</small><p class="market-bio">${esc(note.content)}</p></article>`).join("")}</div></section>`).join("") || empty("No tasks were attached to this job.")}`;
+        dialog.querySelector("[data-work-close]").onclick = close;
+        dialog.querySelectorAll("[data-work-task]").forEach(form => { form.onsubmit = async event => {
+          event.preventDefault(); const button = form.querySelector("button"); if (button.disabled) return; button.disabled = true;
+          try { const values = Object.fromEntries(new FormData(form)); await api(`/api/marketplace/jobs/${encodeURIComponent(jobID)}/work/${encodeURIComponent(form.dataset.workTask)}`, { method: "PATCH", body: JSON.stringify(values) }); await draw(); }
+          catch (error) { form.querySelector(".status-line").textContent = error.message; }
+          finally { button.disabled = false; }
+        }; });
+      } catch (error) { dialog.innerHTML = `<p>${esc(error.message)}</p><button class="btn" type="button">Close</button>`; dialog.querySelector("button").onclick = close; }
+    }
+    await draw();
+  }
+
+  async function openJobChat(jobID, freelancerID) {
+    const dialog = document.createElement("dialog"); dialog.className = "modal market-chat-dialog marketplace";
+    dialog.innerHTML = `<div class="modal-head"><h2>Invitation chat</h2><button class="btn" type="button" data-chat-close>Close</button></div><p class="muted">Private conversation between the employer and this freelancer. Latest 100 messages.</p><div class="market-chat-history" aria-live="polite"></div><form class="market-form"><label class="field">Message<textarea name="content" rows="3" maxlength="5000" required></textarea></label><button class="btn primary" type="submit">Send message</button></form><p class="status-line" role="status"></p>`;
+    document.body.append(dialog); dialog.showModal();
+    let timer, closed = false, loading = false, requestID = "";
+    const close = () => { closed = true; clearInterval(timer); dialog.close(); dialog.remove(); };
+    dialog.querySelector("[data-chat-close]").onclick = close;
+    dialog.addEventListener("cancel", event => { event.preventDefault(); close(); });
+    const endpoint = `/api/marketplace/jobs/${encodeURIComponent(jobID)}/chat/${encodeURIComponent(freelancerID)}`;
+    const form = dialog.querySelector("form"), history = dialog.querySelector(".market-chat-history"), status = dialog.querySelector(".status-line");
+    async function refresh() {
+      if (loading || closed) return; loading = true;
+      try {
+        const data = await api(endpoint); if (closed) return;
+        const nearBottom = history.scrollHeight - history.scrollTop - history.clientHeight < 80;
+        history.innerHTML = data.messages.slice().reverse().map(item => `<article class="market-chat-message ${item.sender_id === state.me.id ? "is-mine" : ""}"><strong>${item.sender_id === state.me.id ? "You" : item.sender_id === freelancerID ? "Freelancer" : "Employer"}</strong><p class="market-bio">${esc(item.content)}</p><small>${esc(date(item.created_at))}</small></article>`).join("") || empty("Start a conversation about the task scope and rate.");
+        form.hidden = data.read_only;
+        if (data.read_only) status.textContent = "This invitation is closed. You can still read the conversation.";
+        if (nearBottom) history.scrollTop = history.scrollHeight;
+      } catch (error) { if (!closed) status.textContent = error.message; }
+      finally { loading = false; }
+    }
+    form.onsubmit = async event => {
+      event.preventDefault(); const button = form.querySelector("button"); if (button.disabled) return; button.disabled = true;
+      if (!requestID) requestID = Array.from(crypto.getRandomValues(new Uint8Array(12)), byte => byte.toString(16).padStart(2, "0")).join("");
+      form.elements.content.readOnly = true;
+      try { await post(endpoint, { content: form.elements.content.value, request_id: requestID }); requestID = ""; form.elements.content.readOnly = false; form.reset(); status.textContent = ""; await refresh(); history.scrollTop = history.scrollHeight; }
+      catch (error) { status.textContent = error.message; }
+      finally { button.disabled = false; }
+    };
+    await refresh(); if (!closed) timer = setInterval(refresh, 8000);
+  }
+
   async function wallet() {
     const params = new URLSearchParams(location.search); let captureMessage = "";
     if (params.has("topup")) {
@@ -325,7 +386,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     document.querySelectorAll(".market-settlement").forEach((form, i) => { form.id = `marketSettlement${i}`; bindForm(`#${form.id}`, async f => { const v = Object.fromEntries(new FormData(f)); await post(`/api/marketplace/admin/transfers/${f.dataset.transfer}`, { status: "paid", reference: v.reference, fee: cents(v.fee) }); await admin(); }); });
     bindButtons("[data-reject-transfer]", async b => { await post(`/api/marketplace/admin/transfers/${b.dataset.rejectTransfer}`, { status: "rejected", fee: 0 }); await admin(); });
   }
-  async function openFreelancerHelp({ tasks = [], websiteName = "Website" } = {}) {
+  async function openFreelancerHelp({ tasks = [], websiteName = "Website", websiteID = "", domainScope = false } = {}) {
     if (document.querySelector("#freelancerHelpDialog")) return;
     const dialog = document.createElement("dialog");
     dialog.id = "freelancerHelpDialog";
@@ -378,7 +439,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
         find("[data-fh-page]").textContent = `Page ${pageNumber}`;
         find("[data-fh-prev]").disabled = pageNumber <= 1;
         find("[data-fh-next]").disabled = !data.has_more;
-        find("[data-fh-results]").innerHTML = profiles.map(p => `<article class="panel fh-person"><div class="market-person">${photo(p)}<div><h3>${esc(p.name)}</h3><p>${esc(p.title)}</p><p class="muted">${esc(p.location)}${p.country ? ", " + esc(regionNames.of(p.country)) : ""}</p></div></div><div class="fh-person-detail"><div class="toolbar">${badge(availabilityLabel(p))}${p.verified ? badge("ID verified") : ""}</div><p>${p.rating_count ? `${Number(p.rating).toFixed(1)} / 5 from ${Number(p.rating_count)} completed-job reviews` : "No completed-job reviews yet"} · ${Number(p.finished_jobs || 0)} jobs completed</p><p>${esc((p.bio || "").slice(0, 160))}</p>${chips((p.skills || []).slice(0, 8))}</div><div class="toolbar"><a class="btn" href="/freelancers/${esc(p.id)}" target="_blank" rel="noopener">View profile & reviews</a><button type="button" class="btn primary" data-fh-invite="${esc(p.id)}" ${!p.available ? "disabled" : ""}>Offer task</button></div></article>`).join("") || empty("No freelancers match. Try another skill, country or rating.");
+        find("[data-fh-results]").innerHTML = profiles.map(p => `<article class="panel fh-person"><div class="market-person">${photo(p)}<div><h3>${esc(p.name)}</h3><p>${esc(p.title)}</p><p class="muted">${esc(p.location)}${p.country ? ", " + esc(regionNames.of(p.country)) : ""}</p></div></div><div class="fh-person-detail"><div class="toolbar">${badge(availabilityLabel(p))}${p.verified ? badge("ID verified") : ""}</div><p>${p.rating_count ? `${Number(p.rating).toFixed(1)} / 5 from ${Number(p.rating_count)} completed-job reviews` : "No completed-job reviews yet"} · ${Number(p.finished_jobs || 0)} jobs completed</p><p>${esc((p.bio || "").slice(0, 160))}</p>${chips((p.skills || []).slice(0, 8))}</div><div class="toolbar"><a class="btn" href="/freelancers/${esc(p.id)}" target="_blank" rel="noopener">View profile & reviews</a><button type="button" class="btn primary" data-fh-invite="${esc(p.id)}" ${["busy", "on_break"].includes(p.availability) ? "disabled" : ""}>Offer task</button></div></article>`).join("") || empty("No freelancers match. Try another skill, country or rating.");
         dialog.querySelectorAll("[data-fh-invite]").forEach(button => { button.onclick = () => { if (!busy) offer(profiles.find(p => p.id === button.dataset.fhInvite)); }; });
         status("");
       } catch (error) { if (!closed && current === request) { find("[data-fh-results]").innerHTML = ""; status(error.message, true); } }
@@ -390,9 +451,10 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
       const mount = find("[data-fh-offer]");
       mount.hidden = false;
       mount.innerHTML = `<h3>Offer a task to ${esc(person.name)}</h3><form class="market-form" data-fh-send>
-        <label class="field">Task or existing job<select name="source" required><option value="">Choose a task or job</option>${tasks.map(t => `<option value="task:${esc(t.id)}">Board task: ${esc(t.title)}</option>`).join("")}${jobs.map(j => `<option value="job:${esc(j.id)}">Open job: ${esc(j.title)}</option>`).join("")}</select></label>
+        <label class="field">Task or existing job<select name="source" required><option value="">Choose a task or job</option>${tasks.length > 1 ? `<option value="domain">Selected tasks from this domain</option>` : ""}${tasks.map(t => `<option value="task:${esc(t.id)}">Board task: ${esc(t.title)}</option>`).join("")}${jobs.map(j => `<option value="job:${esc(j.id)}">Open job: ${esc(j.title)}</option>`).join("")}</select></label>
         ${!tasks.length && !jobs.length ? '<p>Add a board task or <a href="/marketplace/jobs" target="_blank" rel="noopener">publish a job</a> first.</p>' : ""}
         <div data-fh-new hidden><label class="field">Public job title<input name="title" minlength="5" maxlength="160"></label><label class="field">Public scope and deliverables<textarea name="description" minlength="30" maxlength="10000" rows="4"></textarea></label><label class="field">Required skills, separated by commas<input name="skills" placeholder="WordPress, PHP, custom skill"></label><label class="market-check"><input type="checkbox" name="publish_consent"><span>I reviewed this description and agree to publish it as an open marketplace job. It contains no private client details or credentials.</span></label></div>
+        <section data-fh-domain hidden><p>Select exactly which tasks to share (up to 50). Invitees can read their titles and descriptions; hired freelancers can update statuses and post work notes. New tasks added later are not included.</p><label class="field">Pricing<select name="pricing_mode"><option value="domain">One price for selected domain tasks</option><option value="per_task">Price each task</option></select></label><div class="fh-scope-tasks">${tasks.map((task, index) => `<div class="fh-scope-row"><label class="market-check"><input type="checkbox" data-scope-task="${esc(task.id)}" ${index < 50 ? "checked" : ""}><span>${esc(task.title)}</span></label><label data-scope-price-label hidden>Task price (USD)<input type="number" min="1" max="100000" step="0.01" data-scope-price="${esc(task.id)}" disabled></label></div>`).join("")}</div></section><p data-fh-private-scope>Sharing a task also shares its current description privately with invited freelancers. Review the task for confidential information before sending.</p>
         <label class="field">Offer price / new job budget (USD)<input name="price" type="number" min="1" max="100000" step="0.01" required></label>
         <label class="field">Private invitation message<textarea name="message" minlength="20" maxlength="5000" rows="3" required></textarea></label>
         <button type="submit" class="btn primary">Send offer</button><p data-fh-offer-status role="status" aria-live="polite"></p>
@@ -402,22 +464,43 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
       const note = find("[data-fh-offer-status]");
       fields.message.value = "Hello, I would like your help with this task. Please review the scope and let me know if you are interested.";
       fields.source.onchange = () => {
-        const isNew = fields.source.value.startsWith("task:");
+        const isDomain = fields.source.value === "domain";
+        const isNew = isDomain || fields.source.value.startsWith("task:");
         find("[data-fh-new]").hidden = !isNew;
+        find("[data-fh-domain]").hidden = !isDomain;
+        fields.pricing_mode.disabled = !isDomain;
+        updateScopePrices();
         for (const name of ["title", "description", "skills", "publish_consent"]) { fields[name].required = isNew; fields[name].disabled = !isNew; }
         fields.publish_consent.checked = false;
         if (isNew) {
           const task = tasks.find(t => "task:" + t.id === fields.source.value);
-          fields.title.value = task?.title || "";
+          fields.title.value = isDomain ? `Freelancer help for ${websiteName}` : task?.title || "";
           // Task content may be rich HTML. Copy plain text only for owner review.
           const parsed = new DOMParser().parseFromString(task?.content || task?.comment || "", "text/html");
-          fields.description.value = parsed.body.textContent || "";
+          fields.description.value = isDomain ? `Help complete the selected tasks for ${websiteName}. Invited freelancers can review the private task list before accepting.` : parsed.body.textContent || "";
           fields.skills.value = find("[data-fh-filters]").elements.skill.value;
         } else {
           const job = jobs.find(j => "job:" + j.id === fields.source.value);
           fields.price.value = job ? (job.budget / 100).toFixed(2) : "";
+          fields.price.readOnly = job?.scope_price_mode === "per_task";
         }
       };
+      function updateScopePrices() {
+        const perTask = fields.source.value === "domain" && fields.pricing_mode.value === "per_task";
+        fields.price.readOnly = perTask || jobs.find(job => "job:" + job.id === fields.source.value)?.scope_price_mode === "per_task";
+        let total = 0;
+        form.querySelectorAll("[data-scope-price]").forEach(input => {
+          const checked = form.querySelector(`[data-scope-task="${input.dataset.scopePrice}"]`).checked;
+          input.disabled = !perTask || !checked; input.required = perTask && checked;
+          input.closest("label").hidden = !perTask;
+          if (perTask && checked) total += Math.round(Number(input.value || 0) * 100);
+        });
+        if (perTask) fields.price.value = (total / 100).toFixed(2);
+      }
+      fields.pricing_mode.onchange = updateScopePrices;
+      form.querySelectorAll("[data-scope-task], [data-scope-price]").forEach(input => { input.oninput = updateScopePrices; });
+      if (domainScope && tasks.length > 1) fields.source.value = "domain";
+      else if (tasks.length === 1) fields.source.value = "task:" + tasks[0].id;
       fields.source.onchange();
       form.onsubmit = async event => {
         event.preventDefault();
@@ -431,8 +514,12 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
         try {
           const price = cents(fields.price.value);
           let jobID = fields.source.value.replace(/^job:/, "");
-          if (fields.source.value.startsWith("task:")) {
-            const data = await post("/api/marketplace/jobs", { source_task_id: fields.source.value.slice(5), title: fields.title.value, description: fields.description.value, skills: fields.skills.value.split(","), budget: price });
+          if (fields.source.value.startsWith("task:") || fields.source.value === "domain") {
+            const domain = fields.source.value === "domain";
+            const mode = domain ? fields.pricing_mode.value : "domain";
+            const scopeTasks = domain ? Array.from(form.querySelectorAll("[data-scope-task]:checked")).map(input => ({ task_id: input.dataset.scopeTask, price: mode === "per_task" ? cents(form.querySelector(`[data-scope-price="${input.dataset.scopeTask}"]`).value) : 0 })) : [{ task_id: fields.source.value.slice(5), price: 0 }];
+            if (!scopeTasks.length || scopeTasks.length > 50) throw new Error("Select between 1 and 50 tasks.");
+            const data = await post("/api/marketplace/jobs", { source_task_id: domain ? "" : fields.source.value.slice(5), scope_tasks: scopeTasks, scope_price_mode: mode, scope_website_id: websiteID, title: fields.title.value, description: fields.description.value, skills: fields.skills.value.split(","), budget: price });
             jobID = data.job.id;
             jobs.push(data.job);
             // Keep the published job if invitation delivery fails, so retry cannot publish it twice.
@@ -447,8 +534,10 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
         finally {
           busy = false; button.disabled = false; find("[data-fh-close]").disabled = false;
           form.querySelectorAll("input,select,textarea").forEach(field => { field.disabled = false; });
-          const isNew = fields.source.value.startsWith("task:");
+          const isDomain = fields.source.value === "domain";
+          const isNew = isDomain || fields.source.value.startsWith("task:");
           for (const name of ["title", "description", "skills", "publish_consent"]) fields[name].disabled = !isNew;
+          fields.pricing_mode.disabled = !isDomain; updateScopePrices();
         }
       };
       mount.scrollIntoView({ behavior: "smooth", block: "nearest" });

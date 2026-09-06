@@ -75,7 +75,7 @@ func TestMarketplaceRoutesAndPrivateAccess(t *testing.T) {
 	authed := api.Group("")
 	authed.Use(func(c *gin.Context) { c.AbortWithStatusJSON(401, gin.H{"error": "unauthorized"}) })
 	s.marketplaceRoutes(router, api, authed) // Detect route conflicts without needing a database.
-	for _, route := range []string{"/api/marketplace/me", "/api/marketplace/identity/" + primitive.NewObjectID().Hex(), "/api/marketplace/wallet", "/api/marketplace/admin", "/api/marketplace/admin/identity"} {
+	for _, route := range []string{"/api/marketplace/me", "/api/marketplace/identity/" + primitive.NewObjectID().Hex(), "/api/marketplace/wallet", "/api/marketplace/admin", "/api/marketplace/admin/identity", "/api/marketplace/jobs/" + primitive.NewObjectID().Hex() + "/work", "/api/marketplace/jobs/" + primitive.NewObjectID().Hex() + "/chat/" + primitive.NewObjectID().Hex(), "/api/marketplace/tasks/" + primitive.NewObjectID().Hex() + "/team"} {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, httptest.NewRequest("GET", route, nil))
 		if w.Code != 401 {
