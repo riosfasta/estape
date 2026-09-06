@@ -20,8 +20,8 @@ type marketplaceScopeRequest struct {
 }
 
 func validateScopePricing(tasks []marketplaceScopeRequest, mode string, budget int64) error {
-	if len(tasks) == 0 || len(tasks) > 50 {
-		return marketInvalid("Select 1 to 50 tasks from one domain")
+	if len(tasks) == 0 || len(tasks) > 500 {
+		return marketInvalid("Select 1 to 500 tasks from one domain")
 	}
 	if mode != "domain" && mode != "per_task" {
 		return marketInvalid("Choose a domain price or a price per task")
@@ -184,7 +184,7 @@ func (s *Server) marketplaceWork(c *gin.Context) {
 			team = append(team, gin.H{"id": member.ID, "name": member.Name, "username": member.Username, "role": map[bool]string{true: "employer", false: "freelancer"}[memberID == job.OwnerID]})
 		}
 	}
-	c.JSON(200, gin.H{"tasks": tasks, "can_update": write, "team": team, "price_mode": job.ScopePriceMode, "budget": job.Budget, "agreed_price": job.Price})
+	c.JSON(200, gin.H{"tasks": tasks, "can_update": write, "team": team, "price_mode": job.ScopePriceMode, "budget": job.Budget, "agreed_price": job.Price, "hourly": hourlySummary(job, user.ID)})
 }
 
 func (s *Server) marketplaceUpdateWork(c *gin.Context) {

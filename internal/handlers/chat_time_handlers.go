@@ -556,6 +556,10 @@ func (s *Server) stopTimer(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "time entry not found"})
 		return
 	}
+	if !entry.MarketplaceJobID.IsZero() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Contract timer entries are protected; use the shared task workspace"})
+		return
+	}
 	if entry.UserID != userCtx.ID && userCtx.Role != models.RoleTeamAdmin && userCtx.Role != models.RoleOwnerAdmin {
 		c.JSON(http.StatusForbidden, gin.H{"error": "cannot stop this timer"})
 		return
@@ -714,7 +718,7 @@ func (s *Server) deleteTimeEntry(c *gin.Context) {
 	if !ok {
 		return
 	}
-	filter := bson.M{"_id": id}
+	filter := bson.M{"_id": id, "marketplace_job_id": bson.M{"$exists": false}}
 	if isInvitedCompanyRole(userCtx.Role) {
 		filter["user_id"] = userCtx.ID
 	}

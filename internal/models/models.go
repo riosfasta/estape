@@ -617,15 +617,17 @@ type ExportJob struct {
 }
 
 type TimeEntry struct {
-	ID              primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	TaskID          primitive.ObjectID `bson:"task_id" json:"task_id"`
-	UserID          primitive.ObjectID `bson:"user_id" json:"user_id"`
-	TeamID          primitive.ObjectID `bson:"team_id" json:"team_id"`
-	StartTime       time.Time          `bson:"start_time" json:"start_time"`
-	EndTime         *time.Time         `bson:"end_time,omitempty" json:"end_time,omitempty"`
-	DurationMinutes int                `bson:"duration_minutes" json:"duration_minutes"`
-	IsManual        bool               `bson:"is_manual" json:"is_manual"`
-	Note            string             `bson:"note,omitempty" json:"note,omitempty"`
-	Billable        bool               `bson:"billable" json:"billable"`
-	CreatedAt       time.Time          `bson:"created_at" json:"created_at"`
+	MarketplaceJobID primitive.ObjectID `bson:"marketplace_job_id,omitempty" json:"marketplace_job_id,omitempty"`
+	DurationSeconds  int64              `bson:"duration_seconds,omitempty" json:"duration_seconds,omitempty"`
+	ID               primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	TaskID           primitive.ObjectID `bson:"task_id" json:"task_id"`
+	UserID           primitive.ObjectID `bson:"user_id" json:"user_id"`
+	TeamID           primitive.ObjectID `bson:"team_id" json:"team_id"`
+	StartTime        time.Time          `bson:"start_time" json:"start_time"`
+	EndTime          *time.Time         `bson:"end_time,omitempty" json:"end_time,omitempty"`
+	DurationMinutes  int                `bson:"duration_minutes" json:"duration_minutes"`
+	IsManual         bool               `bson:"is_manual" json:"is_manual"`
+	Note             string             `bson:"note,omitempty" json:"note,omitempty"`
+	Billable         bool               `bson:"billable" json:"billable"`
+	CreatedAt        time.Time          `bson:"created_at" json:"created_at"`
 }

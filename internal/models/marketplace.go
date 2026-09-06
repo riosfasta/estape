@@ -42,6 +42,13 @@ type PortfolioDetail struct {
 }
 
 type MarketplaceJob struct {
+	BillingType    string                 `bson:"billing_type,omitempty" json:"billing_type,omitempty"`
+	HourlyRate     int64                  `bson:"hourly_rate,omitempty" json:"hourly_rate,omitempty"`
+	MaxSeconds     int64                  `bson:"max_seconds,omitempty" json:"max_seconds,omitempty"`
+	TrackedSeconds int64                  `bson:"tracked_seconds,omitempty" json:"tracked_seconds,omitempty"`
+	TimerStartedAt *time.Time             `bson:"timer_started_at,omitempty" json:"-"`
+	TimerUntil     *time.Time             `bson:"timer_until,omitempty" json:"-"`
+	TimerTaskID    primitive.ObjectID     `bson:"timer_task_id,omitempty" json:"-"`
 	ScopeTasks     []MarketplaceScopeTask `bson:"scope_tasks,omitempty" json:"-"`
 	ScopeWebsiteID primitive.ObjectID     `bson:"scope_website_id,omitempty" json:"-"`
 	ScopePriceMode string                 `bson:"scope_price_mode,omitempty" json:"scope_price_mode,omitempty"`

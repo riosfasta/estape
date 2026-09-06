@@ -50,7 +50,7 @@
 
 .market-connect-users { display: grid; gap: 12px; max-height: 360px; overflow: auto; padding: 12px 4px; margin: 12px 0; }
 .market-connect-users > label { border-bottom: 1px solid var(--border-color, #8883); padding: 8px; }
-.fh-dialog{width:min(1120px,calc(100vw - 32px));max-width:1120px;max-height:calc(100dvh - 40px);overflow:auto;padding:26px}
+.fh-dialog{width:90vw;max-width:90vw;max-height:calc(100dvh - 40px);overflow:auto;padding:26px}
 .fh-dialog [hidden]{display:none!important}
 .fh-dialog .modal-head{align-items:flex-start}
 .fh-dialog .market-notice{margin-bottom:20px}

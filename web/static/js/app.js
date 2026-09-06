@@ -7360,7 +7360,7 @@ async function renderClientWebsite(clientID, websiteID) {
   }));
   bindContextActionMenus(app);
   $("#addWebsiteDocBtn")?.addEventListener("click", () => $("#websiteDocumentDialog")?.showModal());
-  $("#findFreelancerHelpBtn")?.addEventListener("click", () => marketplace.openFreelancerHelp({ tasks: (data.tasks || []).filter(task => task.tab_id === selectedTab?.id), websiteName: website.name, websiteID: website.id }));
+  $("#findFreelancerHelpBtn")?.addEventListener("click", () => marketplace.openFreelancerHelp({ tasks: data.tasks || [], websiteName: website.name, websiteID: website.id }));
   $("#addClientTaskBtn")?.addEventListener("click", () => {
     $("#clientTaskForm")?.setAttribute("hidden", "");
     document.querySelector("[data-client-task-choice]")?.removeAttribute("hidden");

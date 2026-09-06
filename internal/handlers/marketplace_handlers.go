@@ -94,6 +94,8 @@ func (s *Server) marketplaceRoutes(router *gin.Engine, api, authed *gin.RouterGr
 	authed.POST("/marketplace/media", s.marketplaceUploadMedia)
 	authed.POST("/marketplace/identity", s.marketplaceUploadIdentity)
 	authed.DELETE("/marketplace/identity", s.marketplaceDeleteIdentity)
+	authed.GET("/marketplace/skill-options", s.marketplaceSkillOptions)
+	authed.POST("/marketplace/jobs/:id/timer/:timerAction", s.marketplaceTimer)
 	authed.GET("/marketplace/identity/:id", s.marketplaceReadIdentity)
 	authed.GET("/marketplace/jobs/:id", s.marketplaceJob)
 	authed.POST("/marketplace/jobs", s.marketplaceCreateJob)
@@ -600,6 +602,9 @@ func (s *Server) marketplaceCreateJob(c *gin.Context) {
 	user, _ := currentUser(c)
 	ctx := c.Request.Context()
 	var req struct {
+		BillingType    string                    `json:"billing_type"`
+		HourlyRate     int64                     `json:"hourly_rate"`
+		MaxSeconds     int64                     `json:"max_seconds"`
 		SourceTaskID   string                    `json:"source_task_id"`
 		ScopeTasks     []marketplaceScopeRequest `json:"scope_tasks"`
 		ScopePriceMode string                    `json:"scope_price_mode"`
@@ -620,7 +625,7 @@ func (s *Server) marketplaceCreateJob(c *gin.Context) {
 		marketplaceError(c, marketInvalid("Enter a title, description (30–10000 characters), skills and a budget from $1 to $100,000"))
 		return
 	}
-	job := models.MarketplaceJob{ID: primitive.NewObjectID(), OwnerID: user.ID, Title: req.Title, Description: req.Description, Skills: skills, Budget: req.Budget, Status: "open", CreatedAt: time.Now().UTC()}
+	job := models.MarketplaceJob{BillingType: req.BillingType, HourlyRate: req.HourlyRate, MaxSeconds: req.MaxSeconds, ID: primitive.NewObjectID(), OwnerID: user.ID, Title: req.Title, Description: req.Description, Skills: skills, Budget: req.Budget, Status: "open", CreatedAt: time.Now().UTC()}
 	if req.SourceTaskID != "" && len(req.ScopeTasks) == 0 {
 		req.ScopeTasks = []marketplaceScopeRequest{{TaskID: req.SourceTaskID}}
 	}
@@ -638,6 +643,10 @@ func (s *Server) marketplaceCreateJob(c *gin.Context) {
 		}
 	}
 
+	if err := validateHourlyJob(job); err != nil {
+		marketplaceError(c, err)
+		return
+	}
 	err = s.marketplaceTransaction(ctx, func(sc mongo.SessionContext) error {
 		p, err := s.marketplaceReady(sc, user.ID, false)
 		if err != nil {
@@ -692,7 +701,9 @@ func (s *Server) marketplaceJob(c *gin.Context) {
 		read, _ := scopedJobAccess(job, user.ID, &proposal)
 		canViewScope = canViewScope || read
 	}
-	c.JSON(200, gin.H{"job": job, "proposals": proposals, "has_scope": len(job.ScopeTasks) > 0, "can_view_scope": canViewScope && len(job.ScopeTasks) > 0})
+	var hourly gin.H
+ if canViewScope { hourly = hourlySummary(job, user.ID) }
+ c.JSON(200, gin.H{"job": job, "proposals": proposals, "has_scope": len(job.ScopeTasks) > 0, "can_view_scope": canViewScope && len(job.ScopeTasks) > 0, "hourly": hourly})
 }
 
 func (s *Server) marketplacePropose(c *gin.Context) {
@@ -746,7 +757,7 @@ func (s *Server) marketplacePropose(c *gin.Context) {
 		if p.Availability == "busy" || p.Availability == "on_break" {
 			return marketInvalid("Freelancer is busy or off for a break")
 		}
-		if job.ScopePriceMode == "per_task" && req.Price != job.Budget {
+		if (job.ScopePriceMode == "per_task" || job.BillingType == "hourly") && req.Price != job.Budget {
 			return marketInvalid("This offer uses fixed per-task prices; its total must match the task budget")
 		}
 		proposal.Name = p.Name
@@ -893,6 +904,11 @@ func (s *Server) marketplaceJobAction(c *gin.Context) {
 			if j.FreelancerID != user.ID || j.Status != "hired" || len(strings.TrimSpace(req.Delivery)) < 20 || len(req.Delivery) > 10000 {
 				return marketInvalid("Only the hired freelancer can submit work; include delivery details (20–10000 characters)")
 			}
+			if j.BillingType == "hourly" {
+				if err := s.finishHourlyTimer(sc, &j, time.Now().UTC()); err != nil {
+					return err
+				}
+			}
 			_, err := s.store.C("marketplace_jobs").UpdateOne(sc, bson.M{"_id": id}, bson.M{"$set": bson.M{"status": "submitted", "delivery": strings.TrimSpace(req.Delivery)}})
 			if err != nil {
 				return err
@@ -913,9 +929,17 @@ func (s *Server) marketplaceJobAction(c *gin.Context) {
 			}
 			now := time.Now().UTC()
 			available := now.Add(7 * 24 * time.Hour)
-			fee := marketplaceFee(j.Price)
-			net := j.Price - fee
-			result, err := s.store.C("marketplace_wallets").UpdateOne(sc, bson.M{"_id": user.ID, "reserved": bson.M{"$gte": j.Price}}, bson.M{"$inc": bson.M{"reserved": -j.Price}})
+			reserved := j.Price
+			amount := j.Price
+			if j.BillingType == "hourly" {
+				if j.TimerStartedAt != nil {
+					return marketInvalid("Stop the contract timer before approving")
+				}
+				amount = hourlyAmount(j, j.TrackedSeconds)
+			}
+			fee := marketplaceFee(amount)
+			net := amount - fee
+			result, err := s.store.C("marketplace_wallets").UpdateOne(sc, bson.M{"_id": user.ID, "reserved": bson.M{"$gte": reserved}}, bson.M{"$inc": bson.M{"reserved": -reserved, "deposits": reserved - amount}})
 			if err != nil {
 				return err
 			}
@@ -930,7 +954,7 @@ func (s *Server) marketplaceJobAction(c *gin.Context) {
 			if err != nil {
 				return err
 			}
-			_, err = s.store.C("marketplace_jobs").UpdateOne(sc, bson.M{"_id": id}, bson.M{"$set": bson.M{"status": "completed", "fee": fee, "rating": req.Rating, "review": strings.TrimSpace(req.Review), "approved_at": now, "available_at": available}})
+			_, err = s.store.C("marketplace_jobs").UpdateOne(sc, bson.M{"_id": id}, bson.M{"$set": bson.M{"status": "completed", "price": amount, "fee": fee, "rating": req.Rating, "review": strings.TrimSpace(req.Review), "approved_at": now, "available_at": available}})
 			if err != nil {
 				return err
 			}
