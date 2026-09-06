@@ -51,6 +51,27 @@ func TestYouTubePortfolioLinks(t *testing.T) {
 	}
 }
 
+func TestOptionalPortfolioDetails(t *testing.T) {
+	photos := []string{"/uploads/example.jpg"}
+	for _, detail := range []models.PortfolioDetail{
+		{Photo: photos[0]},
+		{Photo: photos[0], Title: " My project ", URL: "https://example.com/project", Description: "Built a website."},
+	} {
+		if _, err := normalizePortfolioDetails([]models.PortfolioDetail{detail}, photos); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, detail := range []models.PortfolioDetail{
+		{Photo: photos[0], URL: "javascript:alert(1)"},
+		{Photo: photos[0], URL: "https://user:secret@example.com"},
+		{Photo: "/uploads/another.jpg"},
+	} {
+		if _, err := normalizePortfolioDetails([]models.PortfolioDetail{detail}, photos); err == nil {
+			t.Fatal("invalid project details accepted")
+		}
+	}
+}
+
 func TestFreelancerEffectiveAvailability(t *testing.T) {
 	for _, state := range []string{"", "available", "busy", "running_project", "on_break"} {
 		profile := models.FreelancerProfile{Availability: state}

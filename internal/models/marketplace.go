@@ -6,6 +6,7 @@ import (
 )
 
 type FreelancerProfile struct {
+	PortfolioDetails []PortfolioDetail  `bson:"portfolio_details,omitempty" json:"portfolio_details"`
 	Availability     string             `bson:"availability,omitempty" json:"availability"`
 	PortfolioPhotos  []string           `bson:"portfolio_photos,omitempty" json:"portfolio_photos"`
 	YouTubeURLs      []string           `bson:"youtube_urls,omitempty" json:"youtube_urls"`
@@ -31,6 +32,13 @@ type FreelancerProfile struct {
 	Connects         int                `bson:"connects" json:"connects"`
 	ConnectWeek      time.Time          `bson:"connect_week" json:"connect_week"`
 	UpdatedAt        time.Time          `bson:"updated_at" json:"updated_at"`
+}
+
+type PortfolioDetail struct {
+	Photo       string `bson:"photo" json:"photo"`
+	Title       string `bson:"title,omitempty" json:"title"`
+	URL         string `bson:"url,omitempty" json:"url"`
+	Description string `bson:"description,omitempty" json:"description"`
 }
 
 type MarketplaceJob struct {

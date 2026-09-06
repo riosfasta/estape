@@ -20,6 +20,38 @@ import (
 
 const marketplaceImageLimit = 500 * 1024
 
+func normalizePortfolioDetails(details []models.PortfolioDetail, photos []string) ([]models.PortfolioDetail, error) {
+	if len(details) > 12 {
+		return nil, errors.New("Add details for up to 12 project photos")
+	}
+	allowed := map[string]bool{}
+	for _, photo := range photos {
+		allowed[photo] = true
+	}
+	seen := map[string]bool{}
+	result := []models.PortfolioDetail{}
+	for _, detail := range details {
+		if !allowed[detail.Photo] || seen[detail.Photo] {
+			return nil, errors.New("Project details must match a portfolio photo")
+		}
+		seen[detail.Photo] = true
+		detail.Title = strings.TrimSpace(detail.Title)
+		detail.Description = strings.TrimSpace(detail.Description)
+		detail.URL = strings.TrimSpace(detail.URL)
+		if len(detail.Title) > 120 || len(detail.Description) > 2000 || len(detail.URL) > 2048 {
+			return nil, errors.New("Use a title up to 120 characters, description up to 2000 and URL up to 2048")
+		}
+		if detail.URL != "" {
+			link, err := url.Parse(detail.URL)
+			if err != nil || (link.Scheme != "https" && link.Scheme != "http") || link.Hostname() == "" || link.User != nil {
+				return nil, errors.New("Use a valid HTTP or HTTPS project URL")
+			}
+		}
+		result = append(result, detail)
+	}
+	return result, nil
+}
+
 func validateMarketplaceImage(data []byte) (string, error) {
 	if len(data) == 0 || len(data) > marketplaceImageLimit {
 		return "", errors.New("Each image must be 500 KB or smaller")

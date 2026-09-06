@@ -220,18 +220,19 @@ func (s *Server) marketplaceMe(c *gin.Context) {
 func (s *Server) marketplaceSaveProfile(c *gin.Context) {
 	user, _ := currentUser(c)
 	var req struct {
-		Availability    *string   `json:"availability"`
-		PortfolioPhotos *[]string `json:"portfolio_photos"`
-		YouTubeURLs     *[]string `json:"youtube_urls"`
-		Name            string    `json:"name"`
-		Title           string    `json:"title"`
-		Bio             string    `json:"bio"`
-		Country         string    `json:"country"`
-		Location        string    `json:"location"`
-		Skills          []string  `json:"skills"`
-		Photo           string    `json:"photo"`
-		Public          bool      `json:"public"`
-		Consent         bool      `json:"consent"`
+		Availability     *string                   `json:"availability"`
+		PortfolioDetails *[]models.PortfolioDetail `json:"portfolio_details"`
+		PortfolioPhotos  *[]string                 `json:"portfolio_photos"`
+		YouTubeURLs      *[]string                 `json:"youtube_urls"`
+		Name             string                    `json:"name"`
+		Title            string                    `json:"title"`
+		Bio              string                    `json:"bio"`
+		Country          string                    `json:"country"`
+		Location         string                    `json:"location"`
+		Skills           []string                  `json:"skills"`
+		Photo            string                    `json:"photo"`
+		Public           bool                      `json:"public"`
+		Consent          bool                      `json:"consent"`
 	}
 	if c.ShouldBindJSON(&req) != nil {
 		marketplaceError(c, marketInvalid("Invalid profile"))
@@ -296,6 +297,18 @@ func (s *Server) marketplaceSaveProfile(c *gin.Context) {
 		}
 		set["portfolio_photos"] = *req.PortfolioPhotos
 	}
+	if req.PortfolioDetails != nil {
+		photos := current.PortfolioPhotos
+		if req.PortfolioPhotos != nil {
+			photos = *req.PortfolioPhotos
+		}
+		details, err := normalizePortfolioDetails(*req.PortfolioDetails, photos)
+		if err != nil {
+			marketplaceError(c, marketInvalid(err.Error()))
+			return
+		}
+		set["portfolio_details"] = details
+	}
 	if req.YouTubeURLs != nil {
 		if len(*req.YouTubeURLs) > 6 {
 			marketplaceError(c, marketInvalid("Add up to 6 YouTube videos"))
@@ -335,7 +348,7 @@ func validMarketplaceCountry(code string) bool {
 }
 
 func publicFreelancer(p models.FreelancerProfile) gin.H {
-	return gin.H{"id": p.ID, "name": p.Name, "title": p.Title, "bio": p.Bio, "country": p.Country, "location": p.Location, "skills": p.Skills, "photo": p.Photo, "rating": p.Rating, "rating_count": p.RatingCount, "finished_jobs": p.FinishedJobs, "published_jobs": p.PublishedJobs, "available": freelancerAvailability(p) == "available", "availability": freelancerAvailability(p), "portfolio_photos": p.PortfolioPhotos, "youtube_urls": p.YouTubeURLs, "verified": p.IdentityStatus == "verified"}
+	return gin.H{"id": p.ID, "name": p.Name, "title": p.Title, "bio": p.Bio, "country": p.Country, "location": p.Location, "skills": p.Skills, "photo": p.Photo, "rating": p.Rating, "rating_count": p.RatingCount, "finished_jobs": p.FinishedJobs, "published_jobs": p.PublishedJobs, "available": freelancerAvailability(p) == "available", "availability": freelancerAvailability(p), "portfolio_photos": p.PortfolioPhotos, "portfolio_details": p.PortfolioDetails, "youtube_urls": p.YouTubeURLs, "verified": p.IdentityStatus == "verified"}
 }
 
 func (s *Server) marketplaceFreelancers(c *gin.Context) {
