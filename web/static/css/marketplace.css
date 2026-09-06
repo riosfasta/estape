@@ -94,3 +94,5 @@
 @media(max-width:550px){.market-work-dialog,.market-chat-dialog{padding:16px}.fh-scope-row{grid-template-columns:1fr}.market-chat-message{max-width:100%}}
 
 .market-chat-dialog [hidden]{display:none!important}
+
+.fh-skill-dropdown{border:1px solid var(--border-color);border-radius:10px;padding:12px}.fh-skill-dropdown summary{padding:4px 0}.fh-skill-dropdown[open] summary{margin-bottom:12px}.fh-skill-dropdown [data-fh-skill-options]{max-height:250px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:12px}.fh-scope-row[hidden]{display:none!important}.fh-dialog{box-sizing:border-box}

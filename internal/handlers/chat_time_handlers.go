@@ -675,6 +675,10 @@ func (s *Server) updateTimeEntry(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "time entry not found"})
 		return
 	}
+	if !entry.MarketplaceJobID.IsZero() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Hourly contract time records cannot be manually edited"})
+		return
+	}
 	if entry.UserID != userCtx.ID && userCtx.Role != models.RoleTeamAdmin && userCtx.Role != models.RoleOwnerAdmin {
 		c.JSON(http.StatusForbidden, gin.H{"error": "cannot update this entry"})
 		return

@@ -8,7 +8,7 @@ const escape = value => String(value ?? "").replaceAll("&", "&amp;").replaceAll(
 class Element {
   children = new Map(); value = ""; innerHTML = ""; dataset = {}; attributes = {};
   classList = { toggle: (name, value) => { this.attributes[name] = value; } };
-  get elements() { return this.fields ||= Object.fromEntries(["skill", "country", "availability", "rating", "finished_jobs", "source", "title", "description", "skills", "publish_consent", "pricing_mode", "price", "message"].map(name => [name, new Element()])); }
+  get elements() { return this.fields ||= Object.fromEntries(["skill", "country", "availability", "rating", "finished_jobs", "source", "title", "description", "skills", "publish_consent", "pricing_mode", "billing_type", "hourly_rate", "max_hours", "price", "message"].map(name => [name, new Element()])); }
   querySelector(key) { if (!this.children.has(key)) this.children.set(key, new Element()); return this.children.get(key); }
   querySelectorAll(key) {
     if (this.scope && key === "[data-scope-price]") return this.scope.prices;
@@ -55,7 +55,7 @@ test("FH supports filters, list/grid, safe profiles and retrying a task offer wi
     dialog.querySelector("invite").onclick();
     const form = dialog.querySelector("[data-fh-send]");
     form.elements.source.value = "task:task-1"; form.elements.source.onchange();
-    form.elements.price.value = "100"; form.elements.publish_consent.checked = true;
+    form.elements.skills.value = "PHP"; form.elements.price.value = "100"; form.elements.publish_consent.checked = true;
     await form.onsubmit({ preventDefault() {} });
     assert.equal(form.elements.source.value, "job:new-job");
     await form.onsubmit({ preventDefault() {} });
@@ -68,7 +68,7 @@ test("FH supports filters, list/grid, safe profiles and retrying a task offer wi
   } finally { globalThis.FormData = originalFormData; }
 });
 
-test("domain offer sends only selected tasks and their fixed price breakdown", async () => {
+for (const hourly of [false, true]) test(hourly ? "hourly offer sends rate, hours and cost caps with no conflicting per-task prices" : "domain offer sends only selected tasks and their fixed price breakdown", async () => {
   let dialog;
   const originalFormData = globalThis.FormData;
   globalThis.FormData = class { *[Symbol.iterator]() {} };
@@ -81,7 +81,7 @@ test("domain offer sends only selected tasks and their fixed price breakdown", a
     if (url.includes("/freelancers?")) return { freelancers: [{ id: "freelancer", name: "Developer", skills: [], availability: "running_project" }], page: 1 };
     if (url.endsWith("/skills")) return { skills: [] };
     if (url.endsWith("/me")) return { jobs: [] };
-    if (url.endsWith("/jobs")) return { job: { id: "new-job", title: "Domain work", budget: 35000, scope_price_mode: "per_task" } };
+    if (url.endsWith("/jobs")) return { job: { id: "new-job", title: "Domain work", budget: 35000, scope_price_mode: hourly ? "domain" : "per_task", billing_type: hourly ? "hourly" : "fixed", hourly_rate: hourly ? 2500 : 0, max_seconds: hourly ? 14400 : 0 } };
     if (url.endsWith("/proposals")) return { ok: true };
     throw new Error("Unexpected request: " + url);
   } });
@@ -96,17 +96,20 @@ test("domain offer sends only selected tasks and their fixed price breakdown", a
     const price = form.querySelector(`[data-scope-price="${id}"]`); price.dataset.scopePrice = id; price.value = value; price.closest = () => new Element(); prices.push(price);
   }
   form.scope = { checks, prices };
+  form.elements.skills.value = "PHP";
   form.elements.pricing_mode.value = "per_task";
   form.elements.pricing_mode.onchange();
   assert.equal(form.elements.price.value, "350.00");
   assert.equal(prices[2].disabled, true);
+  if (hourly) { form.elements.billing_type.value = "hourly"; form.elements.hourly_rate.value = "25"; form.elements.max_hours.value = "4"; form.elements.billing_type.onchange(); assert.equal(form.elements.pricing_mode.value, "domain"); assert.equal(form.elements.pricing_mode.disabled, true); }
   form.elements.publish_consent.checked = true;
   await form.onsubmit({ preventDefault() {} });
   const created = requests.find(r => r.url === "/api/marketplace/jobs");
   assert.ok(created, dialog.querySelector("[data-fh-offer-status]").textContent);
   const payload = JSON.parse(created.options.body);
   assert.equal(payload.scope_website_id, "site");
-  assert.equal(payload.scope_price_mode, "per_task");
+  assert.equal(payload.scope_price_mode, hourly ? "domain" : "per_task");
+  if (hourly) { assert.equal(payload.hourly_rate, 2500); assert.equal(payload.max_seconds, 14400); assert.equal(payload.billing_type, "hourly"); }
   assert.equal(payload.budget, 35000);
-  assert.deepEqual(payload.scope_tasks, [{ task_id: "a", price: 10000 }, { task_id: "b", price: 25000 }]);
+  assert.deepEqual(payload.scope_tasks, [{ task_id: "a", price: hourly ? 0 : 10000 }, { task_id: "b", price: hourly ? 0 : 25000 }]);
 });

@@ -702,8 +702,10 @@ func (s *Server) marketplaceJob(c *gin.Context) {
 		canViewScope = canViewScope || read
 	}
 	var hourly gin.H
- if canViewScope { hourly = hourlySummary(job, user.ID) }
- c.JSON(200, gin.H{"job": job, "proposals": proposals, "has_scope": len(job.ScopeTasks) > 0, "can_view_scope": canViewScope && len(job.ScopeTasks) > 0, "hourly": hourly})
+	if canViewScope {
+		hourly = hourlySummary(job, user.ID)
+	}
+	c.JSON(200, gin.H{"job": job, "proposals": proposals, "has_scope": len(job.ScopeTasks) > 0, "can_view_scope": canViewScope && len(job.ScopeTasks) > 0, "hourly": hourly})
 }
 
 func (s *Server) marketplacePropose(c *gin.Context) {
@@ -828,6 +830,9 @@ func (s *Server) marketplaceProposalAction(c *gin.Context) {
 		}
 		if action != "hire" || j.OwnerID != user.ID || (p.Status != "submitted" && p.Status != "accepted") {
 			return marketInvalid("Only the employer can hire an applicant or an accepted invitation")
+		}
+		if j.BillingType == "hourly" && p.Price != j.Budget {
+			return marketInvalid("Hourly hiring must reserve the full agreed maximum cost")
 		}
 		if _, err := s.marketplaceReady(sc, user.ID, false); err != nil {
 			return err

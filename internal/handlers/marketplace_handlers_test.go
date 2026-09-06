@@ -480,5 +480,80 @@ func TestMarketplaceIntegration(t *testing.T) {
 	if err = s.cleanupMarketplaceUser(ctx, freelancer); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("hourly protected timer and unused reserve", func(t *testing.T) {
+		if err := s.ensureMarketplaceProfile(ctx, freelancer); err != nil {
+			t.Fatal(err)
+		}
+		_, err := st.C("freelancer_profiles").UpdateByID(ctx, freelancer, bson.M{"$set": bson.M{"active_jobs": 1}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = st.C("marketplace_wallets").UpdateByID(ctx, boss, bson.M{"$set": bson.M{"deposits": 0, "reserved": 5000}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		taskID := primitive.NewObjectID()
+		if _, err = st.C("client_tasks").InsertOne(ctx, models.ClientTask{ID: taskID, Title: "Hourly task"}); err != nil {
+			t.Fatal(err)
+		}
+		j := hourlyTestJob()
+		j.ID = primitive.NewObjectID()
+		j.OwnerID = boss
+		j.FreelancerID = freelancer
+		j.Status = "hired"
+		j.Budget = 5000
+		j.Price = 5000
+		j.ScopeTasks[0].TaskID = taskID
+		if _, err = st.C("marketplace_jobs").InsertOne(ctx, j); err != nil {
+			t.Fatal(err)
+		}
+		path := "/jobs/" + j.ID.Hex()
+		check(request(other, "POST", path+"/timer/start", gin.H{"task_id": taskID}), 400)
+		check(request(boss, "POST", path+"/timer/start", gin.H{"task_id": taskID}), 400)
+		check(request(freelancer, "POST", path+"/timer/start", gin.H{"task_id": primitive.NewObjectID()}), 400)
+		check(request(freelancer, "POST", path+"/timer/start", gin.H{"task_id": taskID}), 200)
+		check(request(freelancer, "POST", path+"/timer/start", gin.H{"task_id": taskID}), 200)
+		second := j
+		second.ID = primitive.NewObjectID()
+		if _, err = st.C("marketplace_jobs").InsertOne(ctx, second); err != nil {
+			t.Fatal(err)
+		}
+		check(request(freelancer, "POST", "/jobs/"+second.ID.Hex()+"/timer/start", gin.H{"task_id": taskID}), 400)
+		start := time.Now().UTC().Add(-2 * time.Hour)
+		deadline := start.Add(time.Hour)
+		if _, err = st.C("marketplace_jobs").UpdateByID(ctx, j.ID, bson.M{"$set": bson.M{"timer_started_at": start, "timer_until": deadline}}); err != nil {
+			t.Fatal(err)
+		}
+		check(request(freelancer, "POST", path+"/timer/stop", gin.H{}), 200)
+		check(request(freelancer, "POST", path+"/timer/stop", gin.H{}), 200)
+		var entry models.TimeEntry
+		if err = st.C("time_entries").FindOne(ctx, bson.M{"marketplace_job_id": j.ID}).Decode(&entry); err != nil {
+			t.Fatal(err)
+		}
+		if entry.DurationSeconds != 3600 {
+			t.Fatal("deadline was not enforced")
+		}
+		count, err := st.C("time_entries").CountDocuments(ctx, bson.M{"marketplace_job_id": j.ID})
+		if err != nil || count != 1 {
+			t.Fatal("repeated stop duplicated time")
+		}
+		authed.PATCH("/marketplace/protected-time/:id", s.updateTimeEntry)
+		authed.DELETE("/marketplace/protected-time/:id", s.deleteTimeEntry)
+		check(request(freelancer, "PATCH", "/protected-time/"+entry.ID.Hex(), gin.H{"duration_minutes": 9999}), 403)
+		check(request(admin, "DELETE", "/protected-time/"+entry.ID.Hex(), gin.H{}), 404)
+		check(request(freelancer, "POST", path+"/submit", gin.H{"delivery": "The selected task is complete and ready for review."}), 200)
+		check(request(freelancer, "POST", path+"/timer/start", gin.H{"task_id": taskID}), 400)
+		check(request(boss, "POST", path+"/approve", gin.H{"rating": 5}), 200)
+		check(request(boss, "POST", path+"/approve", gin.H{"rating": 5}), 400)
+		if wallet(boss).Deposits != 2500 || wallet(boss).Reserved != 0 {
+			t.Fatal("unused reserve was not returned exactly once")
+		}
+		if err = st.C("marketplace_jobs").FindOne(ctx, bson.M{"_id": j.ID}).Decode(&j); err != nil {
+			t.Fatal(err)
+		}
+		if j.Price != 2500 || j.Fee != 125 || j.TrackedSeconds != 3600 {
+			t.Fatal("incorrect hourly settlement")
+		}
+	})
 	t.Log("Isolated marketplace lifecycle, concurrent hiring, wallet replay, privacy, hold, fee and settlement checks passed")
 }

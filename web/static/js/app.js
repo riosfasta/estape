@@ -1,6 +1,5 @@
 import { cropMarketplaceImage, imagePreviewURL } from "/static/js/marketplace-image.js?v=20260905-1";
 import { openEmbeddedCheckout } from "/static/js/checkout.js?v=20260905-1";
-import { createMarketplace } from "/static/js/marketplace.js?v=20260906-5";
 function readStoredObject(key) {
   try {
     const parsed = JSON.parse(localStorage.getItem(key) || "{}");
@@ -12157,7 +12156,18 @@ async function route(options = {}) {
   }
 }
 
-const marketplace = createMarketplace({ api, state, shell, app, esc, icons, uploadResizedImage, openEmbeddedCheckout, cropMarketplaceImage, imagePreviewURL });
+// Login can render independently of marketplace feature modules.
+let marketplaceModule;
+async function loadMarketplaceModule() {
+  if (!marketplaceModule) marketplaceModule = import("/static/js/marketplace.js?v=20260906-7")
+    .then(({ createMarketplace }) => createMarketplace({ api, state, shell, app, esc, icons, uploadResizedImage, openEmbeddedCheckout, cropMarketplaceImage, imagePreviewURL }))
+    .catch(error => { marketplaceModule = null; throw error; });
+  return marketplaceModule;
+}
+const marketplace = {
+  render: async (...args) => (await loadMarketplaceModule()).render(...args),
+  openFreelancerHelp: async (...args) => (await loadMarketplaceModule()).openFreelancerHelp(...args),
+};
 app.addEventListener("click", async event => {
   const button = event.target.closest("[data-hire-domain], [data-hire-single-task]");
   if (!button || button.disabled) return;
