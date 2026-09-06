@@ -1144,7 +1144,6 @@ function joinedCompanyAccesses() {
 }
 
 function personalWorkspaceTeam() {
-  if (state.me?.role === "owner_adm") return state.team || state.personalTeam || null;
   return state.personalTeam || null;
 }
 
@@ -6914,7 +6913,7 @@ async function refreshClientSidebarCache() {
 
 async function renderClientProjects() {
   await refreshClientSidebarCache();
-  const canCreate = state.me?.role !== "owner_adm" && state.me?.role !== "client_admin";
+  const canCreate = state.me?.role !== "client_admin";
   const sitesByClient = (state.clientWebsites || []).reduce((acc, site) => {
     (acc[site.client_id] ||= []).push(site);
     return acc;

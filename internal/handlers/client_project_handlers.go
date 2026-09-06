@@ -19,6 +19,14 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// The owner's normal workspace is separate from platform-wide admin views.
+func ownerWorkspaceProjectFilter(user middleware.UserContext) bson.M {
+	if user.Role == models.RoleOwnerAdmin {
+		return bson.M{"created_by": user.ID}
+	}
+	return bson.M{}
+}
+
 func (s *Server) listClientProjects(c *gin.Context) {
 	userCtx, _ := currentUser(c)
 	if user, err := s.loadUser(c.Request.Context(), userCtx.ID); err == nil {
@@ -30,7 +38,7 @@ func (s *Server) listClientProjects(c *gin.Context) {
 		userCtx.TeamID = user.TeamID
 	}
 	access := s.clientAccessSets(c.Request.Context(), userCtx)
-	filter := bson.M{}
+	filter := ownerWorkspaceProjectFilter(userCtx)
 	if userCtx.Role != models.RoleOwnerAdmin {
 		clientIDs := uniqueObjectIDs(append(append([]primitive.ObjectID{}, access.FullClientIDs...), access.DomainClientIDs...))
 		if len(clientIDs) == 0 {
@@ -1277,7 +1285,7 @@ func (s *Server) listAssignedClientTasks(c *gin.Context) {
 
 	assignedOnly := strings.EqualFold(c.Query("scope"), "assigned") || strings.EqualFold(c.Query("view"), "assigned")
 	access := s.clientAccessSets(c.Request.Context(), userCtx)
-	clientFilter := bson.M{}
+	clientFilter := ownerWorkspaceProjectFilter(userCtx)
 	if userCtx.Role != models.RoleOwnerAdmin {
 		clientIDs := uniqueObjectIDs(append(append([]primitive.ObjectID{}, access.FullClientIDs...), access.DomainClientIDs...))
 		if len(clientIDs) == 0 {
@@ -2026,10 +2034,6 @@ func (s *Server) personalWorkspaceTeam(c *gin.Context) (models.Team, bool) {
 	user, err := s.loadUser(c.Request.Context(), userCtx.ID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-		return models.Team{}, false
-	}
-	if user.Role == models.RoleOwnerAdmin {
-		c.JSON(http.StatusForbidden, gin.H{"error": "owner admin does not have a client workspace"})
 		return models.Team{}, false
 	}
 	team, err := s.personalTeamForUser(c.Request.Context(), user, time.Now())

@@ -354,10 +354,8 @@ func (s *Server) me(c *gin.Context) {
 		}
 	}
 	var personalTeam *models.Team
-	if user.Role != models.RoleOwnerAdmin {
-		if owned, err := s.personalTeamForUser(c.Request.Context(), user, time.Now()); err == nil {
-			personalTeam = &owned
-		}
+	if owned, err := s.personalTeamForUser(c.Request.Context(), user, time.Now()); err == nil {
+		personalTeam = &owned
 	}
 	var companyAccess gin.H
 	companyAccesses := make([]gin.H, 0)
