@@ -46,6 +46,7 @@ func (s *Server) grantInvitationAccess(ctx context.Context, invitation models.Te
 		// Idempotent so a failed acceptance can be safely retried.
 		result, err := s.store.C(collection).UpdateMany(ctx, invitationAccessFilter(invitation.TeamID, ids), bson.M{
 			"$addToSet": bson.M{"member_ids": userID},
+			"$pull": bson.M{"group_only_member_ids": userID},
 			"$set":      bson.M{"member_roles." + userID.Hex(): firstNonEmpty(invitation.StaffRole, "internal")},
 		})
 		if err != nil {

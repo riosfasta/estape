@@ -420,10 +420,10 @@ func (s *Server) addClientProjectMember(c *gin.Context) {
 	staffRole := clientAccessStaffRole(req.Role, member)
 	targetRole := "member"
 	set := bson.M{"updated_at": time.Now(), clientAccessRoleField(memberID): staffRole}
-	update := bson.M{"$addToSet": bson.M{"member_ids": memberID}, "$pull": bson.M{"client_admin_ids": memberID}, "$set": set}
+	update := bson.M{"$addToSet": bson.M{"member_ids": memberID}, "$pull": bson.M{"client_admin_ids": memberID, "group_only_member_ids": memberID}, "$set": set}
 	if staffRole == string(models.RoleClientAdmin) {
 		targetRole = string(models.RoleClientAdmin)
-		update = bson.M{"$addToSet": bson.M{"client_admin_ids": memberID}, "$pull": bson.M{"member_ids": memberID}, "$set": set}
+		update = bson.M{"$addToSet": bson.M{"client_admin_ids": memberID}, "$pull": bson.M{"member_ids": memberID, "group_only_member_ids": memberID}, "$set": set}
 	}
 	alreadyTargetRole := (targetRole == string(models.RoleClientAdmin) && containsObjectID(client.ClientAdminIDs, memberID)) || (targetRole == "member" && containsObjectID(client.MemberIDs, memberID))
 	alreadyHadAccess := containsObjectID(client.ClientAdminIDs, memberID) || containsObjectID(client.MemberIDs, memberID)
@@ -468,11 +468,7 @@ func (s *Server) removeClientProjectMember(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot remove the client folder creator"})
 		return
 	}
-	_, err := s.store.C("client_projects").UpdateByID(c.Request.Context(), client.ID, bson.M{
-		"$pull":  bson.M{"member_ids": memberID, "client_admin_ids": memberID},
-		"$set":   bson.M{"updated_at": time.Now()},
-		"$unset": bson.M{clientAccessRoleField(memberID): ""},
-	})
+	_, err := s.store.C("client_projects").UpdateByID(c.Request.Context(), client.ID, directMemberAccessUpdate(memberID, false))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not remove member"})
 		return
@@ -533,10 +529,10 @@ func (s *Server) addClientWebsiteMember(c *gin.Context) {
 	staffRole := clientAccessStaffRole(req.Role, member)
 	targetRole := "member"
 	set := bson.M{"updated_at": time.Now(), clientAccessRoleField(memberID): staffRole}
-	update := bson.M{"$addToSet": bson.M{"member_ids": memberID}, "$pull": bson.M{"client_admin_ids": memberID}, "$set": set}
+	update := bson.M{"$addToSet": bson.M{"member_ids": memberID}, "$pull": bson.M{"client_admin_ids": memberID, "group_only_member_ids": memberID}, "$set": set}
 	if staffRole == string(models.RoleClientAdmin) {
 		targetRole = string(models.RoleClientAdmin)
-		update = bson.M{"$addToSet": bson.M{"client_admin_ids": memberID}, "$pull": bson.M{"member_ids": memberID}, "$set": set}
+		update = bson.M{"$addToSet": bson.M{"client_admin_ids": memberID}, "$pull": bson.M{"member_ids": memberID, "group_only_member_ids": memberID}, "$set": set}
 	}
 	alreadyTargetRole := (targetRole == string(models.RoleClientAdmin) && containsObjectID(site.ClientAdminIDs, memberID)) || (targetRole == "member" && containsObjectID(site.MemberIDs, memberID))
 	alreadyHadAccess := containsObjectID(site.ClientAdminIDs, memberID) || containsObjectID(site.MemberIDs, memberID)
@@ -581,11 +577,7 @@ func (s *Server) removeClientWebsiteMember(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot remove the domain creator"})
 		return
 	}
-	if _, err := s.store.C("client_websites").UpdateByID(c.Request.Context(), site.ID, bson.M{
-		"$pull":  bson.M{"member_ids": memberID, "client_admin_ids": memberID},
-		"$set":   bson.M{"updated_at": time.Now()},
-		"$unset": bson.M{clientAccessRoleField(memberID): ""},
-	}); err != nil {
+	if _, err := s.store.C("client_websites").UpdateByID(c.Request.Context(), site.ID, directMemberAccessUpdate(memberID, false)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not remove domain access"})
 		return
 	}

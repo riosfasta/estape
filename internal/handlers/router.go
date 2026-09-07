@@ -135,6 +135,11 @@ func (s *Server) Router() *gin.Engine {
 
 	authed.GET("/teams/:id", s.getTeam)
 	authed.PATCH("/teams/:id/profile", s.updateTeamProfile)
+	authed.POST("/teams/:id/groups", s.saveTeamGroup)
+	authed.PUT("/teams/:id/groups/:groupId", s.saveTeamGroup)
+	authed.DELETE("/teams/:id/groups/:groupId", s.deleteTeamGroup)
+	authed.PUT("/teams/:id/members/:userId/group", s.moveTeamGroupMember)
+	authed.PUT("/teams/:id/members/:userId/access", s.setTeamMemberAccess)
 	authed.GET("/teams/:id/invitations", s.listTeamInvitations)
 	authed.POST("/teams/:id/invitations", s.createTeamInvitation)
 	authed.DELETE("/teams/:id/invitations/:inviteId", s.cancelTeamInvitation)

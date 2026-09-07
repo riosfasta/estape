@@ -495,7 +495,7 @@ func (s *Server) removeTeamMember(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "member not found"})
 		return
 	}
-	_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), teamID, bson.M{"$pull": bson.M{"member_ids": memberID}})
+	_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), teamID, bson.M{"$pull": bson.M{"member_ids": memberID}, "$unset": bson.M{"member_groups."+memberID.Hex(): ""}})
 	_, _ = s.store.C("client_projects").UpdateMany(c.Request.Context(), bson.M{"team_id": teamID}, bson.M{
 		"$pull":  bson.M{"member_ids": memberID, "client_admin_ids": memberID},
 		"$unset": bson.M{clientAccessRoleField(memberID): ""},

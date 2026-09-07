@@ -53,6 +53,8 @@ type User struct {
 }
 
 type Team struct {
+	Groups          []TeamGroup          `bson:"groups,omitempty" json:"groups,omitempty"`
+	MemberGroups    map[string]string    `bson:"member_groups,omitempty" json:"member_groups,omitempty"`
 	ID              primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
 	Name            string               `bson:"name" json:"name"`
 	CompanyEmail    string               `bson:"company_email,omitempty" json:"company_email,omitempty"`
@@ -62,6 +64,13 @@ type Team struct {
 	SubscriptionID  primitive.ObjectID   `bson:"subscription_id,omitempty" json:"subscription_id,omitempty"`
 	CreatedAt       time.Time            `bson:"created_at" json:"created_at"`
 	SeatLimitCached int                  `bson:"seat_limit_cached,omitempty" json:"seat_limit_cached,omitempty"`
+}
+
+type TeamGroup struct {
+	ID primitive.ObjectID `bson:"id" json:"id"`
+	Name string `bson:"name" json:"name"`
+	ClientIDs []primitive.ObjectID `bson:"client_ids" json:"client_ids"`
+	WebsiteIDs []primitive.ObjectID `bson:"website_ids" json:"website_ids"`
 }
 
 type Subscription struct {
@@ -130,6 +139,8 @@ type Project struct {
 }
 
 type ClientProject struct {
+	GroupMemberIDs []primitive.ObjectID `bson:"group_member_ids,omitempty" json:"group_member_ids,omitempty"`
+	GroupOnlyMemberIDs []primitive.ObjectID `bson:"group_only_member_ids,omitempty" json:"group_only_member_ids,omitempty"`
 	ID             primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
 	TeamID         primitive.ObjectID   `bson:"team_id" json:"team_id"`
 	Name           string               `bson:"name" json:"name"`
@@ -145,6 +156,8 @@ type ClientProject struct {
 }
 
 type ClientWebsite struct {
+	GroupMemberIDs []primitive.ObjectID `bson:"group_member_ids,omitempty" json:"group_member_ids,omitempty"`
+	GroupOnlyMemberIDs []primitive.ObjectID `bson:"group_only_member_ids,omitempty" json:"group_only_member_ids,omitempty"`
 	ID             primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
 	ClientID       primitive.ObjectID   `bson:"client_id" json:"client_id"`
 	TeamID         primitive.ObjectID   `bson:"team_id" json:"team_id"`
