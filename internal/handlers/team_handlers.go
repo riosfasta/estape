@@ -468,6 +468,10 @@ func (s *Server) updateTeamMember(c *gin.Context) {
 		if models.UserStatus(*req.Status) == models.StatusSuspended {
 			_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), teamID, bson.M{"$pull": bson.M{"member_ids": memberID}})
 		}
+		if err := s.refreshTeamGroupAccess(c.Request.Context(), teamID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "staff status updated but group access could not be refreshed; please retry"})
+			return
+		}
 	}
 	s.audit(c.Request.Context(), userCtx.ID, "team.member.updated", "user", memberID)
 	c.JSON(http.StatusOK, gin.H{"updated": true})
@@ -495,13 +499,13 @@ func (s *Server) removeTeamMember(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "member not found"})
 		return
 	}
-	_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), teamID, bson.M{"$pull": bson.M{"member_ids": memberID}, "$unset": bson.M{"member_groups."+memberID.Hex(): ""}})
+	_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), teamID, bson.M{"$pull": bson.M{"member_ids": memberID}, "$unset": bson.M{"member_groups." + memberID.Hex(): ""}})
 	_, _ = s.store.C("client_projects").UpdateMany(c.Request.Context(), bson.M{"team_id": teamID}, bson.M{
-		"$pull":  bson.M{"member_ids": memberID, "client_admin_ids": memberID},
+		"$pull":  bson.M{"member_ids": memberID, "client_admin_ids": memberID, "group_member_ids": memberID, "group_only_member_ids": memberID},
 		"$unset": bson.M{clientAccessRoleField(memberID): ""},
 	})
 	_, _ = s.store.C("client_websites").UpdateMany(c.Request.Context(), bson.M{"team_id": teamID}, bson.M{
-		"$pull":  bson.M{"member_ids": memberID, "client_admin_ids": memberID},
+		"$pull":  bson.M{"member_ids": memberID, "client_admin_ids": memberID, "group_member_ids": memberID, "group_only_member_ids": memberID},
 		"$unset": bson.M{clientAccessRoleField(memberID): ""},
 	})
 	s.audit(c.Request.Context(), userCtx.ID, "team.member.removed", "user", memberID)

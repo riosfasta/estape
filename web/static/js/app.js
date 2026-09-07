@@ -3956,18 +3956,20 @@ function taskRows(tasks) {
     </article>`).join("");
 }
 
-function teamMemberRows(members, canManageTeam) {
+function teamMemberRows(members, canManageTeam, team = {}) {
   if (!members.length) return `<p class="muted">No listed members yet.</p>`;
   return members.map((member) => {
     const hasLeft = member.status === "left";
     const canManageMember = canManageTeam && member.id !== state.me?.id && ["users_member", "client_admin"].includes(member.role) && !hasLeft;
     const isSuspended = member.status === "suspended";
     const statusText = hasLeft ? "left company" : (isSuspended ? "blocked" : (member.status || "active"));
-    return `<article class="task-row">
+    const canGroup = canManageTeam && canGroupTeamMember(member, team);
+    return `<article class="task-row" ${canGroup ? `draggable="true" data-drag-team-member="${esc(member.id)}"` : ""}>
       <div><h3>${esc(member.name)}</h3><span class="muted">@${esc(member.username || "pending")} · ${esc(member.email)}</span></div>
       <div class="team-member-actions">
         <span class="pill ${isSuspended || hasLeft ? "danger" : ""}">${esc(statusText)}</span>
         ${member.id && !hasLeft ? `<button class="btn compact" type="button" data-team-member-tasks="${esc(member.id)}">${icon("list-checks")}Tasks</button>` : ""}
+        ${canGroup ? `<button class="btn compact" type="button" data-person-access="${esc(member.id)}">${icon("folder-lock")}Access</button><select aria-label="Group for ${esc(member.name || member.email)}" data-move-team-member="${esc(member.id)}"><option value="">Ungrouped</option>${(team.groups || []).map(group => `<option value="${esc(group.id)}" ${team.member_groups?.[member.id] === group.id ? "selected" : ""}>${esc(group.name)}</option>`).join("")}</select>` : ""}
       </div>
       ${canManageMember ? `
         <details class="row-menu">
@@ -4045,6 +4047,132 @@ async function openTeamMemberTasks(teamID, memberID, trigger = null) {
   } finally {
     stopButton();
   }
+}
+
+function canGroupTeamMember(member, team) {
+  return member.status === "active" && (team.member_ids || []).includes(member.id) && member.id !== team.owner_admin_id && member.role !== "owner_adm" && !(member.role === "users_admin" && member.team_id === team.id);
+}
+
+function teamGroupsHTML(team, members, canManage) {
+  const groups = team.groups || [];
+  const known = new Set(groups.map(group => group.id));
+  const buckets = [{ id: "", name: "Ungrouped" }, ...groups];
+  return `<div class="panel-head"><h2>Team groups</h2>${canManage ? `<button class="btn compact primary" type="button" data-new-team-group>${icon("plus")}New group</button>` : ""}</div>
+    ${canManage ? '<p class="muted">Drag staff into a group, or use their group selector. Group access adds to individual access.</p>' : ""}
+    <p class="status-line" id="teamGroupsStatus" role="status"></p>
+    <div class="team-group-list">${buckets.map(group => {
+      const people = members.filter(member => {
+        const assigned = team.member_groups?.[member.id] || "";
+        return group.id ? assigned === group.id : !known.has(assigned);
+      });
+      return `<section class="team-group" data-drop-team-group="${esc(group.id)}" aria-label="${esc(group.name)} group">
+        <div class="panel-head"><h3>${esc(group.name)} <span class="pill">${people.length}</span></h3>${canManage && group.id ? `<div class="toolbar"><button class="btn compact" type="button" data-edit-team-group="${esc(group.id)}">${icon("settings-2")}Name & access</button><button class="btn icon quiet" type="button" data-delete-team-group="${esc(group.id)}" aria-label="Delete ${esc(group.name)} group">${icon("trash-2")}</button></div>` : ""}</div>
+        <div class="task-list">${people.length ? teamMemberRows(people, canManage, team) : '<p class="muted team-group-empty">Drop staff here</p>'}</div>
+      </section>`;
+    }).join("")}</div>`;
+}
+
+function bindTeamGroups(team, members) {
+  let moving = false;
+  const status = message => { const node = $("#teamGroupsStatus"); if (node) node.textContent = message; };
+  const move = async (userID, groupID) => {
+    if (moving) return;
+    moving = true;
+    try {
+      status("Updating group and access…");
+      await api(`/api/teams/${team.id}/members/${userID}/group`, { method: "PUT", body: JSON.stringify({ group_id: groupID }) });
+      await renderTeam();
+    } catch (error) { status(error.message); } finally { moving = false; }
+  };
+  document.querySelectorAll('[data-drag-team-member]').forEach(row => row.addEventListener("dragstart", event => {
+    if (event.target.closest("button, select, input, details")) { event.preventDefault(); return; }
+    event.dataTransfer.setData("application/x-bugmega-team-member", row.dataset.dragTeamMember);
+    event.dataTransfer.effectAllowed = "move";
+  }));
+  document.querySelectorAll('[data-drop-team-group]').forEach(zone => {
+    zone.addEventListener("dragover", event => {
+      if (!Array.from(event.dataTransfer.types).includes("application/x-bugmega-team-member")) return;
+      event.preventDefault(); event.dataTransfer.dropEffect = "move"; zone.classList.add("drag-over");
+    });
+    zone.addEventListener("dragleave", event => { if (!zone.contains(event.relatedTarget)) zone.classList.remove("drag-over"); });
+    zone.addEventListener("drop", event => {
+      event.preventDefault(); zone.classList.remove("drag-over");
+      const id = event.dataTransfer.getData("application/x-bugmega-team-member");
+      if (members.some(member => member.id === id && canGroupTeamMember(member, team))) move(id, zone.dataset.dropTeamGroup);
+    });
+  });
+  document.querySelectorAll('[data-move-team-member]').forEach(select => select.addEventListener("change", async () => {
+    await move(select.dataset.moveTeamMember, select.value);
+    if (select.isConnected) select.value = team.member_groups?.[select.dataset.moveTeamMember] || "";
+  }));
+  $('[data-new-team-group]')?.addEventListener("click", () => openTeamAccessDialog(team, null, null));
+  document.querySelectorAll('[data-edit-team-group]').forEach(button => button.addEventListener("click", () => openTeamAccessDialog(team, (team.groups || []).find(group => group.id === button.dataset.editTeamGroup), null)));
+  document.querySelectorAll('[data-person-access]').forEach(button => button.addEventListener("click", () => openTeamAccessDialog(team, null, members.find(member => member.id === button.dataset.personAccess))));
+  document.querySelectorAll('[data-delete-team-group]').forEach(button => button.addEventListener("click", async () => {
+    if (!confirm("Delete this group? Its members will become ungrouped and lose this group's access. Individual access remains.")) return;
+    button.disabled = true;
+    try {
+      await api(`/api/teams/${team.id}/groups/${button.dataset.deleteTeamGroup}`, { method: "DELETE" });
+      await renderTeam();
+    } catch (error) { status(error.message); button.disabled = false; }
+  }));
+}
+
+function teamAccessChoice(resource, group, member, website, inheritedFolderIDs) {
+  if (!member) return { checked: (website ? group?.website_ids : group?.client_ids)?.includes(resource.id) || false, locked: false, inherited: false };
+  const creator = resource.created_by === member.id;
+  const direct = (resource.member_ids || []).includes(member.id) && !(resource.group_only_member_ids || []).includes(member.id);
+  return {
+    checked: creator || direct || (resource.client_admin_ids || []).includes(member.id),
+    locked: creator,
+    inherited: (resource.group_member_ids || []).includes(member.id) || (website && inheritedFolderIDs.includes(resource.client_id)),
+  };
+}
+
+async function openTeamAccessDialog(team, group, member) {
+  $("#teamAccessDialog")?.remove();
+  const dialog = document.createElement("dialog");
+  dialog.id = "teamAccessDialog"; dialog.className = "modal team-access-dialog";
+  dialog.innerHTML = `<form class="form-grid"><div class="modal-head"><h2>${member ? `Access for ${esc(member.name || member.email)}` : group ? "Edit group" : "New group"}</h2><button class="btn icon quiet" type="button" data-close-access aria-label="Close">${icon("x")}</button></div>
+    ${!member ? `<div class="field"><label>Group name</label><input name="group_name" required maxlength="80" value="${esc(group?.name || "")}" placeholder="e.g. Developers"></div>` : '<p class="muted">Checked items are direct access. Group access is shown separately and remains when direct access is unchecked. Folder access includes all its domains. Creators retain access to their own folders and domains.</p>'}
+    <p class="muted">Select folders or individual domains. Leaving everything unchecked grants no ${member ? "direct" : "group"} project access.</p>
+    <input type="search" data-search-access placeholder="Search folders and domains" aria-label="Search access options">
+    <div class="staff-invitation-access" data-team-access-options>Loading…</div>
+    <p class="status-line" role="status"></p><button class="btn primary" type="submit" disabled>Save access</button></form>`;
+  document.body.appendChild(dialog); dialog.showModal(); icons();
+  dialog.addEventListener("close", () => dialog.remove());
+  dialog.querySelector('[data-close-access]').addEventListener("click", () => dialog.close());
+  const form = dialog.querySelector("form"), submit = form.querySelector('[type="submit"]');
+  try {
+    const data = await api("/api/client-projects");
+    if (!dialog.isConnected) return;
+    const clients = (data.clients || []).filter(item => item.team_id === team.id);
+    const sites = (data.websites || []).filter(item => item.team_id === team.id);
+    const inheritedFolders = member ? clients.filter(item => (item.group_member_ids || []).includes(member.id)).map(item => item.id) : [];
+    const row = (resource, website, folderName = "") => {
+      const choice = teamAccessChoice(resource, group, member, website, inheritedFolders);
+      const label = website ? `Domain: ${resource.name || resource.url} — ${folderName}` : `Folder: ${resource.name}`;
+      return `<label class="staff-invitation-access-option" data-access-search="${esc(label.toLowerCase())}"><input type="checkbox" name="${website ? "website_ids" : "client_ids"}" value="${esc(resource.id)}" ${choice.checked ? "checked" : ""} ${choice.locked ? "disabled" : ""}><span>${esc(label)} ${choice.inherited ? '<small class="pill">Group access</small>' : ""} ${choice.locked ? '<small class="pill">Creator</small>' : ""}</span></label>`;
+    };
+    dialog.querySelector('[data-team-access-options]').innerHTML = `<div class="staff-invitation-access-list">${clients.map(client => row(client, false) + sites.filter(site => site.client_id === client.id).map(site => row(site, true, client.name)).join("")).join("") || '<p class="muted">No folders or domains yet.</p>'}</div>`;
+    dialog.querySelector('[data-search-access]').addEventListener("input", event => {
+      const term = event.target.value.trim().toLowerCase();
+      dialog.querySelectorAll('[data-access-search]').forEach(row => { row.hidden = !row.dataset.accessSearch.includes(term); });
+    });
+    submit.disabled = false;
+  } catch (error) { setFormStatus(form, error.message, true); return; }
+  form.addEventListener("submit", async event => {
+    event.preventDefault(); if (submit.disabled) return;
+    const selected = name => [...form.querySelectorAll(`input[name="${name}"]:checked`)].map(input => input.value);
+    const payload = { client_ids: selected("client_ids"), website_ids: selected("website_ids") };
+    if (!member) payload.name = form.elements.group_name.value.trim();
+    submit.disabled = true;
+    try {
+      const url = member ? `/api/teams/${team.id}/members/${member.id}/access` : `/api/teams/${team.id}/groups${group ? `/${group.id}` : ""}`;
+      await api(url, { method: member || group ? "PUT" : "POST", body: JSON.stringify(payload) });
+      dialog.close(); await renderTeam();
+    } catch (error) { setFormStatus(form, error.message, true); } finally { submit.disabled = false; }
+  });
 }
 
 function staffInvitationFields() {
@@ -4135,7 +4263,7 @@ async function renderTeam() {
   shell("Team", `
     <div class="page-title"><div><h1>Team</h1><p class="muted">${esc(data.team.name)}</p></div></div>
     <div class="grid-2">
-      <section class="panel"><h2>Listed Members</h2><div class="task-list">${teamMemberRows(members, canManageTeam)}</div></section>
+      <section class="panel team-groups-panel">${teamGroupsHTML(data.team, members, canManageTeam)}</section>
       ${canManageTeam ? `<section class="panel">
         <h2>Invite Staff</h2>
         <form id="inviteForm" class="form-grid">
@@ -4165,6 +4293,7 @@ async function renderTeam() {
       <div id="teamMemberTasksBody"></div>
     </dialog>`);
   const membersByID = Object.fromEntries(members.map((member) => [member.id, member]));
+  if (canManageTeam) bindTeamGroups(data.team, members);
   bindStaffInvitationForm($("#inviteForm"), teamID);
   document.querySelectorAll("[data-team-member-tasks]").forEach((btn) => btn.addEventListener("click", () => {
     openTeamMemberTasks(teamID, btn.dataset.teamMemberTasks, btn);

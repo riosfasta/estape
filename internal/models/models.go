@@ -67,9 +67,9 @@ type Team struct {
 }
 
 type TeamGroup struct {
-	ID primitive.ObjectID `bson:"id" json:"id"`
-	Name string `bson:"name" json:"name"`
-	ClientIDs []primitive.ObjectID `bson:"client_ids" json:"client_ids"`
+	ID         primitive.ObjectID   `bson:"id" json:"id"`
+	Name       string               `bson:"name" json:"name"`
+	ClientIDs  []primitive.ObjectID `bson:"client_ids" json:"client_ids"`
 	WebsiteIDs []primitive.ObjectID `bson:"website_ids" json:"website_ids"`
 }
 
@@ -139,38 +139,38 @@ type Project struct {
 }
 
 type ClientProject struct {
-	GroupMemberIDs []primitive.ObjectID `bson:"group_member_ids,omitempty" json:"group_member_ids,omitempty"`
+	GroupMemberIDs     []primitive.ObjectID `bson:"group_member_ids,omitempty" json:"group_member_ids,omitempty"`
 	GroupOnlyMemberIDs []primitive.ObjectID `bson:"group_only_member_ids,omitempty" json:"group_only_member_ids,omitempty"`
-	ID             primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
-	TeamID         primitive.ObjectID   `bson:"team_id" json:"team_id"`
-	Name           string               `bson:"name" json:"name"`
-	CompanyEmail   string               `bson:"company_email,omitempty" json:"company_email,omitempty"`
-	ContactName    string               `bson:"contact_name,omitempty" json:"contact_name,omitempty"`
-	Details        string               `bson:"details,omitempty" json:"details,omitempty"`
-	MemberIDs      []primitive.ObjectID `bson:"member_ids" json:"member_ids"`
-	ClientAdminIDs []primitive.ObjectID `bson:"client_admin_ids" json:"client_admin_ids"`
-	MemberRoles    map[string]string    `bson:"member_roles,omitempty" json:"member_roles,omitempty"`
-	CreatedBy      primitive.ObjectID   `bson:"created_by" json:"created_by"`
-	CreatedAt      time.Time            `bson:"created_at" json:"created_at"`
-	UpdatedAt      time.Time            `bson:"updated_at" json:"updated_at"`
+	ID                 primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	TeamID             primitive.ObjectID   `bson:"team_id" json:"team_id"`
+	Name               string               `bson:"name" json:"name"`
+	CompanyEmail       string               `bson:"company_email,omitempty" json:"company_email,omitempty"`
+	ContactName        string               `bson:"contact_name,omitempty" json:"contact_name,omitempty"`
+	Details            string               `bson:"details,omitempty" json:"details,omitempty"`
+	MemberIDs          []primitive.ObjectID `bson:"member_ids" json:"member_ids"`
+	ClientAdminIDs     []primitive.ObjectID `bson:"client_admin_ids" json:"client_admin_ids"`
+	MemberRoles        map[string]string    `bson:"member_roles,omitempty" json:"member_roles,omitempty"`
+	CreatedBy          primitive.ObjectID   `bson:"created_by" json:"created_by"`
+	CreatedAt          time.Time            `bson:"created_at" json:"created_at"`
+	UpdatedAt          time.Time            `bson:"updated_at" json:"updated_at"`
 }
 
 type ClientWebsite struct {
-	GroupMemberIDs []primitive.ObjectID `bson:"group_member_ids,omitempty" json:"group_member_ids,omitempty"`
+	GroupMemberIDs     []primitive.ObjectID `bson:"group_member_ids,omitempty" json:"group_member_ids,omitempty"`
 	GroupOnlyMemberIDs []primitive.ObjectID `bson:"group_only_member_ids,omitempty" json:"group_only_member_ids,omitempty"`
-	ID             primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
-	ClientID       primitive.ObjectID   `bson:"client_id" json:"client_id"`
-	TeamID         primitive.ObjectID   `bson:"team_id" json:"team_id"`
-	Name           string               `bson:"name" json:"name"`
-	URL            string               `bson:"url,omitempty" json:"url,omitempty"`
-	Details        string               `bson:"details,omitempty" json:"details,omitempty"`
-	WidgetKey      string               `bson:"widget_key,omitempty" json:"widget_key,omitempty"`
-	MemberIDs      []primitive.ObjectID `bson:"member_ids,omitempty" json:"member_ids,omitempty"`
-	ClientAdminIDs []primitive.ObjectID `bson:"client_admin_ids,omitempty" json:"client_admin_ids,omitempty"`
-	MemberRoles    map[string]string    `bson:"member_roles,omitempty" json:"member_roles,omitempty"`
-	CreatedBy      primitive.ObjectID   `bson:"created_by" json:"created_by"`
-	CreatedAt      time.Time            `bson:"created_at" json:"created_at"`
-	UpdatedAt      time.Time            `bson:"updated_at" json:"updated_at"`
+	ID                 primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	ClientID           primitive.ObjectID   `bson:"client_id" json:"client_id"`
+	TeamID             primitive.ObjectID   `bson:"team_id" json:"team_id"`
+	Name               string               `bson:"name" json:"name"`
+	URL                string               `bson:"url,omitempty" json:"url,omitempty"`
+	Details            string               `bson:"details,omitempty" json:"details,omitempty"`
+	WidgetKey          string               `bson:"widget_key,omitempty" json:"widget_key,omitempty"`
+	MemberIDs          []primitive.ObjectID `bson:"member_ids,omitempty" json:"member_ids,omitempty"`
+	ClientAdminIDs     []primitive.ObjectID `bson:"client_admin_ids,omitempty" json:"client_admin_ids,omitempty"`
+	MemberRoles        map[string]string    `bson:"member_roles,omitempty" json:"member_roles,omitempty"`
+	CreatedBy          primitive.ObjectID   `bson:"created_by" json:"created_by"`
+	CreatedAt          time.Time            `bson:"created_at" json:"created_at"`
+	UpdatedAt          time.Time            `bson:"updated_at" json:"updated_at"`
 }
 
 type ClientDocument struct {

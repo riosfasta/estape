@@ -521,7 +521,11 @@ func (s *Server) leaveCompany(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare personal workspace"})
 		return
 	}
-	_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), companyTeamID, bson.M{"$pull": bson.M{"member_ids": user.ID}, "$unset": bson.M{"member_groups."+user.ID.Hex(): ""}})
+	_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), companyTeamID, bson.M{"$pull": bson.M{"member_ids": user.ID}, "$unset": bson.M{"member_groups." + user.ID.Hex(): ""}})
+	if err := s.refreshTeamGroupAccess(c.Request.Context(), companyTeamID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not remove group access; please retry leaving the company"})
+		return
+	}
 	invitationUpdate, err := s.store.C("team_invitations").UpdateMany(c.Request.Context(), bson.M{
 		"team_id":          companyTeamID,
 		"existing_user_id": user.ID,
