@@ -572,11 +572,13 @@ func (s *Server) canManageTeam(c *gin.Context, teamID primitive.ObjectID) bool {
 		userCtx.Role = user.Role
 		userCtx.TeamID = user.TeamID
 	}
-	if userCtx.Role == models.RoleOwnerAdmin || (userCtx.Role == models.RoleTeamAdmin && userCtx.TeamID == teamID) {
-		return true
-	}
+	// Always allow users to manage their own personal team (they are the owner)
 	var team models.Team
 	if err := s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": teamID, "owner_admin_id": userCtx.ID}).Decode(&team); err == nil {
+		return true
+	}
+	// Allow platform owner admin or team admins to manage their assigned team
+	if userCtx.Role == models.RoleOwnerAdmin || (userCtx.Role == models.RoleTeamAdmin && userCtx.TeamID == teamID) {
 		return true
 	}
 	c.JSON(http.StatusForbidden, gin.H{"error": "only team admins can manage this team"})
