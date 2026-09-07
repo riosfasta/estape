@@ -11734,8 +11734,22 @@ async function renderReports() {
   });
 }
 
+async function loadChatPeople() {
+  const teamID = activeWorkspaceTeamID();
+  const data = await api(`/api/users/mentions?chat=1${teamID ? `&team_id=${encodeURIComponent(teamID)}` : ""}`);
+  return data.users || [];
+}
+
+function chatTeammateChoices(users) {
+  return (users || []).filter(user => user.id !== state.me?.id).map(user => {
+    const name = user.role === "owner_adm" ? "Bug Mega" : user.name || user.username || "Chat member";
+    return `<label class="chat-teammate-choice" data-chat-person="${esc((name + " " + (user.username || "")).toLowerCase())}"><input type="radio" name="recipient" value="${esc(user.id)}" required>${chatAvatarHTML(user, name)}<span><strong>${esc(name)}</strong><small>${user.role === "owner_adm" ? "Admin Support" : esc(user.username ? "@" + user.username : "Teammate")}</small></span></label>`;
+  }).join("") || '<p class="muted">No teammates available.</p>';
+}
+
 function chatTitle(chat, usersByID = {}) {
   if (!chat) return "Chat";
+  if (chat.list_profile?.name) return chat.list_profile.name;
   if (chat.type === "support") return "Chat for help";
   if (String(chat.title || "").trim()) return String(chat.title).trim();
   const names = (chat.participant_ids || [])
@@ -11789,14 +11803,16 @@ function chatActionsHTML(chat) {
   return "";
 }
 
+function chatListRowContent(chat, usersByID = {}) {
+  const profile = chat.list_profile || { name: chatTitle(chat, usersByID), subtitle: chat.type === "support" ? "Support" : "Conversation" };
+  return `${chatAvatarHTML({ avatar_url: profile.avatar_url }, profile.name)}<span class="chat-list-person"><strong>${esc(profile.name)}</strong><small>${esc(chat.status === "ended" ? "Ended · " + profile.subtitle : profile.subtitle)}</small></span>`;
+}
+
 function chatConversationRow(chat, selected, usersByID) {
   const statusClass = chatStatusClass(chat);
   return `<article class="task-row chat-conversation-row ${chat.deleted_at ? "is-deleted" : ""}">
     <a class="chat-conversation-link" href="/chat?id=${esc(chat.id)}">
-      <div>
-        <h3>${esc(chatTitle(chat, usersByID))}</h3>
-        <span class="muted">${esc((chat.participant_ids || []).length)} participants${chat.deleted_at ? " - admin only" : ""}</span>
-      </div>
+      <span class="chat-list-identity">${chatListRowContent(chat, usersByID)}</span>
       <span class="pill ${statusClass}">${esc(chatStatusLabel(chat, selected))}</span>
     </a>
     ${chatActionsHTML(chat)}
@@ -11841,7 +11857,7 @@ function startChatDialogHTML(users) {
       <div class="member-picker">
         ${members.length ? members.map((user) => `<label class="member-choice">
           <input type="checkbox" name="participant_ids" value="${esc(user.id)}">
-          ${userChip(user)}
+          ${chatAvatarHTML(user, user.name || user.username)}
           <span><strong>${esc(user.name || user.username || user.email)}</strong><small>@${esc(user.username || "member")}${user.staff_role ? " - " + esc(staffRoleLabel(user.staff_role)) : ""}</small></span>
         </label>`).join("") : `<p class="muted">No members available for chat yet.</p>`}
       </div>
@@ -11899,7 +11915,7 @@ function chatMessageHTML(message, usersByID = {}, context = "page") {
   const displayName = author.role === "owner_adm" ? "Bug Mega" : (author.name || author.username || "Chat member");
   const authorName = author.role === "owner_adm" ? "Bug Mega" : mine ? "You" : displayName;
   return `<div class="message ${mine ? "mine" : ""}" data-message-id="${esc(message.id)}">
-    <div class="message-head"><span class="chat-author">${chatAvatarHTML(author, displayName)}<strong>${esc(authorName)}</strong></span><time>${inboxTime(message.sent_at)}</time></div>
+    <div class="message-head"><span class="chat-author">${chatAvatarHTML(author, displayName)}<span class="chat-author-name"><strong>${esc(authorName)}</strong>${author.role === "owner_adm" ? '<small>Admin Support</small>' : ''}</span></span><time>${inboxTime(message.sent_at)}</time></div>
     ${message.reply_text ? `<blockquote>${chatText(message.reply_text)}</blockquote>` : ""}
     ${message.content ? `<p>${chatText(message.content)}</p>` : ""}
     ${message.attachment_url ? `<a class="attachment-link" href="${esc(message.attachment_url)}" target="_blank" rel="noopener noreferrer">${icon("paperclip")}${esc(message.attachment_name || "Attachment")}</a>` : ""}
@@ -12027,7 +12043,7 @@ async function renderChat() {
   const selectedChat = requestedChatID ? chats.find((chat) => chat.id === requestedChatID) || null : null;
   const selected = selectedChat?.id || "";
   const messages = selected ? ((await api(`/api/chats/${selected}/messages`)).messages || []) : [];
-  const mentionUsers = await loadMentionUsers().catch(() => []);
+  const mentionUsers = await loadChatPeople().catch(() => []);
   const usersByID = Object.fromEntries([...mentionUsers, state.me].filter(Boolean).map((user) => [user.id, user]));
   const chatCanWrite = Boolean(selected && selectedChat?.status !== "ended" && !selectedChat?.deleted_at);
   const selectedStatus = selectedChat ? (selectedChat.deleted_at ? "Deleted room - admins can restore or remove it forever" : selectedChat.status === "ended" ? "Conversation ended" : "Conversation open") : "Choose a conversation";
@@ -12163,26 +12179,29 @@ async function openFloatingChatList() {
   if (!state.me || !state.access) return;
   const widget = createFloatingChatPanel("Chats");
   try {
-    const [data, users] = await Promise.all([api("/api/chats"), loadMentionUsers().catch(() => [])]);
+    const [data, users] = await Promise.all([api("/api/chats"), loadChatPeople().catch(() => [])]);
     if (!widget.isConnected) return;
     const names = Object.fromEntries([...users, state.me].map(user => [user.id, user]));
     const chats = (data.chats || []).filter(chat => !chat.deleted_at);
     widget.innerHTML = '<div class="help-chat-head"><strong>Chats</strong><button class="btn icon quiet" type="button" data-close-help-chat aria-label="Close chat">' + icon("x") + '</button></div>' +
       (state.me.role !== "owner_adm" ? '<button class="btn primary" type="button" data-admin-chat>Chat with admin</button>' : '') +
       '<label class="field">Search conversations<input type="search" data-chat-search placeholder="Find a chat"></label><div class="floating-chat-list" data-chat-list></div>' +
-      '<details><summary>Start a new chat</summary><form data-floating-new-chat class="form-grid"><label class="field">Find a teammate<input type="search" data-recipient-search placeholder="Search names"></label><label class="field">Teammate<select name="recipient" required><option value="">Choose someone</option>' + users.filter(user => user.id !== state.me.id).map(user => '<option value="' + esc(user.id) + '">' + esc(user.name || user.username) + '</option>').join('') + '</select></label><button class="btn" type="submit">Start chat</button></form></details><p class="status-line" data-floating-status role="status"></p>';
+      '<details><summary>Start a new chat</summary><form data-floating-new-chat class="form-grid"><label class="field">Find a teammate<input type="search" data-recipient-search placeholder="Search names"></label><fieldset class="chat-teammate-picker"><legend>Choose someone</legend>' + chatTeammateChoices(users) + '</fieldset><p class="muted" data-recipient-empty hidden>No matching teammates.</p><button class="btn" type="submit">Start chat</button></form></details><p class="status-line" data-floating-status role="status"></p>';
     const draw = () => {
       const q = widget.querySelector("[data-chat-search]").value.toLowerCase();
-      widget.querySelector("[data-chat-list]").innerHTML = chats.filter(chat => chatTitle(chat, names).toLowerCase().includes(q)).map(chat => '<button class="floating-chat-row" type="button" data-floating-chat="' + esc(chat.id) + '"><strong>' + esc(chatTitle(chat, names)) + '</strong><small>' + (chat.status === "ended" ? 'Ended' : chat.type === 'support' ? 'Support' : 'Conversation') + '</small></button>').join('') || '<p class="muted">No conversations found. Start a chat or contact support.</p>';
+      widget.querySelector("[data-chat-list]").innerHTML = chats.filter(chat => (chatTitle(chat, names) + " " + (chat.list_profile?.subtitle || "")).toLowerCase().includes(q)).map(chat => '<button class="floating-chat-row" type="button" data-floating-chat="' + esc(chat.id) + '">' + chatListRowContent(chat, names) + '</button>').join('') || '<p class="muted">No conversations found. Start a chat or contact support.</p>';
+      bindChatReplyButtons("support");
       widget.querySelectorAll("[data-floating-chat]").forEach(button => { button.onclick = () => openHelpChatWidget(chats.find(chat => chat.id === button.dataset.floatingChat)); });
     };
     draw(); widget.querySelector("[data-chat-search]").oninput = draw;
     widget.querySelector("[data-admin-chat]")?.addEventListener("click", () => openHelpChatWidget());
-    widget.querySelector("[data-recipient-search]").oninput = event => { const q = event.target.value.toLowerCase(); widget.querySelectorAll('select[name="recipient"] option').forEach(option => { option.hidden = !!option.value && !option.textContent.toLowerCase().includes(q); }); };
+    widget.querySelector("[data-recipient-search]").oninput = event => { const q = event.target.value.trim().toLowerCase(); let visible = 0; widget.querySelectorAll('[data-chat-person]').forEach(row => { row.hidden = !row.dataset.chatPerson.includes(q); if (!row.hidden) visible++; }); widget.querySelector('[data-recipient-empty]').hidden = visible > 0; };
+    bindChatReplyButtons("support");
     widget.querySelector("[data-floating-new-chat]").onsubmit = async event => {
       event.preventDefault(); const form = event.currentTarget, button = form.querySelector("button"); if (button.disabled) return; button.disabled = true;
       try {
-        const recipient = form.elements.recipient.value;
+        const recipient = form.querySelector('input[name="recipient"]:checked')?.value;
+        if (!recipient) throw new Error("Choose a teammate to start a chat.");
         const existing = chats.find(chat => chat.type === "direct" && chat.status !== "ended" && chat.participant_ids?.length === 2 && chat.participant_ids.includes(state.me.id) && chat.participant_ids.includes(recipient));
         const chat = existing || (await api("/api/chats", { method: "POST", body: JSON.stringify({ type: "direct", participant_ids: [recipient] }) })).chat;
         if (widget.isConnected) await openHelpChatWidget(chat);
@@ -12210,7 +12229,7 @@ async function openHelpChatWidget(selectedChat = null) {
     const usersByID = Object.fromEntries([...users, state.me].filter(Boolean).map(user => [user.id, user]));
     widget.dataset.chatId = chat.id; widget.dataset.supportCustomer = customer ? "1" : "0";
     const enabled = chat.status !== "ended" && !chat.deleted_at;
-    widget.innerHTML = '<div class="help-chat-head"><button class="btn icon quiet" type="button" data-chat-list-back aria-label="Back to chats">' + icon("arrow-left") + '</button><div><strong>' + esc(chat.type === "support" ? "Bugmega support" : chatTitle(chat, usersByID)) + '</strong><span class="muted" data-chat-connection>' + (enabled ? 'Connecting...' : 'This conversation has ended') + '</span></div><button class="btn icon quiet" type="button" data-close-help-chat aria-label="Close chat">' + icon("x") + '</button></div>' +
+    widget.innerHTML = '<div class="help-chat-head"><button class="btn icon quiet" type="button" data-chat-list-back aria-label="Back to chats">' + icon("arrow-left") + '</button><div><strong>' + esc(chat.type === "support" ? "Bug Mega" : chatTitle(chat, usersByID)) + '</strong>' + (chat.type === "support" ? '<small class="chat-support-label">Admin Support</small>' : '') + '<span class="muted" data-chat-connection>' + (enabled ? 'Connecting...' : 'This conversation has ended') + '</span></div><button class="btn icon quiet" type="button" data-close-help-chat aria-label="Close chat">' + icon("x") + '</button></div>' +
       '<div id="helpMessages" class="messages help-messages" role="log" aria-live="polite">' + (customer ? '<div class="support-welcome"><strong>Bugmega support</strong><p>Welcome to Bugmega support! Let me know how I can help you.</p></div>' : '') + messages.map(message => chatMessageHTML(message, usersByID, "support")).join('') + '</div>' +
       '<p class="support-wait" data-support-wait role="status" hidden>Your message has been sent. Please wait for a response from Bugmega support.</p>' +
       chatComposerHTML("helpChatForm", "support", enabled, "Type a message") + (enabled ? '<div class="help-chat-actions"><button class="btn compact" type="button" data-end-floating-chat>End conversation</button></div>' : "") + '<p class="status-line" data-floating-status role="status"></p>';

@@ -390,6 +390,7 @@ type Bug struct {
 }
 
 type Chat struct {
+	ListProfile    *ChatListProfile     `bson:"-" json:"list_profile,omitempty"`
 	ID             primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
 	Type           string               `bson:"type" json:"type"`
 	Title          string               `bson:"title,omitempty" json:"title,omitempty"`
@@ -402,6 +403,12 @@ type Chat struct {
 	DeletedAt      *time.Time           `bson:"deleted_at,omitempty" json:"deleted_at,omitempty"`
 	DeletedBy      primitive.ObjectID   `bson:"deleted_by,omitempty" json:"deleted_by,omitempty"`
 	CreatedAt      time.Time            `bson:"created_at" json:"created_at"`
+}
+
+type ChatListProfile struct {
+	Name      string `json:"name"`
+	AvatarURL string `json:"avatar_url"`
+	Subtitle  string `json:"subtitle"`
 }
 
 type Message struct {

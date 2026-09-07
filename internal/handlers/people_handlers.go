@@ -777,6 +777,23 @@ func (s *Server) listMentionUsers(c *gin.Context) {
 	if users == nil {
 		users = []models.User{}
 	}
+	if c.Query("chat") == "1" {
+		ids := make([]primitive.ObjectID, 0, len(users))
+		for _, user := range users {
+			ids = append(ids, user.ID)
+		}
+		identities, err := s.chatSenders(c.Request.Context(), ids)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load teammate photos"})
+			return
+		}
+		for i := range users {
+			if identity := identities[users[i].ID]; identity != nil {
+				users[i].AvatarURL = identity.AvatarURL
+				users[i].Name = identity.Name
+			}
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"users": users})
 }
 

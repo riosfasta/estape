@@ -42,3 +42,33 @@ func TestChatSenderIdentity(t *testing.T) {
 		t.Fatal("sender presentation should not be persisted in messages")
 	}
 }
+
+func TestChatListIdentityUsesRecipientAndCompany(t *testing.T) {
+	owner, customer, colleague := primitive.NewObjectID(), primitive.NewObjectID(), primitive.NewObjectID()
+	people := map[primitive.ObjectID]*models.ChatSender{
+		owner:     {ID: owner, Name: "Bug Mega", AvatarURL: "/owner.png", Role: models.RoleOwnerAdmin},
+		customer:  {ID: customer, Name: "Alex", AvatarURL: "/alex.png", Role: models.RoleMember},
+		colleague: {ID: colleague, Name: "Sam", AvatarURL: "/sam.png", Role: models.RoleMember},
+	}
+	chat := models.Chat{Type: "support", CreatedBy: customer, ParticipantIDs: []primitive.ObjectID{customer, owner}}
+	got := chatListIdentity(chat, owner, models.RoleOwnerAdmin, people, models.Team{})
+	if got.Name != "Alex" || got.AvatarURL != "/alex.png" {
+		t.Fatalf("owner must see customer: %+v", got)
+	}
+	got = chatListIdentity(chat, customer, models.RoleMember, people, models.Team{})
+	if got.Name != "Bug Mega" || got.Subtitle != "Admin Support" {
+		t.Fatalf("customer must see support owner: %+v", got)
+	}
+	chat.Type = "direct"
+	chat.Title = "Old title"
+	chat.ParticipantIDs = []primitive.ObjectID{customer, colleague}
+	got = chatListIdentity(chat, customer, models.RoleMember, people, models.Team{})
+	if got.Name != "Sam" || got.AvatarURL != "/sam.png" {
+		t.Fatalf("direct chat must show other person: %+v", got)
+	}
+	chat.ParticipantIDs = append(chat.ParticipantIDs, owner)
+	got = chatListIdentity(chat, customer, models.RoleMember, people, models.Team{Name: "Acme", LogoURL: "/company.png"})
+	if got.Name != "Acme" || got.AvatarURL != "/company.png" || got.Subtitle != "Old title" {
+		t.Fatalf("group must show company: %+v", got)
+	}
+}

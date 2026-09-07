@@ -141,6 +141,10 @@ func (s *Server) listChats(c *gin.Context) {
 	if chats == nil {
 		chats = []models.Chat{}
 	}
+	if err := s.populateChatListProfiles(c.Request.Context(), chats, userCtx.ID, userCtx.Role); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load conversation profiles"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"chats": chats})
 }
 
