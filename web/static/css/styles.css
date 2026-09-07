@@ -5073,7 +5073,7 @@ body.sidebar-collapsed .client-task-panel.annotation-task-viewer {
   gap: 10px;
   align-items: center;
 }
-.help-chat-head span { display: flex; font-size: 12px; }
+.help-chat-head span { display: block; font-size: 12px; }
 .help-messages { min-height: 260px; max-height: 400px; }
 .help-chat-actions { display: flex; justify-content: flex-end; }
 .builder { display: grid; grid-template-columns: 220px minmax(0, 1fr) 320px; gap: 14px; }
