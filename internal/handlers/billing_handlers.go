@@ -381,6 +381,9 @@ func (s *Server) enqueuePurchaseAlertEmail(ctx context.Context, buyer models.Use
 
 func (s *Server) purchaseSubscription(c *gin.Context) {
 	userCtx, _ := currentUser(c)
+	if !s.canManageTeam(c, userCtx.TeamID) {
+		return
+	}
 	var req struct {
 		PlanID        string `json:"plan_id"`
 		Provider      string `json:"provider"`

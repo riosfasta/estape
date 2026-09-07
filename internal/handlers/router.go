@@ -206,8 +206,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/bugs/:id/convert-to-task", s.convertBugToTask)
 
 	authed.GET("/paypal/config", s.payPalSDKConfig)
-	authed.POST("/subscriptions/:id/capture", middleware.RequireRoles(models.RoleTeamAdmin), s.capturePayPalSubscription)
-	authed.POST("/subscriptions/purchase", middleware.RequireRoles(models.RoleTeamAdmin), s.purchaseSubscription)
+	authed.POST("/subscriptions/:id/capture", s.capturePayPalSubscription)
+	authed.POST("/subscriptions/purchase", s.purchaseSubscription)
 	authed.GET("/subscriptions/:teamId/invoices", s.listInvoices)
 
 	authed.GET("/integrations", middleware.RequireRoles(models.RoleTeamAdmin), s.listIntegrations)
