@@ -11740,7 +11740,7 @@ function chatTitle(chat, usersByID = {}) {
   if (String(chat.title || "").trim()) return String(chat.title).trim();
   const names = (chat.participant_ids || [])
     .filter((id) => id !== state.me?.id)
-    .map((id) => usersByID[id]?.name || usersByID[id]?.username || "")
+    .map((id) => usersByID[id]?.role === "owner_adm" ? "Bug Mega" : usersByID[id]?.name || usersByID[id]?.username || "")
     .filter(Boolean);
   if (names.length) return names.slice(0, 3).join(", ");
   if (chat.type === "direct") return "Direct chat";
@@ -11886,12 +11886,20 @@ function setChatReply(context, reply) {
   icons();
 }
 
+function chatAvatarHTML(author, name) {
+  const initial = String(name || "Chat member").trim().split(/\s+/).slice(0, 2).map(word => word[0] || "").join("").toUpperCase();
+  const photo = String(author.avatar_url || "");
+  const validPhoto = photo.startsWith("/") || /^https?:\/\//i.test(photo);
+  return `<span class="chat-avatar" aria-hidden="true"><span>${esc(initial)}</span>${validPhoto ? `<img src="${esc(photo)}" alt="" loading="lazy" data-chat-avatar>` : ""}</span>`;
+}
+
 function chatMessageHTML(message, usersByID = {}, context = "page") {
   const mine = message.sender_id === state.me?.id;
-  const author = usersByID[message.sender_id] || {};
-  const authorName = mine ? "You" : (author.name || author.username || "Someone");
+  const author = message.sender || (mine ? state.me : usersByID[message.sender_id]) || {};
+  const displayName = author.role === "owner_adm" ? "Bug Mega" : (author.name || author.username || "Chat member");
+  const authorName = author.role === "owner_adm" ? "Bug Mega" : mine ? "You" : displayName;
   return `<div class="message ${mine ? "mine" : ""}" data-message-id="${esc(message.id)}">
-    <div class="message-head"><strong>${esc(authorName)}</strong><time>${inboxTime(message.sent_at)}</time></div>
+    <div class="message-head"><span class="chat-author">${chatAvatarHTML(author, displayName)}<strong>${esc(authorName)}</strong></span><time>${inboxTime(message.sent_at)}</time></div>
     ${message.reply_text ? `<blockquote>${chatText(message.reply_text)}</blockquote>` : ""}
     ${message.content ? `<p>${chatText(message.content)}</p>` : ""}
     ${message.attachment_url ? `<a class="attachment-link" href="${esc(message.attachment_url)}" target="_blank" rel="noopener noreferrer">${icon("paperclip")}${esc(message.attachment_name || "Attachment")}</a>` : ""}
@@ -11901,6 +11909,12 @@ function chatMessageHTML(message, usersByID = {}, context = "page") {
 
 function bindChatReplyButtons(context) {
   const root = context === "support" ? $("#helpChatWidget") : document;
+  root?.querySelectorAll('[data-chat-avatar]').forEach(img => {
+    if (img.dataset.avatarBound) return;
+    img.dataset.avatarBound = "true";
+    img.addEventListener("error", () => img.remove(), { once: true });
+    if (img.complete && img.naturalWidth === 0) img.remove();
+  });
   root?.querySelectorAll(`[data-quote-context="${context}"]`).forEach((btn) => {
     if (btn.dataset.replyBound) return;
     btn.dataset.replyBound = "true";

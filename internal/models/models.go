@@ -405,6 +405,7 @@ type Chat struct {
 }
 
 type Message struct {
+	Sender         *ChatSender          `bson:"-" json:"sender,omitempty"`
 	ID             primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
 	ChatID         primitive.ObjectID   `bson:"chat_id" json:"chat_id"`
 	SenderID       primitive.ObjectID   `bson:"sender_id" json:"sender_id"`
@@ -415,6 +416,13 @@ type Message struct {
 	AttachmentName string               `bson:"attachment_name,omitempty" json:"attachment_name,omitempty"`
 	SentAt         time.Time            `bson:"sent_at" json:"sent_at"`
 	ReadBy         []primitive.ObjectID `bson:"read_by" json:"read_by"`
+}
+
+type ChatSender struct {
+	ID        primitive.ObjectID `json:"id"`
+	Name      string             `json:"name"`
+	AvatarURL string             `json:"avatar_url"`
+	Role      Role               `json:"role"`
 }
 
 type Notification struct {

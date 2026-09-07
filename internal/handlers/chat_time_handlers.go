@@ -167,6 +167,18 @@ func (s *Server) chatMessages(c *gin.Context) {
 	for left, right := 0, len(messages)-1; left < right; left, right = left+1, right-1 {
 		messages[left], messages[right] = messages[right], messages[left]
 	}
+	senderIDs := make([]primitive.ObjectID, 0, len(messages))
+	for _, message := range messages {
+		senderIDs = append(senderIDs, message.SenderID)
+	}
+	senders, err := s.chatSenders(c.Request.Context(), senderIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load chat sender profiles"})
+		return
+	}
+	for i := range messages {
+		messages[i].Sender = senders[messages[i].SenderID]
+	}
 	c.JSON(http.StatusOK, gin.H{"messages": messages})
 }
 
@@ -332,6 +344,11 @@ func (s *Server) chatWebSocket(c *gin.Context) {
 		c.JSON(http.StatusGone, gin.H{"error": "chat was deleted"})
 		return
 	}
+	senders, err := s.chatSenders(c.Request.Context(), []primitive.ObjectID{userID})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load chat sender profile"})
+		return
+	}
 	conn, err := wsUpgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		return
@@ -407,6 +424,7 @@ func (s *Server) chatWebSocket(c *gin.Context) {
 			_ = conn.WriteMessage(websocket.TextMessage, out)
 			continue
 		}
+		msg.Sender = senders[userID]
 		s.notifyMentions(c.Request.Context(), chat.TeamID, userID, msg.Content, "chat", msg.ID)
 		s.notifyChatMessage(c.Request.Context(), chat, userID, msg)
 		out, _ := json.Marshal(gin.H{"type": "message", "message": msg})
