@@ -113,9 +113,6 @@ func (s *Server) createChat(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create chat"})
 		return
 	}
-	if req.Type != "support" {
-		s.enqueueOwnerNewChatEmail(c.Request.Context(), chat, userCtx.ID)
-	}
 	c.JSON(http.StatusCreated, gin.H{"chat": chat})
 }
 
@@ -382,18 +379,6 @@ func (s *Server) notifyChatMessage(ctx context.Context, chat models.Chat, sender
 	for _, participantID := range chat.ParticipantIDs {
 		if participantID != senderID {
 			recipients[participantID] = true
-		}
-	}
-	if !chat.TeamID.IsZero() {
-		cursor, err := s.store.C("users").Find(ctx, bson.M{"team_id": chat.TeamID, "role": models.RoleTeamAdmin, "status": models.StatusActive})
-		if err == nil {
-			defer cursor.Close(ctx)
-			for cursor.Next(ctx) {
-				var admin models.User
-				if cursor.Decode(&admin) == nil && admin.ID != senderID {
-					recipients[admin.ID] = true
-				}
-			}
 		}
 	}
 	actor := "A user"
