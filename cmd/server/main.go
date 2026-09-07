@@ -18,7 +18,7 @@ import (
 
 func main() {
 	cfg := config.Load()
-	logger := log.New(cfg.LogLevel, cfg.LogJSON)
+	logger := log.New(cfg.LogLevel, false)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
