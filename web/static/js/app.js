@@ -11817,6 +11817,8 @@ function startChatReadTracking() {
       if (!badges.length) return;
       const data = await api('/api/chats');
       const counts = new Map((data.chats || []).map(chat => [chat.id, Number(chat.unread_count) || 0]));
+      const latest = new Map((data.chats || []).map(chat => [chat.id, chat.last_message_at]));
+      document.querySelectorAll('[data-chat-time]').forEach(node => { const value = latest.get(node.dataset.chatTime); node.textContent = chatLatestTime(value); node.dateTime = value || ""; node.hidden = !value; });
       badges.forEach(badge => { const count = counts.get(badge.dataset.chatUnread) || 0; badge.textContent = count; badge.hidden = count === 0; badge.setAttribute("aria-label", `${count} unread messages`); });
     } catch (_) { /* Keep the previous count on temporary network errors. */ }
     finally { state.chatReadRefreshing = false; }
@@ -11829,9 +11831,21 @@ function chatActionsHTML(chat) {
   if (!chat) return "";
   return `<div class="chat-management-actions"><button class="btn compact danger" type="button" data-delete-chat="${esc(chat.id)}" title="Delete from your account only">${icon("trash-2")}Delete for me</button></div>`;
 }
+function chatLatestTime(value, now = new Date()) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  const clock = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  if (sameDay(date, now)) return clock;
+  const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
+  if (sameDay(date, yesterday)) return "Yesterday";
+  return `${clock} ${date.getDate()} ${date.toLocaleString("en-GB", { month: "long" })} ${date.getFullYear()}`;
+}
+
 function chatListRowContent(chat, usersByID = {}) {
   const profile = chat.list_profile || { name: chatTitle(chat, usersByID), subtitle: chat.type === "support" ? "Support" : "Conversation" };
-  return `${chatAvatarHTML({ avatar_url: profile.avatar_url }, profile.name)}<span class="chat-list-person"><strong>${esc(profile.name)}</strong><small>${esc(chat.status === "ended" ? "Ended · " + profile.subtitle : profile.subtitle)}</small></span><span class="chat-unread-count" data-chat-unread="${esc(chat.id)}" aria-label="${Number(chat.unread_count) || 0} unread messages" ${chat.unread_count > 0 ? "" : "hidden"}>${Number(chat.unread_count) || 0}</span>`;
+  return `${chatAvatarHTML({ avatar_url: profile.avatar_url }, profile.name)}<span class="chat-list-person"><strong>${esc(profile.name)}</strong><small>${esc(chat.status === "ended" ? "Ended · " + profile.subtitle : profile.subtitle)}</small></span><span class="chat-list-meta"><time data-chat-time="${esc(chat.id)}" datetime="${esc(chat.last_message_at || "")}" ${chat.last_message_at ? "" : "hidden"}>${esc(chatLatestTime(chat.last_message_at))}</time><span class="chat-unread-count" data-chat-unread="${esc(chat.id)}" aria-label="${Number(chat.unread_count) || 0} unread messages" ${chat.unread_count > 0 ? "" : "hidden"}>${Number(chat.unread_count) || 0}</span></span>`;
 }
 
 function chatConversationRow(chat, selected, usersByID) {

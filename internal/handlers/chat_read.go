@@ -9,6 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"net/http"
+	"time"
 )
 
 func chatHiddenUpdate(user primitive.ObjectID, hide bool) bson.M {
@@ -45,25 +46,38 @@ func (s *Server) populateChatUnread(ctx context.Context, chats []models.Chat, us
 		ids = append(ids, chat.ID)
 	}
 	cursor, err := s.store.C("messages").Aggregate(ctx, mongo.Pipeline{
-		bson.D{{Key: "$match", Value: unreadChatFilter(user, ids)}},
-		bson.D{{Key: "$group", Value: bson.M{"_id": "$chat_id", "count": bson.M{"$sum": 1}}}},
+		bson.D{{Key: "$match", Value: bson.M{"chat_id": bson.M{"$in": ids}}}},
+		bson.D{{Key: "$group", Value: bson.M{
+			"_id":             "$chat_id",
+			"last_message_at": bson.M{"$max": "$sent_at"},
+			"count": bson.M{"$sum": bson.M{"$cond": bson.A{bson.M{"$and": bson.A{
+				bson.M{"$ne": bson.A{"$sender_id", user}},
+				bson.M{"$not": bson.A{bson.M{"$in": bson.A{user, bson.M{"$ifNull": bson.A{"$read_by", bson.A{}}}}}}},
+			}}, 1, 0}}},
+		}}},
 	})
 	if err != nil {
 		return err
 	}
 	var rows []struct {
-		ID    primitive.ObjectID `bson:"_id"`
-		Count int64              `bson:"count"`
+		ID            primitive.ObjectID `bson:"_id"`
+		Count         int64              `bson:"count"`
+		LastMessageAt time.Time          `bson:"last_message_at"`
 	}
 	if err := cursor.All(ctx, &rows); err != nil {
 		return err
 	}
 	counts := map[primitive.ObjectID]int64{}
+	latest := map[primitive.ObjectID]time.Time{}
 	for _, row := range rows {
 		counts[row.ID] = row.Count
+		latest[row.ID] = row.LastMessageAt
 	}
 	for i := range chats {
 		chats[i].UnreadCount = counts[chats[i].ID]
+		if stamp := latest[chats[i].ID]; !stamp.IsZero() {
+			chats[i].LastMessageAt = &stamp
+		}
 	}
 	return nil
 }

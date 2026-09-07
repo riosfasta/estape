@@ -9,6 +9,9 @@
 .floating-chat-list-item > .btn { flex-shrink: 0; }
 .chat-list-person { display: flex; flex-direction: column; gap: 3px; min-width: 0; text-align: left; }
 .chat-list-person strong { font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.chat-list-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; margin-left: auto; max-width: 120px; flex-shrink: 0; }
+.chat-list-meta time { font-size: 11px; line-height: 1.4; color: var(--text-secondary); text-align: right; }
+.chat-list-meta time[hidden] { display: none; }
 .chat-list-person small { font-size: 12px; line-height: 1.4; color: var(--text-secondary); overflow-wrap: anywhere; }
 .team-group-list { display: grid; gap: 16px; }
 .team-group { border: 1px solid var(--border); border-radius: 12px; padding: 14px; min-height: 100px; transition: background .15s, border-color .15s; }

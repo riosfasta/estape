@@ -390,6 +390,7 @@ type Bug struct {
 }
 
 type Chat struct {
+	LastMessageAt  *time.Time           `bson:"-" json:"last_message_at,omitempty"`
 	UnreadCount    int64                `bson:"-" json:"unread_count"`
 	ListProfile    *ChatListProfile     `bson:"-" json:"list_profile,omitempty"`
 	ID             primitive.ObjectID   `bson:"_id,omitempty" json:"id"`

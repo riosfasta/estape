@@ -8,7 +8,7 @@ const code = source.slice(source.indexOf("function chatAvatarHTML("), source.ind
 const ctx = vm.createContext({ state: { me: { id: "me", name: "My Name", avatar_url: "/self.png" } }, esc: value => String(value ?? "").replaceAll('"', '&quot;').replaceAll('<', '&lt;'), inboxTime: () => "now", chatText: value => value, icon: () => "" });
 vm.runInContext(code, ctx);
 vm.runInContext(source.slice(source.indexOf("function chatTeammateChoices("), source.indexOf("function chatTitle(")), ctx);
-vm.runInContext(source.slice(source.indexOf("function chatListRowContent("), source.indexOf("function chatConversationRow(")), ctx);
+vm.runInContext(source.slice(source.indexOf("function chatLatestTime("), source.indexOf("function chatConversationRow(")), ctx);
 
 test("owner messages show Bug Mega and a photo without needing the mention list", () => {
   for (const context of ["page", "support"]) {
@@ -48,4 +48,14 @@ test("conversation rows display the recipient or company profile supplied by the
   assert.match(html, /src="\/company.webp"/);
   assert.match(html, /<strong>Acme<\/strong>/);
   assert.match(html, /Website launch/);
+});
+
+test("latest reply uses local time, yesterday, or a full older date", () => {
+  const now = new Date(2026, 8, 7, 16, 0);
+  assert.equal(ctx.chatLatestTime(new Date(2026, 8, 7, 14, 30), now), "14:30");
+  assert.equal(ctx.chatLatestTime(new Date(2026, 8, 6, 23, 59), now), "Yesterday");
+  assert.equal(ctx.chatLatestTime(new Date(2026, 7, 15, 14, 40), now), "14:40 15 August 2026");
+  assert.equal(ctx.chatLatestTime(new Date(2025, 11, 31, 23, 59), new Date(2026, 0, 1, 0, 1)), "Yesterday");
+  assert.equal(ctx.chatLatestTime(null, now), "");
+  assert.equal(ctx.chatLatestTime("invalid", now), "");
 });
