@@ -28,7 +28,8 @@ func (s *Server) managedGroupTeam(c *gin.Context) (models.Team, bool) {
 		return team, false
 	}
 	actor, _ := currentUser(c)
-	if !s.canManageTeamSilently(c.Request.Context(), actor, id) {
+	user, err := s.loadUser(c.Request.Context(), actor.ID)
+	if err != nil || user.Status != models.StatusActive || !(user.Role == models.RoleOwnerAdmin || team.OwnerAdminID == user.ID || (user.Role == models.RoleTeamAdmin && user.TeamID == id)) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "only active company admins can manage groups and access"})
 		return team, false
 	}

@@ -4143,6 +4143,7 @@ async function openTeamAccessDialog(team, group, member) {
   dialog.addEventListener("close", () => dialog.remove());
   dialog.querySelector('[data-close-access]').addEventListener("click", () => dialog.close());
   const form = dialog.querySelector("form"), submit = form.querySelector('[type="submit"]');
+  form.addEventListener("submit", event => event.preventDefault());
   try {
     const data = await api("/api/client-projects");
     if (!dialog.isConnected) return;
