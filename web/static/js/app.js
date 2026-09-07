@@ -4047,6 +4047,83 @@ async function openTeamMemberTasks(teamID, memberID, trigger = null) {
   }
 }
 
+function staffInvitationFields() {
+  return `<div class="field"><label>Emails or @usernames, separated by commas</label><textarea name="recipient" required rows="2" placeholder="alex@company.com, sam@company.com, @alex_dev" autocomplete="off"></textarea></div>
+    <fieldset class="staff-invitation-access"><legend>Folder / domain access</legend>
+      <p class="muted">Select folders to include all their domains, or select individual domains. Leave empty to invite staff without project access. Access starts after acceptance.</p>
+      <input type="search" data-invitation-search placeholder="Search folders and domains" aria-label="Search folders and domains">
+      <div data-invitation-access-list class="staff-invitation-access-list"><p class="muted">Loading folders and domains…</p></div>
+    </fieldset>`;
+}
+
+function splitStaffInvitationRecipients(value) {
+  return [...new Set(String(value).split(/[,\n]+/).map(value => value.trim().toLowerCase()).filter(Boolean))];
+}
+
+async function bindStaffInvitationForm(form, teamID) {
+  if (!form) return;
+  const submit = form.querySelector('[type="submit"]');
+  const list = form.querySelector('[data-invitation-access-list]');
+  submit.disabled = true;
+  try {
+    const data = await api("/api/client-projects");
+    if (!form.isConnected) return;
+    const clients = (data.clients || []).filter(client => client.team_id === teamID);
+    const rows = [];
+    for (const client of clients) {
+      rows.push({ name: "client_ids", id: client.id, label: `Folder: ${client.name}` });
+      for (const site of (data.websites || []).filter(site => site.client_id === client.id && site.team_id === teamID)) {
+        rows.push({ name: "website_ids", id: site.id, label: `Domain: ${site.name || site.url} — ${client.name}` });
+      }
+    }
+    list.innerHTML = rows.length ? rows.map(row => `<label class="staff-invitation-access-option" data-access-search="${esc(row.label.toLowerCase())}"><input type="checkbox" name="${row.name}" value="${esc(row.id)}"><span>${esc(row.label)}</span></label>`).join("") : '<p class="muted">No folders or domains in this company yet.</p>';
+    form.querySelector('[data-invitation-search]').addEventListener("input", event => {
+      const search = event.target.value.trim().toLowerCase();
+      list.querySelectorAll('[data-access-search]').forEach(row => { row.hidden = !row.dataset.accessSearch.includes(search); });
+    });
+    submit.disabled = false;
+  } catch (error) {
+    list.textContent = "Could not load access options. Reload this page to try again.";
+    setFormStatus(form, error.message, true);
+    return;
+  }
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (submit.disabled) return;
+    const recipients = splitStaffInvitationRecipients(form.elements.recipient.value);
+    if (!recipients.length || recipients.length > 50) return setFormStatus(form, "Enter between 1 and 50 emails or @usernames.", true);
+    const fields = new FormData(form);
+    const access = { client_ids: fields.getAll("client_ids"), website_ids: fields.getAll("website_ids") };
+    const failures = [];
+    let sent = 0;
+    submit.disabled = true;
+    try {
+      for (const recipient of recipients) {
+        setFormStatus(form, `Sending invitation ${sent + failures.length + 1} of ${recipients.length}…`);
+        try {
+          await api(`/api/teams/${teamID}/invitations`, { method: "POST", body: JSON.stringify({ recipient, ...access }) });
+          sent++;
+        } catch (error) {
+          failures.push({ recipient, message: error.message });
+        }
+      }
+      form.elements.recipient.value = failures.map(item => item.recipient).join(", ");
+      setFormStatus(form, `${sent} invitation${sent === 1 ? "" : "s"} sent.${failures.length ? " " + failures.map(item => `${item.recipient}: ${item.message}`).join("; ") : " Access will be granted after acceptance."}`, failures.length > 0);
+      const history = form.closest("section")?.querySelector(".invite-history");
+      if (history) {
+        const data = await api(`/api/teams/${teamID}/invitations`).catch(() => null);
+        if (data && form.isConnected) {
+          history.innerHTML = invitationStatusRows(data.invitations || []);
+          bindInvitationCancels(path() === "/team" ? renderTeam : renderCompanySettings, teamID);
+          icons();
+        }
+      }
+    } finally {
+      submit.disabled = false;
+    }
+  });
+}
+
 async function renderTeam() {
   const teamID = activeWorkspaceTeamID() || state.personalTeam?.id || state.team?.id;
   if (!teamID) return renderDashboard();
@@ -4062,7 +4139,7 @@ async function renderTeam() {
       ${canManageTeam ? `<section class="panel">
         <h2>Invite Staff</h2>
         <form id="inviteForm" class="form-grid">
-          <div class="field"><label>Email or @username</label><input name="recipient" required placeholder="staff@company.com or @alex_dev" autocomplete="off"></div>
+          ${staffInvitationFields()}
           <button class="btn primary" type="submit">${icon("mail-plus")}Send invitation</button>
           <p class="status-line"></p>
         </form>
@@ -4088,16 +4165,7 @@ async function renderTeam() {
       <div id="teamMemberTasksBody"></div>
     </dialog>`);
   const membersByID = Object.fromEntries(members.map((member) => [member.id, member]));
-  $("#inviteForm")?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    try {
-      await api(`/api/teams/${teamID}/invitations`, { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
-      renderTeam();
-    } catch (error) {
-      setFormStatus(form, error.message, true);
-    }
-  });
+  bindStaffInvitationForm($("#inviteForm"), teamID);
   document.querySelectorAll("[data-team-member-tasks]").forEach((btn) => btn.addEventListener("click", () => {
     openTeamMemberTasks(teamID, btn.dataset.teamMemberTasks, btn);
   }));
@@ -10110,7 +10178,7 @@ async function renderCompanySettings() {
         <section class="panel">
           <h2>Add Staff</h2>
           <form id="staffInviteForm" class="form-grid">
-            <div class="field"><label>Email or @username</label><input name="recipient" required placeholder="staff@company.com or @alex_dev" autocomplete="off"></div>
+            ${staffInvitationFields()}
             <button class="btn primary" type="submit">${icon("user-plus")}Send invitation</button>
             <p class="status-line"></p>
           </form>
@@ -10262,17 +10330,7 @@ async function renderCompanySettings() {
     }
   });
 
-  $("#staffInviteForm")?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    try {
-      await api(`/api/teams/${state.team.id}/invitations`, { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
-      form.reset();
-      await renderCompanySettings();
-    } catch (error) {
-      setFormStatus(form, error.message, true);
-    }
-  });
+  bindStaffInvitationForm($("#staffInviteForm"), team.id);
 
   $("#leaveCompanyBtn")?.addEventListener("click", async (event) => {
     const panel = event.currentTarget.closest(".panel");

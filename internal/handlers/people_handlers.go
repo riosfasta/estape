@@ -232,10 +232,12 @@ func (s *Server) createTeamInvitation(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Recipient string `json:"recipient"`
-		Email     string `json:"email"`
-		Username  string `json:"username"`
-		StaffRole string `json:"staff_role"`
+		Recipient  string               `json:"recipient"`
+		Email      string               `json:"email"`
+		Username   string               `json:"username"`
+		StaffRole  string               `json:"staff_role"`
+		ClientIDs  []primitive.ObjectID `json:"client_ids"`
+		WebsiteIDs []primitive.ObjectID `json:"website_ids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid invitation body"})
@@ -244,6 +246,10 @@ func (s *Server) createTeamInvitation(c *gin.Context) {
 	staffRole := allowedStaffRole(req.StaffRole)
 	if staffRole == "" {
 		staffRole = "internal"
+	}
+	if err := s.validateInvitationAccess(c.Request.Context(), teamID, req.ClientIDs, req.WebsiteIDs); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 	var team models.Team
 	if err := s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": teamID}).Decode(&team); err != nil {
@@ -344,6 +350,8 @@ func (s *Server) createTeamInvitation(c *gin.Context) {
 		return
 	}
 	invitation := models.TeamInvitation{
+		ClientIDs:      uniqueObjectIDs(req.ClientIDs),
+		WebsiteIDs:     uniqueObjectIDs(req.WebsiteIDs),
 		ID:             primitive.NewObjectID(),
 		TeamID:         teamID,
 		Email:          email,
@@ -635,6 +643,14 @@ func (s *Server) respondInvitation(c *gin.Context) {
 	now := time.Now()
 	status := "declined"
 	if action == "accept" {
+		if !invitation.ExpiresAt.After(now) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "this invitation has expired"})
+			return
+		}
+		if err := s.validateInvitationAccess(c.Request.Context(), invitation.TeamID, invitation.ClientIDs, invitation.WebsiteIDs); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invited folder or domain is no longer available; ask the company to send a new invitation"})
+			return
+		}
 		status = "accepted"
 		username := user.Username
 		if username == "" {
@@ -658,7 +674,14 @@ func (s *Server) respondInvitation(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not join team"})
 			return
 		}
-		_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), invitation.TeamID, bson.M{"$addToSet": bson.M{"member_ids": userCtx.ID}})
+		if err := s.grantInvitationAccess(c.Request.Context(), invitation, userCtx.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not grant project access; please retry accepting the invitation"})
+			return
+		}
+		if _, err := s.store.C("teams").UpdateByID(c.Request.Context(), invitation.TeamID, bson.M{"$addToSet": bson.M{"member_ids": userCtx.ID}}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not join team; please retry"})
+			return
+		}
 	}
 	_, err = s.store.C("team_invitations").UpdateByID(c.Request.Context(), invitation.ID, bson.M{"$set": bson.M{"status": status, "responded_at": now, "existing_user_id": userCtx.ID}})
 	if err != nil {

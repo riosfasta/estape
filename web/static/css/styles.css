@@ -1,3 +1,9 @@
+.staff-invitation-access { min-width: 0; border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+.staff-invitation-access-list { display: grid; gap: 6px; max-height: 260px; overflow-y: auto; margin-top: 10px; }
+.staff-invitation-access .staff-invitation-access-option { display: flex; align-items: center; gap: 10px; padding: 8px; cursor: pointer; }
+.staff-invitation-access .staff-invitation-access-option[hidden] { display: none; }
+.staff-invitation-access .staff-invitation-access-option input[type="checkbox"] { width: 18px; height: 18px; min-width: 18px; min-height: 18px; flex: 0 0 18px; margin: 0; padding: 0; }
+.staff-invitation-access-option span { overflow-wrap: anywhere; }
 :root {
   --bg-primary: #f7f8f4;
   --bg-secondary: #ffffff;

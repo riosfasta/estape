@@ -428,18 +428,20 @@ type PushDevice struct {
 }
 
 type TeamInvitation struct {
-	ID             primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	TeamID         primitive.ObjectID `bson:"team_id" json:"team_id"`
-	Email          string             `bson:"email" json:"email"`
-	Username       string             `bson:"username,omitempty" json:"username,omitempty"`
-	StaffRole      string             `bson:"staff_role" json:"staff_role"`
-	InvitedBy      primitive.ObjectID `bson:"invited_by" json:"invited_by"`
-	ExistingUserID primitive.ObjectID `bson:"existing_user_id,omitempty" json:"existing_user_id,omitempty"`
-	Token          string             `bson:"token" json:"-"`
-	Status         string             `bson:"status" json:"status"`
-	CreatedAt      time.Time          `bson:"created_at" json:"created_at"`
-	ExpiresAt      time.Time          `bson:"expires_at" json:"expires_at"`
-	RespondedAt    *time.Time         `bson:"responded_at,omitempty" json:"responded_at,omitempty"`
+	ClientIDs      []primitive.ObjectID `bson:"client_ids,omitempty" json:"client_ids,omitempty"`
+	WebsiteIDs     []primitive.ObjectID `bson:"website_ids,omitempty" json:"website_ids,omitempty"`
+	ID             primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	TeamID         primitive.ObjectID   `bson:"team_id" json:"team_id"`
+	Email          string               `bson:"email" json:"email"`
+	Username       string               `bson:"username,omitempty" json:"username,omitempty"`
+	StaffRole      string               `bson:"staff_role" json:"staff_role"`
+	InvitedBy      primitive.ObjectID   `bson:"invited_by" json:"invited_by"`
+	ExistingUserID primitive.ObjectID   `bson:"existing_user_id,omitempty" json:"existing_user_id,omitempty"`
+	Token          string               `bson:"token" json:"-"`
+	Status         string               `bson:"status" json:"status"`
+	CreatedAt      time.Time            `bson:"created_at" json:"created_at"`
+	ExpiresAt      time.Time            `bson:"expires_at" json:"expires_at"`
+	RespondedAt    *time.Time           `bson:"responded_at,omitempty" json:"responded_at,omitempty"`
 }
 
 type EmailQueueItem struct {
