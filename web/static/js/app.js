@@ -12228,8 +12228,9 @@ async function openFloatingChatList() {
     if (!widget.isConnected) return;
     const names = Object.fromEntries([...users, state.me].map(user => [user.id, user]));
     const chats = (data.chats || []).filter(chat => !chat.deleted_at);
-    widget.innerHTML = '<div class="help-chat-head"><strong>Chats</strong><button class="btn icon quiet" type="button" data-close-help-chat aria-label="Close chat">' + icon("x") + '</button></div>' +
-      (state.me.role !== "owner_adm" ? '<button class="btn primary" type="button" data-admin-chat>Chat with admin</button>' : '') +
+    widget.innerHTML = '<div class="help-chat-head"><strong>Chats</strong><span class="toolbar">' +
+      (state.me.role !== "owner_adm" ? '<button class="btn icon quiet" type="button" data-admin-chat title="Chat with admin" aria-label="Chat with admin">' + icon("circle-help") + '</button>' : '') +
+      '<button class="btn icon quiet" type="button" data-close-help-chat aria-label="Close chat">' + icon("x") + '</button></span></div>' +
       '<label class="field">Search conversations<input type="search" data-chat-search placeholder="Find a chat"></label><div class="floating-chat-list" data-chat-list></div>' +
       '<details><summary>Start a new chat</summary><form data-floating-new-chat class="form-grid"><label class="field">Find a teammate<input type="search" data-recipient-search placeholder="Search names"></label><fieldset class="chat-teammate-picker"><legend>Choose someone</legend>' + chatTeammateChoices(users) + '</fieldset><p class="muted" data-recipient-empty hidden>No matching teammates.</p><button class="btn" type="submit">Start chat</button></form></details><p class="status-line" data-floating-status role="status"></p>';
     const draw = () => {
