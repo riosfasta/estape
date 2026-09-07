@@ -583,7 +583,7 @@ func (s *Server) canManageTeam(c *gin.Context, teamID primitive.ObjectID) bool {
 	}
 	// Return debug info with error to help diagnose issues
 	c.JSON(http.StatusForbidden, gin.H{
-		"error":             "onlys team admins can manage this team",
+		"error":             fmt.Sprintf("only team admins can manage this team (your role: %s)", userCtx.Role),
 		"user_id":           userCtx.ID.Hex(),
 		"user_role":         userCtx.Role,
 		"user_team_id":      userCtx.TeamID.Hex(),
