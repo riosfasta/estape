@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	template "html/template"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -28,6 +29,7 @@ import (
 
 type Server struct {
 	cfg          config.Config
+	logger       *log.Logger
 	store        *store.Store
 	tokens       *auth.TokenManager
 	mailer       *email.Worker
@@ -38,8 +40,8 @@ type Server struct {
 	signupLimits *registrationRateLimiter
 }
 
-func New(cfg config.Config, store *store.Store, tokens *auth.TokenManager, mailer *email.Worker, hub *realtime.Hub, payments map[string]billing.PaymentProvider, taskIntegrations map[string]integrations.TaskIntegrationProvider) *Server {
-	return &Server{cfg: cfg, store: store, tokens: tokens, mailer: mailer, hub: hub, push: NewPushService(cfg), payments: payments, integrations: taskIntegrations, signupLimits: newRegistrationRateLimiter()}
+func New(cfg config.Config, logger *log.Logger, store *store.Store, tokens *auth.TokenManager, mailer *email.Worker, hub *realtime.Hub, payments map[string]billing.PaymentProvider, taskIntegrations map[string]integrations.TaskIntegrationProvider) *Server {
+	return &Server{cfg: cfg, logger: logger, store: store, tokens: tokens, mailer: mailer, hub: hub, push: NewPushService(cfg), payments: payments, integrations: taskIntegrations, signupLimits: newRegistrationRateLimiter()}
 }
 
 func (s *Server) Router() *gin.Engine {

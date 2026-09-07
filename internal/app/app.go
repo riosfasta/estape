@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"log"
 
 	"bugmark/internal/auth"
 	"bugmark/internal/billing"
@@ -16,12 +17,13 @@ import (
 )
 
 type App struct {
-	cfg   config.Config
-	store *store.Store
+	cfg    config.Config
+	logger *log.Logger
+	store  *store.Store
 }
 
-func New(cfg config.Config, store *store.Store) *App {
-	return &App{cfg: cfg, store: store}
+func New(cfg config.Config, logger *log.Logger, store *store.Store) *App {
+	return &App{cfg: cfg, logger: logger, store: store}
 }
 
 func (a *App) Router() *gin.Engine {
@@ -41,6 +43,6 @@ func (a *App) Router() *gin.Engine {
 		"monday":  integrations.NewProvider("monday"),
 	}
 
-	api := handlers.New(a.cfg, a.store, tokens, mailer, hub, payments, taskIntegrations)
+	api := handlers.New(a.cfg, a.logger, a.store, tokens, mailer, hub, payments, taskIntegrations)
 	return api.Router()
 }
