@@ -390,6 +390,7 @@ type Bug struct {
 }
 
 type Chat struct {
+	UnreadCount    int64                `bson:"-" json:"unread_count"`
 	ListProfile    *ChatListProfile     `bson:"-" json:"list_profile,omitempty"`
 	ID             primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
 	Type           string               `bson:"type" json:"type"`

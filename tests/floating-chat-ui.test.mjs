@@ -28,7 +28,7 @@ function setup() {
     $: key => { const [id, ...rest] = key.split(" "); const node = mounted.get(id.slice(1)); return rest.length ? node?.querySelector(rest.join(" ")) : node; },
     path: () => "/projects", icon: () => "<svg></svg>", icons() {}, esc: value => String(value ?? ""),
     loadMentionUsers: async () => [], loadChatPeople: async () => [], chatTeammateChoices: () => "", chatListRowContent: () => "Chat", chatTitle: chat => chat.title || "Chat", chatMessageHTML: message => `<p>${message.content}</p>`,
-    chatComposerHTML: () => '<form id="helpChatForm"></form>', bindRichChatComposer() {}, bindChatReplyButtons() {}, bindMentionSuggestions() {},
+    chatComposerHTML: () => '<form id="helpChatForm"></form>', bindRichChatComposer() {}, bindChatReplyButtons() {}, bindMentionSuggestions() {}, startChatReadTracking() {}, markVisibleChatRead() {},
     WebSocket: Socket, location: { protocol: "https:", host: "example.test" },
     api: async (url, options) => {
       requests.push({ url, options });

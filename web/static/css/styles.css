@@ -2,6 +2,11 @@
 .floating-chat-panel small, .floating-chat-panel time { font-size: 12px; }
 .floating-chat-panel .floating-chat-row { flex-direction: row; align-items: center; gap: 10px; padding: 10px 12px; }
 .chat-list-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.chat-unread-count { display: inline-flex; align-items: center; justify-content: center; margin-left: auto; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; }
+.chat-unread-count[hidden] { display: none; }
+.floating-chat-list-item { display: flex; gap: 4px; align-items: center; min-width: 0; }
+.floating-chat-list-item .floating-chat-row { flex: 1; min-width: 0; }
+.floating-chat-list-item > .btn { flex-shrink: 0; }
 .chat-list-person { display: flex; flex-direction: column; gap: 3px; min-width: 0; text-align: left; }
 .chat-list-person strong { font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
 .chat-list-person small { font-size: 12px; line-height: 1.4; color: var(--text-secondary); overflow-wrap: anywhere; }

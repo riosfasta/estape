@@ -127,6 +127,7 @@ func (s *Server) listChats(c *gin.Context) {
 	} else if userCtx.Role == models.RoleTeamAdmin {
 		filter = bson.M{"$or": []bson.M{{"team_id": userCtx.TeamID}, {"participant_ids": userCtx.ID}}}
 	}
+	filter["hidden_for"] = bson.M{"$ne": userCtx.ID}
 	cursor, err := s.store.C("chats").Find(c.Request.Context(), filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load chats"})
@@ -143,6 +144,10 @@ func (s *Server) listChats(c *gin.Context) {
 	}
 	if err := s.populateChatListProfiles(c.Request.Context(), chats, userCtx.ID, userCtx.Role); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load conversation profiles"})
+		return
+	}
+	if err := s.populateChatUnread(c.Request.Context(), chats, userCtx.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load unread counts"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"chats": chats})
@@ -228,86 +233,17 @@ func (s *Server) endChat(c *gin.Context) {
 }
 
 func (s *Server) deleteChat(c *gin.Context) {
-	userCtx, _ := currentUser(c)
-	chatID, ok := objectIDParam(c, "id")
-	if !ok {
-		return
-	}
-	var chat models.Chat
-	if err := s.store.C("chats").FindOne(c.Request.Context(), bson.M{"_id": chatID}).Decode(&chat); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "chat not found"})
-		return
-	}
-	if !s.canManageChat(userCtx, chat) && !s.canDeleteOwnChat(userCtx, chat) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "only the chat creator or an admin can delete this chat"})
-		return
-	}
-	if chat.DeletedAt != nil {
-		c.JSON(http.StatusOK, gin.H{"deleted": true})
-		return
-	}
-	now := time.Now()
-	if _, err := s.store.C("chats").UpdateByID(c.Request.Context(), chatID, bson.M{"$set": bson.M{"deleted_at": now, "deleted_by": userCtx.ID}}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete chat"})
-		return
-	}
-	out, _ := json.Marshal(gin.H{"type": "chat_deleted", "chat_id": chatID, "deleted_by": userCtx.ID, "deleted_at": now})
-	s.hub.Broadcast(chatID.Hex(), out)
-	c.JSON(http.StatusOK, gin.H{"deleted": true})
+	s.setChatHidden(c, true)
 }
 
 func (s *Server) restoreChat(c *gin.Context) {
-	userCtx, _ := currentUser(c)
-	chatID, ok := objectIDParam(c, "id")
-	if !ok {
-		return
-	}
-	var chat models.Chat
-	if err := s.store.C("chats").FindOne(c.Request.Context(), bson.M{"_id": chatID}).Decode(&chat); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "chat not found"})
-		return
-	}
-	if !s.canManageChat(userCtx, chat) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "only an admin can restore this chat"})
-		return
-	}
-	if _, err := s.store.C("chats").UpdateByID(c.Request.Context(), chatID, bson.M{"$unset": bson.M{"deleted_at": "", "deleted_by": ""}}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not restore chat"})
-		return
-	}
-	out, _ := json.Marshal(gin.H{"type": "chat_restored", "chat_id": chatID})
-	s.hub.Broadcast(chatID.Hex(), out)
-	c.JSON(http.StatusOK, gin.H{"restored": true})
+	s.setChatHidden(c, false)
 }
 
+// Keep old clients safe: this endpoint now deletes only the caller's copy too.
 func (s *Server) permanentlyDeleteChat(c *gin.Context) {
-	userCtx, _ := currentUser(c)
-	chatID, ok := objectIDParam(c, "id")
-	if !ok {
-		return
-	}
-	var chat models.Chat
-	if err := s.store.C("chats").FindOne(c.Request.Context(), bson.M{"_id": chatID}).Decode(&chat); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "chat not found"})
-		return
-	}
-	if !s.canManageChat(userCtx, chat) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "only an admin can permanently remove this chat"})
-		return
-	}
-	out, _ := json.Marshal(gin.H{"type": "chat_removed", "chat_id": chatID})
-	s.hub.Broadcast(chatID.Hex(), out)
-	if _, err := s.store.C("messages").DeleteMany(c.Request.Context(), bson.M{"chat_id": chatID}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not remove chat messages"})
-		return
-	}
-	if _, err := s.store.C("chats").DeleteOne(c.Request.Context(), bson.M{"_id": chatID}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not remove chat"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"removed": true})
+	s.setChatHidden(c, true)
 }
-
 func (s *Server) chatWebSocket(c *gin.Context) {
 	rawToken := strings.TrimSpace(c.Query("token"))
 	chatIDRaw := strings.TrimSpace(c.Query("chat_id"))
@@ -429,6 +365,7 @@ func (s *Server) chatWebSocket(c *gin.Context) {
 			continue
 		}
 		msg.Sender = senders[userID]
+		_, _ = s.store.C("chats").UpdateByID(c.Request.Context(), chatID, bson.M{"$unset": bson.M{"hidden_for": ""}})
 		s.notifyMentions(c.Request.Context(), chat.TeamID, userID, msg.Content, "chat", msg.ID)
 		s.notifyChatMessage(c.Request.Context(), chat, userID, msg)
 		out, _ := json.Marshal(gin.H{"type": "message", "message": msg})

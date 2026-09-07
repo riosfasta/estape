@@ -3317,6 +3317,7 @@ async function openNotificationChatDialog(chatID) {
   icons();
   if (!dialog.open) dialog.showModal();
   $("#notificationMessages").scrollTop = $("#notificationMessages").scrollHeight;
+  markVisibleChatRead(chatID, $("#notificationMessages"));
 }
 
 function bindNotificationActions() {
@@ -11787,25 +11788,50 @@ function typedConfirm(message) {
   return (answer || "").trim().toLowerCase() === "confirm";
 }
 
-function chatActionsHTML(chat) {
-  if (!chat) return "";
-  if (chat.deleted_at && isChatAdmin()) {
-    return `<div class="chat-management-actions">
-      <button class="btn compact" type="button" data-restore-chat="${esc(chat.id)}">${icon("rotate-ccw")}Restore</button>
-      <button class="btn compact danger" type="button" data-remove-chat="${esc(chat.id)}">${icon("trash-2")}Remove forever</button>
-    </div>`;
-  }
-  if (!chat.deleted_at && canDeleteChat(chat)) {
-    return `<div class="chat-management-actions">
-      <button class="btn compact danger" type="button" data-delete-chat="${esc(chat.id)}">${icon("trash-2")}Delete</button>
-    </div>`;
-  }
-  return "";
+async function markVisibleChatRead(chatID, root) {
+  if (!root) return;
+  root.dataset.readChatId = chatID;
+  if (document.visibilityState !== "visible" || !root.isConnected || root.offsetParent === null || root.dataset.markingRead) return;
+  const rows = [...root.querySelectorAll('[data-message-id]')].filter(row => !row.dataset.readAcknowledged);
+  if (!rows.length) return;
+  root.dataset.markingRead = "1";
+  try {
+    for (let i = 0; i < rows.length; i += 250) {
+      const batch = rows.slice(i, i + 250);
+      const result = await api(`/api/chats/${chatID}/read`, { method: "POST", body: JSON.stringify({ message_ids: batch.map(row => row.dataset.messageId) }) });
+      document.querySelectorAll(`[data-chat-unread="${chatID}"]`).forEach(badge => { const count = Math.max(0, (Number(badge.textContent) || 0) - (Number(result.read) || 0)); badge.textContent = count; badge.hidden = count === 0; badge.setAttribute("aria-label", `${count} unread messages`); });
+      batch.forEach(row => { row.dataset.readAcknowledged = "1"; });
+    }
+  } catch (_) { /* Retry while the conversation remains visible. */ }
+  finally { delete root.dataset.markingRead; }
 }
 
+function startChatReadTracking() {
+  if (state.chatReadPoll) return;
+  const refresh = async () => {
+    if (!state.me || document.visibilityState !== "visible" || state.chatReadRefreshing) return;
+    state.chatReadRefreshing = true;
+    try {
+      await Promise.all([...document.querySelectorAll('[data-read-chat-id]')].map(root => markVisibleChatRead(root.dataset.readChatId, root)));
+      const badges = [...document.querySelectorAll('[data-chat-unread]')];
+      if (!badges.length) return;
+      const data = await api('/api/chats');
+      const counts = new Map((data.chats || []).map(chat => [chat.id, Number(chat.unread_count) || 0]));
+      badges.forEach(badge => { const count = counts.get(badge.dataset.chatUnread) || 0; badge.textContent = count; badge.hidden = count === 0; badge.setAttribute("aria-label", `${count} unread messages`); });
+    } catch (_) { /* Keep the previous count on temporary network errors. */ }
+    finally { state.chatReadRefreshing = false; }
+  };
+  state.chatReadPoll = setInterval(refresh, 15000);
+  document.addEventListener("visibilitychange", refresh);
+}
+
+function chatActionsHTML(chat) {
+  if (!chat) return "";
+  return `<div class="chat-management-actions"><button class="btn compact danger" type="button" data-delete-chat="${esc(chat.id)}" title="Delete from your account only">${icon("trash-2")}Delete for me</button></div>`;
+}
 function chatListRowContent(chat, usersByID = {}) {
   const profile = chat.list_profile || { name: chatTitle(chat, usersByID), subtitle: chat.type === "support" ? "Support" : "Conversation" };
-  return `${chatAvatarHTML({ avatar_url: profile.avatar_url }, profile.name)}<span class="chat-list-person"><strong>${esc(profile.name)}</strong><small>${esc(chat.status === "ended" ? "Ended · " + profile.subtitle : profile.subtitle)}</small></span>`;
+  return `${chatAvatarHTML({ avatar_url: profile.avatar_url }, profile.name)}<span class="chat-list-person"><strong>${esc(profile.name)}</strong><small>${esc(chat.status === "ended" ? "Ended · " + profile.subtitle : profile.subtitle)}</small></span><span class="chat-unread-count" data-chat-unread="${esc(chat.id)}" aria-label="${Number(chat.unread_count) || 0} unread messages" ${chat.unread_count > 0 ? "" : "hidden"}>${Number(chat.unread_count) || 0}</span>`;
 }
 
 function chatConversationRow(chat, selected, usersByID) {
@@ -11820,10 +11846,12 @@ function chatConversationRow(chat, selected, usersByID) {
 }
 
 function bindChatManagementActions(refresh = renderChat) {
+  startChatReadTracking();
   document.querySelectorAll("[data-delete-chat]").forEach((btn) => btn.addEventListener("click", async () => {
-    if (!typedConfirm("Delete this chat room? Members will no longer see it, but admins can restore it.")) return;
+    if (!confirm("Delete this chat from your account only? Other participants keep their conversation. A new message will bring it back.")) return;
     try {
       await api(`/api/chats/${btn.dataset.deleteChat}`, { method: "DELETE" });
+      document.querySelectorAll('dialog[open]').forEach(dialog => { if (dialog.querySelector(`[data-delete-chat="${btn.dataset.deleteChat}"]`)) dialog.close(); });
       await refresh();
     } catch (error) {
       setStatus(error.message, true);
@@ -12117,6 +12145,7 @@ async function renderChat() {
   if (selectedChat) {
     bindRichChatComposer("chatForm", "page");
     bindChatReplyButtons("page");
+    markVisibleChatRead(selected, $("#messages"));
   }
 }
 
@@ -12132,6 +12161,7 @@ function openChatSocket(chatID, usersByID = {}, context = "page") {
       messages?.insertAdjacentHTML("beforeend", chatMessageHTML(data.message, usersByID, context));
       if (messages) messages.scrollTop = messages.scrollHeight;
       bindChatReplyButtons(context);
+      markVisibleChatRead(chatID, messages);
       icons();
     }
     if (["chat_ended", "chat_deleted", "chat_restored", "chat_removed"].includes(data.type)) {
@@ -12176,6 +12206,7 @@ function createFloatingChatPanel(title) {
 }
 
 async function openFloatingChatList() {
+  startChatReadTracking();
   if (!state.me || !state.access) return;
   const widget = createFloatingChatPanel("Chats");
   try {
@@ -12189,7 +12220,14 @@ async function openFloatingChatList() {
       '<details><summary>Start a new chat</summary><form data-floating-new-chat class="form-grid"><label class="field">Find a teammate<input type="search" data-recipient-search placeholder="Search names"></label><fieldset class="chat-teammate-picker"><legend>Choose someone</legend>' + chatTeammateChoices(users) + '</fieldset><p class="muted" data-recipient-empty hidden>No matching teammates.</p><button class="btn" type="submit">Start chat</button></form></details><p class="status-line" data-floating-status role="status"></p>';
     const draw = () => {
       const q = widget.querySelector("[data-chat-search]").value.toLowerCase();
-      widget.querySelector("[data-chat-list]").innerHTML = chats.filter(chat => (chatTitle(chat, names) + " " + (chat.list_profile?.subtitle || "")).toLowerCase().includes(q)).map(chat => '<button class="floating-chat-row" type="button" data-floating-chat="' + esc(chat.id) + '">' + chatListRowContent(chat, names) + '</button>').join('') || '<p class="muted">No conversations found. Start a chat or contact support.</p>';
+      widget.querySelector("[data-chat-list]").innerHTML = chats.filter(chat => (chatTitle(chat, names) + " " + (chat.list_profile?.subtitle || "")).toLowerCase().includes(q)).map(chat => '<div class="floating-chat-list-item"><button class="floating-chat-row" type="button" data-floating-chat="' + esc(chat.id) + '">' + chatListRowContent(chat, names) + '</button><button class="btn icon quiet" type="button" data-floating-delete="' + esc(chat.id) + '" aria-label="Delete chat for me" title="Delete for me">' + icon("trash-2") + '</button></div>').join('') || '<p class="muted">No conversations found. Start a chat or contact support.</p>';
+      icons();
+      widget.querySelectorAll('[data-floating-delete]').forEach(button => { button.onclick = async () => {
+        if (!confirm("Delete this chat for your account only? Other participants keep it. A new message will bring it back.")) return;
+        button.disabled = true;
+        try { await api(`/api/chats/${button.dataset.floatingDelete}`, { method: "DELETE" }); if (widget.isConnected) await openFloatingChatList(); }
+        catch (error) { widget.querySelector('[data-floating-status]').textContent = error.message; button.disabled = false; }
+      }; });
       bindChatReplyButtons("support");
       widget.querySelectorAll("[data-floating-chat]").forEach(button => { button.onclick = () => openHelpChatWidget(chats.find(chat => chat.id === button.dataset.floatingChat)); });
     };
@@ -12241,6 +12279,8 @@ async function openHelpChatWidget(selectedChat = null) {
       catch (error) { widget.querySelector("[data-floating-status]").textContent = error.message; button.disabled = false; }
     });
     if (enabled) openSupportChatSocket(chat.id, usersByID);
+    startChatReadTracking();
+    markVisibleChatRead(chat.id, widget.querySelector('#helpMessages'));
     bindRichChatComposer("helpChatForm", "support"); bindChatReplyButtons("support"); bindMentionSuggestions(widget);
     widget.querySelector(".messages").scrollTop = widget.querySelector(".messages").scrollHeight; icons();
   } catch (error) { if (widget.isConnected) widget.querySelector("p").textContent = error.message; }
@@ -12264,6 +12304,7 @@ function openSupportChatSocket(chatID, usersByID = {}) {
       box.insertAdjacentHTML("beforeend", chatMessageHTML(data.message, usersByID, "support")); box.scrollTop = box.scrollHeight;
       widget.querySelector("[data-support-wait]").hidden = widget.dataset.supportCustomer !== "1" || data.message.sender_id !== state.me.id;
       bindChatReplyButtons("support"); icons();
+      markVisibleChatRead(chatID, box);
     }
     if (["chat_ended", "chat_deleted", "chat_restored", "chat_removed"].includes(data.type)) openFloatingChatList();
     if (data.type === "error") widget.querySelector("[data-floating-status]").textContent = data.error;

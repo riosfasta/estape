@@ -223,6 +223,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/chats", s.createChat)
 	authed.GET("/chats", s.listChats)
 	authed.GET("/chats/:id/messages", s.chatMessages)
+	authed.POST("/chats/:id/read", s.markChatRead)
 	authed.POST("/chats/:id/end", s.endChat)
 	authed.DELETE("/chats/:id", s.deleteChat)
 	authed.POST("/chats/:id/restore", s.restoreChat)
