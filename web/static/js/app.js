@@ -1981,7 +1981,7 @@ async function api(url, options = {}, retry = true) {
   if (res.status === 401 && retry && state.refresh) {
     const refreshed = await fetch("/api/auth/refresh", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${state.access}` },
       body: JSON.stringify({ refresh_token: state.refresh }),
     });
     if (refreshed.ok) {
