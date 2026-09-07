@@ -2069,6 +2069,8 @@ function storeTokens(access, refresh, remember = authRememberPreference()) {
 }
 
 function logout() {
+  closeFloatingChat();
+  $("#floatingChatLauncher")?.remove();
   stopNotificationPolling();
   stopLivePolling();
   fetch("/api/auth/logout", { method: "POST", keepalive: true }).catch(() => {});
@@ -11747,7 +11749,12 @@ function bindRichChatComposer(formID, context) {
     const socket = context === "support" ? state.supportSocket : state.chatSocket;
     const content = input.value.trim();
     const attachmentURL = form.dataset.attachmentUrl || "";
-    if (!socket || socket.readyState !== WebSocket.OPEN || (!content && !attachmentURL)) return;
+    if (!content && !attachmentURL) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      if (context === "support") { const status = $("#helpChatWidget [data-floating-status]"); if (status) status.textContent = "Chat is not connected yet. Please reconnect before sending."; }
+      else setStatus("Chat is not connected yet. Please reconnect before sending.", true);
+      return;
+    }
     const reply = chatReplyState(context);
     socket.send(JSON.stringify({
       content,
@@ -11919,79 +11926,126 @@ function openChatSocket(chatID, usersByID = {}, context = "page") {
   };
 }
 
-async function openHelpChatWidget() {
-  let widget = $("#helpChatWidget");
-  if (widget) {
-    widget.remove();
-    if (state.supportSocket) state.supportSocket.close();
-  }
-  widget = document.createElement("section");
-  widget.id = "helpChatWidget";
-  widget.className = "help-chat-widget";
-  widget.innerHTML = `<div class="help-chat-head"><div><strong>Chat for help</strong><span class="muted">Connecting...</span></div><button class="btn icon quiet" type="button" data-close-help-chat>${icon("x")}</button></div>`;
-  document.body.appendChild(widget);
-  icons();
+function closeFloatingChat() {
+  if (state.supportSocket) { state.supportSocket.close(); state.supportSocket = null; }
+  state.supportReply = null;
+  $("#helpChatWidget")?.remove();
+  $("#floatingChatLauncher")?.setAttribute("aria-expanded", "false");
+}
+
+function syncFloatingChatLauncher() {
+  const allowed = state.me && state.access && !["/login", "/register", "/verify-email"].includes(path());
+  let button = $("#floatingChatLauncher");
+  if (!allowed) { closeFloatingChat(); button?.remove(); return; }
+  if (button && button.dataset.userId !== state.me.id) { closeFloatingChat(); button.remove(); button = null; }
+  if (button) return;
+  button = document.createElement("button"); button.id = "floatingChatLauncher"; button.type = "button";
+  button.className = "floating-chat-launcher"; button.dataset.userId = state.me.id;
+  button.setAttribute("aria-label", "Open chat"); button.setAttribute("aria-controls", "helpChatWidget"); button.setAttribute("aria-expanded", "false");
+  button.innerHTML = icon("messages-square");
+  button.onclick = () => $("#helpChatWidget") ? closeFloatingChat() : openFloatingChatList();
+  document.body.appendChild(button); icons();
+}
+
+function createFloatingChatPanel(title) {
+  closeFloatingChat();
+  const widget = document.createElement("section"); widget.id = "helpChatWidget"; widget.className = "help-chat-widget floating-chat-panel";
+  widget.setAttribute("role", "dialog"); widget.setAttribute("aria-label", title); widget.tabIndex = -1;
+  widget.innerHTML = '<div class="help-chat-head"><strong>' + esc(title) + '</strong><button class="btn icon quiet" type="button" data-close-help-chat aria-label="Close chat">' + icon("x") + '</button></div><p class="muted">Loading...</p>';
+  widget.addEventListener("click", event => { if (event.target.closest("[data-close-help-chat]")) closeFloatingChat(); if (event.target.closest("[data-chat-list-back]")) openFloatingChatList(); });
+  widget.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); closeFloatingChat(); $("#floatingChatLauncher")?.focus(); } });
+  document.body.appendChild(widget); $("#floatingChatLauncher")?.setAttribute("aria-expanded", "true"); widget.focus(); icons(); return widget;
+}
+
+async function openFloatingChatList() {
+  if (!state.me || !state.access) return;
+  const widget = createFloatingChatPanel("Chats");
   try {
-    const chatData = await api("/api/chats");
-    let chat = (chatData.chats || []).find((item) => item.type === "support" && item.status !== "ended" && !item.deleted_at);
+    const [data, users] = await Promise.all([api("/api/chats"), loadMentionUsers().catch(() => [])]);
+    if (!widget.isConnected) return;
+    const names = Object.fromEntries([...users, state.me].map(user => [user.id, user]));
+    const chats = (data.chats || []).filter(chat => !chat.deleted_at);
+    widget.innerHTML = '<div class="help-chat-head"><strong>Chats</strong><button class="btn icon quiet" type="button" data-close-help-chat aria-label="Close chat">' + icon("x") + '</button></div>' +
+      (state.me.role !== "owner_adm" ? '<button class="btn primary" type="button" data-admin-chat>Chat with admin</button>' : '') +
+      '<label class="field">Search conversations<input type="search" data-chat-search placeholder="Find a chat"></label><div class="floating-chat-list" data-chat-list></div>' +
+      '<details><summary>Start a new chat</summary><form data-floating-new-chat class="form-grid"><label class="field">Find a teammate<input type="search" data-recipient-search placeholder="Search names"></label><label class="field">Teammate<select name="recipient" required><option value="">Choose someone</option>' + users.filter(user => user.id !== state.me.id).map(user => '<option value="' + esc(user.id) + '">' + esc(user.name || user.username) + '</option>').join('') + '</select></label><button class="btn" type="submit">Start chat</button></form></details><p class="status-line" data-floating-status role="status"></p>';
+    const draw = () => {
+      const q = widget.querySelector("[data-chat-search]").value.toLowerCase();
+      widget.querySelector("[data-chat-list]").innerHTML = chats.filter(chat => chatTitle(chat, names).toLowerCase().includes(q)).map(chat => '<button class="floating-chat-row" type="button" data-floating-chat="' + esc(chat.id) + '"><strong>' + esc(chatTitle(chat, names)) + '</strong><small>' + (chat.status === "ended" ? 'Ended' : chat.type === 'support' ? 'Support' : 'Conversation') + '</small></button>').join('') || '<p class="muted">No conversations found. Start a chat or contact support.</p>';
+      widget.querySelectorAll("[data-floating-chat]").forEach(button => { button.onclick = () => openHelpChatWidget(chats.find(chat => chat.id === button.dataset.floatingChat)); });
+    };
+    draw(); widget.querySelector("[data-chat-search]").oninput = draw;
+    widget.querySelector("[data-admin-chat]")?.addEventListener("click", () => openHelpChatWidget());
+    widget.querySelector("[data-recipient-search]").oninput = event => { const q = event.target.value.toLowerCase(); widget.querySelectorAll('select[name="recipient"] option').forEach(option => { option.hidden = !!option.value && !option.textContent.toLowerCase().includes(q); }); };
+    widget.querySelector("[data-floating-new-chat]").onsubmit = async event => {
+      event.preventDefault(); const form = event.currentTarget, button = form.querySelector("button"); if (button.disabled) return; button.disabled = true;
+      try {
+        const recipient = form.elements.recipient.value;
+        const existing = chats.find(chat => chat.type === "direct" && chat.status !== "ended" && chat.participant_ids?.length === 2 && chat.participant_ids.includes(state.me.id) && chat.participant_ids.includes(recipient));
+        const chat = existing || (await api("/api/chats", { method: "POST", body: JSON.stringify({ type: "direct", participant_ids: [recipient] }) })).chat;
+        if (widget.isConnected) await openHelpChatWidget(chat);
+      } catch (error) { widget.querySelector("[data-floating-status]").textContent = error.message; } finally { button.disabled = false; }
+    };
+    icons();
+  } catch (error) { if (widget.isConnected) widget.querySelector("p").textContent = error.message; }
+}
+
+async function openHelpChatWidget(selectedChat = null) {
+  if (!state.me || !state.access) return;
+  const widget = createFloatingChatPanel("Chat");
+  try {
+    let chat = selectedChat?.participant_ids ? selectedChat : null;
     if (!chat) {
-      chat = (await api("/api/chats", { method: "POST", body: JSON.stringify({ type: "support" }) })).chat;
+      const chatData = await api("/api/chats");
+      if (!widget.isConnected) return;
+      chat = (chatData.chats || []).find(item => item.type === "support" && item.created_by === state.me.id && item.status !== "ended" && !item.deleted_at);
+      if (!chat) chat = (await api("/api/chats", { method: "POST", body: JSON.stringify({ type: "support" }) })).chat;
     }
-    const messages = ((await api(`/api/chats/${chat.id}/messages`)).messages || []);
-    const users = await loadMentionUsers().catch(() => []);
-    const usersByID = Object.fromEntries([...users, state.me].filter(Boolean).map((user) => [user.id, user]));
-    widget.innerHTML = `
-      <div class="help-chat-head">
-        <div><strong>Chat for help</strong><span class="muted">${chat.status === "ended" ? "Chat ended" : "Support conversation"}</span></div>
-        <button class="btn icon quiet" type="button" data-close-help-chat title="Close">${icon("x")}</button>
-      </div>
-      <div id="helpMessages" class="messages help-messages">${messages.map((message) => chatMessageHTML(message, usersByID, "support")).join("")}</div>
-      <div class="help-chat-actions">
-        ${chat.status !== "ended" ? `<button class="btn compact danger" type="button" id="endHelpChatBtn">${icon("phone-off")}End chat</button>` : `<span class="pill danger">ended</span>`}
-      </div>
-      ${chatComposerHTML("helpChatForm", "support", chat.status !== "ended" && !chat.deleted_at, "Type a message")}`;
-    widget.querySelector("[data-close-help-chat]")?.addEventListener("click", () => {
-      widget.remove();
-      if (state.supportSocket) state.supportSocket.close();
+    if (!widget.isConnected) return;
+    const [messageData, users] = await Promise.all([api('/api/chats/' + chat.id + '/messages'), loadMentionUsers().catch(() => [])]);
+    if (!widget.isConnected) return;
+    const messages = messageData.messages || [], customer = chat.type === "support" && chat.created_by === state.me.id && state.me.role !== "owner_adm";
+    const usersByID = Object.fromEntries([...users, state.me].filter(Boolean).map(user => [user.id, user]));
+    widget.dataset.chatId = chat.id; widget.dataset.supportCustomer = customer ? "1" : "0";
+    const enabled = chat.status !== "ended" && !chat.deleted_at;
+    widget.innerHTML = '<div class="help-chat-head"><button class="btn icon quiet" type="button" data-chat-list-back aria-label="Back to chats">' + icon("arrow-left") + '</button><div><strong>' + esc(chat.type === "support" ? "Bugmega support" : chatTitle(chat, usersByID)) + '</strong><span class="muted" data-chat-connection>' + (enabled ? 'Connecting...' : 'This conversation has ended') + '</span></div><button class="btn icon quiet" type="button" data-close-help-chat aria-label="Close chat">' + icon("x") + '</button></div>' +
+      '<div id="helpMessages" class="messages help-messages" role="log" aria-live="polite">' + (customer ? '<div class="support-welcome"><strong>Bugmega support</strong><p>Welcome to Bugmega support! Let me know how I can help you.</p></div>' : '') + messages.map(message => chatMessageHTML(message, usersByID, "support")).join('') + '</div>' +
+      '<p class="support-wait" data-support-wait role="status" hidden>Your message has been sent. Please wait for a response from Bugmega support.</p>' +
+      chatComposerHTML("helpChatForm", "support", enabled, "Type a message") + (enabled ? '<div class="help-chat-actions"><button class="btn compact" type="button" data-end-floating-chat>End conversation</button></div>' : "") + '<p class="status-line" data-floating-status role="status"></p>';
+    widget.querySelector("[data-support-wait]").hidden = !customer || messages.at(-1)?.sender_id !== state.me.id || !enabled;
+    widget.querySelector("[data-end-floating-chat]")?.addEventListener("click", async event => {
+      if (!confirm("End this conversation?")) return;
+      const button = event.currentTarget; button.disabled = true;
+      try { await api('/api/chats/' + chat.id + '/end', { method: "POST", body: JSON.stringify({}) }); if (widget.isConnected) await openFloatingChatList(); }
+      catch (error) { widget.querySelector("[data-floating-status]").textContent = error.message; button.disabled = false; }
     });
-    $("#endHelpChatBtn")?.addEventListener("click", async () => {
-      if (!confirm("End this help chat?")) return;
-      await api(`/api/chats/${chat.id}/end`, { method: "POST", body: JSON.stringify({}) });
-      if (state.supportSocket) state.supportSocket.close();
-      await openHelpChatWidget();
-    });
-    if (chat.status !== "ended" && !chat.deleted_at) openSupportChatSocket(chat.id, usersByID);
-    bindRichChatComposer("helpChatForm", "support");
-    bindChatReplyButtons("support");
-    bindMentionSuggestions(widget);
-    widget.querySelector(".messages").scrollTop = widget.querySelector(".messages").scrollHeight;
-    icons();
-  } catch (error) {
-    widget.innerHTML = `<div class="help-chat-head"><div><strong>Chat for help</strong><span class="muted">${esc(error.message)}</span></div><button class="btn icon quiet" type="button" data-close-help-chat>${icon("x")}</button></div>`;
-    widget.querySelector("[data-close-help-chat]")?.addEventListener("click", () => widget.remove());
-    icons();
-  }
+    if (enabled) openSupportChatSocket(chat.id, usersByID);
+    bindRichChatComposer("helpChatForm", "support"); bindChatReplyButtons("support"); bindMentionSuggestions(widget);
+    widget.querySelector(".messages").scrollTop = widget.querySelector(".messages").scrollHeight; icons();
+  } catch (error) { if (widget.isConnected) widget.querySelector("p").textContent = error.message; }
 }
 
 function openSupportChatSocket(chatID, usersByID = {}) {
   if (state.supportSocket) state.supportSocket.close();
   const protocol = location.protocol === "https:" ? "wss" : "ws";
-  state.supportSocket = new WebSocket(`${protocol}://${location.host}/ws/chat?chat_id=${chatID}&token=${encodeURIComponent(state.access)}`);
-  state.supportSocket.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    const box = $("#helpMessages");
+  const socket = new WebSocket(protocol + '://' + location.host + '/ws/chat?chat_id=' + chatID + '&token=' + encodeURIComponent(state.access));
+  state.supportSocket = socket;
+  const widget = $("#helpChatWidget");
+  const active = () => state.supportSocket === socket && widget?.isConnected && widget.dataset.chatId === chatID;
+  socket.onopen = () => { if (active()) widget.querySelector("[data-chat-connection]").textContent = "Connected"; };
+  socket.onclose = () => { if (active()) widget.querySelector("[data-chat-connection]").textContent = "Disconnected. Reopen the conversation to reconnect."; };
+  socket.onerror = () => { if (active()) widget.querySelector("[data-floating-status]").textContent = "Could not connect. Reopen the conversation to retry."; };
+  socket.onmessage = event => {
+    if (!active()) return;
+    let data; try { data = JSON.parse(event.data); } catch { return; }
+    const box = widget.querySelector("#helpMessages");
     if (data.message && box) {
-      box.insertAdjacentHTML("beforeend", chatMessageHTML(data.message, usersByID, "support"));
-      box.scrollTop = box.scrollHeight;
-      bindChatReplyButtons("support");
-      icons();
+      box.insertAdjacentHTML("beforeend", chatMessageHTML(data.message, usersByID, "support")); box.scrollTop = box.scrollHeight;
+      widget.querySelector("[data-support-wait]").hidden = widget.dataset.supportCustomer !== "1" || data.message.sender_id !== state.me.id;
+      bindChatReplyButtons("support"); icons();
     }
-    if (["chat_ended", "chat_deleted", "chat_restored", "chat_removed"].includes(data.type)) {
-      openHelpChatWidget();
-    }
-    if (data.type === "error") {
-      setStatus(data.error, true);
-    }
+    if (["chat_ended", "chat_deleted", "chat_restored", "chat_removed"].includes(data.type)) openFloatingChatList();
+    if (data.type === "error") widget.querySelector("[data-floating-status]").textContent = data.error;
   };
 }
 
@@ -12152,6 +12206,7 @@ async function route(options = {}) {
     renderRouteError(error);
   } finally {
     finishRouteTransition(routeToken);
+    syncFloatingChatLauncher();
   }
 }
 

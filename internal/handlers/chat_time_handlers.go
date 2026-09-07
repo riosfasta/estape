@@ -113,11 +113,9 @@ func (s *Server) createChat(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create chat"})
 		return
 	}
-	if req.Type == "support" {
-		actor := s.notificationActorName(c.Request.Context(), userCtx.ID)
-		s.notifyOwnerAdmins(c.Request.Context(), userCtx.ID, "support_chat_created", actor+" started a new help chat.", chat.ID)
+	if req.Type != "support" {
+		s.enqueueOwnerNewChatEmail(c.Request.Context(), chat, userCtx.ID)
 	}
-	s.enqueueOwnerNewChatEmail(c.Request.Context(), chat, userCtx.ID)
 	c.JSON(http.StatusCreated, gin.H{"chat": chat})
 }
 
@@ -152,7 +150,7 @@ func (s *Server) chatMessages(c *gin.Context) {
 	if !ok || !s.userCanAccessChat(c, userCtx, chatID) {
 		return
 	}
-	cursor, err := s.store.C("messages").Find(c.Request.Context(), bson.M{"chat_id": chatID}, options.Find().SetSort(bson.D{{Key: "sent_at", Value: 1}}).SetLimit(250))
+	cursor, err := s.store.C("messages").Find(c.Request.Context(), bson.M{"chat_id": chatID}, options.Find().SetSort(bson.D{{Key: "sent_at", Value: -1}, {Key: "_id", Value: -1}}).SetLimit(250))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load messages"})
 		return
@@ -165,6 +163,9 @@ func (s *Server) chatMessages(c *gin.Context) {
 	}
 	if messages == nil {
 		messages = []models.Message{}
+	}
+	for left, right := 0, len(messages)-1; left < right; left, right = left+1, right-1 {
+		messages[left], messages[right] = messages[right], messages[left]
 	}
 	c.JSON(http.StatusOK, gin.H{"messages": messages})
 }
@@ -401,12 +402,20 @@ func (s *Server) chatWebSocket(c *gin.Context) {
 			SentAt:         time.Now(),
 			ReadBy:         []primitive.ObjectID{userID},
 		}
-		_, _ = s.store.C("messages").InsertOne(c.Request.Context(), msg)
+		if _, err := s.store.C("messages").InsertOne(c.Request.Context(), msg); err != nil {
+			out, _ := json.Marshal(gin.H{"type": "error", "error": "Message could not be saved. Please try again."})
+			_ = conn.WriteMessage(websocket.TextMessage, out)
+			continue
+		}
 		s.notifyMentions(c.Request.Context(), chat.TeamID, userID, msg.Content, "chat", msg.ID)
 		s.notifyChatMessage(c.Request.Context(), chat, userID, msg)
 		out, _ := json.Marshal(gin.H{"type": "message", "message": msg})
 		s.hub.Broadcast(chatID.Hex(), out)
 	}
+}
+
+func shouldNotifySupportOwners(chat models.Chat, sender models.User) bool {
+	return chat.Type == "support" && !sender.ID.IsZero() && sender.Role != models.RoleOwnerAdmin
 }
 
 func (s *Server) notifyChatMessage(ctx context.Context, chat models.Chat, senderID primitive.ObjectID, msg models.Message) {
@@ -431,6 +440,10 @@ func (s *Server) notifyChatMessage(ctx context.Context, chat models.Chat, sender
 	actor := "A user"
 	if user, err := s.loadUser(ctx, senderID); err == nil {
 		actor = firstNonEmpty(user.Name, user.Username, user.Email, actor)
+		if shouldNotifySupportOwners(chat, user) {
+			s.notifyOwnerAdmins(ctx, senderID, "chat_message", actor+" sent a new support message.", chat.ID)
+			s.enqueueOwnerNewChatEmail(ctx, chat, senderID)
+		}
 	}
 	content := actor + " sent a new message in " + chatDisplayTitle(chat) + "."
 	now := msg.SentAt

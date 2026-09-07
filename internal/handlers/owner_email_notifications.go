@@ -150,5 +150,9 @@ func (s *Server) enqueueOwnerNewChatEmail(ctx context.Context, chat models.Chat,
 		{"Started at", ownerEmailTime(chat.CreatedAt)},
 		{"Chat ID", chat.ID.Hex()},
 	}
-	s.enqueueOwnerBehaviorEmail(ctx, ownerEmailNewChat, "new chat: "+title, actor+" started a new chat session.", rows, "Open chat", "/chat?id="+chat.ID.Hex())
+	subject, introduction := "new chat: "+title, actor+" started a new chat session."
+	if chat.Type == "support" {
+		subject, introduction = "new support message: "+title, actor+" sent a new message to Bugmega support."
+	}
+	s.enqueueOwnerBehaviorEmail(ctx, ownerEmailNewChat, subject, introduction, rows, "Open chat", "/chat?id="+chat.ID.Hex())
 }
