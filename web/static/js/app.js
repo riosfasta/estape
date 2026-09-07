@@ -1870,7 +1870,7 @@ function bindTaskTimeTracker(root, taskID, refresh = async () => {}) {
       await api("/api/time-entries", { method: "POST", body: JSON.stringify(body) });
       await refresh();
     } catch (error) {
-      setFormStatus(form, error.message, true);
+      setFormStatus(form, `${error.message}: your level is ${state.membership.role}`, true);
     }
   });
   tracker.querySelectorAll("[data-time-entry-form]").forEach((form) => {
