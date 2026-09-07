@@ -558,16 +558,25 @@ func (s *Server) canAccessTeam(c *gin.Context, teamID primitive.ObjectID) bool {
 }
 
 func (s *Server) canManageTeam(c *gin.Context, teamID primitive.ObjectID) bool {
-	user, ok := currentUser(c)
+	userCtx, ok := currentUser(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
 		return false
 	}
-	if user.Role == models.RoleOwnerAdmin || (user.Role == models.RoleTeamAdmin && user.TeamID == teamID) {
+	// Load actual user from database to get current role and team ID (in case JWT is stale)
+	if user, err := s.loadUser(c.Request.Context(), userCtx.ID); err == nil {
+		if user.Status != models.StatusActive {
+			c.JSON(http.StatusForbidden, gin.H{"error": "account is suspended"})
+			return false
+		}
+		userCtx.Role = user.Role
+		userCtx.TeamID = user.TeamID
+	}
+	if userCtx.Role == models.RoleOwnerAdmin || (userCtx.Role == models.RoleTeamAdmin && userCtx.TeamID == teamID) {
 		return true
 	}
 	var team models.Team
-	if err := s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": teamID, "owner_admin_id": user.ID}).Decode(&team); err == nil {
+	if err := s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": teamID, "owner_admin_id": userCtx.ID}).Decode(&team); err == nil {
 		return true
 	}
 	c.JSON(http.StatusForbidden, gin.H{"error": "only team admins can manage this team"})
