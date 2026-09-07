@@ -581,7 +581,15 @@ func (s *Server) canManageTeam(c *gin.Context, teamID primitive.ObjectID) bool {
 	if userCtx.Role == models.RoleOwnerAdmin || (userCtx.Role == models.RoleTeamAdmin && userCtx.TeamID == teamID) {
 		return true
 	}
-	c.JSON(http.StatusForbidden, gin.H{"error": "only team admins can manage this team"})
+	// Return debug info with error to help diagnose issues
+	c.JSON(http.StatusForbidden, gin.H{
+		"error":             "only team admins can manage this team",
+		"user_id":           userCtx.ID.Hex(),
+		"user_role":         userCtx.Role,
+		"user_team_id":      userCtx.TeamID.Hex(),
+		"requested_team_id": teamID.Hex(),
+		"debug":             "permission check failed: ensure you are the owner of this team or a team admin",
+	})
 	return false
 }
 
