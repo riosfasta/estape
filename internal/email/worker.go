@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"strings"
 	"time"
@@ -175,8 +176,9 @@ func (w *Worker) sendWithConfig(ctx context.Context, cfg smtpRuntimeConfig, item
 		return err
 	}
 	subject := strings.NewReplacer("\r", " ", "\n", " ").Replace(item.Subject)
+	sender := mail.Address{Name: "Noreply Bugmega.com", Address: from}
 	msg := []byte("To: " + item.Recipient + "\r\n" +
-		"From: " + from + "\r\n" +
+		"From: " + sender.String() + "\r\n" +
 		"Subject: " + subject + "\r\n" +
 		"MIME-Version: 1.0\r\n" +
 		"Content-Type: text/html; charset=UTF-8\r\n\r\n" +
