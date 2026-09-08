@@ -466,12 +466,15 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 	checkoutReq.ReturnURL = s.payPalReturnURL(sub.ID)
 	checkoutReq.CancelURL = s.payPalCancelURL(sub.ID)
 	if s.logger != nil {
-		s.logger.Printf("creating paypal checkout: %+v", checkoutReq)
+		s.logger.Printf("creating paypal checkout: plan=%s amount=%d currency=%s mode=%s", checkoutReq.PlanID, checkoutReq.Amount, checkoutReq.Currency, checkoutReq.Mode)
 	}
 	session, err := provider.CreateCheckout(c.Request.Context(), checkoutReq)
 	if err != nil {
+		if s.logger != nil {
+			s.logger.Printf("paypal CreateCheckout failed: %v", err)
+		}
 		_, _ = s.store.C("subscriptions").UpdateByID(c.Request.Context(), sub.ID, bson.M{"$set": bson.M{"status": "checkout_failed", "expires_at": now}})
-		c.JSON(http.StatusBadGateway, gin.H{"error": "could not create PayPal checkout"})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "could not create PayPal checkout: " + err.Error()})
 		return
 	}
 	sub.ExternalTransactionID = session.ExternalID
