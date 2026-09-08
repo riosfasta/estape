@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -310,6 +311,7 @@ func (s *Server) payPalCheckoutBase(ctx context.Context) (billing.CheckoutReques
 	return billing.CheckoutRequest{
 		ClientID:     strings.TrimSpace(settings.PayPalClientID),
 		ClientSecret: strings.TrimSpace(settings.PayPalClientSecret),
+		WebhookID:    strings.TrimSpace(settings.PayPalWebhookID),
 		Mode:         firstNonEmpty(settings.PayPalMode, "sandbox"),
 		BrandName:    firstNonEmpty(settings.SiteName, s.cfg.AppName, "BugMega"),
 	}, nil
@@ -607,17 +609,25 @@ func (s *Server) activatePaidPayPalSubscription(ctx context.Context, sub models.
 	expires := billingExpiry(now, period, quantity)
 	transactionID := firstNonEmpty(capture.ExternalID, sub.ExternalTransactionID)
 
+	riskWarning := ""
+	if capture.SellerProtectionStatus != "" && !strings.EqualFold(capture.SellerProtectionStatus, "ELIGIBLE") {
+		riskWarning = "Elevated risk: Seller protection is " + capture.SellerProtectionStatus
+	}
+
 	invoice := models.Invoice{
-		ID:                 primitive.NewObjectID(),
-		TeamID:             sub.TeamID,
-		SubscriptionID:     sub.ID,
-		PaymentReference:   sub.PaymentReference,
-		Amount:             amount,
-		Currency:           "usd",
-		Status:             "paid",
-		PaymentProvider:    "paypal",
-		ExternalInvoiceURL: s.appAbsoluteURL("/settings/billing#invoice-" + sub.ID.Hex()),
-		IssuedAt:           now,
+		ID:                     primitive.NewObjectID(),
+		TeamID:                 sub.TeamID,
+		SubscriptionID:         sub.ID,
+		PaymentReference:       sub.PaymentReference,
+		Amount:                 amount,
+		Currency:               "usd",
+		Status:                 "paid",
+		PaymentProvider:        "paypal",
+		CaptureID:              capture.CaptureID,
+		SellerProtectionStatus: capture.SellerProtectionStatus,
+		RiskWarning:            riskWarning,
+		ExternalInvoiceURL:     s.appAbsoluteURL("/settings/billing#invoice-" + sub.ID.Hex()),
+		IssuedAt:               now,
 	}
 
 	activated := false
@@ -674,6 +684,9 @@ func (s *Server) activatePaidPayPalSubscription(ctx context.Context, sub models.
 	sub.ExpiresAt = &expires
 	actor := s.notificationActorName(ctx, buyerID)
 	s.notifyOwnerAdmins(ctx, buyerID, "subscription_purchase", actor+" purchased the "+period+" "+plan.Name+" package with PayPal.", sub.ID)
+	if riskWarning != "" {
+		s.notifyOwnerAdmins(ctx, primitive.NilObjectID, "payment_risk_warning", "⚠️ Subscription Payment Risk: Invoice "+invoice.ID.Hex()+" has Seller Protection status: "+capture.SellerProtectionStatus+". Elevated fraud or chargeback risk.", invoice.ID)
+	}
 	s.enqueuePurchaseAlertEmail(ctx, buyer, team, plan, sub, amount, teamSeatCount(team))
 	s.audit(ctx, buyerID, "subscription.paid", "subscription", sub.ID)
 	return invoice, nil
@@ -701,6 +714,46 @@ func (s *Server) listInvoices(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"invoices": invoices})
 }
 
+type payPalWebhookEvent struct {
+	ID           string          `json:"id"`
+	EventType    string          `json:"event_type"`
+	ResourceType string          `json:"resource_type"`
+	Summary      string          `json:"summary"`
+	Resource     json.RawMessage `json:"resource"`
+}
+
+type payPalDisputeResource struct {
+	DisputeID            string `json:"dispute_id"`
+	Status               string `json:"status"`
+	Reason               string `json:"reason"`
+	DisputeAmount        struct {
+		CurrencyCode string `json:"currency_code"`
+		Value        string `json:"value"`
+	} `json:"dispute_amount"`
+	DisputedTransactions []struct {
+		BuyerTransactionID  string `json:"buyer_transaction_id"`
+		SellerTransactionID string `json:"seller_transaction_id"`
+	} `json:"disputed_transactions"`
+	DisputeOutcome struct {
+		OutcomeCode string `json:"outcome_code"`
+	} `json:"dispute_outcome"`
+}
+
+type payPalCaptureWebhookResource struct {
+	ID            string `json:"id"`
+	Status        string `json:"status"`
+	StatusDetails struct {
+		Reason string `json:"reason"`
+	} `json:"status_details"`
+	Amount struct {
+		CurrencyCode string `json:"currency_code"`
+		Value        string `json:"value"`
+	} `json:"amount"`
+	SellerProtection struct {
+		Status string `json:"status"`
+	} `json:"seller_protection"`
+}
+
 func (s *Server) paymentWebhook(providerName string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		provider, ok := s.payments[providerName]
@@ -708,14 +761,295 @@ func (s *Server) paymentWebhook(providerName string) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "unknown provider"})
 			return
 		}
-		body, _ := io.ReadAll(c.Request.Body)
-		event, err := provider.HandleWebhook(c.Request.Context(), body, map[string]string{"signature": c.GetHeader("Paypal-Transmission-Sig")})
+		body, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read webhook body"})
+			return
+		}
+
+		ctx := c.Request.Context()
+		settings, err := s.loadSiteSettings(ctx)
+		if err != nil {
+			settings = s.defaultSiteSettings(time.Now())
+		}
+		settings = s.settingsWithConfigFallback(settings)
+
+		headers := map[string]string{
+			"transmission_id":   c.GetHeader("Paypal-Transmission-Id"),
+			"transmission_time": c.GetHeader("Paypal-Transmission-Time"),
+			"transmission_sig":  c.GetHeader("Paypal-Transmission-Sig"),
+			"cert_url":          c.GetHeader("Paypal-Cert-Url"),
+			"auth_algo":         c.GetHeader("Paypal-Auth-Algo"),
+			"webhook_id":        strings.TrimSpace(settings.PayPalWebhookID),
+		}
+
+		// Strictly verify signature if WebhookVerifier is available and Webhook ID is configured
+		if verifier, ok := provider.(billing.WebhookVerifier); ok && strings.TrimSpace(settings.PayPalWebhookID) != "" {
+			req := billing.CheckoutRequest{
+				ClientID:     strings.TrimSpace(settings.PayPalClientID),
+				ClientSecret: strings.TrimSpace(settings.PayPalClientSecret),
+				WebhookID:    strings.TrimSpace(settings.PayPalWebhookID),
+				Mode:         firstNonEmpty(settings.PayPalMode, "sandbox"),
+			}
+			valid, verifyErr := verifier.VerifyWebhookSignature(ctx, req, headers, body)
+			if verifyErr != nil || !valid {
+				if s.logger != nil {
+					s.logger.Printf("paypal webhook signature verification failed: %v", verifyErr)
+				}
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid webhook signature"})
+				return
+			}
+		}
+
+		event, err := provider.HandleWebhook(ctx, body, headers)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "webhook rejected"})
 			return
 		}
+
+		// Process risk and dispute events for PayPal
+		if providerName == "paypal" {
+			processedEvent, riskErr := s.processPayPalRiskWebhook(ctx, body)
+			if riskErr != nil {
+				if s.logger != nil {
+					s.logger.Printf("paypal risk webhook processing error: %v", riskErr)
+				}
+			} else if processedEvent != "" {
+				event = processedEvent
+			}
+		}
+
 		c.JSON(http.StatusOK, gin.H{"received": true, "event": event})
 	}
+}
+
+func (s *Server) processPayPalRiskWebhook(ctx context.Context, body []byte) (string, error) {
+	var event payPalWebhookEvent
+	if err := json.Unmarshal(body, &event); err != nil {
+		return "", err
+	}
+	eventType := strings.ToUpper(strings.TrimSpace(event.EventType))
+
+	switch eventType {
+	case "CUSTOMER.DISPUTE.CREATED", "RISK.DISPUTE.CREATED":
+		var dispute payPalDisputeResource
+		_ = json.Unmarshal(event.Resource, &dispute)
+		disputeID := firstNonEmpty(dispute.DisputeID, "unknown")
+		reason := firstNonEmpty(dispute.Reason, "Unspecified dispute reason")
+		amountStr := dispute.DisputeAmount.Value + " " + dispute.DisputeAmount.CurrencyCode
+
+		sellerTxnID := ""
+		if len(dispute.DisputedTransactions) > 0 {
+			sellerTxnID = dispute.DisputedTransactions[0].SellerTransactionID
+		}
+
+		matchedID := primitive.NilObjectID
+		matched := s.matchAndUpdatePaymentDispute(ctx, sellerTxnID, "OPEN", "🚨 Dispute opened: "+reason, &matchedID)
+
+		detailMsg := fmt.Sprintf("🚨 PayPal Dispute Opened (%s): %s disputed for %s.", disputeID, reason, amountStr)
+		if sellerTxnID != "" {
+			detailMsg += " Capture ID: " + sellerTxnID + "."
+		}
+		if matched {
+			detailMsg += " Associated transaction flagged."
+		}
+		detailMsg += " Immediate action required in PayPal Resolution Center."
+		s.notifyOwnerAdmins(ctx, primitive.NilObjectID, "dispute_risk", detailMsg, matchedID)
+		return "dispute_created", nil
+
+	case "CUSTOMER.DISPUTE.RESOLVED":
+		var dispute payPalDisputeResource
+		_ = json.Unmarshal(event.Resource, &dispute)
+		disputeID := firstNonEmpty(dispute.DisputeID, "unknown")
+		outcome := firstNonEmpty(dispute.DisputeOutcome.OutcomeCode, dispute.Status, "RESOLVED")
+		sellerTxnID := ""
+		if len(dispute.DisputedTransactions) > 0 {
+			sellerTxnID = dispute.DisputedTransactions[0].SellerTransactionID
+		}
+		matchedID := primitive.NilObjectID
+		s.matchAndUpdatePaymentDispute(ctx, sellerTxnID, outcome, "Dispute resolved: "+outcome, &matchedID)
+		s.notifyOwnerAdmins(ctx, primitive.NilObjectID, "dispute_risk", fmt.Sprintf("PayPal Dispute Resolved: %s was closed with outcome %s.", disputeID, outcome), matchedID)
+		return "dispute_resolved", nil
+
+	case "CUSTOMER.DISPUTE.UPDATED":
+		var dispute payPalDisputeResource
+		_ = json.Unmarshal(event.Resource, &dispute)
+		disputeID := firstNonEmpty(dispute.DisputeID, "unknown")
+		sellerTxnID := ""
+		if len(dispute.DisputedTransactions) > 0 {
+			sellerTxnID = dispute.DisputedTransactions[0].SellerTransactionID
+		}
+		matchedID := primitive.NilObjectID
+		s.matchAndUpdatePaymentDispute(ctx, sellerTxnID, dispute.Status, "Dispute updated: "+dispute.Status, &matchedID)
+		s.notifyOwnerAdmins(ctx, primitive.NilObjectID, "dispute_risk", fmt.Sprintf("PayPal Dispute Updated: %s status is now %s.", disputeID, dispute.Status), matchedID)
+		return "dispute_updated", nil
+
+	case "PAYMENT.CAPTURE.PENDING":
+		var cap payPalCaptureWebhookResource
+		_ = json.Unmarshal(event.Resource, &cap)
+		reason := cap.StatusDetails.Reason
+		matchedID := primitive.NilObjectID
+		if strings.Contains(strings.ToLower(reason), "review") || strings.Contains(strings.ToLower(reason), "risk") {
+			s.matchAndUpdatePaymentRisk(ctx, cap.ID, "", "⚠️ Payment pending risk review: "+reason, &matchedID)
+			s.notifyOwnerAdmins(ctx, primitive.NilObjectID, "payment_risk_warning", fmt.Sprintf("⚠️ PayPal Payment Pending Review: Capture %s is held under PayPal risk review (%s). Do not deliver unverified goods or release balance.", cap.ID, reason), matchedID)
+		} else {
+			s.notifyOwnerAdmins(ctx, primitive.NilObjectID, "payment_risk_warning", fmt.Sprintf("PayPal Payment Pending: Capture %s is pending (%s).", cap.ID, reason), matchedID)
+		}
+		return "capture_pending", nil
+
+	case "PAYMENT.CAPTURE.DENIED":
+		var cap payPalCaptureWebhookResource
+		_ = json.Unmarshal(event.Resource, &cap)
+		matchedID := primitive.NilObjectID
+		s.matchAndUpdatePaymentRisk(ctx, cap.ID, "", "🚨 Payment capture denied by PayPal risk filters", &matchedID)
+		s.notifyOwnerAdmins(ctx, primitive.NilObjectID, "payment_risk_warning", fmt.Sprintf("🚨 PayPal Payment Denied: Capture %s was rejected by PayPal fraud/risk filters.", cap.ID), matchedID)
+		return "capture_denied", nil
+
+	case "PAYMENT.CAPTURE.REVERSED":
+		var cap payPalCaptureWebhookResource
+		_ = json.Unmarshal(event.Resource, &cap)
+		matchedID := primitive.NilObjectID
+		s.matchAndUpdatePaymentReversal(ctx, cap.ID, &matchedID)
+		s.notifyOwnerAdmins(ctx, primitive.NilObjectID, "payment_risk_warning", fmt.Sprintf("🚨 PayPal Payment Reversed: Capture %s was reversed by PayPal.", cap.ID), matchedID)
+		return "capture_reversed", nil
+
+	case "PAYMENT.CAPTURE.COMPLETED":
+		var cap payPalCaptureWebhookResource
+		_ = json.Unmarshal(event.Resource, &cap)
+		sellerProtection := strings.ToUpper(strings.TrimSpace(cap.SellerProtection.Status))
+		matchedID := primitive.NilObjectID
+		if sellerProtection != "" && !strings.EqualFold(sellerProtection, "ELIGIBLE") {
+			s.matchAndUpdatePaymentRisk(ctx, cap.ID, sellerProtection, "Elevated risk: Seller protection is "+sellerProtection, &matchedID)
+			s.notifyOwnerAdmins(ctx, primitive.NilObjectID, "payment_risk_warning", fmt.Sprintf("⚠️ PayPal Payment Risk: Capture %s completed, but Seller Protection is %s (elevated fraud risk).", cap.ID, sellerProtection), matchedID)
+		} else if cap.ID != "" {
+			s.matchAndUpdatePaymentRisk(ctx, cap.ID, "ELIGIBLE", "", &matchedID)
+		}
+		return "capture_completed", nil
+	}
+
+	return eventType, nil
+}
+
+func (s *Server) matchAndUpdatePaymentDispute(ctx context.Context, captureID string, disputeStatus string, riskWarning string, matchedID *primitive.ObjectID) bool {
+	if s == nil || s.store == nil {
+		return false
+	}
+	captureID = strings.TrimSpace(captureID)
+	if captureID == "" {
+		return false
+	}
+	filter := bson.M{"$or": []bson.M{
+		{"capture_id": captureID},
+		{"payment_reference": captureID},
+	}}
+	var invoice models.Invoice
+	if err := s.store.C("invoices").FindOne(ctx, filter).Decode(&invoice); err == nil {
+		*matchedID = invoice.ID
+		_, _ = s.store.C("invoices").UpdateByID(ctx, invoice.ID, bson.M{"$set": bson.M{
+			"dispute_status": disputeStatus,
+			"risk_warning":   riskWarning,
+		}})
+		return true
+	}
+
+	transferFilter := bson.M{"$or": []bson.M{
+		{"capture_id": captureID},
+		{"external_id": captureID},
+		{"payment_reference": captureID},
+	}}
+	var transfer models.MarketplaceTransfer
+	if err := s.store.C("marketplace_transfers").FindOne(ctx, transferFilter).Decode(&transfer); err == nil {
+		*matchedID = transfer.ID
+		_, _ = s.store.C("marketplace_transfers").UpdateByID(ctx, transfer.ID, bson.M{"$set": bson.M{
+			"dispute_status": disputeStatus,
+			"risk_warning":   riskWarning,
+		}})
+		return true
+	}
+	return false
+}
+
+func (s *Server) matchAndUpdatePaymentRisk(ctx context.Context, captureID string, sellerProtection string, riskWarning string, matchedID *primitive.ObjectID) bool {
+	if s == nil || s.store == nil {
+		return false
+	}
+	captureID = strings.TrimSpace(captureID)
+	if captureID == "" {
+		return false
+	}
+	setFields := bson.M{}
+	if sellerProtection != "" {
+		setFields["seller_protection_status"] = sellerProtection
+	}
+	if riskWarning != "" {
+		setFields["risk_warning"] = riskWarning
+	}
+	if len(setFields) == 0 {
+		return false
+	}
+
+	filter := bson.M{"$or": []bson.M{
+		{"capture_id": captureID},
+		{"payment_reference": captureID},
+	}}
+	var invoice models.Invoice
+	if err := s.store.C("invoices").FindOne(ctx, filter).Decode(&invoice); err == nil {
+		*matchedID = invoice.ID
+		_, _ = s.store.C("invoices").UpdateByID(ctx, invoice.ID, bson.M{"$set": setFields})
+		return true
+	}
+
+	transferFilter := bson.M{"$or": []bson.M{
+		{"capture_id": captureID},
+		{"external_id": captureID},
+		{"payment_reference": captureID},
+	}}
+	var transfer models.MarketplaceTransfer
+	if err := s.store.C("marketplace_transfers").FindOne(ctx, transferFilter).Decode(&transfer); err == nil {
+		*matchedID = transfer.ID
+		_, _ = s.store.C("marketplace_transfers").UpdateByID(ctx, transfer.ID, bson.M{"$set": setFields})
+		return true
+	}
+	return false
+}
+
+func (s *Server) matchAndUpdatePaymentReversal(ctx context.Context, captureID string, matchedID *primitive.ObjectID) bool {
+	if s == nil || s.store == nil {
+		return false
+	}
+	captureID = strings.TrimSpace(captureID)
+	if captureID == "" {
+		return false
+	}
+	filter := bson.M{"$or": []bson.M{
+		{"capture_id": captureID},
+		{"payment_reference": captureID},
+	}}
+	var invoice models.Invoice
+	if err := s.store.C("invoices").FindOne(ctx, filter).Decode(&invoice); err == nil {
+		*matchedID = invoice.ID
+		_, _ = s.store.C("invoices").UpdateByID(ctx, invoice.ID, bson.M{"$set": bson.M{
+			"status":       "reversed",
+			"risk_warning": "Payment reversed by PayPal",
+		}})
+		return true
+	}
+
+	transferFilter := bson.M{"$or": []bson.M{
+		{"capture_id": captureID},
+		{"external_id": captureID},
+		{"payment_reference": captureID},
+	}}
+	var transfer models.MarketplaceTransfer
+	if err := s.store.C("marketplace_transfers").FindOne(ctx, transferFilter).Decode(&transfer); err == nil {
+		*matchedID = transfer.ID
+		_, _ = s.store.C("marketplace_transfers").UpdateByID(ctx, transfer.ID, bson.M{"$set": bson.M{
+			"status":       "reversed",
+			"risk_warning": "Payment reversed by PayPal",
+		}})
+		return true
+	}
+	return false
 }
 
 func (s *Server) approveSubscription(c *gin.Context) {

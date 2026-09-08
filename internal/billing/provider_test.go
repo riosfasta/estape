@@ -3,6 +3,7 @@ package billing
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -90,5 +91,63 @@ func TestPayPalCaptureRetryReadsCompletedOrder(t *testing.T) {
 func TestUnimplementedPayPalRefundNeverReportsSuccess(t *testing.T) {
 	if err := (PayPalProvider{}).RefundPayment(context.Background(), "capture"); err == nil {
 		t.Fatal("no-op refund reported success")
+	}
+}
+
+func TestPayPalCaptureExtractsSellerProtectionAndRisk(t *testing.T) {
+	provider := PayPalProvider{client: &http.Client{Transport: paypalTestTransport(func(req *http.Request) (*http.Response, error) {
+		code := 200
+		body := `{"access_token":"test-token"}`
+		if strings.HasSuffix(req.URL.Path, "/capture") {
+			body = `{"id":"order-risk-1","status":"COMPLETED","purchase_units":[{"payments":{"captures":[{"id":"cap-risk-1","status":"COMPLETED","amount":{"currency_code":"USD","value":"49.00"},"status_details":{"reason":"risk_review"},"seller_protection":{"status":"NOT_ELIGIBLE","dispute_categories":["ITEM_NOT_RECEIVED_ELIGIBLE"]}}]}}]}`
+		}
+		return &http.Response{StatusCode: code, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}}
+
+	capture, err := provider.CaptureCheckout(context.Background(), CheckoutRequest{ClientID: "test", ClientSecret: "test"}, "order-risk-1")
+	if err != nil {
+		t.Fatalf("capture failed: %v", err)
+	}
+	if capture.CaptureID != "cap-risk-1" {
+		t.Errorf("expected capture ID cap-risk-1, got %s", capture.CaptureID)
+	}
+	if capture.SellerProtectionStatus != "NOT_ELIGIBLE" {
+		t.Errorf("expected seller protection status NOT_ELIGIBLE, got %s", capture.SellerProtectionStatus)
+	}
+	if capture.StatusDetailsReason != "risk_review" {
+		t.Errorf("expected status reason risk_review, got %s", capture.StatusDetailsReason)
+	}
+}
+
+func TestPayPalVerifyWebhookSignature(t *testing.T) {
+	for _, status := range []string{"SUCCESS", "FAILURE"} {
+		t.Run(status, func(t *testing.T) {
+			provider := PayPalProvider{client: &http.Client{Transport: paypalTestTransport(func(req *http.Request) (*http.Response, error) {
+				code := 200
+				body := `{"access_token":"test-token"}`
+				if strings.HasSuffix(req.URL.Path, "/verify-webhook-signature") {
+					body = fmt.Sprintf(`{"verification_status":"%s"}`, status)
+				}
+				return &http.Response{StatusCode: code, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+			})}}
+
+			headers := map[string]string{
+				"transmission_id":   "test-trans-id",
+				"transmission_time": "2026-09-08T12:00:00Z",
+				"transmission_sig":  "test-sig",
+				"cert_url":          "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-1",
+				"auth_algo":         "SHA256withRSA",
+				"webhook_id":        "WH-123",
+			}
+			rawEvent := []byte(`{"id":"WH-EVENT-1","event_type":"PAYMENT.CAPTURE.COMPLETED"}`)
+			valid, err := provider.VerifyWebhookSignature(context.Background(), CheckoutRequest{ClientID: "test", ClientSecret: "test", WebhookID: "WH-123"}, headers, rawEvent)
+			if err != nil {
+				t.Fatalf("verify webhook signature failed with error: %v", err)
+			}
+			expectedValid := (status == "SUCCESS")
+			if valid != expectedValid {
+				t.Errorf("expected validity %v for status %s, got %v", expectedValid, status, valid)
+			}
+		})
 	}
 }

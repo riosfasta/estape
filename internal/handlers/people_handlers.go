@@ -1006,7 +1006,7 @@ func (s *Server) notifyUserIDs(ctx context.Context, userIDs []primitive.ObjectID
 
 func (s *Server) notifyOwnerAdmins(ctx context.Context, actorID primitive.ObjectID, notificationType string, content string, relatedID primitive.ObjectID) {
 	content = strings.TrimSpace(content)
-	if content == "" {
+	if content == "" || s == nil || s.store == nil {
 		return
 	}
 	cursor, err := s.store.C("users").Find(ctx, bson.M{"role": models.RoleOwnerAdmin, "status": models.StatusActive})

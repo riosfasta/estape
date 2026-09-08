@@ -110,16 +110,20 @@ type Plan struct {
 }
 
 type Invoice struct {
-	PaymentReference   string             `bson:"payment_reference,omitempty" json:"payment_reference,omitempty"`
-	ID                 primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	TeamID             primitive.ObjectID `bson:"team_id" json:"team_id"`
-	SubscriptionID     primitive.ObjectID `bson:"subscription_id" json:"subscription_id"`
-	Amount             int64              `bson:"amount" json:"amount"`
-	Currency           string             `bson:"currency" json:"currency"`
-	Status             string             `bson:"status" json:"status"`
-	PaymentProvider    string             `bson:"payment_provider" json:"payment_provider"`
-	ExternalInvoiceURL string             `bson:"external_invoice_url,omitempty" json:"external_invoice_url,omitempty"`
-	IssuedAt           time.Time          `bson:"issued_at" json:"issued_at"`
+	PaymentReference       string             `bson:"payment_reference,omitempty" json:"payment_reference,omitempty"`
+	ID                     primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	TeamID                 primitive.ObjectID `bson:"team_id" json:"team_id"`
+	SubscriptionID         primitive.ObjectID `bson:"subscription_id" json:"subscription_id"`
+	Amount                 int64              `bson:"amount" json:"amount"`
+	Currency               string             `bson:"currency" json:"currency"`
+	Status                 string             `bson:"status" json:"status"`
+	PaymentProvider        string             `bson:"payment_provider" json:"payment_provider"`
+	CaptureID              string             `bson:"capture_id,omitempty" json:"capture_id,omitempty"`
+	SellerProtectionStatus string             `bson:"seller_protection_status,omitempty" json:"seller_protection_status,omitempty"`
+	RiskWarning            string             `bson:"risk_warning,omitempty" json:"risk_warning,omitempty"`
+	DisputeStatus          string             `bson:"dispute_status,omitempty" json:"dispute_status,omitempty"`
+	ExternalInvoiceURL     string             `bson:"external_invoice_url,omitempty" json:"external_invoice_url,omitempty"`
+	IssuedAt               time.Time          `bson:"issued_at" json:"issued_at"`
 }
 
 type Space struct {
