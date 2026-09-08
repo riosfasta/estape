@@ -20,7 +20,6 @@ type CheckoutRequest struct {
 	Currency     string
 	ClientID     string
 	ClientSecret string
-	WebhookID    string
 	Mode         string
 	ReturnURL    string
 	CancelURL    string
@@ -38,16 +37,14 @@ type CheckoutSession struct {
 }
 
 type PaymentCapture struct {
-	Provider               string `json:"provider"`
-	ExternalID             string `json:"external_id"`
-	CaptureID              string `json:"capture_id,omitempty"`
-	Status                 string `json:"status"`
-	OrderStatus            string `json:"order_status,omitempty"`
-	Amount                 int64  `json:"amount,omitempty"`
-	Currency               string `json:"currency,omitempty"`
-	PayerEmail             string `json:"payer_email,omitempty"`
-	SellerProtectionStatus string `json:"seller_protection_status,omitempty"`
-	StatusDetailsReason    string `json:"status_details_reason,omitempty"`
+	Provider    string `json:"provider"`
+	ExternalID  string `json:"external_id"`
+	CaptureID   string `json:"capture_id,omitempty"`
+	Status      string `json:"status"`
+	OrderStatus string `json:"order_status,omitempty"`
+	Amount      int64  `json:"amount,omitempty"`
+	Currency    string `json:"currency,omitempty"`
+	PayerEmail  string `json:"payer_email,omitempty"`
 }
 
 type PaymentProvider interface {
@@ -56,10 +53,6 @@ type PaymentProvider interface {
 	CaptureCheckout(context.Context, CheckoutRequest, string) (PaymentCapture, error)
 	HandleWebhook(context.Context, []byte, map[string]string) (string, error)
 	RefundPayment(context.Context, string) error
-}
-
-type WebhookVerifier interface {
-	VerifyWebhookSignature(context.Context, CheckoutRequest, map[string]string, []byte) (bool, error)
 }
 
 type MockProvider struct {
@@ -103,10 +96,6 @@ func (p MockProvider) CaptureCheckout(_ context.Context, _ CheckoutRequest, orde
 
 func (p MockProvider) HandleWebhook(_ context.Context, _ []byte, _ map[string]string) (string, error) {
 	return "payment_succeeded", nil
-}
-
-func (p MockProvider) VerifyWebhookSignature(_ context.Context, _ CheckoutRequest, _ map[string]string, _ []byte) (bool, error) {
-	return true, nil
 }
 
 func (p MockProvider) RefundPayment(_ context.Context, _ string) error {
@@ -203,19 +192,12 @@ func (p PayPalProvider) CaptureCheckout(ctx context.Context, req CheckoutRequest
 		PurchaseUnits []struct {
 			Payments struct {
 				Captures []struct {
-					ID            string `json:"id"`
-					Status        string `json:"status"`
-					StatusDetails struct {
-						Reason string `json:"reason"`
-					} `json:"status_details"`
+					ID     string `json:"id"`
+					Status string `json:"status"`
 					Amount struct {
 						CurrencyCode string `json:"currency_code"`
 						Value        string `json:"value"`
 					} `json:"amount"`
-					SellerProtection struct {
-						Status            string   `json:"status"`
-						DisputeCategories []string `json:"dispute_categories"`
-					} `json:"seller_protection"`
 				} `json:"captures"`
 			} `json:"payments"`
 		} `json:"purchase_units"`
@@ -232,8 +214,6 @@ func (p PayPalProvider) CaptureCheckout(ctx context.Context, req CheckoutRequest
 	captureStatus := ""
 	captureAmount := int64(0)
 	captureCurrency := ""
-	captureSellerProtection := ""
-	captureStatusReason := ""
 	for _, unit := range response.PurchaseUnits {
 		if len(unit.Payments.Captures) > 0 {
 			capture := unit.Payments.Captures[0]
@@ -241,23 +221,19 @@ func (p PayPalProvider) CaptureCheckout(ctx context.Context, req CheckoutRequest
 			captureStatus = capture.Status
 			captureCurrency = normalizedCurrency(capture.Amount.CurrencyCode)
 			captureAmount = amountStringToCents(capture.Amount.Value)
-			captureSellerProtection = strings.ToUpper(strings.TrimSpace(capture.SellerProtection.Status))
-			captureStatusReason = capture.StatusDetails.Reason
 			break
 		}
 	}
 	status := firstNonEmpty(captureStatus, "NO_CAPTURE")
 	return PaymentCapture{
-		Provider:               p.Name(),
-		ExternalID:             firstNonEmpty(response.ID, orderID),
-		CaptureID:              captureID,
-		Status:                 status,
-		OrderStatus:            response.Status,
-		Amount:                 captureAmount,
-		Currency:               captureCurrency,
-		PayerEmail:             response.Payer.EmailAddress,
-		SellerProtectionStatus: captureSellerProtection,
-		StatusDetailsReason:    captureStatusReason,
+		Provider:    p.Name(),
+		ExternalID:  firstNonEmpty(response.ID, orderID),
+		CaptureID:   captureID,
+		Status:      status,
+		OrderStatus: response.Status,
+		Amount:      captureAmount,
+		Currency:    captureCurrency,
+		PayerEmail:  response.Payer.EmailAddress,
 	}, nil
 }
 
@@ -273,57 +249,6 @@ func (p PayPalProvider) HandleWebhook(_ context.Context, body []byte, _ map[stri
 		return "", err
 	}
 	return firstNonEmpty(event.EventType, event.Resource.Status, "paypal_event"), nil
-}
-
-func (p PayPalProvider) VerifyWebhookSignature(ctx context.Context, req CheckoutRequest, headers map[string]string, body []byte) (bool, error) {
-	webhookID := strings.TrimSpace(req.WebhookID)
-	if webhookID == "" {
-		webhookID = strings.TrimSpace(headers["webhook_id"])
-	}
-	if webhookID == "" {
-		return false, errors.New("paypal webhook id is required for verification")
-	}
-
-	transmissionID := firstNonEmpty(headers["transmission_id"], headers["Paypal-Transmission-Id"], headers["paypal-transmission-id"])
-	transmissionTime := firstNonEmpty(headers["transmission_time"], headers["Paypal-Transmission-Time"], headers["paypal-transmission-time"])
-	transmissionSig := firstNonEmpty(headers["transmission_sig"], headers["Paypal-Transmission-Sig"], headers["paypal-transmission-sig"])
-	certURL := firstNonEmpty(headers["cert_url"], headers["Paypal-Cert-Url"], headers["paypal-cert-url"])
-	authAlgo := firstNonEmpty(headers["auth_algo"], headers["Paypal-Auth-Algo"], headers["paypal-auth-algo"])
-
-	if transmissionID == "" || transmissionTime == "" || transmissionSig == "" || certURL == "" || authAlgo == "" {
-		return false, errors.New("missing required paypal webhook verification headers")
-	}
-
-	token, apiBase, err := p.accessToken(ctx, req)
-	if err != nil {
-		return false, err
-	}
-
-	var rawEvent interface{}
-	if err := json.Unmarshal(body, &rawEvent); err != nil {
-		return false, fmt.Errorf("invalid webhook json body: %w", err)
-	}
-
-	verifyPayload := map[string]interface{}{
-		"transmission_id":   transmissionID,
-		"transmission_time": transmissionTime,
-		"cert_url":          certURL,
-		"auth_algo":         authAlgo,
-		"transmission_sig":  transmissionSig,
-		"webhook_id":        webhookID,
-		"webhook_event":     rawEvent,
-	}
-
-	var verifyResp struct {
-		VerificationStatus string `json:"verification_status"`
-	}
-
-	endpoint := apiBase + "/v1/notifications/verify-webhook-signature"
-	if err := p.postJSON(ctx, endpoint, token, "", verifyPayload, &verifyResp); err != nil {
-		return false, err
-	}
-
-	return strings.EqualFold(verifyResp.VerificationStatus, "SUCCESS"), nil
 }
 
 func (p PayPalProvider) RefundPayment(_ context.Context, _ string) error {

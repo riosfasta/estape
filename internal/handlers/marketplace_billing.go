@@ -156,20 +156,8 @@ func (s *Server) marketplaceCaptureTopup(c *gin.Context) {
 		marketplaceError(c, marketInvalid("Payment could not be verified; no balance has been credited"))
 		return
 	}
-	riskWarning := ""
-	if capture.SellerProtectionStatus != "" && !strings.EqualFold(capture.SellerProtectionStatus, "ELIGIBLE") {
-		riskWarning = "Elevated risk: Seller protection is " + capture.SellerProtectionStatus
-	}
 	err = s.marketplaceTransaction(ctx, func(sc mongo.SessionContext) error {
-		setFields := bson.M{
-			"status":                   "completed",
-			"capture_id":               capture.CaptureID,
-			"seller_protection_status": capture.SellerProtectionStatus,
-		}
-		if riskWarning != "" {
-			setFields["risk_warning"] = riskWarning
-		}
-		result, err := s.store.C("marketplace_transfers").UpdateOne(sc, bson.M{"_id": id, "status": "pending"}, bson.M{"$set": setFields})
+		result, err := s.store.C("marketplace_transfers").UpdateOne(sc, bson.M{"_id": id, "status": "pending"}, bson.M{"$set": bson.M{"status": "completed", "capture_id": capture.CaptureID}})
 		if err != nil {
 			return err
 		}
@@ -180,10 +168,7 @@ func (s *Server) marketplaceCaptureTopup(c *gin.Context) {
 		return err
 	})
 	if !marketplaceError(c, err) {
-		if riskWarning != "" {
-			s.notifyOwnerAdmins(ctx, primitive.NilObjectID, "payment_risk_warning", "⚠️ Marketplace Top-up Risk: Deposit of "+formatBillingAmountCents(transfer.Amount)+" has Seller Protection status: "+capture.SellerProtectionStatus+". Elevated risk of chargeback.", transfer.ID)
-		}
-		c.JSON(200, gin.H{"ok": true, "risk_warning": riskWarning})
+		c.JSON(200, gin.H{"ok": true})
 	}
 }
 

@@ -1730,12 +1730,8 @@ function billingInvoicesPanelHTML(invoices = [], options = {}) {
   return `<section class="panel billing-invoices-panel ${esc(className)}">
     <h2>Invoices</h2>
     <div class="task-list">${invoices.map((invoice) => `<article class="task-row" id="invoice-${esc(invoice.id || invoice.subscription_id || "")}">
-      <div><h3>${money(invoice.amount)} ${esc(invoice.currency || "").toUpperCase()}</h3><span class="muted">${fmtDate(invoice.issued_at)}</span>${invoice.payment_reference ? `<small style="display:block;overflow-wrap:anywhere">Reference: ${esc(invoice.payment_reference)}</small>` : ""}${invoice.risk_warning ? `<small class="danger" style="display:block;color:#e11d48;font-weight:600">⚠️ ${esc(invoice.risk_warning)}</small>` : ""}</div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-        <span class="pill">${esc(invoice.status || "invoice")}</span>
-        ${invoice.dispute_status ? `<span class="pill danger" style="background:#fee2e2;color:#991b1b">Dispute: ${esc(invoice.dispute_status)}</span>` : ""}
-        ${invoice.seller_protection_status && invoice.seller_protection_status !== "ELIGIBLE" ? `<span class="pill warning" style="background:#fef3c7;color:#92400e" title="Seller Protection: ${esc(invoice.seller_protection_status)}">⚠️ Risk: ${esc(invoice.seller_protection_status)}</span>` : ""}
-      </div>
+      <div><h3>${money(invoice.amount)} ${esc(invoice.currency || "").toUpperCase()}</h3><span class="muted">${fmtDate(invoice.issued_at)}</span>${invoice.payment_reference ? `<small style="display:block;overflow-wrap:anywhere">Reference: ${esc(invoice.payment_reference)}</small>` : ""}</div>
+      <span class="pill">${esc(invoice.status || "invoice")}</span>
       ${invoice.external_invoice_url ? `<a class="btn" href="${esc(invoice.external_invoice_url)}">Receipt</a>` : `<span class="muted">No receipt</span>`}
     </article>`).join("") || `<p class="muted">No invoices yet.</p>`}</div>
   </section>`;
@@ -9438,7 +9434,7 @@ function adminUserDetailHTML(data = {}) {
         const status = adminMembershipLabel(sub.expires_at && new Date(sub.expires_at) < new Date() ? "expired" : sub.status);
         return `<article><strong>${esc(plan.name || "Unknown plan")}</strong><span>${esc(status)} - ${esc(sub.payment_provider || "No payment provider")}</span><span>Started ${esc(fmtDate(sub.started_at))}${sub.expires_at ? ` - Expires ${esc(fmtDate(sub.expires_at))}` : ""}${sub.trial_ends_at ? ` - Trial ends ${esc(fmtDate(sub.trial_ends_at))}` : ""}</span><span>${sub.external_transaction_id ? `Transaction ${esc(sub.external_transaction_id)}` : "No transaction ID"}</span></article>`;
       })}
-      ${adminMiniRows(invoices, "No invoices found.", (invoice) => `<article><strong>${esc(money(invoice.amount))} ${esc(String(invoice.currency || "USD").toUpperCase())}</strong><span>${esc(invoice.status || "unknown")} - ${esc(invoice.payment_provider || "No provider")}</span>${invoice.payment_reference ? `<span style="overflow-wrap:anywhere">Reference: ${esc(invoice.payment_reference)}</span>` : ""}${invoice.risk_warning ? `<span class="danger" style="color:#e11d48;font-weight:600">⚠️ ${esc(invoice.risk_warning)}</span>` : ""}${invoice.dispute_status ? `<span class="danger" style="color:#b91c1c;font-weight:600">Dispute: ${esc(invoice.dispute_status)}</span>` : ""}<span>${esc(fmtDate(invoice.issued_at))}${invoice.external_invoice_url ? ` - <a class="text-link" href="${esc(invoice.external_invoice_url)}" target="_blank" rel="noopener noreferrer">Receipt</a>` : ""}</span></article>`)}
+      ${adminMiniRows(invoices, "No invoices found.", (invoice) => `<article><strong>${esc(money(invoice.amount))} ${esc(String(invoice.currency || "USD").toUpperCase())}</strong><span>${esc(invoice.status || "unknown")} - ${esc(invoice.payment_provider || "No provider")}</span>${invoice.payment_reference ? `<span style="overflow-wrap:anywhere">Reference: ${esc(invoice.payment_reference)}</span>` : ""}<span>${esc(fmtDate(invoice.issued_at))}${invoice.external_invoice_url ? ` - <a class="text-link" href="${esc(invoice.external_invoice_url)}" target="_blank" rel="noopener noreferrer">Receipt</a>` : ""}</span></article>`)}
     </section>
     <section class="admin-detail-section"><h3>Companies and workspaces</h3>
       ${adminMiniRows(teams, "No teams found.", (team) => `<article><strong>${esc(team.name || "Unnamed workspace")}</strong><span>${esc(team.company_email || "No company email")} - ${team.member_ids?.length || 0} members</span><span>Created ${esc(fmtDate(team.created_at))}</span></article>`)}
