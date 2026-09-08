@@ -383,17 +383,24 @@ func (s *Server) enqueuePurchaseAlertEmail(ctx context.Context, buyer models.Use
 
 func (s *Server) purchaseSubscription(c *gin.Context) {
 	userCtx, _ := currentUser(c)
-	if !s.canManageTeam(c, userCtx.TeamID) {
-		return
-	}
 	var req struct {
 		PlanID        string `json:"plan_id"`
 		Provider      string `json:"provider"`
 		BillingPeriod string `json:"billing_period"`
 		Quantity      int    `json:"quantity"`
+		TeamID        string `json:"team_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid subscription body"})
+		return
+	}
+	targetTeamID := userCtx.TeamID
+	if strings.TrimSpace(req.TeamID) != "" {
+		if tid, err := objectIDFromString(req.TeamID); err == nil {
+			targetTeamID = tid
+		}
+	}
+	if !s.canManageTeam(c, targetTeamID) {
 		return
 	}
 	providerName := strings.ToLower(strings.TrimSpace(req.Provider))
@@ -427,16 +434,16 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 	quantity := normalizedBillingQuantity(req.Quantity)
 
 	var team models.Team
-	_ = s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": userCtx.TeamID}).Decode(&team)
+	_ = s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": targetTeamID}).Decode(&team)
 	if team.ID.IsZero() {
-		team.ID = userCtx.TeamID
+		team.ID = targetTeamID
 	}
 	seatCount := teamSeatCount(team)
 	amount := planBillingAmount(plan, seatCount, period, quantity)
 	now := time.Now()
 	sub := models.Subscription{
 		ID:              primitive.NewObjectID(),
-		TeamID:          userCtx.TeamID,
+		TeamID:          targetTeamID,
 		PlanID:          plan.ID,
 		Status:          "pending_payment",
 		CheckoutAmount:  amount,
@@ -458,7 +465,7 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	checkoutReq.TeamID = userCtx.TeamID.Hex()
+	checkoutReq.TeamID = targetTeamID.Hex()
 	checkoutReq.PlanID = plan.ID.Hex()
 	checkoutReq.Amount = amount
 	checkoutReq.Currency = "usd"

@@ -673,7 +673,20 @@ func (s *Server) respondInvitation(c *gin.Context) {
 				return
 			}
 		}
-		_, err = s.store.C("users").UpdateByID(c.Request.Context(), userCtx.ID, bson.M{"$set": bson.M{"team_id": invitation.TeamID, "role": teamRoleForStaffRole(invitation.StaffRole), "staff_role": invitation.StaffRole, "username": username, "status": models.StatusActive}})
+		userUpdate := bson.M{
+			"username": username,
+			"status":   models.StatusActive,
+		}
+		if user.TeamID.IsZero() {
+			if personalTeam, err := s.personalTeamForUser(c.Request.Context(), user, now); err == nil {
+				userUpdate["team_id"] = personalTeam.ID
+				if user.Role != models.RoleOwnerAdmin {
+					userUpdate["role"] = models.RoleTeamAdmin
+					userUpdate["staff_role"] = "manager"
+				}
+			}
+		}
+		_, err = s.store.C("users").UpdateByID(c.Request.Context(), userCtx.ID, bson.M{"$set": userUpdate})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not join team"})
 			return

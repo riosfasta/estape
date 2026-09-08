@@ -2236,6 +2236,9 @@ func (s *Server) canManageTeamSilently(ctx context.Context, userCtx middleware.U
 	if userCtx.Role == models.RoleOwnerAdmin || (userCtx.Role == models.RoleTeamAdmin && userCtx.TeamID == teamID) {
 		return true
 	}
+	if s.store == nil {
+		return false
+	}
 	count, err := s.store.C("teams").CountDocuments(ctx, bson.M{"_id": teamID, "owner_admin_id": userCtx.ID})
 	return err == nil && count > 0
 }

@@ -42,13 +42,13 @@ func (s *Server) capturePayPalSubscription(c *gin.Context) {
 		return
 	}
 	user, _ := currentUser(c)
-	if !s.canManageTeam(c, user.TeamID) {
-		return
-	}
 	ctx := c.Request.Context()
 	var sub models.Subscription
-	if err := s.store.C("subscriptions").FindOne(ctx, bson.M{"_id": id, "team_id": user.TeamID, "buyer_id": user.ID, "payment_provider": "paypal"}).Decode(&sub); err != nil {
+	if err := s.store.C("subscriptions").FindOne(ctx, bson.M{"_id": id, "buyer_id": user.ID, "payment_provider": "paypal"}).Decode(&sub); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Checkout not found"})
+		return
+	}
+	if !s.canManageTeam(c, sub.TeamID) {
 		return
 	}
 	if invoice, paid := s.paidInvoiceForSubscription(ctx, sub.ID); paid {

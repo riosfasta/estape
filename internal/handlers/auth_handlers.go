@@ -357,12 +357,31 @@ func (s *Server) me(c *gin.Context) {
 	if owned, err := s.personalTeamForUser(c.Request.Context(), user, time.Now()); err == nil {
 		personalTeam = &owned
 	}
+	if user.Role != models.RoleOwnerAdmin && personalTeam != nil {
+		isPersonalWorkspace := user.TeamID.IsZero() || user.TeamID == personalTeam.ID || (team != nil && team.OwnerAdminID == user.ID)
+		if isPersonalWorkspace {
+			needsRepair := user.Role != models.RoleTeamAdmin || user.TeamID != personalTeam.ID
+			if needsRepair {
+				user.Role = models.RoleTeamAdmin
+				user.StaffRole = "manager"
+				user.TeamID = personalTeam.ID
+				_, _ = s.store.C("users").UpdateByID(c.Request.Context(), user.ID, bson.M{
+					"$set": bson.M{
+						"role":       models.RoleTeamAdmin,
+						"staff_role": "manager",
+						"team_id":    personalTeam.ID,
+					},
+				})
+				team = personalTeam
+			}
+		}
+	}
 	var companyAccess gin.H
 	companyAccesses := make([]gin.H, 0)
 	companyAccessTeams := map[primitive.ObjectID]bool{}
 	inviteCursor, inviteErr := s.store.C("team_invitations").Find(
 		c.Request.Context(),
-		bson.M{"existing_user_id": user.ID, "status": "accepted"},
+		bson.M{"$or": []bson.M{{"existing_user_id": user.ID}, {"email": user.Email}}, "status": "accepted"},
 		options.Find().SetSort(bson.D{{Key: "responded_at", Value: -1}, {Key: "created_at", Value: -1}}),
 	)
 	if inviteErr == nil {
@@ -453,6 +472,141 @@ func (s *Server) me(c *gin.Context) {
 		"membership":           membership,
 		"unread_comment_count": unreadCommentCount,
 		"platform_settings":    s.publicPlatformSettings(c.Request.Context()),
+	})
+}
+
+func (s *Server) switchWorkspace(c *gin.Context) {
+	userCtx, ok := currentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
+		return
+	}
+	user, err := s.loadUser(c.Request.Context(), userCtx.ID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	if user.Status != models.StatusActive {
+		c.JSON(http.StatusForbidden, gin.H{"error": "account is suspended"})
+		return
+	}
+
+	var req struct {
+		TeamID  string `json:"team_id"`
+		Context string `json:"context"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid switch workspace body"})
+		return
+	}
+
+	now := time.Now()
+	personalTeam, err := s.personalTeamForUser(c.Request.Context(), user, now)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare personal workspace"})
+		return
+	}
+
+	targetContext := strings.ToLower(strings.TrimSpace(req.Context))
+	targetTeamIDRaw := strings.TrimSpace(req.TeamID)
+
+	var targetTeam models.Team
+	var newRole models.Role
+	var newStaffRole string
+
+	isPersonal := targetContext == "personal" || targetTeamIDRaw == "" || targetTeamIDRaw == personalTeam.ID.Hex()
+	if isPersonal {
+		targetTeam = personalTeam
+		if user.Role == models.RoleOwnerAdmin {
+			newRole = models.RoleOwnerAdmin
+			newStaffRole = user.StaffRole
+		} else {
+			newRole = models.RoleTeamAdmin
+			newStaffRole = "manager"
+		}
+	} else {
+		targetID, err := objectIDFromString(targetTeamIDRaw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid team_id"})
+			return
+		}
+		if targetID == personalTeam.ID {
+			targetTeam = personalTeam
+			if user.Role == models.RoleOwnerAdmin {
+				newRole = models.RoleOwnerAdmin
+				newStaffRole = user.StaffRole
+			} else {
+				newRole = models.RoleTeamAdmin
+				newStaffRole = "manager"
+			}
+		} else {
+			if err := s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": targetID}).Decode(&targetTeam); err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "workspace not found"})
+				return
+			}
+			// Check access: member of team OR accepted invitation
+			hasAccess := containsObjectID(targetTeam.MemberIDs, user.ID)
+			var invitation models.TeamInvitation
+			inviteErr := s.store.C("team_invitations").FindOne(c.Request.Context(), bson.M{
+				"team_id": targetID,
+				"$or":     []bson.M{{"existing_user_id": user.ID}, {"email": user.Email}},
+				"status":  "accepted",
+			}, options.FindOne().SetSort(bson.D{{Key: "responded_at", Value: -1}, {Key: "created_at", Value: -1}})).Decode(&invitation)
+			if inviteErr == nil {
+				hasAccess = true
+			}
+			if !hasAccess && user.Role != models.RoleOwnerAdmin {
+				c.JSON(http.StatusForbidden, gin.H{"error": "you do not have access to this workspace"})
+				return
+			}
+			if user.Role == models.RoleOwnerAdmin {
+				newRole = models.RoleOwnerAdmin
+				newStaffRole = user.StaffRole
+			} else {
+				if inviteErr == nil && invitation.StaffRole != "" {
+					newStaffRole = invitation.StaffRole
+					newRole = teamRoleForStaffRole(invitation.StaffRole)
+				} else {
+					newRole = models.RoleMember
+					newStaffRole = "member"
+				}
+			}
+		}
+	}
+
+	update := bson.M{
+		"team_id":    targetTeam.ID,
+		"role":       newRole,
+		"staff_role": newStaffRole,
+	}
+	if _, err := s.store.C("users").UpdateByID(c.Request.Context(), user.ID, bson.M{"$set": update}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not switch workspace"})
+		return
+	}
+
+	user.TeamID = targetTeam.ID
+	user.Role = newRole
+	user.StaffRole = newStaffRole
+
+	access, refresh, err := s.issueTokens(c.Request.Context(), user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not issue refreshed session"})
+		return
+	}
+	s.setSessionCookies(c, access, refresh)
+
+	s.audit(c.Request.Context(), user.ID, "workspace.switched", "team", targetTeam.ID)
+
+	c.JSON(http.StatusOK, gin.H{
+		"ok":            true,
+		"user":          user,
+		"team":          targetTeam,
+		"personal_team": personalTeam,
+		"role":          newRole,
+		"staff_role":    newStaffRole,
+		"access_token":  access,
+		"refresh_token": refresh,
+		"membership":    s.membershipAccessPayload(c.Request.Context(), targetTeam.ID),
 	})
 }
 

@@ -119,6 +119,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/users/me/2fa/enable", s.enableTwoFactor)
 	authed.POST("/users/me/2fa/disable", s.disableTwoFactor)
 	authed.GET("/users/me/invitations", s.listMyInvitations)
+	authed.POST("/users/me/workspace/switch", s.switchWorkspace)
 	authed.DELETE("/users/me/company-access", s.leaveCompany)
 	authed.GET("/users/me/notifications", s.listNotifications)
 	authed.DELETE("/users/me/notifications", s.deleteMyNotifications)
@@ -596,6 +597,9 @@ func (s *Server) canManageTeam(c *gin.Context, teamID primitive.ObjectID) bool {
 }
 
 func (s *Server) loadUser(ctx context.Context, id primitive.ObjectID) (models.User, error) {
+	if s.store == nil {
+		return models.User{}, errors.New("store unavailable")
+	}
 	var user models.User
 	err := s.store.C("users").FindOne(ctx, bson.M{"_id": id}).Decode(&user)
 	return user, err

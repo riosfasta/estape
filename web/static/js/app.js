@@ -1173,6 +1173,18 @@ function workspaceOptions() {
 
 function ensureWorkspaceContext() {
   const options = workspaceOptions();
+  if (state.team?.id) {
+    if (state.personalTeam?.id && state.team.id === state.personalTeam.id) {
+      state.workspaceContext = "personal";
+      localStorage.setItem(WORKSPACE_CONTEXT_KEY, state.workspaceContext);
+    } else {
+      const match = options.find((opt) => opt.team_id === state.team.id);
+      if (match) {
+        state.workspaceContext = match.value;
+        localStorage.setItem(WORKSPACE_CONTEXT_KEY, state.workspaceContext);
+      }
+    }
+  }
   if (!options.some((option) => option.value === state.workspaceContext)) {
     state.workspaceContext = "personal";
     localStorage.setItem(WORKSPACE_CONTEXT_KEY, state.workspaceContext);
@@ -1204,11 +1216,34 @@ function workspaceContextPickerHTML(options = workspaceOptions()) {
 
 function bindWorkspaceContextSwitcher() {
   const select = $("#workspaceContextSelect");
-  select?.addEventListener("change", () => {
-    state.workspaceContext = select.value;
-    localStorage.setItem(WORKSPACE_CONTEXT_KEY, state.workspaceContext);
-    state.mentionUsers = null;
-    route();
+  select?.addEventListener("change", async () => {
+    const targetValue = select.value;
+    const options = workspaceOptions();
+    const option = options.find((o) => o.value === targetValue);
+    if (!option) return;
+    const prevValue = state.workspaceContext;
+    select.disabled = true;
+    try {
+      const data = await api("/api/users/me/workspace/switch", {
+        method: "POST",
+        body: JSON.stringify({
+          context: option.kind === "personal" || option.kind === "owner" ? "personal" : "company",
+          team_id: option.team_id || "",
+        }),
+      });
+      if (data.access_token) {
+        storeTokens(data.access_token, data.refresh_token);
+      }
+      state.workspaceContext = targetValue;
+      localStorage.setItem(WORKSPACE_CONTEXT_KEY, state.workspaceContext);
+      state.mentionUsers = null;
+      await loadMe();
+      route();
+    } catch (error) {
+      alert("Failed to switch workspace: " + (error.message || "Unknown error"));
+      select.value = prevValue;
+      select.disabled = false;
+    }
   });
 }
 
@@ -1501,6 +1536,7 @@ async function checkoutPurchaseCart() {
         provider: "paypal",
         billing_period: cart.billing_period || "monthly",
         quantity: Math.max(1, Number(cart.quantity || 1)),
+        team_id: activeWorkspaceTeamID() || state.personalTeam?.id || state.team?.id || "",
       }),
     });
     if (!data.checkout?.external_id) throw new Error("PayPal did not return a checkout order.");
@@ -9081,10 +9117,16 @@ async function renderBilling() {
   const billingTeamID = activeWorkspaceTeamID() || state.team?.id || state.personalTeam?.id || "";
   const invoices = billingTeamID ? ((await api(`/api/subscriptions/${billingTeamID}/invoices`)).invoices || []) : [];
   const paidMembership = currentMembershipIsPaid(membership);
+  const isCompanyMember = !isPersonalWorkspaceContext() && state.me?.role !== "owner_adm";
+  const companyNotice = isCompanyMember ? `<section class="panel soft-panel" style="margin-bottom:16px;">
+    <strong>${icon("info")} Company Workspace Billing</strong>
+    <p class="muted">You are viewing billing for ${esc(activeWorkspaceOption()?.name || "this company")}. Package subscriptions for this workspace are managed by the company admin. To purchase a package for your own workspace, switch to your personal workspace using the top-left workspace selector.</p>
+  </section>` : "";
   shell("Billing", `
     <div class="page-title"><div><h1>Premium bug reporting</h1><p class="muted">${paidMembership ? "Membership details and receipts." : "Plans, trial state, approvals, and receipts."}</p></div></div>
     <p class="market-notice">Subscriptions and the 14-day trial apply to premium bug reporting only. Freelancing and hiring have no monthly subscription. <a href="/wallet">Manage hiring balance and earnings</a>.</p>
     ${paymentNotice}
+    ${companyNotice}
     ${paidMembership ? billingMembershipDetailsHTML(membership, plans) : `
       <section class="panel paywall-panel">
         <h2>${membership.status === "trialing" ? "Trial membership" : "Choose a package"}</h2>
