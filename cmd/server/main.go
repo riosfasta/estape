@@ -12,19 +12,18 @@ import (
 
 	"bugmark/internal/app"
 	"bugmark/internal/config"
-	"bugmark/internal/log"
 	"bugmark/internal/store"
 )
 
 func main() {
 	cfg := config.Load()
-	logger := log.New(cfg.LogLevel, false)
+	logger := log.Default()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	db, err := store.Connect(ctx, cfg)
 	if err != nil {
-		logger.Fatalw("connect mongodb", "err", err)
+		logger.Fatalf("connect mongodb: %v", err)
 	}
 	defer func() {
 		disconnectCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
@@ -33,10 +32,10 @@ func main() {
 	}()
 
 	if err := db.CreateIndexes(ctx); err != nil {
-		logger.Fatalw("create indexes", "err", err)
+		logger.Fatalf("create indexes: %v", err)
 	}
 	if err := db.Seed(ctx, cfg); err != nil {
-		logger.Fatalw("seed database", "err", err)
+		logger.Fatalf("seed database: %v", err)
 	}
 
 	application := app.New(cfg, logger, db)
@@ -49,9 +48,9 @@ func main() {
 	}
 
 	go func() {
-		logger.Infow("bugmega running", "url", cfg.AppURL)
+		logger.Printf("bugmega running at %s", cfg.AppURL)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Fatalw("server error", "err", err)
+			logger.Fatalf("server error: %v", err)
 		}
 	}()
 
@@ -62,6 +61,6 @@ func main() {
 	shutdownCtx, stop := context.WithTimeout(context.Background(), 10*time.Second)
 	defer stop()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Warnw("shutdown error", "err", err)
+		logger.Printf("shutdown error: %v", err)
 	}
 }

@@ -465,7 +465,9 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 	checkoutReq.Description = sub.PaymentReference + " | " + fmt.Sprintf("%s %s package", plan.Name, period)
 	checkoutReq.ReturnURL = s.payPalReturnURL(sub.ID)
 	checkoutReq.CancelURL = s.payPalCancelURL(sub.ID)
-	s.logger.Infow("creating paypal checkout", "req", checkoutReq)
+	if s.logger != nil {
+		s.logger.Printf("creating paypal checkout: %+v", checkoutReq)
+	}
 	session, err := provider.CreateCheckout(c.Request.Context(), checkoutReq)
 	if err != nil {
 		_, _ = s.store.C("subscriptions").UpdateByID(c.Request.Context(), sub.ID, bson.M{"$set": bson.M{"status": "checkout_failed", "expires_at": now}})
