@@ -26,6 +26,8 @@ type taskReportQuery struct {
 	ClientID    primitive.ObjectID
 	WebsiteID   primitive.ObjectID
 	TaskID      primitive.ObjectID
+	TabID       primitive.ObjectID
+	Status      string
 	From        time.Time
 	To          time.Time
 	HasDateSpan bool
@@ -45,15 +47,16 @@ type taskReportOptions struct {
 }
 
 type taskReportData struct {
-	User        models.User
-	Clients     []models.ClientProject
-	Websites    []models.ClientWebsite
-	Tasks       []models.ClientTask
-	Completions []taskReportCompletion
-	UsersByID   map[primitive.ObjectID]models.User
-	TimeMinutes map[primitive.ObjectID]int
-	Query       taskReportQuery
-	GeneratedAt time.Time
+	User         models.User
+	Clients      []models.ClientProject
+	Websites     []models.ClientWebsite
+	Tasks        []models.ClientTask
+	Completions  []taskReportCompletion
+	UsersByID    map[primitive.ObjectID]models.User
+	TimeMinutes  map[primitive.ObjectID]int
+	TaskComments []models.ClientTaskComment
+	Query        taskReportQuery
+	GeneratedAt  time.Time
 }
 
 type taskReportCompletion struct {
@@ -84,6 +87,19 @@ func (s *Server) taskReportPDF(c *gin.Context) {
 	}
 	pdf := renderTaskReportPDF(data)
 	filename := fmt.Sprintf("task-report-%s.pdf", strings.ReplaceAll(query.Period, " ", "-"))
+	if query.Scope == "task" && len(data.Tasks) > 0 {
+		title := strings.TrimSpace(data.Tasks[0].Title)
+		if title == "" {
+			title = "task"
+		}
+		filename = fmt.Sprintf("task-%s.pdf", slugify(title))
+	} else if query.Status != "" {
+		statusSlug := slugify(query.Status)
+		if statusSlug == "" {
+			statusSlug = "status"
+		}
+		filename = fmt.Sprintf("tasks-%s.pdf", statusSlug)
+	}
 	c.Header("Content-Type", "application/pdf")
 	c.Header("Content-Disposition", `attachment; filename="`+filename+`"`)
 	c.Data(200, "application/pdf", pdf)
@@ -114,12 +130,14 @@ func (s *Server) taskReportPreview(c *gin.Context) {
 
 func parseTaskReportQuery(c *gin.Context) (taskReportQuery, error) {
 	now := time.Now()
+	rawPeriod := strings.ToLower(strings.TrimSpace(c.Query("period")))
 	query := taskReportQuery{
 		Scope:     strings.ToLower(strings.TrimSpace(c.DefaultQuery("scope", "assigned"))),
-		Period:    strings.ToLower(strings.TrimSpace(c.DefaultQuery("period", "week"))),
+		Period:    rawPeriod,
 		DateField: strings.ToLower(strings.TrimSpace(c.DefaultQuery("date_field", "created_at"))),
 		Options:   parseTaskReportOptions(c),
 		Note:      normalizeTaskReportNote(c.Query("note")),
+		Status:    strings.TrimSpace(c.Query("status")),
 	}
 	switch query.Scope {
 	case "assigned", "all", "domain", "task":
@@ -130,6 +148,11 @@ func parseTaskReportQuery(c *gin.Context) (taskReportQuery, error) {
 	case "created_at", "updated_at", "due_date":
 	default:
 		query.DateField = "created_at"
+	}
+	if raw := strings.TrimSpace(c.Query("tab_id")); raw != "" {
+		if id, err := objectIDFromString(raw); err == nil {
+			query.TabID = id
+		}
 	}
 	if raw := strings.TrimSpace(c.Query("client_id")); raw != "" {
 		id, err := objectIDFromString(raw)
@@ -153,7 +176,7 @@ func parseTaskReportQuery(c *gin.Context) (taskReportQuery, error) {
 		query.TaskID = id
 		query.Scope = "task"
 	}
-	if query.Scope == "domain" && query.WebsiteID.IsZero() {
+	if query.Scope == "domain" && query.WebsiteID.IsZero() && query.TabID.IsZero() {
 		return query, fmt.Errorf("select a domain for domain export")
 	}
 	if query.Scope == "task" && query.TaskID.IsZero() {
@@ -181,6 +204,15 @@ func parseTaskReportQuery(c *gin.Context) (taskReportQuery, error) {
 		}
 		query.Period = "custom"
 		return query, nil
+	}
+
+	if query.Scope == "task" || query.Status != "" {
+		if query.Period == "" {
+			query.Period = "all"
+		}
+	}
+	if query.Period == "" {
+		query.Period = "week"
 	}
 
 	from, to, hasRange := reportPeriodRange(query.Period, now)
@@ -259,6 +291,34 @@ func reportPeriodRange(period string, now time.Time) (time.Time, time.Time, bool
 }
 
 func (s *Server) buildTaskReportData(ctx context.Context, c *gin.Context, userCtx middleware.UserContext, user models.User, query taskReportQuery) (taskReportData, error) {
+	if !query.TaskID.IsZero() && s.store != nil {
+		var singleTask models.ClientTask
+		if err := s.store.C("client_tasks").FindOne(ctx, bson.M{"_id": query.TaskID}).Decode(&singleTask); err == nil {
+			var site models.ClientWebsite
+			_ = s.store.C("client_websites").FindOne(ctx, bson.M{"_id": singleTask.WebsiteID}).Decode(&site)
+			if userCtx.Role != models.RoleOwnerAdmin && !s.canAccessClientWebsite(ctx, userCtx, site) && !containsObjectID(singleTask.AssigneeIDs, userCtx.ID) && singleTask.CreatedBy != userCtx.ID {
+				return taskReportData{}, fmt.Errorf("task access denied")
+			}
+			query.ClientID = singleTask.ClientID
+			query.WebsiteID = singleTask.WebsiteID
+			if query.TabID.IsZero() {
+				query.TabID = singleTask.TabID
+			}
+			query.Scope = "task"
+			query.HasDateSpan = false
+		} else {
+			return taskReportData{}, fmt.Errorf("task not found")
+		}
+	}
+
+	if query.WebsiteID.IsZero() && !query.TabID.IsZero() && s.store != nil {
+		var tab models.ClientTab
+		if err := s.store.C("client_tabs").FindOne(ctx, bson.M{"_id": query.TabID}).Decode(&tab); err == nil {
+			query.WebsiteID = tab.WebsiteID
+			query.ClientID = tab.ClientID
+		}
+	}
+
 	clients, err := s.reportAllowedClientProjects(ctx, userCtx)
 	if err != nil {
 		return taskReportData{}, err
@@ -268,6 +328,12 @@ func (s *Server) buildTaskReportData(ctx context.Context, c *gin.Context, userCt
 		for _, client := range clients {
 			if client.ID == query.ClientID {
 				filtered = append(filtered, client)
+			}
+		}
+		if len(filtered) == 0 && s.store != nil {
+			var cp models.ClientProject
+			if err := s.store.C("client_projects").FindOne(ctx, bson.M{"_id": query.ClientID}).Decode(&cp); err == nil {
+				filtered = []models.ClientProject{cp}
 			}
 		}
 		clients = filtered
@@ -292,6 +358,15 @@ func (s *Server) buildTaskReportData(ctx context.Context, c *gin.Context, userCt
 				break
 			}
 		}
+		if !allowedWebsite && s.store != nil {
+			var cw models.ClientWebsite
+			if err := s.store.C("client_websites").FindOne(ctx, bson.M{"_id": query.WebsiteID}).Decode(&cw); err == nil {
+				if userCtx.Role == models.RoleOwnerAdmin || s.canAccessClientWebsite(ctx, userCtx, cw) {
+					websites = append(websites, cw)
+					allowedWebsite = true
+				}
+			}
+		}
 		if !allowedWebsite {
 			return taskReportData{}, fmt.Errorf("domain access denied")
 		}
@@ -305,7 +380,9 @@ func (s *Server) buildTaskReportData(ctx context.Context, c *gin.Context, userCt
 				filteredWebsites = append(filteredWebsites, website)
 			}
 		}
-		websites = filteredWebsites
+		if len(filteredWebsites) > 0 || query.WebsiteID.IsZero() {
+			websites = filteredWebsites
+		}
 	}
 
 	taskFilter := s.clientTaskAccessFilter(ctx, userCtx, clientIDs)
@@ -314,6 +391,12 @@ func (s *Server) buildTaskReportData(ctx context.Context, c *gin.Context, userCt
 	}
 	if !query.WebsiteID.IsZero() {
 		taskFilter = bson.M{"$and": []bson.M{taskFilter, {"website_id": query.WebsiteID}}}
+	}
+	if !query.TabID.IsZero() {
+		taskFilter = bson.M{"$and": []bson.M{taskFilter, {"tab_id": query.TabID}}}
+	}
+	if query.Status != "" {
+		taskFilter = bson.M{"$and": []bson.M{taskFilter, {"status": query.Status}}}
 	}
 	if !query.TaskID.IsZero() {
 		taskFilter = bson.M{"$and": []bson.M{taskFilter, {"_id": query.TaskID}}}
@@ -330,30 +413,37 @@ func (s *Server) buildTaskReportData(ctx context.Context, c *gin.Context, userCt
 		taskFilter = bson.M{"$and": []bson.M{taskFilter, {query.DateField: dateRange}}}
 	}
 
-	cursor, err := s.store.C("client_tasks").Find(ctx, taskFilter, options.Find().SetSort(bson.D{{Key: "client_id", Value: 1}, {Key: "website_id", Value: 1}, {Key: "due_date", Value: 1}, {Key: "created_at", Value: -1}}).SetLimit(2000))
-	if err != nil {
-		return taskReportData{}, fmt.Errorf("could not load report tasks")
-	}
-	defer cursor.Close(ctx)
 	tasks := []models.ClientTask{}
-	if err := cursor.All(ctx, &tasks); err != nil {
-		return taskReportData{}, fmt.Errorf("could not decode report tasks")
+	if s.store != nil {
+		cursor, err := s.store.C("client_tasks").Find(ctx, taskFilter, options.Find().SetSort(bson.D{{Key: "client_id", Value: 1}, {Key: "website_id", Value: 1}, {Key: "due_date", Value: 1}, {Key: "created_at", Value: -1}}).SetLimit(2000))
+		if err != nil {
+			return taskReportData{}, fmt.Errorf("could not load report tasks")
+		}
+		defer cursor.Close(ctx)
+		if err := cursor.All(ctx, &tasks); err != nil {
+			return taskReportData{}, fmt.Errorf("could not decode report tasks")
+		}
 	}
 
 	completions := s.reportTaskCompletions(ctx, completionTaskFilter, query)
 	reportTasks := mergeReportTasks(tasks, completionTasks(completions))
 	usersByID := s.reportUsersByID(ctx, reportTasks, completions)
 	timeMinutes := s.reportTaskTimeMinutes(ctx, reportTasks, query, userCtx)
+	var taskComments []models.ClientTaskComment
+	if !query.TaskID.IsZero() {
+		taskComments, _ = s.clientTaskComments(ctx, query.TaskID)
+	}
 	return taskReportData{
-		User:        user,
-		Clients:     clients,
-		Websites:    websites,
-		Tasks:       tasks,
-		Completions: completions,
-		UsersByID:   usersByID,
-		TimeMinutes: timeMinutes,
-		Query:       query,
-		GeneratedAt: time.Now(),
+		User:         user,
+		Clients:      clients,
+		Websites:     websites,
+		Tasks:        tasks,
+		Completions:  completions,
+		UsersByID:    usersByID,
+		TimeMinutes:  timeMinutes,
+		TaskComments: taskComments,
+		Query:        query,
+		GeneratedAt:  time.Now(),
 	}, nil
 }
 
@@ -565,8 +655,135 @@ func (s *Server) reportTaskTimeMinutes(ctx context.Context, tasks []models.Clien
 	return out
 }
 
+func renderSingleTaskPDF(task models.ClientTask, data taskReportData) []byte {
+	taskTitle := strings.TrimSpace(task.Title)
+	if taskTitle == "" {
+		taskTitle = "Untitled Task"
+	}
+	clientByID := map[primitive.ObjectID]models.ClientProject{}
+	for _, client := range data.Clients {
+		clientByID[client.ID] = client
+	}
+	websiteByID := map[primitive.ObjectID]models.ClientWebsite{}
+	for _, website := range data.Websites {
+		websiteByID[website.ID] = website
+	}
+
+	headerSubtitle := reportScopeLabel(data.Query) + " - " + data.GeneratedAt.Format("Jan 2, 2006 15:04")
+	pdf := newSimplePDF("Task Export", headerSubtitle)
+
+	pdf.section("Task Overview")
+	titleLines := wrapText(taskTitle, 80, 14)
+	pdf.ensure(float64(len(titleLines)*16 + 10))
+	for _, line := range titleLines {
+		pdf.text(46, pdf.y, 14, line, "0.08 0.12 0.10")
+		pdf.y -= 16
+	}
+	pdf.y -= 4
+
+	clientName := strings.TrimSpace(clientByID[task.ClientID].Name)
+	if clientName == "" {
+		clientName = "Unknown Project"
+	}
+	websiteName := strings.TrimSpace(websiteByID[task.WebsiteID].Name)
+	if websiteName == "" {
+		websiteName = "Unknown Domain"
+	}
+
+	pdf.kv("Status", formatStatusTitle(task.Status))
+	pdf.kv("Project", clientName)
+	pdf.kv("Domain", websiteName)
+	if website := websiteByID[task.WebsiteID]; strings.TrimSpace(website.URL) != "" {
+		pdf.kv("Domain URL", website.URL)
+	}
+	pdf.kv("Type", strings.ToUpper(task.Type))
+	pdf.kv("Assignees", reportAssigneeNames(task.AssigneeIDs, data.UsersByID))
+	pdf.kv("Created", task.CreatedAt.Format("2006-01-02 15:04"))
+	if task.DueDate != nil {
+		pdf.kv("Due Date", task.DueDate.Format("2006-01-02"))
+	}
+	if tracked := data.TimeMinutes[task.ID]; tracked > 0 {
+		pdf.kv("Tracked Time", minutesReportLabel(tracked))
+	}
+	if clientTaskIsRecurring(task) {
+		pdf.kv("Recurrence", strings.ToUpper(task.Recurrence.Frequency))
+	}
+	pdf.space(8)
+
+	hasContent := false
+	desc := strings.TrimSpace(task.Content)
+	if desc != "" {
+		hasContent = true
+		pdf.section("Description")
+		pdf.paragraphWithLineBreaks(desc)
+	}
+	comment := strings.TrimSpace(task.Comment)
+	if comment != "" && comment != desc {
+		if !hasContent {
+			pdf.section("Description")
+			hasContent = true
+		} else {
+			pdf.section("Additional Notes")
+		}
+		pdf.paragraphWithLineBreaks(comment)
+	}
+	for _, block := range task.Blocks {
+		if block.Type != "checklist" && strings.TrimSpace(block.Content) != "" {
+			if !hasContent {
+				pdf.section("Description")
+				hasContent = true
+			}
+			pdf.paragraphWithLineBreaks(block.Content)
+		}
+	}
+
+	checklistItems := reportTaskChecklistItems(task)
+	if len(checklistItems) > 0 {
+		done, total := reportChecklistStats(checklistItems)
+		pdf.section(fmt.Sprintf("Checklist (%d/%d completed)", done, total))
+		pdf.checklistItems(checklistItems)
+	}
+
+	if len(task.Annotations) > 0 {
+		pdf.section(fmt.Sprintf("Annotations (%d)", len(task.Annotations)))
+		for idx, ann := range task.Annotations {
+			annTitle := strings.TrimSpace(ann.Title)
+			if annTitle == "" {
+				annTitle = fmt.Sprintf("Annotation #%d", idx+1)
+			}
+			pdf.ensure(24)
+			pdf.text(46, pdf.y, 9, annTitle, "0.04 0.34 0.30")
+			pdf.y -= 12
+			if ann.Comment != "" {
+				pdf.paragraphWithLineBreaks(ann.Comment)
+			}
+			if ann.URL != "" {
+				pdf.small("URL: " + ann.URL)
+			}
+			pdf.space(4)
+		}
+	}
+
+	if len(data.TaskComments) > 0 {
+		pdf.section(fmt.Sprintf("Comments & Discussion (%d)", len(data.TaskComments)))
+		for _, c := range data.TaskComments {
+			pdf.taskCommentRow(c, data.UsersByID)
+		}
+	}
+
+	pdf.reportNote(data.Query.Note)
+	return pdf.bytes()
+}
+
 func renderTaskReportPDF(data taskReportData) []byte {
-	pdf := newSimplePDF("Project Task Report", taskReportSubtitle(data))
+	if data.Query.Scope == "task" && len(data.Tasks) == 1 {
+		return renderSingleTaskPDF(data.Tasks[0], data)
+	}
+	title := "Project Task Report"
+	if data.Query.Status != "" {
+		title = "Tasks: " + formatStatusTitle(data.Query.Status)
+	}
+	pdf := newSimplePDF(title, taskReportSubtitle(data))
 	if data.Query.Options.Summary {
 		pdf.section("Summary")
 		total, done, open, overdue, annotationCount, tracked, completedEvents := taskReportSummary(data)
@@ -851,17 +1068,36 @@ func minFloat(a float64, b float64) float64 {
 	return b
 }
 
+func formatStatusTitle(status string) string {
+	label := clientTaskStatusLogLabel(status)
+	if label == "" {
+		return "Tasks"
+	}
+	parts := strings.Fields(label)
+	for i, p := range parts {
+		if len(p) > 0 {
+			parts[i] = strings.ToUpper(p[:1]) + strings.ToLower(p[1:])
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
 func reportScopeLabel(query taskReportQuery) string {
+	var base string
 	switch query.Scope {
 	case "all":
-		return "All tasks in accessible projects"
+		base = "All tasks in accessible projects"
 	case "domain":
-		return "All tasks in selected domain"
+		base = "Tasks in selected domain"
 	case "task":
 		return "Single task"
 	default:
-		return "Assigned to me"
+		base = "Assigned to me"
 	}
+	if query.Status != "" {
+		return base + " (" + formatStatusTitle(query.Status) + ")"
+	}
+	return base
 }
 
 func reportDateFilterLabel(query taskReportQuery) string {
@@ -1269,6 +1505,40 @@ func (p *simplePDF) completionRow(item taskReportCompletion, clients map[primiti
 	}
 	p.line(46, p.y, 566, p.y)
 	p.y -= 10
+}
+
+func (p *simplePDF) taskCommentRow(comment models.ClientTaskComment, users map[primitive.ObjectID]models.User) {
+	author := "Someone"
+	if u, ok := users[comment.AuthorID]; ok {
+		author = userDisplayName(u)
+	}
+	date := "Unknown time"
+	if !comment.CreatedAt.IsZero() {
+		date = comment.CreatedAt.Format("2006-01-02 15:04")
+	}
+	p.ensure(28)
+	p.text(46, p.y, 8, author+"  -  "+date, "0.04 0.34 0.30")
+	p.y -= 12
+	if reply := strings.TrimSpace(comment.ReplyText); reply != "" {
+		replyLines := wrapText("Replying to: "+reply, 96, 7)
+		for _, line := range replyLines {
+			p.ensure(10)
+			p.text(54, p.y, 7, line, "0.36 0.42 0.39")
+			p.y -= 10
+		}
+	}
+	content := strings.TrimSpace(comment.Content)
+	if content != "" {
+		p.paragraphWithLineBreaks(content)
+	}
+	if name := strings.TrimSpace(comment.AttachmentName); name != "" {
+		p.ensure(10)
+		p.text(46, p.y, 7, "Attachment: "+name, "0.36 0.42 0.39")
+		p.y -= 10
+	}
+	p.ensure(8)
+	p.line(46, p.y, 566, p.y)
+	p.y -= 8
 }
 
 func (p *simplePDF) text(x float64, y float64, size int, text string, color string) {

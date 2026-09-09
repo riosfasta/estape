@@ -3514,6 +3514,39 @@ button.inbox-row {
 .task-card-dragging {
   transform: rotate(.4deg);
 }
+.client-task-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+.client-task-card-head .client-task-open {
+  flex: 1;
+  min-width: 0;
+}
+.client-task-export-btn {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  padding: 0;
+  opacity: .55;
+  transition: opacity .14s ease, color .14s ease;
+}
+.client-task-export-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.client-task-card:hover .client-task-export-btn,
+.client-task-export-btn:focus,
+.client-task-export-btn:hover {
+  opacity: 1;
+}
+.client-task-export-btn:hover,
+.status-column-export-btn:hover {
+  color: var(--accent-strong);
+}
 .client-task-open {
   width: 100%;
   padding: 0;

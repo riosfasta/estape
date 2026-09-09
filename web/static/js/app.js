@@ -6778,11 +6778,13 @@ function clientTaskBoardHTML(tasks, tab, members, canManage, canManageStatuses =
     ${statuses.map((status) => `<section class="kanban-column" data-client-status="${esc(status.value)}">
       <div class="kanban-status-head">
         <h3>${statusBadgeHTML(status, "status-badge status-heading")}</h3>
-        ${canManageStatuses ? `<span class="status-column-controls">
+        <span class="status-column-controls">
+          <button class="btn icon quiet status-column-export-btn" type="button" data-export-status-pdf="${esc(status.value)}" data-tab-id="${esc(tab.id)}" data-website-id="${esc(tab.website_id)}" data-status-label="${esc(status.label || status.value)}" title="Export ${esc(status.label || status.value)} tasks to PDF">${icon("file-down")}</button>
+          ${canManageStatuses ? `
           <button class="btn icon quiet" type="button" data-status-column-move="${esc(status.value)}" data-status-column-dir="-1" title="Move status up">${icon("chevron-up")}</button>
           <button class="btn icon quiet" type="button" data-status-column-move="${esc(status.value)}" data-status-column-dir="1" title="Move status down">${icon("chevron-down")}</button>
           <button class="btn icon quiet status-column-handle" type="button" data-status-column-handle title="Drag status">${icon("grip-vertical")}</button>
-        </span>` : ""}
+        ` : ""}</span>
       </div>
       ${(tasks || []).filter((task) => (task.status || "todo") === status.value && task.tab_id === tab.id).map((task) => {
         const canManageTask = canManageClientTaskUI(task, canManage);
@@ -6790,7 +6792,10 @@ function clientTaskBoardHTML(tasks, tab, members, canManage, canManageStatuses =
         const dueInfo = taskDueInfo(task);
         const isActiveTimer = state.activeTimer && String(state.activeTimer.task_id) === String(task.id);
         return `<article class="task-card client-task-card" data-client-task-id="${esc(task.id)}" data-can-drag="${canUpdateTaskProgress ? "true" : "false"}">
-          <button class="client-task-open" type="button" data-open-client-task="${esc(task.id)}">${esc(compactClientTaskTitle(task.title))}</button>
+          <div class="client-task-card-head">
+            <button class="client-task-open" type="button" data-open-client-task="${esc(task.id)}">${esc(compactClientTaskTitle(task.title))}</button>
+            <button class="btn icon quiet client-task-export-btn" type="button" data-export-client-task-pdf="${esc(task.id)}" data-task-title="${esc(task.title)}" title="Export task to PDF">${icon("file-down")}</button>
+          </div>
           <p>${chatText(taskPreviewText(task) || "No content yet.")}</p>
           <div class="client-task-card-meta">
             ${statusBadgeHTML(status, "status-badge status-pill")}
@@ -7116,6 +7121,7 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     <header class="client-task-panel-head annotation-viewer-head">
       <div><span class="muted">${esc(data.client?.name || "Client")} / ${esc(data.website?.name || "Website")}</span><h2>${esc(compactClientTaskTitle(task.title || "Annotation"))}</h2></div>
       <div class="toolbar">
+        <button class="btn icon quiet" type="button" data-export-client-task-pdf="${esc(task.id)}" data-task-title="${esc(task.title || "Annotation")}" title="Export task to PDF">${icon("file-down")}</button>
         ${canManageTask ? `<button class="btn icon quiet" type="button" id="editClientAnnotationTaskBtn" title="Edit" aria-label="Edit annotation">${icon("pencil")}</button><button class="btn icon danger" type="button" id="deleteClientAnnotationTaskBtn" title="Delete" aria-label="Delete annotation">${icon("trash-2")}</button>` : ""}
         <button class="btn icon quiet" type="button" data-close-client-task title="Close">${icon("x")}</button>
       </div>
@@ -7477,6 +7483,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
     <header class="client-task-panel-head">
       <div><span class="muted">${esc(data.client?.name || "Client")} / ${esc(data.website?.name || "Website")}</span><h2>${esc(compactClientTaskTitle(task.title))}</h2></div>
       <div class="toolbar">
+        <button class="btn icon quiet" type="button" data-export-client-task-pdf="${esc(task.id)}" data-task-title="${esc(task.title)}" title="Export task to PDF">${icon("file-down")}</button>
         ${canManageTask ? `<button class="btn icon quiet" type="button" id="editClientTaskBtn" title="Edit" aria-label="Edit task">${icon("pencil")}</button><button class="btn icon danger" type="button" id="deleteClientTaskPanelBtn" title="Delete" aria-label="Delete task">${icon("trash-2")}</button>` : ""}
         <button class="btn icon quiet" type="button" data-close-client-task title="Close">${icon("x")}</button>
       </div>
@@ -14332,6 +14339,50 @@ app.addEventListener("click", async event => {
   finally { button.disabled = false; }
 });
 document.addEventListener("click", async (event) => {
+  const statusExportBtn = event.target.closest("[data-export-status-pdf]");
+  if (statusExportBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const status = statusExportBtn.dataset.exportStatusPdf;
+    const tabID = statusExportBtn.dataset.tabId;
+    const websiteID = statusExportBtn.dataset.websiteId;
+    const stopLoading = setButtonLoading(statusExportBtn, true, "");
+    try {
+      const url = taskReportPDFURL({
+        scope: "domain",
+        website_id: websiteID,
+        tab_id: tabID,
+        status: status,
+        period: "all",
+      }, { includeToken: false });
+      await downloadAuthenticatedFile(url, `tasks-${status}.pdf`);
+    } catch (err) {
+      window.alert("Failed to export tasks: " + (err.message || err));
+    } finally {
+      stopLoading();
+    }
+    return;
+  }
+  const taskExportBtn = event.target.closest("[data-export-client-task-pdf]");
+  if (taskExportBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const taskID = taskExportBtn.dataset.exportClientTaskPdf;
+    const stopLoading = setButtonLoading(taskExportBtn, true, "");
+    try {
+      const url = taskReportPDFURL({
+        scope: "task",
+        task_id: taskID,
+        period: "all",
+      }, { includeToken: false });
+      await downloadAuthenticatedFile(url, `task-${taskID}.pdf`);
+    } catch (err) {
+      window.alert("Failed to export task: " + (err.message || err));
+    } finally {
+      stopLoading();
+    }
+    return;
+  }
   const circleBtn = event.target.closest("[data-meta-timer-circle]");
   if (circleBtn) {
     event.preventDefault();
