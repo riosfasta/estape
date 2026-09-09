@@ -413,6 +413,117 @@ func (s *Server) me(c *gin.Context) {
 			})
 		}
 	}
+	// Also discover any team where user is in member_ids
+	teamCursor, teamErr := s.store.C("teams").Find(
+		c.Request.Context(),
+		bson.M{"member_ids": user.ID},
+		options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}),
+	)
+	if teamErr == nil {
+		defer teamCursor.Close(c.Request.Context())
+		for teamCursor.Next(c.Request.Context()) {
+			var t models.Team
+			if teamCursor.Decode(&t) != nil || t.ID.IsZero() || companyAccessTeams[t.ID] {
+				continue
+			}
+			if personalTeam != nil && t.ID == personalTeam.ID {
+				continue
+			}
+			if t.OwnerAdminID == user.ID {
+				continue
+			}
+			companyAccessTeams[t.ID] = true
+			companyAccesses = append(companyAccesses, gin.H{
+				"team_id":          t.ID,
+				"company_name":     t.Name,
+				"company_logo_url": t.LogoURL,
+				"company_role":     models.RoleMember,
+				"staff_role":       "member",
+				"status":           models.StatusActive,
+				"joined_at":        t.CreatedAt,
+				"current":          t.ID == user.TeamID,
+				"membership":       s.membershipAccessPayload(c.Request.Context(), t.ID),
+			})
+		}
+	}
+	// Also discover teams connected via shared client projects, websites, or tasks
+	connectedTeamIDs := []primitive.ObjectID{}
+	if cur, err := s.store.C("client_projects").Find(c.Request.Context(), bson.M{
+		"$or": []bson.M{
+			{"member_ids": user.ID},
+			{"client_admin_ids": user.ID},
+			{"created_by": user.ID},
+		},
+	}, options.Find().SetProjection(bson.M{"team_id": 1})); err == nil {
+		defer cur.Close(c.Request.Context())
+		for cur.Next(c.Request.Context()) {
+			var p struct {
+				TeamID primitive.ObjectID `bson:"team_id"`
+			}
+			if cur.Decode(&p) == nil && !p.TeamID.IsZero() {
+				connectedTeamIDs = append(connectedTeamIDs, p.TeamID)
+			}
+		}
+	}
+	if cur, err := s.store.C("client_websites").Find(c.Request.Context(), bson.M{
+		"$or": []bson.M{
+			{"member_ids": user.ID},
+			{"client_admin_ids": user.ID},
+			{"created_by": user.ID},
+		},
+	}, options.Find().SetProjection(bson.M{"team_id": 1})); err == nil {
+		defer cur.Close(c.Request.Context())
+		for cur.Next(c.Request.Context()) {
+			var w struct {
+				TeamID primitive.ObjectID `bson:"team_id"`
+			}
+			if cur.Decode(&w) == nil && !w.TeamID.IsZero() {
+				connectedTeamIDs = append(connectedTeamIDs, w.TeamID)
+			}
+		}
+	}
+	if cur, err := s.store.C("client_tasks").Find(c.Request.Context(), bson.M{
+		"$or": []bson.M{
+			{"assignee_ids": user.ID},
+			{"annotations.assignee_ids": user.ID},
+		},
+	}, options.Find().SetProjection(bson.M{"team_id": 1})); err == nil {
+		defer cur.Close(c.Request.Context())
+		for cur.Next(c.Request.Context()) {
+			var ct struct {
+				TeamID primitive.ObjectID `bson:"team_id"`
+			}
+			if cur.Decode(&ct) == nil && !ct.TeamID.IsZero() {
+				connectedTeamIDs = append(connectedTeamIDs, ct.TeamID)
+			}
+		}
+	}
+	for _, tid := range uniqueObjectIDs(connectedTeamIDs) {
+		if (personalTeam != nil && tid == personalTeam.ID) || companyAccessTeams[tid] {
+			continue
+		}
+		var connectedTeam models.Team
+		if err := s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": tid}).Decode(&connectedTeam); err == nil {
+			if connectedTeam.OwnerAdminID == user.ID {
+				continue
+			}
+			if !containsObjectID(connectedTeam.MemberIDs, user.ID) {
+				_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), connectedTeam.ID, bson.M{"$addToSet": bson.M{"member_ids": user.ID}})
+			}
+			companyAccessTeams[connectedTeam.ID] = true
+			companyAccesses = append(companyAccesses, gin.H{
+				"team_id":          connectedTeam.ID,
+				"company_name":     connectedTeam.Name,
+				"company_logo_url": connectedTeam.LogoURL,
+				"company_role":     models.RoleMember,
+				"staff_role":       "member",
+				"status":           models.StatusActive,
+				"joined_at":        connectedTeam.CreatedAt,
+				"current":          connectedTeam.ID == user.TeamID,
+				"membership":       s.membershipAccessPayload(c.Request.Context(), connectedTeam.ID),
+			})
+		}
+	}
 	if isInvitedCompanyRole(user.Role) && team != nil {
 		joinedAt := user.CreatedAt
 		var invitation models.TeamInvitation
@@ -554,6 +665,36 @@ func (s *Server) switchWorkspace(c *gin.Context) {
 			}, options.FindOne().SetSort(bson.D{{Key: "responded_at", Value: -1}, {Key: "created_at", Value: -1}})).Decode(&invitation)
 			if inviteErr == nil {
 				hasAccess = true
+			}
+			if !hasAccess && user.Role != models.RoleOwnerAdmin {
+				count, _ := s.store.C("client_projects").CountDocuments(c.Request.Context(), bson.M{
+					"team_id": targetID,
+					"$or":     []bson.M{{"member_ids": user.ID}, {"client_admin_ids": user.ID}, {"created_by": user.ID}},
+				})
+				if count > 0 {
+					hasAccess = true
+				}
+				if !hasAccess {
+					siteCount, _ := s.store.C("client_websites").CountDocuments(c.Request.Context(), bson.M{
+						"team_id": targetID,
+						"$or":     []bson.M{{"member_ids": user.ID}, {"client_admin_ids": user.ID}, {"created_by": user.ID}},
+					})
+					if siteCount > 0 {
+						hasAccess = true
+					}
+				}
+				if !hasAccess {
+					taskCount, _ := s.store.C("client_tasks").CountDocuments(c.Request.Context(), bson.M{
+						"team_id": targetID,
+						"$or":     []bson.M{{"assignee_ids": user.ID}, {"annotations.assignee_ids": user.ID}},
+					})
+					if taskCount > 0 {
+						hasAccess = true
+					}
+				}
+			}
+			if hasAccess && !containsObjectID(targetTeam.MemberIDs, user.ID) {
+				_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), targetTeam.ID, bson.M{"$addToSet": bson.M{"member_ids": user.ID}})
 			}
 			if !hasAccess && user.Role != models.RoleOwnerAdmin {
 				c.JSON(http.StatusForbidden, gin.H{"error": "you do not have access to this workspace"})

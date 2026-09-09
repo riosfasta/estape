@@ -1150,12 +1150,15 @@ function personalWorkspaceTeam() {
 function workspaceOptions() {
   const userDisplayName = state.me?.name || state.me?.username || state.me?.email || "User";
   const personalTeam = personalWorkspaceTeam();
+  const ownName = state.me?.role === "owner_adm"
+    ? "Owner Workspace (Own)"
+    : `${personalTeam?.name || `${userDisplayName}'s Workspace`} (Own)`;
   const options = [{
     value: "personal",
     kind: state.me?.role === "owner_adm" ? "owner" : "personal",
     team_id: personalTeam?.id || "",
-    name: state.me?.role === "owner_adm" ? "Owner Admin" : (personalTeam?.name || `${userDisplayName}'s Company`),
-    subtitle: state.me?.role === "owner_adm" ? "Platform Owner" : userDisplayName,
+    name: ownName,
+    subtitle: state.me?.role === "owner_adm" ? "Platform Owner" : "Own workspace",
     logo_url: personalTeam?.logo_url || "",
   }];
   joinedCompanyAccesses().forEach((access) => {
@@ -1163,8 +1166,8 @@ function workspaceOptions() {
       value: `company:${access.team_id}`,
       kind: "company",
       team_id: access.team_id,
-      name: access.name,
-      subtitle: staffRoleLabel(access.staff_role) || companyRoleLabel(access.company_role) || "Member",
+      name: `${access.name} (Team)`,
+      subtitle: staffRoleLabel(access.staff_role) || companyRoleLabel(access.company_role) || "Team workspace",
       logo_url: access.logo_url,
     });
   });
@@ -3099,10 +3102,21 @@ function canManageSidebarClient(client) {
 function sidebarProjectsHTML() {
   const workspaceTeamID = activeWorkspaceTeamID();
   const sitesByClient = (state.clientWebsites || []).reduce((acc, site) => {
-    (acc[site.client_id] ||= []).push(site);
+    if (!workspaceTeamID || !site.team_id || site.team_id === workspaceTeamID) {
+      (acc[site.client_id] ||= []).push(site);
+    }
     return acc;
   }, {});
-  const visibleClients = (state.clientProjects || []).filter((client) => !workspaceTeamID || client.team_id === workspaceTeamID);
+  const myID = state.me?.id || "";
+  const isTeamOwner = state.me?.role === "owner_adm" || state.team?.owner_admin_id === myID || (isPersonalWorkspaceContext() && [state.me?.team_id, state.personalTeam?.id].filter(Boolean).includes(workspaceTeamID));
+  const visibleClients = (state.clientProjects || []).filter((client) => {
+    if (workspaceTeamID && client.team_id && client.team_id !== workspaceTeamID) return false;
+    const sites = sitesByClient[client.id] || [];
+    if (isTeamOwner && (!workspaceTeamID || client.team_id === workspaceTeamID)) return true;
+    if ((client.member_ids || []).includes(myID) || (client.client_admin_ids || []).includes(myID) || client.created_by === myID) return true;
+    if (sites.length > 0) return true;
+    return false;
+  });
   const rows = visibleClients.map((client) => {
     const sites = sitesByClient[client.id] || [];
     const isOpen = isProjectSidebarOpen(client);
@@ -5464,6 +5478,7 @@ function assigneeAvatarsHTML(ids = [], usersByID = {}) {
 function assigneePickerHTML(members = [], selected = []) {
   const selectedSet = new Set(selected || []);
   const selectedUsers = (members || []).map((entry) => entry.user || {}).filter((user) => selectedSet.has(user.id));
+  const unlistedSelected = (selected || []).filter((id) => id && !(members || []).some((m) => String(m.user?.id) === String(id)));
   const rows = (members || []).map((entry) => {
     const user = entry.user || {};
     const name = user.name || user.username || user.email || "Member";
@@ -5476,10 +5491,12 @@ function assigneePickerHTML(members = [], selected = []) {
       <span class="assignee-remove-hint" aria-hidden="true">${icon("x")}</span>
     </label>`;
   }).join("");
+  const totalCount = selectedUsers.length + unlistedSelected.length;
   return `<div class="assignee-picker">
+    ${unlistedSelected.map((id) => `<input type="hidden" name="assignee_ids" value="${esc(id)}">`).join("")}
     <button class="assignee-trigger" type="button" data-assignee-trigger>
       <span class="assignee-trigger-icons">${selectedUsers.length ? selectedUsers.slice(0, 3).map((user) => userChip(user)).join("") : icon("user-plus")}</span>
-      <span data-assignee-trigger-label>${selectedUsers.length ? `${selectedUsers.length} assigned` : "Assign"}</span>
+      <span data-assignee-trigger-label>${totalCount ? `${totalCount} assigned` : "Assign"}</span>
     </button>
     <div class="assignee-menu" data-assignee-menu hidden>
       <input class="assignee-search" type="search" placeholder="Search or enter email...">
@@ -5544,7 +5561,9 @@ function statusPickerHTML(statuses = [], selected = "todo", name = "status", aut
 }
 
 function selectedAssigneeIDs(form) {
-  return Array.from(form.querySelectorAll("input[name='assignee_ids']:checked")).map((input) => input.value).filter(Boolean);
+  const checked = Array.from(form.querySelectorAll("input[name='assignee_ids']:checked")).map((input) => input.value);
+  const hidden = Array.from(form.querySelectorAll("input[type='hidden'][name='assignee_ids']")).map((input) => input.value);
+  return Array.from(new Set([...checked, ...hidden])).filter(Boolean);
 }
 
 function bindAssigneePickers(root = document) {
@@ -7022,7 +7041,7 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
           ${statusPickerHTML(statuses, task.status || "todo", "status", "", { canManageStatuses, tabID: data.tab?.id })}
           ${taskCompletionBadgeHTML(task)}
           <span class="pill warn due-edit-pill"><button class="due-icon-btn" type="button" data-due-edit-open title="Change due date">${icon("calendar-days")}</button><button class="due-date-text-btn" type="button" data-due-edit-open><span data-due-edit-label>${esc(taskDueInfo(task).text || "No due date")}</span></button><input class="due-edit-input" type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}" title="Due date"></span>
-          ${assigneePickerHTML((data.members || []).filter(member => member.client_role !== "freelancer"), task.assignee_ids || [])}
+          ${assigneePickerHTML(data.members || [], task.assignee_ids || [])}
           <span class="status-line"></span>
         </form>` : ""}
         <section class="feedback-sidebar-view" id="annotationViewerListView">
@@ -7046,7 +7065,7 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
         <div class="field"><label>Title</label><input name="title" maxlength="80" value="${esc(task.title || "")}" required></div>
         <div class="field"><label>Annotation URL</label><input name="url" value="${esc(pageURL)}" placeholder="https://example.com/page"></div>
         <div class="field"><label>Details</label>${richEditorHTML("comment", task.comment || task.content || "", "Write annotation details")}</div>
-        <div class="field"><label>Assignment</label>${assigneePickerHTML((data.members || []).filter(member => member.client_role !== "freelancer"), task.assignee_ids || [])}</div>
+        <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [], task.assignee_ids || [])}</div>
         <div class="grid-2"><div class="field"><label>Due date</label><input type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}"></div></div>
         ${recurrenceControlsHTML(task.recurrence || {}, task.due_date)}
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="editClientAnnotationTaskDialog">Cancel</button></div>
@@ -7369,7 +7388,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
           ${taskCompletionBadgeHTML(task)}
           <span class="pill">${icon("calendar-days")}${esc(fmtDateTime(task.created_at))}</span>
           <span class="pill warn due-edit-pill"><button class="due-icon-btn" type="button" data-due-edit-open title="Change due date">${icon("calendar-days")}</button><button class="due-date-text-btn" type="button" data-due-edit-open><span data-due-edit-label>${esc(dueInfo.text || "No due date")}</span></button><input class="due-edit-input" type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}" title="Due date"></span>
-          ${assigneePickerHTML((data.members || []).filter(member => member.client_role !== "freelancer"), task.assignee_ids || [])}
+          ${assigneePickerHTML(data.members || [], task.assignee_ids || [])}
           <span class="status-line"></span>
         </form>` : `<div class="task-detail-meta">
           ${statusBadgeHTML(statuses.find((item) => item.value === (task.status || "todo")) || statuses[0], "status-badge status-pill")}
@@ -7413,7 +7432,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
         <div class="field"><label>Title</label><input name="title" maxlength="80" value="${esc(task.title || "")}" required></div>
         ${task.type === "annotation" ? `<div class="field"><label>Comment</label>${richEditorHTML("comment", taskContent || "", "Write task details")}</div>` : `<div class="field"><label>Task body</label>${contentBlockEditorHTML(taskContentBlocks(task))}</div>`}
         <div class="field" ${task.type === "annotation" ? "" : "hidden"}><label>Annotation URL</label><input name="url" value="${esc(task.url || "")}" placeholder="https://example.com/page"></div>
-        <div class="field"><label>Assignment</label>${assigneePickerHTML((data.members || []).filter(member => member.client_role !== "freelancer"), task.assignee_ids || [])}</div>
+        <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [], task.assignee_ids || [])}</div>
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="editClientTaskDialog">Cancel</button></div>
         <p class="status-line"></p>
       </form>
@@ -7672,17 +7691,30 @@ async function refreshClientSidebarCache() {
 async function renderClientProjects() {
   await refreshClientSidebarCache();
   const canCreate = state.me?.role !== "client_admin";
+  const workspaceTeamID = activeWorkspaceTeamID();
   const sitesByClient = (state.clientWebsites || []).reduce((acc, site) => {
-    (acc[site.client_id] ||= []).push(site);
+    if (!workspaceTeamID || !site.team_id || site.team_id === workspaceTeamID) {
+      (acc[site.client_id] ||= []).push(site);
+    }
     return acc;
   }, {});
+  const myID = state.me?.id || "";
+  const isTeamOwner = state.me?.role === "owner_adm" || state.team?.owner_admin_id === myID || (isPersonalWorkspaceContext() && [state.me?.team_id, state.personalTeam?.id].filter(Boolean).includes(workspaceTeamID));
+  const visibleClients = (state.clientProjects || []).filter((client) => {
+    if (workspaceTeamID && client.team_id && client.team_id !== workspaceTeamID) return false;
+    const sites = sitesByClient[client.id] || [];
+    if (isTeamOwner && (!workspaceTeamID || client.team_id === workspaceTeamID)) return true;
+    if ((client.member_ids || []).includes(myID) || (client.client_admin_ids || []).includes(myID) || client.created_by === myID) return true;
+    if (sites.length > 0) return true;
+    return false;
+  });
   shell("Projects", `
     <div class="page-title">
       <div><h1>Projects</h1><p class="muted">Client folders and websites.</p></div>
       ${canCreate ? `<button class="btn primary" id="newClientBtn">${icon("folder-plus")}Add client</button>` : ""}
     </div>
     <section class="client-grid">
-      ${(state.clientProjects || []).map((client) => `<article class="panel client-card">
+      ${visibleClients.map((client) => `<article class="panel client-card">
         <div class="panel-head"><div><h2>${esc(client.name)}</h2><p class="muted">${esc(client.company_email || client.contact_name || "Client folder")}</p></div><span class="pill">${icon("folder")}client</span></div>
         <p>${chatText(client.details || "No client notes yet.")}</p>
         <div class="access-list">

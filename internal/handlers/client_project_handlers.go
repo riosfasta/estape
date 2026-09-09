@@ -46,6 +46,9 @@ func (s *Server) listClientProjects(c *gin.Context) {
 			return
 		}
 		filter = bson.M{"_id": bson.M{"$in": clientIDs}}
+		if !userCtx.TeamID.IsZero() {
+			filter["team_id"] = userCtx.TeamID
+		}
 	}
 	cursor, err := s.store.C("client_projects").Find(c.Request.Context(), filter, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
 	if err != nil {
@@ -68,6 +71,9 @@ func (s *Server) listClientProjects(c *gin.Context) {
 	websites := []models.ClientWebsite{}
 	if len(clientIDs) > 0 {
 		siteFilter := bson.M{"client_id": bson.M{"$in": clientIDs}}
+		if !userCtx.TeamID.IsZero() {
+			siteFilter["team_id"] = userCtx.TeamID
+		}
 		if userCtx.Role != models.RoleOwnerAdmin {
 			or := []bson.M{}
 			if len(access.FullClientIDs) > 0 {
@@ -79,7 +85,7 @@ func (s *Server) listClientProjects(c *gin.Context) {
 			if len(or) == 0 {
 				siteFilter = bson.M{"_id": primitive.NewObjectID()}
 			} else {
-				siteFilter = bson.M{"$or": or}
+				siteFilter["$or"] = or
 			}
 		}
 		siteCursor, err := s.store.C("client_websites").Find(c.Request.Context(), siteFilter, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
@@ -97,49 +103,130 @@ type clientAccessSet struct {
 	WebsiteIDs      []primitive.ObjectID
 }
 
+func (s *Server) isFolderMember(userCtx middleware.UserContext, client models.ClientProject) bool {
+	if client.CreatedBy == userCtx.ID || containsObjectID(client.ClientAdminIDs, userCtx.ID) {
+		return true
+	}
+	if !containsObjectID(client.MemberIDs, userCtx.ID) {
+		return false
+	}
+	if len(client.MemberRoles) == 0 {
+		return true
+	}
+	return client.MemberRoles[userCtx.ID.Hex()] != ""
+}
+
 func (s *Server) clientAccessSets(ctx context.Context, userCtx middleware.UserContext) clientAccessSet {
 	out := clientAccessSet{}
-	if userCtx.Role == models.RoleOwnerAdmin {
+	if userCtx.Role == models.RoleOwnerAdmin || s.store == nil {
 		return out
 	}
-	clientFilter := bson.M{}
-	switch userCtx.Role {
-	case models.RoleTeamAdmin:
-		clientFilter["team_id"] = userCtx.TeamID
-	default:
-		clientFilter["$or"] = []bson.M{
-			{"member_ids": userCtx.ID},
-			{"client_admin_ids": userCtx.ID},
-			{"created_by": userCtx.ID},
+	isTeamOwner := false
+	if !userCtx.TeamID.IsZero() {
+		var team models.Team
+		if err := s.store.C("teams").FindOne(ctx, bson.M{"_id": userCtx.TeamID}).Decode(&team); err == nil {
+			isTeamOwner = team.OwnerAdminID == userCtx.ID
 		}
 	}
-	cursor, err := s.store.C("client_projects").Find(ctx, clientFilter, options.Find().SetProjection(bson.M{"_id": 1}))
+	var clientFilter bson.M
+	if isTeamOwner {
+		clientFilter = bson.M{"team_id": userCtx.TeamID}
+	} else if !userCtx.TeamID.IsZero() {
+		clientFilter = bson.M{
+			"team_id": userCtx.TeamID,
+			"$or": []bson.M{
+				{"member_ids": userCtx.ID},
+				{"client_admin_ids": userCtx.ID},
+				{"created_by": userCtx.ID},
+			},
+		}
+	} else {
+		clientFilter = bson.M{
+			"$or": []bson.M{
+				{"member_ids": userCtx.ID},
+				{"client_admin_ids": userCtx.ID},
+				{"created_by": userCtx.ID},
+			},
+		}
+	}
+	cursor, err := s.store.C("client_projects").Find(ctx, clientFilter, options.Find().SetProjection(bson.M{"_id": 1, "team_id": 1, "created_by": 1, "client_admin_ids": 1, "member_ids": 1, "member_roles": 1}))
 	if err == nil {
 		defer cursor.Close(ctx)
 		for cursor.Next(ctx) {
 			var client models.ClientProject
 			if cursor.Decode(&client) == nil && !client.ID.IsZero() {
-				out.FullClientIDs = append(out.FullClientIDs, client.ID)
+				if (isTeamOwner && (!userCtx.TeamID.IsZero() && client.TeamID == userCtx.TeamID)) || s.isFolderMember(userCtx, client) {
+					out.FullClientIDs = append(out.FullClientIDs, client.ID)
+				} else {
+					out.DomainClientIDs = append(out.DomainClientIDs, client.ID)
+				}
 			}
 		}
 	}
-	if userCtx.Role != models.RoleTeamAdmin {
-		siteCursor, err := s.store.C("client_websites").Find(ctx, bson.M{"$or": []bson.M{
-			{"member_ids": userCtx.ID},
-			{"client_admin_ids": userCtx.ID},
-			{"created_by": userCtx.ID},
-		}}, options.Find().SetProjection(bson.M{"_id": 1, "client_id": 1}))
-		if err == nil {
-			defer siteCursor.Close(ctx)
-			for siteCursor.Next(ctx) {
-				var site models.ClientWebsite
-				if siteCursor.Decode(&site) == nil {
-					if !site.ID.IsZero() {
-						out.WebsiteIDs = append(out.WebsiteIDs, site.ID)
-					}
-					if !site.ClientID.IsZero() {
-						out.DomainClientIDs = append(out.DomainClientIDs, site.ClientID)
-					}
+	var siteFilter bson.M
+	if isTeamOwner {
+		siteFilter = bson.M{"team_id": userCtx.TeamID}
+	} else if !userCtx.TeamID.IsZero() {
+		siteFilter = bson.M{
+			"team_id": userCtx.TeamID,
+			"$or": []bson.M{
+				{"member_ids": userCtx.ID},
+				{"client_admin_ids": userCtx.ID},
+				{"created_by": userCtx.ID},
+			},
+		}
+	} else {
+		siteFilter = bson.M{
+			"$or": []bson.M{
+				{"member_ids": userCtx.ID},
+				{"client_admin_ids": userCtx.ID},
+				{"created_by": userCtx.ID},
+			},
+		}
+	}
+	siteCursor, err := s.store.C("client_websites").Find(ctx, siteFilter, options.Find().SetProjection(bson.M{"_id": 1, "client_id": 1}))
+	if err == nil {
+		defer siteCursor.Close(ctx)
+		for siteCursor.Next(ctx) {
+			var site models.ClientWebsite
+			if siteCursor.Decode(&site) == nil {
+				if !site.ID.IsZero() {
+					out.WebsiteIDs = append(out.WebsiteIDs, site.ID)
+				}
+				if !site.ClientID.IsZero() {
+					out.DomainClientIDs = append(out.DomainClientIDs, site.ClientID)
+				}
+			}
+		}
+	}
+	var taskFilter bson.M
+	if !userCtx.TeamID.IsZero() {
+		taskFilter = bson.M{
+			"team_id": userCtx.TeamID,
+			"$or": []bson.M{
+				{"assignee_ids": userCtx.ID},
+				{"annotations.assignee_ids": userCtx.ID},
+			},
+		}
+	} else {
+		taskFilter = bson.M{
+			"$or": []bson.M{
+				{"assignee_ids": userCtx.ID},
+				{"annotations.assignee_ids": userCtx.ID},
+			},
+		}
+	}
+	taskCursor, err := s.store.C("client_tasks").Find(ctx, taskFilter, options.Find().SetProjection(bson.M{"client_id": 1, "website_id": 1}))
+	if err == nil {
+		defer taskCursor.Close(ctx)
+		for taskCursor.Next(ctx) {
+			var t models.ClientTask
+			if taskCursor.Decode(&t) == nil {
+				if !t.ClientID.IsZero() {
+					out.DomainClientIDs = append(out.DomainClientIDs, t.ClientID)
+				}
+				if !t.WebsiteID.IsZero() {
+					out.WebsiteIDs = append(out.WebsiteIDs, t.WebsiteID)
 				}
 			}
 		}
@@ -172,7 +259,11 @@ func (s *Server) clientTaskAccessFilter(ctx context.Context, userCtx middleware.
 	if len(or) == 0 {
 		return bson.M{"_id": primitive.NewObjectID()}
 	}
-	return bson.M{"$and": []bson.M{base, {"$or": or}}}
+	andList := []bson.M{base, {"$or": or}}
+	if !userCtx.TeamID.IsZero() {
+		andList = append(andList, bson.M{"team_id": userCtx.TeamID})
+	}
+	return bson.M{"$and": andList}
 }
 
 func (s *Server) createClientProject(c *gin.Context) {
@@ -193,7 +284,11 @@ func (s *Server) createClientProject(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if !s.requireTeamFeatureAccess(c, team.ID, "client folders") {
+	targetTeamID := userCtx.TeamID
+	if targetTeamID.IsZero() {
+		targetTeamID = team.ID
+	}
+	if !s.requireTeamFeatureAccess(c, targetTeamID, "client folders") {
 		return
 	}
 	var req struct {
@@ -214,7 +309,7 @@ func (s *Server) createClientProject(c *gin.Context) {
 	now := time.Now()
 	client := models.ClientProject{
 		ID:             primitive.NewObjectID(),
-		TeamID:         team.ID,
+		TeamID:         targetTeamID,
 		Name:           name,
 		CompanyEmail:   strings.ToLower(strings.TrimSpace(req.CompanyEmail)),
 		ContactName:    strings.TrimSpace(req.ContactName),
@@ -759,6 +854,20 @@ func (s *Server) getClientWebsite(c *gin.Context) {
 	tasks, _ := s.clientTasks(c.Request.Context(), site.ID)
 	userCtx, _ := currentUser(c)
 	members := s.mergeMemberRows(s.clientProjectMembers(c.Request.Context(), client), s.clientWebsiteMembers(c.Request.Context(), site))
+	if !client.TeamID.IsZero() {
+		members = s.mergeMemberRows(members, s.teamMemberRows(c.Request.Context(), client.TeamID))
+	}
+	missingIDs := []primitive.ObjectID{}
+	for _, t := range tasks {
+		for _, aID := range t.AssigneeIDs {
+			if !aID.IsZero() && !containsMemberRow(members, aID) {
+				missingIDs = append(missingIDs, aID)
+			}
+		}
+	}
+	if len(missingIDs) > 0 {
+		members = s.mergeMemberRows(members, s.usersToMemberRows(c.Request.Context(), uniqueObjectIDs(missingIDs)))
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"client":              client,
 		"website":             site,
@@ -1151,7 +1260,7 @@ func (s *Server) createClientTask(c *gin.Context) {
 	_ = s.store.C("client_projects").FindOne(c.Request.Context(), bson.M{"_id": tab.ClientID}).Decode(&client)
 	var site models.ClientWebsite
 	_ = s.store.C("client_websites").FindOne(c.Request.Context(), bson.M{"_id": tab.WebsiteID}).Decode(&site)
-	allowedAssignees := allowedClientTaskAssignees(client, site)
+	allowedAssignees := s.allowedClientTaskAssignees(c.Request.Context(), client, site)
 	for _, assigneeID := range assigneeIDs {
 		if !containsObjectID(allowedAssignees, assigneeID) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "assignee must have access to this domain"})
@@ -1226,12 +1335,22 @@ func (s *Server) createClientTask(c *gin.Context) {
 		}
 		annotations = normalizeClientTaskAnnotations(sourceAnnotations, normalizeClientTaskStatuses(tab.Statuses), userCtx.ID, now)
 	}
+	teamID := tab.TeamID
+	if teamID.IsZero() {
+		teamID = client.TeamID
+	}
+	if teamID.IsZero() {
+		teamID = site.TeamID
+	}
+	if teamID.IsZero() {
+		teamID = userCtx.TeamID
+	}
 	task := models.ClientTask{
 		ID:            primitive.NewObjectID(),
 		ClientID:      tab.ClientID,
 		WebsiteID:     tab.WebsiteID,
 		TabID:         tab.ID,
-		TeamID:        tab.TeamID,
+		TeamID:        teamID,
 		Type:          taskType,
 		Title:         title,
 		Content:       content,
@@ -1285,6 +1404,9 @@ func (s *Server) listAssignedClientTasks(c *gin.Context) {
 			return
 		}
 		clientFilter["_id"] = bson.M{"$in": clientIDs}
+		if !userCtx.TeamID.IsZero() {
+			clientFilter["team_id"] = userCtx.TeamID
+		}
 	}
 
 	clientCursor, err := s.store.C("client_projects").Find(c.Request.Context(), clientFilter, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
@@ -1327,10 +1449,17 @@ func (s *Server) listAssignedClientTasks(c *gin.Context) {
 				taskAccessFilter = bson.M{"$or": or}
 			}
 		}
-		taskFilter := taskAccessFilter
-		if assignedOnly {
-			taskFilter = bson.M{"$and": []bson.M{taskAccessFilter, {"assignee_ids": userCtx.ID}}}
+		andList := []bson.M{taskAccessFilter}
+		if !userCtx.TeamID.IsZero() {
+			andList = append(andList, bson.M{"team_id": userCtx.TeamID})
 		}
+		if assignedOnly {
+			andList = append(andList, bson.M{"$or": []bson.M{
+				{"assignee_ids": userCtx.ID},
+				{"annotations.assignee_ids": userCtx.ID},
+			}})
+		}
+		taskFilter := bson.M{"$and": andList}
 		cursor, err := s.store.C("client_tasks").Find(c.Request.Context(), taskFilter, options.Find().SetSort(bson.D{{Key: "due_date", Value: 1}, {Key: "created_at", Value: -1}}))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load tasks"})
@@ -1347,6 +1476,9 @@ func (s *Server) listAssignedClientTasks(c *gin.Context) {
 	websiteIDs := []primitive.ObjectID{}
 	if len(clientIDs) > 0 {
 		siteFilter := bson.M{"client_id": bson.M{"$in": clientIDs}}
+		if !userCtx.TeamID.IsZero() {
+			siteFilter["team_id"] = userCtx.TeamID
+		}
 		if userCtx.Role != models.RoleOwnerAdmin {
 			or := []bson.M{}
 			if len(access.FullClientIDs) > 0 {
@@ -1358,7 +1490,7 @@ func (s *Server) listAssignedClientTasks(c *gin.Context) {
 			if len(or) == 0 {
 				siteFilter = bson.M{"_id": primitive.NewObjectID()}
 			} else {
-				siteFilter = bson.M{"$or": or}
+				siteFilter["$or"] = or
 			}
 		}
 		siteCursor, err := s.store.C("client_websites").Find(c.Request.Context(), siteFilter, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
@@ -1418,6 +1550,18 @@ func (s *Server) listAssignedClientTasks(c *gin.Context) {
 			members = append(members, member)
 		}
 	}
+	missingAssigneeIDs := []primitive.ObjectID{}
+	for _, t := range allowedTasks {
+		for _, aID := range t.AssigneeIDs {
+			if !aID.IsZero() && !seenMembers[aID] {
+				missingAssigneeIDs = append(missingAssigneeIDs, aID)
+				seenMembers[aID] = true
+			}
+		}
+	}
+	if len(missingAssigneeIDs) > 0 {
+		members = s.mergeMemberRows(members, s.usersToMemberRows(c.Request.Context(), missingAssigneeIDs))
+	}
 	canCreateTasks := false
 	for _, client := range allowedClients {
 		if s.canManageClientProject(c.Request.Context(), userCtx, client) {
@@ -1466,6 +1610,18 @@ func (s *Server) getClientTask(c *gin.Context) {
 	members := s.mergeMemberRows(s.clientProjectMembers(c.Request.Context(), client), s.clientWebsiteMembers(c.Request.Context(), website))
 	scopedMembers := s.scopedTaskFreelancers(c.Request.Context(), task.ID)
 	members = s.mergeMemberRows(members, scopedMembers)
+	if !client.TeamID.IsZero() {
+		members = s.mergeMemberRows(members, s.teamMemberRows(c.Request.Context(), client.TeamID))
+	}
+	missingIDs := []primitive.ObjectID{}
+	for _, aID := range task.AssigneeIDs {
+		if !aID.IsZero() && !containsMemberRow(members, aID) {
+			missingIDs = append(missingIDs, aID)
+		}
+	}
+	if len(missingIDs) > 0 {
+		members = s.mergeMemberRows(members, s.usersToMemberRows(c.Request.Context(), missingIDs))
+	}
 	userCtx, _ := currentUser(c)
 	c.JSON(http.StatusOK, gin.H{
 		"task":                task,
@@ -1631,7 +1787,7 @@ func (s *Server) updateClientTask(c *gin.Context) {
 		}
 		var site models.ClientWebsite
 		_ = s.store.C("client_websites").FindOne(c.Request.Context(), bson.M{"_id": task.WebsiteID}).Decode(&site)
-		allowedAssignees := allowedClientTaskAssignees(client, site)
+		allowedAssignees := s.allowedClientTaskAssignees(c.Request.Context(), client, site)
 		for _, assigneeID := range assignees {
 			if !containsObjectID(allowedAssignees, assigneeID) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "assignee must have access to this domain"})
@@ -2201,7 +2357,14 @@ func (s *Server) canAccessAnyClientWebsite(ctx context.Context, userCtx middlewa
 		{"client_admin_ids": userCtx.ID},
 		{"created_by": userCtx.ID},
 	}})
-	return err == nil && count > 0
+	if err == nil && count > 0 {
+		return true
+	}
+	taskCount, err := s.store.C("client_tasks").CountDocuments(ctx, bson.M{"client_id": clientID, "$or": []bson.M{
+		{"assignee_ids": userCtx.ID},
+		{"annotations.assignee_ids": userCtx.ID},
+	}})
+	return err == nil && taskCount > 0
 }
 
 func (s *Server) canAccessClientWebsite(ctx context.Context, userCtx middleware.UserContext, site models.ClientWebsite) bool {
@@ -2209,12 +2372,18 @@ func (s *Server) canAccessClientWebsite(ctx context.Context, userCtx middleware.
 	if err := s.store.C("client_projects").FindOne(ctx, bson.M{"_id": site.ClientID}).Decode(&client); err != nil {
 		return false
 	}
-	return s.canManageClientProject(ctx, userCtx, client) ||
-		containsObjectID(client.MemberIDs, userCtx.ID) ||
-		containsObjectID(client.ClientAdminIDs, userCtx.ID) ||
+	if s.canManageClientProject(ctx, userCtx, client) ||
+		s.isFolderMember(userCtx, client) ||
 		containsObjectID(site.MemberIDs, userCtx.ID) ||
 		containsObjectID(site.ClientAdminIDs, userCtx.ID) ||
-		site.CreatedBy == userCtx.ID
+		site.CreatedBy == userCtx.ID {
+		return true
+	}
+	taskCount, err := s.store.C("client_tasks").CountDocuments(ctx, bson.M{"website_id": site.ID, "$or": []bson.M{
+		{"assignee_ids": userCtx.ID},
+		{"annotations.assignee_ids": userCtx.ID},
+	}})
+	return err == nil && taskCount > 0
 }
 
 func (s *Server) canManageClientWebsite(ctx context.Context, userCtx middleware.UserContext, site models.ClientWebsite) bool {
@@ -2278,12 +2447,26 @@ func (s *Server) clientWebsites(ctx context.Context, clientID primitive.ObjectID
 
 func (s *Server) clientWebsitesForAccess(ctx context.Context, client models.ClientProject, userCtx middleware.UserContext) ([]models.ClientWebsite, error) {
 	filter := bson.M{"client_id": client.ID}
-	if !s.canManageClientProject(ctx, userCtx, client) && !containsObjectID(client.MemberIDs, userCtx.ID) && !containsObjectID(client.ClientAdminIDs, userCtx.ID) && client.CreatedBy != userCtx.ID {
-		filter = bson.M{"client_id": client.ID, "$or": []bson.M{
+	if !s.canManageClientProject(ctx, userCtx, client) && !s.isFolderMember(userCtx, client) {
+		assignedSiteIDs := []primitive.ObjectID{}
+		if taskCursor, err := s.store.C("client_tasks").Find(ctx, bson.M{"client_id": client.ID, "$or": []bson.M{{"assignee_ids": userCtx.ID}, {"annotations.assignee_ids": userCtx.ID}}}, options.Find().SetProjection(bson.M{"website_id": 1})); err == nil {
+			defer taskCursor.Close(ctx)
+			for taskCursor.Next(ctx) {
+				var t models.ClientTask
+				if taskCursor.Decode(&t) == nil && !t.WebsiteID.IsZero() {
+					assignedSiteIDs = append(assignedSiteIDs, t.WebsiteID)
+				}
+			}
+		}
+		or := []bson.M{
 			{"member_ids": userCtx.ID},
 			{"client_admin_ids": userCtx.ID},
 			{"created_by": userCtx.ID},
-		}}
+		}
+		if len(assignedSiteIDs) > 0 {
+			or = append(or, bson.M{"_id": bson.M{"$in": uniqueObjectIDs(assignedSiteIDs)}})
+		}
+		filter = bson.M{"client_id": client.ID, "$or": or}
 	}
 	cursor, err := s.store.C("client_websites").Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
 	if err != nil {
@@ -2518,6 +2701,50 @@ func allowedClientTaskAssignees(client models.ClientProject, site models.ClientW
 	ids = append(ids, site.ClientAdminIDs...)
 	ids = append(ids, client.CreatedBy, site.CreatedBy)
 	return uniqueObjectIDs(ids)
+}
+
+func (s *Server) allowedClientTaskAssignees(ctx context.Context, client models.ClientProject, site models.ClientWebsite) []primitive.ObjectID {
+	ids := allowedClientTaskAssignees(client, site)
+	teamID := client.TeamID
+	if teamID.IsZero() {
+		teamID = site.TeamID
+	}
+	ids = append(ids, s.widgetTeamMemberIDs(ctx, teamID)...)
+	return uniqueObjectIDs(ids)
+}
+
+func containsMemberRow(rows []gin.H, id primitive.ObjectID) bool {
+	for _, row := range rows {
+		if u, ok := row["user"].(models.User); ok && u.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) teamMemberRows(ctx context.Context, teamID primitive.ObjectID) []gin.H {
+	ids := s.widgetTeamMemberIDs(ctx, teamID)
+	return s.usersToMemberRows(ctx, ids)
+}
+
+func (s *Server) usersToMemberRows(ctx context.Context, ids []primitive.ObjectID) []gin.H {
+	ids = uniqueObjectIDs(ids)
+	if len(ids) == 0 {
+		return []gin.H{}
+	}
+	cursor, err := s.store.C("users").Find(ctx, bson.M{"_id": bson.M{"$in": ids}, "status": bson.M{"$ne": models.StatusSuspended}}, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
+	if err != nil {
+		return []gin.H{}
+	}
+	defer cursor.Close(ctx)
+	rows := []gin.H{}
+	for cursor.Next(ctx) {
+		var user models.User
+		if cursor.Decode(&user) == nil {
+			rows = append(rows, gin.H{"user": user, "client_role": "member", "staff_role": user.StaffRole, "role": user.Role})
+		}
+	}
+	return rows
 }
 
 func normalizeClientTaskTitle(value string) string {
