@@ -109,6 +109,7 @@ func (s *Server) marketplaceRoutes(router *gin.Engine, api, authed *gin.RouterGr
 	authed.POST("/marketplace/proposals/:id/:action", s.marketplaceProposalAction)
 	authed.GET("/marketplace/wallet", s.marketplaceWallet)
 	authed.POST("/marketplace/topup", s.marketplaceTopup)
+	authed.POST("/marketplace/topup/direct", s.marketplaceDirectTopup)
 	authed.POST("/marketplace/topup/:id/capture", s.marketplaceCaptureTopup)
 	authed.POST("/marketplace/transfers", s.marketplaceRequestTransfer)
 	authed.GET("/marketplace/admin", s.marketplaceAdmin)
@@ -625,7 +626,22 @@ func (s *Server) marketplaceCreateJob(c *gin.Context) {
 		marketplaceError(c, marketInvalid("Enter a title, description (30–10000 characters), skills and a budget from $1 to $100,000"))
 		return
 	}
-	job := models.MarketplaceJob{BillingType: req.BillingType, HourlyRate: req.HourlyRate, MaxSeconds: req.MaxSeconds, ID: primitive.NewObjectID(), OwnerID: user.ID, Title: req.Title, Description: req.Description, Skills: skills, Budget: req.Budget, Status: "open", CreatedAt: time.Now().UTC()}
+	hiringWalletID, teamID, _ := s.resolveWorkspaceHiringWallet(ctx, user)
+	job := models.MarketplaceJob{
+		BillingType:      req.BillingType,
+		HourlyRate:       req.HourlyRate,
+		MaxSeconds:       req.MaxSeconds,
+		ID:               primitive.NewObjectID(),
+		OwnerID:          user.ID,
+		EmployerWalletID: hiringWalletID,
+		TeamID:           teamID,
+		Title:            req.Title,
+		Description:      req.Description,
+		Skills:           skills,
+		Budget:           req.Budget,
+		Status:           "open",
+		CreatedAt:        time.Now().UTC(),
+	}
 	if req.SourceTaskID != "" && len(req.ScopeTasks) == 0 {
 		req.ScopeTasks = []marketplaceScopeRequest{{TaskID: req.SourceTaskID}}
 	}
@@ -654,7 +670,7 @@ func (s *Server) marketplaceCreateJob(c *gin.Context) {
 		}
 		job.OwnerName = p.Name
 		var wallet models.MarketplaceWallet
-		if err = s.store.C("marketplace_wallets").FindOne(sc, bson.M{"_id": user.ID, "deposits": bson.M{"$gte": req.Budget}}).Decode(&wallet); err != nil {
+		if err = s.store.C("marketplace_wallets").FindOne(sc, bson.M{"_id": hiringWalletID, "deposits": bson.M{"$gte": req.Budget}}).Decode(&wallet); err != nil {
 			return marketInvalid("Top up your balance to cover the job budget before publishing")
 		}
 		_, err = s.store.C("marketplace_jobs").InsertOne(sc, job)
@@ -680,8 +696,9 @@ func (s *Server) marketplaceJob(c *gin.Context) {
 	if marketplaceError(c, s.store.C("marketplace_jobs").FindOne(ctx, bson.M{"_id": id}).Decode(&job)) {
 		return
 	}
+	canManage := job.OwnerID == user.ID || (!job.TeamID.IsZero() && job.TeamID == user.TeamID && (user.Role == models.RoleOwnerAdmin || user.Role == models.RoleTeamAdmin)) || (!job.EmployerWalletID.IsZero() && job.EmployerWalletID == user.ID)
 	filter := bson.M{"job_id": id}
-	if job.OwnerID != user.ID {
+	if !canManage {
 		filter["freelancer_id"] = user.ID
 	}
 	cur, err := s.store.C("marketplace_proposals").Find(ctx, filter, options.Find().SetLimit(200).SetSort(bson.D{{Key: "created_at", Value: -1}}))
@@ -693,10 +710,10 @@ func (s *Server) marketplaceJob(c *gin.Context) {
 	if marketplaceError(c, cur.All(ctx, &proposals)) {
 		return
 	}
-	if job.OwnerID != user.ID && job.FreelancerID != user.ID {
+	if !canManage && job.FreelancerID != user.ID {
 		job.Delivery = ""
 	}
-	canViewScope := job.OwnerID == user.ID || job.FreelancerID == user.ID
+	canViewScope := canManage || job.FreelancerID == user.ID
 	for _, proposal := range proposals {
 		read, _ := scopedJobAccess(job, user.ID, &proposal)
 		canViewScope = canViewScope || read
@@ -828,7 +845,8 @@ func (s *Server) marketplaceProposalAction(c *gin.Context) {
 			}
 			return s.marketplaceNotify(sc, j.OwnerID, j.ID, "marketplace_job", "Your offer was "+status+": "+j.Title)
 		}
-		if action != "hire" || j.OwnerID != user.ID || (p.Status != "submitted" && p.Status != "accepted") {
+		canHire := j.OwnerID == user.ID || (!j.TeamID.IsZero() && j.TeamID == user.TeamID && (user.Role == models.RoleOwnerAdmin || user.Role == models.RoleTeamAdmin)) || (!j.EmployerWalletID.IsZero() && j.EmployerWalletID == user.ID)
+		if action != "hire" || !canHire || (p.Status != "submitted" && p.Status != "accepted") {
 			return marketInvalid("Only the employer can hire an applicant or an accepted invitation")
 		}
 		if j.BillingType == "hourly" && p.Price != j.Budget {
@@ -847,7 +865,11 @@ func (s *Server) marketplaceProposalAction(c *gin.Context) {
 		if result.ModifiedCount != 1 {
 			return marketInvalid("Freelancer is no longer available")
 		}
-		result, err = s.store.C("marketplace_wallets").UpdateOne(sc, bson.M{"_id": user.ID, "deposits": bson.M{"$gte": p.Price}}, bson.M{"$inc": bson.M{"deposits": -p.Price, "reserved": p.Price}})
+		hiringWalletID := j.EmployerWalletID
+		if hiringWalletID.IsZero() {
+			hiringWalletID = j.OwnerID
+		}
+		result, err = s.store.C("marketplace_wallets").UpdateOne(sc, bson.M{"_id": hiringWalletID, "deposits": bson.M{"$gte": p.Price}}, bson.M{"$inc": bson.M{"deposits": -p.Price, "reserved": p.Price}})
 		if err != nil {
 			return err
 		}
@@ -894,9 +916,10 @@ func (s *Server) marketplaceJobAction(c *gin.Context) {
 		if err := s.store.C("marketplace_jobs").FindOne(sc, bson.M{"_id": id}).Decode(&j); err != nil {
 			return err
 		}
+		canManage := j.OwnerID == user.ID || (!j.TeamID.IsZero() && j.TeamID == user.TeamID && (user.Role == models.RoleOwnerAdmin || user.Role == models.RoleTeamAdmin)) || (!j.EmployerWalletID.IsZero() && j.EmployerWalletID == user.ID)
 		switch action {
 		case "cancel":
-			if j.OwnerID != user.ID || j.Status != "open" {
+			if !canManage || j.Status != "open" {
 				return marketInvalid("Only an open job can be cancelled")
 			}
 			_, err := s.store.C("marketplace_jobs").UpdateOne(sc, bson.M{"_id": id}, bson.M{"$set": bson.M{"status": "cancelled"}})
@@ -920,7 +943,7 @@ func (s *Server) marketplaceJobAction(c *gin.Context) {
 			}
 			return s.marketplaceNotify(sc, j.OwnerID, j.ID, "marketplace_job", "Work is ready for your approval: "+j.Title)
 		case "revise":
-			if j.OwnerID != user.ID || j.Status != "submitted" {
+			if !canManage || j.Status != "submitted" {
 				return marketInvalid("Only the employer can request changes to submitted work")
 			}
 			_, err := s.store.C("marketplace_jobs").UpdateOne(sc, bson.M{"_id": id}, bson.M{"$set": bson.M{"status": "hired"}})
@@ -929,7 +952,7 @@ func (s *Server) marketplaceJobAction(c *gin.Context) {
 			}
 			return s.marketplaceNotify(sc, j.FreelancerID, j.ID, "marketplace_job", "Changes were requested for: "+j.Title)
 		case "approve":
-			if j.OwnerID != user.ID || j.Status != "submitted" || req.Rating < 1 || req.Rating > 5 || len(req.Review) > 2000 {
+			if !canManage || j.Status != "submitted" || req.Rating < 1 || req.Rating > 5 || len(req.Review) > 2000 {
 				return marketInvalid("Only the employer can approve submitted work; choose a rating from 1 to 5")
 			}
 			now := time.Now().UTC()
@@ -944,7 +967,11 @@ func (s *Server) marketplaceJobAction(c *gin.Context) {
 			}
 			fee := marketplaceFee(amount)
 			net := amount - fee
-			result, err := s.store.C("marketplace_wallets").UpdateOne(sc, bson.M{"_id": user.ID, "reserved": bson.M{"$gte": reserved}}, bson.M{"$inc": bson.M{"reserved": -reserved, "deposits": reserved - amount}})
+			hiringWalletID := j.EmployerWalletID
+			if hiringWalletID.IsZero() {
+				hiringWalletID = j.OwnerID
+			}
+			result, err := s.store.C("marketplace_wallets").UpdateOne(sc, bson.M{"_id": hiringWalletID, "reserved": bson.M{"$gte": reserved}}, bson.M{"$inc": bson.M{"reserved": -reserved, "deposits": reserved - amount}})
 			if err != nil {
 				return err
 			}

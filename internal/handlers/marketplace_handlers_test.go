@@ -82,6 +82,11 @@ func TestMarketplaceRoutesAndPrivateAccess(t *testing.T) {
 			t.Errorf("%s: %d", route, w.Code)
 		}
 	}
+	wDirect := httptest.NewRecorder()
+	router.ServeHTTP(wDirect, httptest.NewRequest("POST", "/api/marketplace/topup/direct", nil))
+	if wDirect.Code != 401 {
+		t.Errorf("direct topup expected 401, got %d", wDirect.Code)
+	}
 	// Public catalog now loads its configurable allowance from MongoDB.
 	if _, err := template.ParseFiles(filepath.Join("..", "..", "web", "templates", "marketplace_privacy.gohtml")); err != nil {
 		t.Fatal(err)
@@ -92,6 +97,43 @@ func TestMarketplaceRoutesAndPrivateAccess(t *testing.T) {
 		if !s.requireTeamFeatureAccess(c, primitive.NewObjectID(), feature) {
 			t.Errorf("free feature blocked: %s", feature)
 		}
+	}
+}
+
+func TestWorkspaceHiringWalletResolution(t *testing.T) {
+	s := &Server{}
+	ctx := context.Background()
+	userID := primitive.NewObjectID()
+
+	// Case 1: Personal user (no team)
+	personalCtx := middleware.UserContext{
+		ID:   userID,
+		Role: models.RoleTeamAdmin,
+	}
+	walletID, teamID, isWorkspace := s.resolveWorkspaceHiringWallet(ctx, personalCtx)
+	if walletID != userID {
+		t.Errorf("personal user must resolve to user ID, got %v", walletID)
+	}
+	if !teamID.IsZero() {
+		t.Errorf("personal user must have zero team ID, got %v", teamID)
+	}
+	if isWorkspace {
+		t.Error("personal user must not be marked as workspace")
+	}
+
+	// Case 2: Regular member (cannot spend from company wallet)
+	memberTeamID := primitive.NewObjectID()
+	memberCtx := middleware.UserContext{
+		ID:     userID,
+		Role:   models.RoleMember,
+		TeamID: memberTeamID,
+	}
+	walletID, teamID, isWorkspace = s.resolveWorkspaceHiringWallet(ctx, memberCtx)
+	if walletID != userID {
+		t.Errorf("regular member must resolve to personal user ID, got %v", walletID)
+	}
+	if isWorkspace {
+		t.Error("regular member must not have isWorkspace=true")
 	}
 }
 

@@ -34,6 +34,40 @@ function clearStoredTokens() {
   sessionStorage.removeItem(AUTH_REFRESH_KEY);
 }
 
+function parseJwtPayload(token) {
+  try {
+    const parts = String(token || "").split(".");
+    if (parts.length < 2) return null;
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+function isTokenExpiredOrExpiring(token, bufferSeconds = 60) {
+  if (!token) return true;
+  const payload = parseJwtPayload(token);
+  if (!payload || !payload.exp) return false;
+  const now = Math.floor(Date.now() / 1000);
+  return payload.exp - now <= bufferSeconds;
+}
+
+window.addEventListener("storage", (event) => {
+  if (event.key === AUTH_ACCESS_KEY && event.newValue !== null) {
+    state.access = event.newValue;
+  }
+  if (event.key === AUTH_REFRESH_KEY && event.newValue !== null) {
+    state.refresh = event.newValue;
+  }
+});
+
 const state = {
   access: readStoredToken(AUTH_ACCESS_KEY),
   refresh: readStoredToken(AUTH_REFRESH_KEY),
@@ -2528,24 +2562,73 @@ function setFormStatus(form, text, error = false) {
   }
 }
 
+let refreshInFlightPromise = null;
+
+async function refreshAccessToken() {
+  if (refreshInFlightPromise) return refreshInFlightPromise;
+
+  refreshInFlightPromise = (async () => {
+    try {
+      const storedAccess = readStoredToken(AUTH_ACCESS_KEY);
+      const storedRefresh = readStoredToken(AUTH_REFRESH_KEY);
+      if (storedAccess && storedAccess !== state.access && !isTokenExpiredOrExpiring(storedAccess, 15)) {
+        state.access = storedAccess;
+        state.refresh = storedRefresh || state.refresh;
+        return true;
+      }
+
+      const refreshToken = state.refresh || storedRefresh;
+      if (!refreshToken) return false;
+
+      const res = await fetch("/api/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+
+      if (!res.ok) {
+        return false;
+      }
+
+      const data = await res.json();
+      if (data.access_token && data.refresh_token) {
+        storeTokens(data.access_token, data.refresh_token);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    } finally {
+      refreshInFlightPromise = null;
+    }
+  })();
+
+  return refreshInFlightPromise;
+}
+
 async function api(url, options = {}, retry = true) {
-  const headers = options.headers || {};
   const isForm = options.body instanceof FormData;
-  if (!isForm) headers["Content-Type"] = "application/json";
+  const isAuthEndpoint = typeof url === "string" && (url.startsWith("/api/auth/") || url.startsWith("/auth/"));
+
+  if (!isAuthEndpoint && state.refresh && isTokenExpiredOrExpiring(state.access, 30)) {
+    await refreshAccessToken();
+  }
+
+  const headers = options.headers ? { ...options.headers } : {};
+  if (!isForm && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   if (state.access) headers.Authorization = "Bearer " + state.access;
+
   const res = await fetch(url, { ...options, headers });
   if (res.status === 401 && retry && state.refresh) {
-    const refreshed = await fetch("/api/auth/refresh", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${state.access}` },
-      body: JSON.stringify({ refresh_token: state.refresh }),
-    });
-    if (refreshed.ok) {
-      const data = await refreshed.json();
-      storeTokens(data.access_token, data.refresh_token);
-      return api(url, options, false);
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      const retryHeaders = options.headers ? { ...options.headers } : {};
+      if (!isForm && !retryHeaders["Content-Type"]) retryHeaders["Content-Type"] = "application/json";
+      if (state.access) retryHeaders.Authorization = "Bearer " + state.access;
+      return api(url, { ...options, headers: retryHeaders }, false);
     }
   }
+
   const type = res.headers.get("Content-Type") || "";
   const body = type.includes("application/json") ? await res.json() : await res.text();
   if (!res.ok) {
@@ -2559,21 +2642,23 @@ async function api(url, options = {}, retry = true) {
 }
 
 async function apiBlob(url, options = {}, retry = true) {
-  const headers = options.headers || {};
+  if (state.refresh && isTokenExpiredOrExpiring(state.access, 30)) {
+    await refreshAccessToken();
+  }
+
+  const headers = options.headers ? { ...options.headers } : {};
   if (state.access) headers.Authorization = "Bearer " + state.access;
+
   const res = await fetch(url, { ...options, headers });
   if (res.status === 401 && retry && state.refresh) {
-    const refreshed = await fetch("/api/auth/refresh", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: state.refresh }),
-    });
-    if (refreshed.ok) {
-      const data = await refreshed.json();
-      storeTokens(data.access_token, data.refresh_token);
-      return apiBlob(url, options, false);
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      const retryHeaders = options.headers ? { ...options.headers } : {};
+      if (state.access) retryHeaders.Authorization = "Bearer " + state.access;
+      return apiBlob(url, { ...options, headers: retryHeaders }, false);
     }
   }
+
   if (!res.ok) {
     const type = res.headers.get("Content-Type") || "";
     const body = type.includes("application/json") ? await res.json() : await res.text();
@@ -2629,12 +2714,29 @@ function logout() {
   $("#floatingChatLauncher")?.remove();
   stopNotificationPolling();
   stopLivePolling();
-  fetch("/api/auth/logout", { method: "POST", keepalive: true }).catch(() => {});
+  fetch("/api/auth/logout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: state.refresh }),
+    keepalive: true,
+  }).catch(() => {});
   clearStoredTokens();
   state.access = "";
   state.refresh = "";
   window.location.href = "/login";
 }
+
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState === "visible" && state.refresh && isTokenExpiredOrExpiring(state.access, 120)) {
+    await refreshAccessToken();
+  }
+});
+
+window.addEventListener("focus", async () => {
+  if (state.refresh && isTokenExpiredOrExpiring(state.access, 120)) {
+    await refreshAccessToken();
+  }
+});
 
 async function syncSessionCookie() {
   if (!state.access || state.sessionCookieSynced) return;
@@ -12737,65 +12839,728 @@ function bindTaskReportExportForm(websites = []) {
   });
 }
 
+const timeReportFilters = {
+  period: "all",
+  from: "",
+  to: "",
+  user_id: "",
+  task_id: "",
+  paid: "",
+  tab: "payouts",
+};
+
+function computeReportDatePreset(preset) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  if (preset === "today") {
+    const today = fmt(now);
+    return { from: today, to: today };
+  }
+  if (preset === "this_week") {
+    const day = now.getDay();
+    const diff = (day === 0 ? -6 : 1) - day;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diff);
+    return { from: fmt(monday), to: fmt(now) };
+  }
+  if (preset === "last_week") {
+    const day = now.getDay();
+    const diff = (day === 0 ? -6 : 1) - day;
+    const lastMonday = new Date(now);
+    lastMonday.setDate(now.getDate() + diff - 7);
+    const lastSunday = new Date(lastMonday);
+    lastSunday.setDate(lastMonday.getDate() + 6);
+    return { from: fmt(lastMonday), to: fmt(lastSunday) };
+  }
+  if (preset === "this_month") {
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { from: fmt(firstDay), to: fmt(now) };
+  }
+  if (preset === "last_month") {
+    const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
+    return { from: fmt(firstDay), to: fmt(lastDay) };
+  }
+  return { from: "", to: "" };
+}
+
+function timeReportAvatarHTML(author, name) {
+  const initial = String(name || "U").trim().split(/\s+/).slice(0, 2).map((w) => w[0] || "").join("").toUpperCase() || "U";
+  const photo = String(author?.avatar_url || "");
+  const validPhoto = photo.startsWith("/") || /^https?:\/\//i.test(photo);
+  return `<span class="chat-avatar" aria-hidden="true" style="width:28px;height:28px;min-width:28px;font-size:11px;"><span>${esc(initial)}</span>${validPhoto ? `<img src="${esc(photo)}" alt="" loading="lazy">` : ""}</span>`;
+}
+
+function buildTimeReportParams() {
+  const params = new URLSearchParams();
+  if (timeReportFilters.from) params.set("from", timeReportFilters.from);
+  if (timeReportFilters.to) params.set("to", timeReportFilters.to);
+  if (timeReportFilters.user_id) params.set("user_id", timeReportFilters.user_id);
+  if (timeReportFilters.task_id) params.set("task_id", timeReportFilters.task_id);
+  if (timeReportFilters.paid) params.set("paid", timeReportFilters.paid);
+  return params;
+}
+
 async function renderReports() {
   const list = await getFirstList().catch(() => null);
-  const data = await api("/api/reports/time");
+  const queryParams = buildTimeReportParams();
+  const data = await api("/api/reports/time?" + queryParams.toString()).catch(() => ({ entries: [], summary: {}, users: {} }));
   data.entries = data.entries || [];
+  data.user_summary = data.user_summary || [];
+  data.task_summary = data.task_summary || [];
   const clients = state.clientProjects || [];
   const websites = state.clientWebsites || [];
-  shell("Time Reports", `
-    <div class="page-title"><div><h1>Reports</h1><p class="muted">${Math.round((data.total_minutes || 0) / 60 * 10) / 10} hours tracked.</p></div><a class="btn" href="/api/reports/time/export?token=${state.access}">${icon("download")}CSV</a></div>
-    <section class="panel report-export-panel">
-      <div class="panel-head">
-        <div>
-          <h2>Project task PDF</h2>
-          <p class="muted">Export tasks and completed work you can access, filtered by assignment, project folder, domain, and time period.</p>
-        </div>
-        <a class="btn primary" id="taskPdfExportLink" href="#" target="_blank" rel="noopener">${icon("file-down")}Export PDF</a>
+
+  const isAdmin = Boolean(data.is_admin);
+  const summary = data.summary || {};
+  const totalHours = summary.total_hours != null ? summary.total_hours : Math.round((data.total_minutes || 0) / 60 * 10) / 10;
+  const billableHours = summary.billable_hours != null ? summary.billable_hours : 0;
+  const totalAmount = summary.total_amount != null ? summary.total_amount : 0;
+  const unpaidAmount = summary.unpaid_amount != null ? summary.unpaid_amount : 0;
+  const paidAmount = summary.paid_amount != null ? summary.paid_amount : 0;
+  const unpaidCount = summary.unpaid_count != null ? summary.unpaid_count : 0;
+
+  const exportCSVURL = "/api/reports/time/export?token=" + encodeURIComponent(state.access) + (queryParams.toString() ? "&" + queryParams.toString() : "");
+
+  const activeTab = timeReportFilters.tab || "payouts";
+
+  shell(isAdmin ? "Time & Payment Reports" : "My Time & Earnings", `
+    <div class="page-title">
+      <div>
+        <h1>${isAdmin ? "Time & Payment Reports" : "My Time & Earnings"}</h1>
+        <p class="muted">${isAdmin ? "Track team hours, manage member hourly rates, and manage teammate and freelancer payouts." : "Review your tracked hours, hourly rate, and monitor your earnings and payouts."}</p>
       </div>
-      <form id="taskPdfExportForm" class="form-grid">
-        <input type="hidden" name="customize" value="1">
-        <div class="grid-3">
-          <div class="field"><label>Scope</label><select name="scope"><option value="assigned">Assigned to me</option><option value="all">All tasks in projects</option><option value="domain">Specific domain</option></select></div>
-          <div class="field"><label>Project folder</label><select name="client_id" id="taskReportClient">${reportClientOptions(clients)}</select></div>
-          <div class="field"><label>Domain</label><select name="website_id" id="taskReportWebsite">${reportWebsiteOptions(websites)}</select></div>
+      <div class="toolbar">
+        <a class="btn" href="${exportCSVURL}" download="time-report.csv">${icon("download")} Export CSV</a>
+      </div>
+    </div>
+
+    <!-- KPI Metric Cards -->
+    <div class="report-kpi-grid">
+      <div class="report-kpi-card">
+        <span class="report-kpi-label">Total Time Tracked</span>
+        <span class="report-kpi-value">${totalHours} <span style="font-size:14px;color:var(--text-secondary);">hrs</span></span>
+        <span class="report-kpi-sub">${summary.total_minutes || 0} total minutes</span>
+      </div>
+      <div class="report-kpi-card">
+        <span class="report-kpi-label">Billable Hours</span>
+        <span class="report-kpi-value">${billableHours} <span style="font-size:14px;color:var(--text-secondary);">hrs</span></span>
+        <span class="report-kpi-sub">${summary.billable_minutes || 0} billable mins</span>
+      </div>
+      ${!isAdmin ? `
+        <div class="report-kpi-card highlight">
+          <span class="report-kpi-label">Your Hourly Rate</span>
+          <span class="report-kpi-value">$${(summary.my_hourly_rate || 0).toFixed(2)} <span style="font-size:14px;color:var(--text-secondary);">/ hr</span></span>
+          <span class="report-kpi-sub">Set by workspace admin</span>
         </div>
-        <div class="grid-3">
-          <div class="field"><label>Time filter</label><select name="period" id="taskReportPeriod">${reportPeriodOptions()}</select></div>
-          <div class="field"><label>Date basis</label><select name="date_field"><option value="created_at">Created date</option><option value="due_date">Due date</option><option value="updated_at">Updated date</option></select></div>
-          <div class="field"><label>Format</label><input value="PDF report" readonly></div>
-        </div>
-        <div class="grid-2">
-          <div class="field"><label>From</label><input type="date" name="from" id="taskReportFrom"></div>
-          <div class="field"><label>To</label><input type="date" name="to" id="taskReportTo"></div>
-        </div>
-        <div class="report-option-block">
-          <h3>Data to show</h3>
-          <div class="report-option-grid">
-            ${reportOptionCheckbox("include_summary", "Summary")}
-            ${reportOptionCheckbox("include_completions", "Completed work")}
-            ${reportOptionCheckbox("include_tasks", "Task list")}
-            ${reportOptionCheckbox("include_content", "Task content")}
-            ${reportOptionCheckbox("include_checklist", "Checklists")}
-            ${reportOptionCheckbox("include_assignees", "Assignees")}
-            ${reportOptionCheckbox("include_due_dates", "Due dates")}
-            ${reportOptionCheckbox("include_time", "Tracked time")}
+      ` : ""}
+      <div class="report-kpi-card highlight">
+        <span class="report-kpi-label">${isAdmin ? "Total Amount / Payroll" : "Total Earned"}</span>
+        <span class="report-kpi-value">$${totalAmount.toFixed(2)}</span>
+        <span class="report-kpi-sub">${data.entries.length} tracked entries</span>
+      </div>
+      <div class="report-kpi-card ${unpaidAmount > 0 ? "warning-card" : ""}">
+        <span class="report-kpi-label">${isAdmin ? "Unpaid / Due to Pay" : "Pending Payout"}</span>
+        <span class="report-kpi-value" style="color:var(--warning, #f59e0b);">$${unpaidAmount.toFixed(2)}</span>
+        <span class="report-kpi-sub">${unpaidCount} unpaid entries</span>
+      </div>
+      <div class="report-kpi-card">
+        <span class="report-kpi-label">Paid / Settled</span>
+        <span class="report-kpi-value" style="color:var(--success, #10b981);">$${paidAmount.toFixed(2)}</span>
+        <span class="report-kpi-sub">Settled amounts</span>
+      </div>
+    </div>
+
+    <!-- Filters Panel -->
+    <section class="panel report-filters-panel">
+      <form id="timeReportFilterForm" class="form-grid">
+        <div class="grid-4">
+          <div class="field">
+            <label>Time Range</label>
+            <select name="period" id="timeFilterPeriod">
+              <option value="all" ${timeReportFilters.period === "all" ? "selected" : ""}>All time</option>
+              <option value="today" ${timeReportFilters.period === "today" ? "selected" : ""}>Today</option>
+              <option value="this_week" ${timeReportFilters.period === "this_week" ? "selected" : ""}>This week</option>
+              <option value="last_week" ${timeReportFilters.period === "last_week" ? "selected" : ""}>Last week</option>
+              <option value="this_month" ${timeReportFilters.period === "this_month" ? "selected" : ""}>This month</option>
+              <option value="last_month" ${timeReportFilters.period === "last_month" ? "selected" : ""}>Last month</option>
+              <option value="custom" ${timeReportFilters.period === "custom" ? "selected" : ""}>Custom range</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>From Date</label>
+            <input type="date" name="from" id="timeFilterFrom" value="${esc(timeReportFilters.from)}">
+          </div>
+          <div class="field">
+            <label>To Date</label>
+            <input type="date" name="to" id="timeFilterTo" value="${esc(timeReportFilters.to)}">
+          </div>
+          <div class="field">
+            <label>Payment Status</label>
+            <select name="paid" id="timeFilterPaid">
+              <option value="" ${!timeReportFilters.paid ? "selected" : ""}>All payment statuses</option>
+              <option value="false" ${timeReportFilters.paid === "false" ? "selected" : ""}>Unpaid only</option>
+              <option value="true" ${timeReportFilters.paid === "true" ? "selected" : ""}>Paid only</option>
+            </select>
           </div>
         </div>
-        <div class="field report-note-field">
-          <label>Report note</label>
-          <textarea name="note" maxlength="2000" placeholder="Optional note shown at the bottom of the PDF report"></textarea>
+
+        <div class="grid-3">
+          ${isAdmin ? `
+            <div class="field">
+              <label>Team Member / Freelancer</label>
+              <select name="user_id" id="timeFilterUser">
+                <option value="">All team members</option>
+                ${Object.values(data.users || {}).map((u) => `
+                  <option value="${esc(u.id)}" ${timeReportFilters.user_id === u.id ? "selected" : ""}>${esc(u.name || u.username || u.email)} (${esc(u.role || "member")})</option>
+                `).join("")}
+              </select>
+            </div>
+          ` : `
+            <div class="field">
+              <label>Member Scope</label>
+              <input value="My Tracked Time Only" readonly>
+            </div>
+          `}
+          <div class="field">
+            <label>Task / Activity</label>
+            <select name="task_id" id="timeFilterTask">
+              <option value="">All tasks</option>
+              ${data.task_summary.map((t) => `
+                <option value="${esc(t.task_id)}" ${timeReportFilters.task_id === t.task_id ? "selected" : ""}>${esc(t.title || "Task")} ${t.project_name ? `(${esc(t.project_name)})` : ""}</option>
+              `).join("")}
+            </select>
+          </div>
+          <div class="field" style="display:flex;align-items:flex-end;gap:8px;">
+            <button class="btn primary" type="submit" style="flex:1;">${icon("filter")} Apply Filter</button>
+            <button class="btn" type="button" id="resetReportFilterBtn">Reset</button>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    <!-- Report View Tabs -->
+    <div class="report-tabs-bar">
+      <button class="report-tab-btn ${activeTab === "payouts" ? "active" : ""}" type="button" data-report-tab="payouts">
+        ${icon("users")} ${isAdmin ? "Team Payouts & Rates" : "My Earnings Summary"}
+      </button>
+      <button class="report-tab-btn ${activeTab === "tasks" ? "active" : ""}" type="button" data-report-tab="tasks">
+        ${icon("check-square")} Breakdown By Task
+      </button>
+      <button class="report-tab-btn ${activeTab === "entries" ? "active" : ""}" type="button" data-report-tab="entries">
+        ${icon("clock")} Detailed Time Log (${data.entries.length})
+      </button>
+      <button class="report-tab-btn ${activeTab === "export" ? "active" : ""}" type="button" data-report-tab="export">
+        ${icon("file-down")} Export PDF & Manual Time
+      </button>
+    </div>
+
+    <!-- Tab 1: Payouts & Rates -->
+    <div id="reportTabPanel_payouts" class="report-tab-panel" ${activeTab === "payouts" ? "" : "hidden"}>
+      ${isAdmin ? `
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Team & Freelancer Payroll Management</h2>
+              <p class="muted">Set hourly rates ($/hr) for freelancers and team members. Review hours worked and mark payments as paid.</p>
+            </div>
+          </div>
+          <div class="report-table-wrapper">
+            <table class="report-table">
+              <thead>
+                <tr>
+                  <th>Team Member / Freelancer</th>
+                  <th>Hourly Rate</th>
+                  <th class="num">Tracked Hours</th>
+                  <th class="num">Billable Hours</th>
+                  <th class="num">Total Amount</th>
+                  <th class="num">Unpaid / Due</th>
+                  <th class="num">Paid</th>
+                  <th style="text-align:center;">Payment Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${data.user_summary.map((u) => `
+                  <tr>
+                    <td>
+                      <div class="report-user-cell">
+                        ${timeReportAvatarHTML(u, u.name)}
+                        <div>
+                          <strong>${esc(u.name || "Member")}</strong>
+                          <div class="muted" style="font-size:11px;">${esc(u.email || "")} · <span class="pill" style="min-height:18px;padding:0 6px;font-size:10px;">${esc(u.role || "member")}</span></div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div style="display:flex;align-items:center;gap:6px;">
+                        <strong style="font-size:14px;">$${(u.hourly_rate || 0).toFixed(2)}/hr</strong>
+                        <button class="btn compact quiet" type="button" data-edit-rate="${esc(u.user_id)}" data-user-name="${esc(u.name || "Member")}" data-current-rate="${(u.hourly_rate || 0).toFixed(2)}" title="Edit member hourly rate">${icon("edit")}</button>
+                      </div>
+                    </td>
+                    <td class="num">${u.total_hours.toFixed(2)}h <span class="muted" style="font-size:11px;">(${u.total_minutes}m)</span></td>
+                    <td class="num">${u.billable_hours.toFixed(2)}h</td>
+                    <td class="num"><strong>$${u.total_amount.toFixed(2)}</strong></td>
+                    <td class="num">
+                      ${u.unpaid_amount > 0 ? `<span class="pill unpaid">$${u.unpaid_amount.toFixed(2)}</span>` : `<span class="muted">$0.00</span>`}
+                    </td>
+                    <td class="num">$${u.paid_amount.toFixed(2)}</td>
+                    <td style="text-align:center;">
+                      ${u.unpaid_amount > 0 ? `
+                        <button class="btn compact primary" type="button" data-mark-paid-user="${esc(u.user_id)}" data-user-name="${esc(u.name || "Member")}" data-unpaid-amount="${u.unpaid_amount.toFixed(2)}">
+                          ${icon("check")} Mark Paid
+                        </button>
+                      ` : `
+                        <span class="pill paid" style="font-size:11px;">${icon("check")} Settled</span>
+                      `}
+                    </td>
+                  </tr>
+                `).join("") || `<tr><td colspan="8" class="muted" style="text-align:center;padding:24px;">No team members found in workspace.</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ` : `
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Your Earnings Breakdown</h2>
+              <p class="muted">Your hourly rate is configured at <strong>$${(summary.my_hourly_rate || 0).toFixed(2)} / hr</strong> by your workspace admin.</p>
+            </div>
+          </div>
+          <div class="report-table-wrapper">
+            <table class="report-table">
+              <thead>
+                <tr>
+                  <th>Time Metric</th>
+                  <th class="num">Hours</th>
+                  <th class="num">Effective Rate</th>
+                  <th class="num">Total Amount</th>
+                  <th>Payment Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Billable Work</strong></td>
+                  <td class="num">${billableHours.toFixed(2)}h</td>
+                  <td class="num">$${(summary.my_hourly_rate || 0).toFixed(2)}/hr</td>
+                  <td class="num"><strong>$${((billableHours) * (summary.my_hourly_rate || 0)).toFixed(2)}</strong></td>
+                  <td><span class="pill">billable</span></td>
+                </tr>
+                <tr>
+                  <td><strong>Unpaid / Pending Hours</strong></td>
+                  <td class="num">${((unpaidAmount > 0 && summary.my_hourly_rate > 0) ? (unpaidAmount / summary.my_hourly_rate).toFixed(2) : "0.00")}h</td>
+                  <td class="num">$${(summary.my_hourly_rate || 0).toFixed(2)}/hr</td>
+                  <td class="num"><strong style="color:var(--warning, #f59e0b);">$${unpaidAmount.toFixed(2)}</strong></td>
+                  <td><span class="pill unpaid">${unpaidCount} unpaid entries</span></td>
+                </tr>
+                <tr>
+                  <td><strong>Paid & Settled Hours</strong></td>
+                  <td class="num">${((paidAmount > 0 && summary.my_hourly_rate > 0) ? (paidAmount / summary.my_hourly_rate).toFixed(2) : "0.00")}h</td>
+                  <td class="num">$${(summary.my_hourly_rate || 0).toFixed(2)}/hr</td>
+                  <td class="num"><strong style="color:var(--success, #10b981);">$${paidAmount.toFixed(2)}</strong></td>
+                  <td><span class="pill paid">${icon("check")} Settled</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      `}
+    </div>
+
+    <!-- Tab 2: Breakdown By Task -->
+    <div id="reportTabPanel_tasks" class="report-tab-panel" ${activeTab === "tasks" ? "" : "hidden"}>
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Time & Labor Cost per Task</h2>
+            <p class="muted">Check tracked time, labor costs, and payment distribution across tasks and project domains.</p>
+          </div>
+        </div>
+        <div class="report-table-wrapper">
+          <table class="report-table">
+            <thead>
+              <tr>
+                <th>Task / Activity</th>
+                <th>Project Folder</th>
+                <th>Domain / Website</th>
+                <th class="num">Tracked Hours</th>
+                <th class="num">Billable Hours</th>
+                <th class="num">Labor Cost</th>
+                <th class="num">Unpaid Due</th>
+                <th class="num">Paid Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.task_summary.map((t) => `
+                <tr>
+                  <td><strong>${esc(t.title || "Unassigned task")}</strong></td>
+                  <td><span class="muted">${esc(t.project_name || "-")}</span></td>
+                  <td><span class="muted">${esc(t.website_name || "-")}</span></td>
+                  <td class="num">${t.total_hours.toFixed(2)}h <span class="muted" style="font-size:11px;">(${t.total_minutes}m)</span></td>
+                  <td class="num">${t.billable_hours.toFixed(2)}h</td>
+                  <td class="num"><strong>$${t.total_amount.toFixed(2)}</strong></td>
+                  <td class="num">${t.unpaid_amount > 0 ? `<span class="pill unpaid">$${t.unpaid_amount.toFixed(2)}</span>` : `<span class="muted">$0.00</span>`}</td>
+                  <td class="num">$${t.paid_amount.toFixed(2)}</td>
+                </tr>
+              `).join("") || `<tr><td colspan="8" class="muted" style="text-align:center;padding:24px;">No task entries recorded for the selected filter.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- Tab 3: Detailed Time Log -->
+    <div id="reportTabPanel_entries" class="report-tab-panel" ${activeTab === "entries" ? "" : "hidden"}>
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Chronological Time Log</h2>
+            <p class="muted">List of individual time tracking logs with notes, duration, hourly rate applied, and settlement status.</p>
+          </div>
+        </div>
+        <div class="report-table-wrapper">
+          <table class="report-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                ${isAdmin ? `<th>Member</th>` : ""}
+                <th>Task & Note</th>
+                <th>Project / Domain</th>
+                <th class="num">Duration</th>
+                <th class="num">Rate</th>
+                <th class="num">Amount</th>
+                <th>Type</th>
+                <th>Payment Status</th>
+                ${isAdmin ? `<th style="text-align:center;">Action</th>` : ""}
+              </tr>
+            </thead>
+            <tbody>
+              ${data.entries.map((e) => `
+                <tr>
+                  <td style="white-space:nowrap;">${fmtDate(e.start_time)}</td>
+                  ${isAdmin ? `<td><div class="report-user-cell">${timeReportAvatarHTML({ avatar_url: (data.users?.[e.user_id]?.avatar_url) }, e.user_name)} <span>${esc(e.user_name || "Member")}</span></div></td>` : ""}
+                  <td>
+                    <strong>${esc(e.task_title || "Unassigned")}</strong>
+                    ${e.note ? `<div class="muted" style="font-size:11px;">${esc(e.note)}</div>` : ""}
+                  </td>
+                  <td>
+                    <div style="font-size:12px;">${esc(e.project_name || e.website_name || "-")}</div>
+                    ${e.project_name && e.website_name ? `<div class="muted" style="font-size:10px;">${esc(e.website_name)}</div>` : ""}
+                  </td>
+                  <td class="num">${e.duration_minutes}m <span class="muted" style="font-size:11px;">(${(e.duration_minutes / 60).toFixed(2)}h)</span></td>
+                  <td class="num">$${(e.hourly_rate || 0).toFixed(2)}/h</td>
+                  <td class="num"><strong>$${(e.amount || 0).toFixed(2)}</strong></td>
+                  <td>
+                    <span class="pill">${e.billable ? "billable" : "non-billable"}</span>
+                    ${e.is_manual ? `<span class="pill" style="margin-left:4px;">manual</span>` : ""}
+                  </td>
+                  <td>
+                    ${e.paid ? `<span class="pill paid">${icon("check")} Paid</span>` : `<span class="pill unpaid">Unpaid</span>`}
+                  </td>
+                  ${isAdmin ? `
+                    <td style="text-align:center;">
+                      ${!e.paid ? `
+                        <button class="btn compact quiet" type="button" data-mark-paid-entry="${esc(e.id)}" title="Mark this entry as paid">
+                          ${icon("check")}
+                        </button>
+                      ` : `
+                        <span class="muted" title="Paid">${icon("check")}</span>
+                      `}
+                    </td>
+                  ` : ""}
+                </tr>
+              `).join("") || `<tr><td colspan="${isAdmin ? 10 : 8}" class="muted" style="text-align:center;padding:24px;">No time entries found for the selected filter.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- Tab 4: PDF Export & Manual Time Entry -->
+    <div id="reportTabPanel_export" class="report-tab-panel" ${activeTab === "export" ? "" : "hidden"}>
+      <section class="panel report-export-panel">
+        <div class="panel-head">
+          <div>
+            <h2>Project task PDF</h2>
+            <p class="muted">Export tasks and completed work you can access, filtered by assignment, project folder, domain, and time period.</p>
+          </div>
+          <a class="btn primary" id="taskPdfExportLink" href="#" target="_blank" rel="noopener">${icon("file-down")}Export PDF</a>
+        </div>
+        <form id="taskPdfExportForm" class="form-grid">
+          <input type="hidden" name="customize" value="1">
+          <div class="grid-3">
+            <div class="field"><label>Scope</label><select name="scope"><option value="assigned">Assigned to me</option><option value="all">All tasks in projects</option><option value="domain">Specific domain</option></select></div>
+            <div class="field"><label>Project folder</label><select name="client_id" id="taskReportClient">${reportClientOptions(clients)}</select></div>
+            <div class="field"><label>Domain</label><select name="website_id" id="taskReportWebsite">${reportWebsiteOptions(websites)}</select></div>
+          </div>
+          <div class="grid-3">
+            <div class="field"><label>Time filter</label><select name="period" id="taskReportPeriod">${reportPeriodOptions()}</select></div>
+            <div class="field"><label>Date basis</label><select name="date_field"><option value="created_at">Created date</option><option value="due_date">Due date</option><option value="updated_at">Updated date</option></select></div>
+            <div class="field"><label>Format</label><input value="PDF report" readonly></div>
+          </div>
+          <div class="grid-2">
+            <div class="field"><label>From</label><input type="date" name="from" id="taskReportFrom"></div>
+            <div class="field"><label>To</label><input type="date" name="to" id="taskReportTo"></div>
+          </div>
+          <div class="report-option-block">
+            <h3>Data to show</h3>
+            <div class="report-option-grid">
+              ${reportOptionCheckbox("include_summary", "Summary")}
+              ${reportOptionCheckbox("include_completions", "Completed work")}
+              ${reportOptionCheckbox("include_tasks", "Task list")}
+              ${reportOptionCheckbox("include_content", "Task content")}
+              ${reportOptionCheckbox("include_checklist", "Checklists")}
+              ${reportOptionCheckbox("include_assignees", "Assignees")}
+              ${reportOptionCheckbox("include_due_dates", "Due dates")}
+              ${reportOptionCheckbox("include_time", "Tracked time")}
+            </div>
+          </div>
+          <div class="field report-note-field">
+            <label>Report note</label>
+            <textarea name="note" maxlength="2000" placeholder="Optional note shown at the bottom of the PDF report"></textarea>
+          </div>
+          <p class="status-line"></p>
+        </form>
+        <div id="taskReportPreview" class="report-preview"><div class="report-preview-empty">Loading preview...</div></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Log time manually</h2>
+            <p class="muted">Add a manual time log for completed project work.</p>
+          </div>
+        </div>
+        <form id="manualTimeForm" class="form-grid">
+          <input type="hidden" name="task_id" value="${esc(list?.id || "")}">
+          <div class="grid-2">
+            <div class="field"><label>Date</label><input type="date" name="date" value="${new Date().toISOString().slice(0, 10)}"></div>
+            <div class="field"><label>Minutes</label><input type="number" name="duration_minutes" min="1" value="30"></div>
+          </div>
+          <div class="field"><label>Note</label><textarea name="note" placeholder="Description of work done..."></textarea></div>
+          <button class="btn primary">${icon("plus")} Log time</button>
+          <p class="status-line"></p>
+        </form>
+      </section>
+    </div>
+
+    <!-- Rate Edit Dialog -->
+    <dialog id="timeReportRateDialog" class="modal">
+      <form id="timeReportRateForm" class="form-grid">
+        <input type="hidden" name="user_id" value="">
+        <div class="modal-head">
+          <div>
+            <h2>Set Member Hourly Rate</h2>
+            <p class="muted" id="rateDialogUserName">Member name</p>
+          </div>
+          <button class="btn icon quiet" type="button" data-close-dialog="timeReportRateDialog" title="Close">${icon("x")}</button>
+        </div>
+        <div class="field">
+          <label>Hourly Rate ($/hr)</label>
+          <input type="number" name="hourly_rate" step="0.01" min="0" placeholder="0.00" required>
+          <small class="muted">Rate used to calculate payment amounts for this teammate in this workspace.</small>
         </div>
         <p class="status-line"></p>
+        <div class="toolbar">
+          <button class="btn primary" type="submit">${icon("save")} Save Hourly Rate</button>
+          <button class="btn" type="button" data-close-dialog="timeReportRateDialog">Cancel</button>
+        </div>
       </form>
-      <div id="taskReportPreview" class="report-preview"><div class="report-preview-empty">Loading preview...</div></div>
-    </section>
-    <div class="grid-2">
-      <section class="panel"><h2>Entries</h2><div class="task-list">${data.entries.map((e) => `<article class="task-row"><div><h3>${e.duration_minutes} minutes</h3><span class="muted">${fmtDate(e.start_time)} · ${esc(e.note || "")}</span></div><span class="pill">${e.is_manual ? "manual" : "timer"}</span><span class="pill">${e.billable ? "billable" : "non-billable"}</span></article>`).join("") || `<p class="muted">No time entries yet.</p>`}</div></section>
-      <section class="panel"><h2>Manual entry</h2><form id="manualTimeForm" class="form-grid"><input type="hidden" name="task_id" value="${esc(list?.id || "")}"><div class="field"><label>Date</label><input type="date" name="date"></div><div class="field"><label>Minutes</label><input type="number" name="duration_minutes" min="1" value="30"></div><div class="field"><label>Note</label><textarea name="note"></textarea></div><button class="btn primary">${icon("plus")}Log time</button><p class="status-line"></p></form></section>
-    </div>`);
+    </dialog>
+
+    <!-- Payment Confirm Dialog -->
+    <dialog id="timeReportPaidDialog" class="modal">
+      <form id="timeReportPaidForm" class="form-grid">
+        <input type="hidden" name="user_id" value="">
+        <input type="hidden" name="entry_id" value="">
+        <div class="modal-head">
+          <div>
+            <h2>Confirm Payment Settlement</h2>
+            <p class="muted" id="paidDialogPrompt">Mark unpaid time as paid?</p>
+          </div>
+          <button class="btn icon quiet" type="button" data-close-dialog="timeReportPaidDialog" title="Close">${icon("x")}</button>
+        </div>
+        <p class="muted">Marking hours as paid updates their status and records this settlement timestamp in the report.</p>
+        <p class="status-line"></p>
+        <div class="toolbar">
+          <button class="btn primary" type="submit">${icon("check")} Confirm & Mark as Paid</button>
+          <button class="btn" type="button" data-close-dialog="timeReportPaidDialog">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+  `);
+
+  // Bind Tab Switching
+  document.querySelectorAll(".report-tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = btn.dataset.reportTab;
+      timeReportFilters.tab = tab;
+      document.querySelectorAll(".report-tab-btn").forEach((b) => b.classList.toggle("active", b === btn));
+      document.querySelectorAll(".report-tab-panel").forEach((panel) => {
+        panel.hidden = panel.id !== `reportTabPanel_${tab}`;
+      });
+    });
+  });
+
+  // Bind Filter Form
+  const filterForm = $("#timeReportFilterForm");
+  if (filterForm) {
+    const periodSelect = $("#timeFilterPeriod");
+    if (periodSelect) {
+      periodSelect.addEventListener("change", () => {
+        const val = periodSelect.value;
+        timeReportFilters.period = val;
+        if (val !== "custom") {
+          const { from, to } = computeReportDatePreset(val);
+          timeReportFilters.from = from;
+          timeReportFilters.to = to;
+          const fromInput = $("#timeFilterFrom");
+          const toInput = $("#timeFilterTo");
+          if (fromInput) fromInput.value = from;
+          if (toInput) toInput.value = to;
+          renderReports();
+        }
+      });
+    }
+
+    filterForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const formData = new FormData(filterForm);
+      timeReportFilters.period = formData.get("period") || "all";
+      timeReportFilters.from = formData.get("from") || "";
+      timeReportFilters.to = formData.get("to") || "";
+      timeReportFilters.paid = formData.get("paid") || "";
+      timeReportFilters.user_id = formData.get("user_id") || "";
+      timeReportFilters.task_id = formData.get("task_id") || "";
+      renderReports();
+    });
+
+    const resetBtn = $("#resetReportFilterBtn");
+    if (resetBtn) {
+      resetBtn.addEventListener("click", () => {
+        timeReportFilters.period = "all";
+        timeReportFilters.from = "";
+        timeReportFilters.to = "";
+        timeReportFilters.paid = "";
+        timeReportFilters.user_id = "";
+        timeReportFilters.task_id = "";
+        renderReports();
+      });
+    }
+  }
+
+  // Bind Rate Editing Modal
+  document.querySelectorAll("[data-edit-rate]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const uid = btn.getAttribute("data-edit-rate");
+      const name = btn.getAttribute("data-user-name");
+      const rate = btn.getAttribute("data-current-rate");
+      const dialog = $("#timeReportRateDialog");
+      if (dialog) {
+        dialog.querySelector("[name='user_id']").value = uid;
+        dialog.querySelector("#rateDialogUserName").textContent = name;
+        dialog.querySelector("[name='hourly_rate']").value = rate || "0.00";
+        dialog.querySelector(".status-line").textContent = "";
+        dialog.showModal();
+      }
+    });
+  });
+
+  const rateForm = $("#timeReportRateForm");
+  if (rateForm) {
+    rateForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const statusLine = rateForm.querySelector(".status-line");
+      try {
+        const uid = rateForm.elements.user_id.value;
+        const rate = parseFloat(rateForm.elements.hourly_rate.value) || 0;
+        await api(`/api/reports/time/rates/${encodeURIComponent(uid)}`, {
+          method: "PUT",
+          body: JSON.stringify({ hourly_rate: rate }),
+        });
+        const dialog = $("#timeReportRateDialog");
+        if (dialog) dialog.close();
+        renderReports();
+      } catch (err) {
+        if (statusLine) statusLine.textContent = err.message || "Could not save rate";
+      }
+    });
+  }
+
+  // Bind Mark as Paid Actions
+  document.querySelectorAll("[data-mark-paid-user]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const uid = btn.getAttribute("data-mark-paid-user");
+      const name = btn.getAttribute("data-user-name");
+      const amount = btn.getAttribute("data-unpaid-amount");
+      const dialog = $("#timeReportPaidDialog");
+      if (dialog) {
+        dialog.querySelector("[name='user_id']").value = uid;
+        dialog.querySelector("[name='entry_id']").value = "";
+        dialog.querySelector("#paidDialogPrompt").textContent = `Mark $${amount} in unpaid hours for ${name} as paid?`;
+        dialog.querySelector(".status-line").textContent = "";
+        dialog.showModal();
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-mark-paid-entry]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const eid = btn.getAttribute("data-mark-paid-entry");
+      const dialog = $("#timeReportPaidDialog");
+      if (dialog) {
+        dialog.querySelector("[name='user_id']").value = "";
+        dialog.querySelector("[name='entry_id']").value = eid;
+        dialog.querySelector("#paidDialogPrompt").textContent = "Mark this time entry as paid?";
+        dialog.querySelector(".status-line").textContent = "";
+        dialog.showModal();
+      }
+    });
+  });
+
+  const paidForm = $("#timeReportPaidForm");
+  if (paidForm) {
+    paidForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const statusLine = paidForm.querySelector(".status-line");
+      try {
+        const uid = paidForm.elements.user_id.value;
+        const eid = paidForm.elements.entry_id.value;
+        const body = { paid: true };
+        if (eid) {
+          body.entry_ids = [eid];
+        } else if (uid) {
+          body.user_id = uid;
+          if (timeReportFilters.from) body.from = timeReportFilters.from;
+          if (timeReportFilters.to) body.to = timeReportFilters.to;
+        }
+        await api("/api/reports/time/payments/mark-paid", {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        const dialog = $("#timeReportPaidDialog");
+        if (dialog) dialog.close();
+        renderReports();
+      } catch (err) {
+        if (statusLine) statusLine.textContent = err.message || "Could not update payment status";
+      }
+    });
+  }
+
+  // Bind Close Buttons on Dialogs
+  document.querySelectorAll("[data-close-dialog]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const dialogId = btn.getAttribute("data-close-dialog");
+      const dialog = $(`#${dialogId}`);
+      if (dialog) dialog.close();
+    });
+  });
+
+  // Bind PDF Export Form & Manual Time Entry
   bindTaskReportExportForm(websites);
-  $("#manualTimeForm").addEventListener("submit", async (event) => {
+  $("#manualTimeForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
       const form = Object.fromEntries(new FormData(event.currentTarget).entries());

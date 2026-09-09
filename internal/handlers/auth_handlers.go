@@ -276,8 +276,15 @@ func (s *Server) refresh(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "refresh_token is required"})
 		return
 	}
+	hash := auth.HashToken(strings.TrimSpace(req.RefreshToken))
+	filter := bson.M{
+		"$or": []bson.M{
+			{"refresh_token_hash": hash},
+			{"refresh_token_hashes": hash},
+		},
+	}
 	var user models.User
-	err := s.store.C("users").FindOne(c.Request.Context(), bson.M{"refresh_token_hash": auth.HashToken(req.RefreshToken)}).Decode(&user)
+	err := s.store.C("users").FindOne(c.Request.Context(), filter).Decode(&user)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh token"})
 		return
@@ -289,9 +296,9 @@ func (s *Server) refresh(c *gin.Context) {
 	}
 	if !user.EmailVerified {
 		c.JSON(http.StatusForbidden, gin.H{
-			"error":                    "Please verify your email address first.",
+			"error":                       "Please verify your email address first.",
 			"email_verification_required": true,
-			"masked_email":             maskEmail(user.Email),
+			"masked_email":                maskEmail(user.Email),
 		})
 		return
 	}
@@ -305,6 +312,29 @@ func (s *Server) refresh(c *gin.Context) {
 }
 
 func (s *Server) logout(c *gin.Context) {
+	if s.store != nil {
+		var req struct {
+			RefreshToken string `json:"refresh_token"`
+		}
+		_ = c.ShouldBindJSON(&req)
+		tokenToRevoke := strings.TrimSpace(req.RefreshToken)
+		if tokenToRevoke == "" {
+			if cookie, err := c.Cookie("refresh_token"); err == nil {
+				tokenToRevoke = strings.TrimSpace(cookie)
+			}
+		}
+		if tokenToRevoke != "" {
+			hash := auth.HashToken(tokenToRevoke)
+			_, _ = s.store.C("users").UpdateMany(c.Request.Context(), bson.M{
+				"$or": []bson.M{
+					{"refresh_token_hash": hash},
+					{"refresh_token_hashes": hash},
+				},
+			}, bson.M{
+				"$pull": bson.M{"refresh_token_hashes": hash},
+			})
+		}
+	}
 	s.clearSessionCookies(c)
 	c.JSON(http.StatusOK, gin.H{"logged_out": true})
 }
@@ -323,11 +353,17 @@ func (s *Server) syncSessionCookie(c *gin.Context) {
 	}
 	if !user.EmailVerified {
 		c.JSON(http.StatusForbidden, gin.H{
-			"error":                        "Please verify your email address first.",
+			"error":                       "Please verify your email address first.",
 			"email_verification_required": true,
-			"masked_email":                 maskEmail(user.Email),
+			"masked_email":                maskEmail(user.Email),
 		})
 		return
+	}
+	if cookie, err := c.Cookie("access_token"); err == nil && strings.TrimSpace(cookie) != "" {
+		if claims, err := s.tokens.ParseAccessToken(strings.TrimSpace(cookie)); err == nil && claims.Subject == user.ID.Hex() {
+			c.JSON(http.StatusOK, gin.H{"synced": true})
+			return
+		}
 	}
 	access, refresh, err := s.issueTokens(c.Request.Context(), user)
 	if err != nil {
@@ -1335,7 +1371,18 @@ func (s *Server) issueTokens(ctx context.Context, user models.User) (string, str
 	if err != nil {
 		return "", "", err
 	}
-	_, err = s.store.C("users").UpdateByID(ctx, user.ID, bson.M{"$set": bson.M{"refresh_token_hash": hash}})
+	if s.store != nil {
+		update := bson.M{
+			"$set": bson.M{"refresh_token_hash": hash},
+			"$push": bson.M{
+				"refresh_token_hashes": bson.M{
+					"$each":  []string{hash},
+					"$slice": -15,
+				},
+			},
+		}
+		_, err = s.store.C("users").UpdateByID(ctx, user.ID, update)
+	}
 	return access, refresh, err
 }
 
@@ -1349,7 +1396,7 @@ func (s *Server) setSessionCookies(c *gin.Context, access string, refresh string
 		Name:     "access_token",
 		Value:    access,
 		Path:     "/",
-		MaxAge:   int((20 * time.Minute).Seconds()),
+		MaxAge:   int((12 * time.Hour).Seconds()),
 		HttpOnly: true,
 		Secure:   secure,
 		SameSite: sameSite,

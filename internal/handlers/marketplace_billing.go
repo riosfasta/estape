@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
+	"bugmark/internal/middleware"
 	"bugmark/internal/models"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -41,20 +43,80 @@ func (s *Server) marketplaceReleaseEarnings(ctx context.Context, id primitive.Ob
 	})
 }
 
+func (s *Server) resolveWorkspaceHiringWallet(ctx context.Context, userCtx middleware.UserContext) (primitive.ObjectID, primitive.ObjectID, bool) {
+	if s.store != nil && !userCtx.TeamID.IsZero() && (userCtx.Role == models.RoleOwnerAdmin || userCtx.Role == models.RoleTeamAdmin) {
+		var team models.Team
+		if err := s.store.C("teams").FindOne(ctx, bson.M{"_id": userCtx.TeamID}).Decode(&team); err == nil {
+			if !team.OwnerAdminID.IsZero() {
+				return team.OwnerAdminID, team.ID, true
+			}
+			return userCtx.ID, team.ID, true
+		}
+	}
+	return userCtx.ID, primitive.NilObjectID, false
+}
+
 func (s *Server) marketplaceWallet(c *gin.Context) {
 	user, _ := currentUser(c)
 	ctx := c.Request.Context()
 	if marketplaceError(c, s.marketplaceReleaseEarnings(ctx, user.ID)) {
 		return
 	}
+	hiringWalletID, teamID, isWorkspace := s.resolveWorkspaceHiringWallet(ctx, user)
+
 	var wallet models.MarketplaceWallet
-	err := s.store.C("marketplace_wallets").FindOne(ctx, bson.M{"_id": user.ID}).Decode(&wallet)
+	var personalWallet models.MarketplaceWallet
+	var hiringWallet models.MarketplaceWallet
+
+	err := s.store.C("marketplace_wallets").FindOne(ctx, bson.M{"_id": user.ID}).Decode(&personalWallet)
 	if err == mongo.ErrNoDocuments {
-		wallet.ID = user.ID
+		personalWallet.ID = user.ID
 	} else if marketplaceError(c, err) {
 		return
 	}
-	cur, err := s.store.C("marketplace_transfers").Find(ctx, bson.M{"user_id": user.ID}, options.Find().SetLimit(100).SetSort(bson.D{{Key: "created_at", Value: -1}}))
+
+	workspaceName := ""
+	workspaceOwnerName := ""
+	if isWorkspace && hiringWalletID != user.ID {
+		err := s.store.C("marketplace_wallets").FindOne(ctx, bson.M{"_id": hiringWalletID}).Decode(&hiringWallet)
+		if err == mongo.ErrNoDocuments {
+			hiringWallet.ID = hiringWalletID
+		} else if marketplaceError(c, err) {
+			return
+		}
+		var team models.Team
+		if err := s.store.C("teams").FindOne(ctx, bson.M{"_id": teamID}).Decode(&team); err == nil {
+			workspaceName = team.Name
+		}
+		if ownerUser, err := s.loadUser(ctx, hiringWalletID); err == nil {
+			workspaceOwnerName = ownerUser.Name
+			if workspaceOwnerName == "" {
+				workspaceOwnerName = ownerUser.Username
+			}
+		}
+		// In a team workspace, effective hiring balance comes from admin_owner
+		wallet = models.MarketplaceWallet{
+			ID:       hiringWalletID,
+			Deposits: hiringWallet.Deposits,
+			Reserved: hiringWallet.Reserved,
+			Earnings: personalWallet.Earnings,
+			Pending:  personalWallet.Pending,
+		}
+	} else {
+		wallet = personalWallet
+		if isWorkspace && !teamID.IsZero() {
+			var team models.Team
+			if err := s.store.C("teams").FindOne(ctx, bson.M{"_id": teamID}).Decode(&team); err == nil {
+				workspaceName = team.Name
+			}
+		}
+	}
+
+	transferIDs := []primitive.ObjectID{user.ID}
+	if !hiringWalletID.IsZero() && hiringWalletID != user.ID {
+		transferIDs = append(transferIDs, hiringWalletID)
+	}
+	cur, err := s.store.C("marketplace_transfers").Find(ctx, bson.M{"user_id": bson.M{"$in": transferIDs}}, options.Find().SetLimit(100).SetSort(bson.D{{Key: "created_at", Value: -1}}))
 	if marketplaceError(c, err) {
 		return
 	}
@@ -72,30 +134,139 @@ func (s *Server) marketplaceWallet(c *gin.Context) {
 	if marketplaceError(c, pending.All(ctx, &earnings)) {
 		return
 	}
-	c.JSON(200, gin.H{"wallet": wallet, "transfers": records, "earnings": earnings, "currency": "USD"})
+	c.JSON(200, gin.H{
+		"wallet":               wallet,
+		"transfers":            records,
+		"earnings":             earnings,
+		"currency":             "USD",
+		"is_workspace_wallet":  isWorkspace && hiringWalletID != user.ID,
+		"workspace_name":       workspaceName,
+		"workspace_owner_name": workspaceOwnerName,
+		"workspace_owner_id":   hiringWalletID.Hex(),
+	})
+}
+
+func (s *Server) marketplaceDirectTopup(c *gin.Context) {
+	user, _ := currentUser(c)
+	ctx := c.Request.Context()
+	var req struct {
+		Amount        int64  `json:"amount"`
+		PaymentMethod string `json:"payment_method"`
+		Note          string `json:"note"`
+	}
+	if c.ShouldBindJSON(&req) != nil || req.Amount < 100 || req.Amount > maximumMarketplaceAmount {
+		marketplaceError(c, marketInvalid("Top up between $1 and $100,000"))
+		return
+	}
+	hiringWalletID, teamID, isWorkspace := s.resolveWorkspaceHiringWallet(ctx, user)
+	transfer := models.MarketplaceTransfer{
+		ID:          primitive.NewObjectID(),
+		UserID:      hiringWalletID,
+		Kind:        "topup",
+		Amount:      req.Amount,
+		Fee:         0,
+		Status:      "completed",
+		Destination: "In-Platform Payment",
+		ExternalID:  "IN_PLATFORM",
+		CreatedAt:   time.Now().UTC(),
+	}
+	transfer.PaymentReference = paymentReference("TOPUP-PLATFORM", user.ID, transfer.ID)
+	err := s.marketplaceTransaction(ctx, func(sc mongo.SessionContext) error {
+		if _, err := s.store.C("marketplace_transfers").InsertOne(sc, transfer); err != nil {
+			return err
+		}
+		_, err := s.store.C("marketplace_wallets").UpdateOne(sc, bson.M{"_id": hiringWalletID}, bson.M{"$inc": bson.M{"deposits": req.Amount}}, options.Update().SetUpsert(true))
+		return err
+	})
+	if marketplaceError(c, err) {
+		return
+	}
+	s.audit(ctx, user.ID, "marketplace.topup.direct", "marketplace_wallet", hiringWalletID)
+	if hiringWalletID != user.ID {
+		actorName := s.notificationActorName(ctx, user.ID)
+		s.notifyUserIDs(ctx, []primitive.ObjectID{hiringWalletID}, user.ID, "marketplace_topup", fmt.Sprintf("%s topped up $%.2f to workspace hiring balance.", actorName, float64(req.Amount)/100), transfer.ID)
+	}
+	var updatedWallet models.MarketplaceWallet
+	_ = s.store.C("marketplace_wallets").FindOne(ctx, bson.M{"_id": hiringWalletID}).Decode(&updatedWallet)
+	c.JSON(200, gin.H{
+		"ok":               true,
+		"amount":           req.Amount,
+		"transfer_id":      transfer.ID.Hex(),
+		"transfer":         transfer,
+		"hiring_wallet_id": hiringWalletID.Hex(),
+		"is_workspace":     isWorkspace,
+		"new_deposits":     updatedWallet.Deposits,
+		"team_id":          teamID.Hex(),
+	})
 }
 
 func (s *Server) marketplaceTopup(c *gin.Context) {
 	user, _ := currentUser(c)
 	ctx := c.Request.Context()
 	var req struct {
-		Amount int64 `json:"amount"`
+		Amount int64  `json:"amount"`
+		Method string `json:"method"`
 	}
 	if c.ShouldBindJSON(&req) != nil || req.Amount < 100 || req.Amount > maximumMarketplaceAmount {
 		marketplaceError(c, marketInvalid("Top up between $1 and $100,000"))
 		return
 	}
+	if req.Method == "in_platform" || req.Method == "direct" {
+		// Route directly to in-platform top-up
+		hiringWalletID, teamID, isWorkspace := s.resolveWorkspaceHiringWallet(ctx, user)
+		transfer := models.MarketplaceTransfer{
+			ID:          primitive.NewObjectID(),
+			UserID:      hiringWalletID,
+			Kind:        "topup",
+			Amount:      req.Amount,
+			Fee:         0,
+			Status:      "completed",
+			Destination: "In-Platform Payment",
+			ExternalID:  "IN_PLATFORM",
+			CreatedAt:   time.Now().UTC(),
+		}
+		transfer.PaymentReference = paymentReference("TOPUP-PLATFORM", user.ID, transfer.ID)
+		err := s.marketplaceTransaction(ctx, func(sc mongo.SessionContext) error {
+			if _, err := s.store.C("marketplace_transfers").InsertOne(sc, transfer); err != nil {
+				return err
+			}
+			_, err := s.store.C("marketplace_wallets").UpdateOne(sc, bson.M{"_id": hiringWalletID}, bson.M{"$inc": bson.M{"deposits": req.Amount}}, options.Update().SetUpsert(true))
+			return err
+		})
+		if marketplaceError(c, err) {
+			return
+		}
+		s.audit(ctx, user.ID, "marketplace.topup.direct", "marketplace_wallet", hiringWalletID)
+		if hiringWalletID != user.ID {
+			actorName := s.notificationActorName(ctx, user.ID)
+			s.notifyUserIDs(ctx, []primitive.ObjectID{hiringWalletID}, user.ID, "marketplace_topup", fmt.Sprintf("%s topped up $%.2f to workspace hiring balance.", actorName, float64(req.Amount)/100), transfer.ID)
+		}
+		var updatedWallet models.MarketplaceWallet
+		_ = s.store.C("marketplace_wallets").FindOne(ctx, bson.M{"_id": hiringWalletID}).Decode(&updatedWallet)
+		c.JSON(200, gin.H{
+			"ok":               true,
+			"amount":           req.Amount,
+			"transfer_id":      transfer.ID.Hex(),
+			"transfer":         transfer,
+			"hiring_wallet_id": hiringWalletID.Hex(),
+			"is_workspace":     isWorkspace,
+			"new_deposits":     updatedWallet.Deposits,
+			"team_id":          teamID.Hex(),
+		})
+		return
+	}
+	hiringWalletID, _, _ := s.resolveWorkspaceHiringWallet(ctx, user)
 	base, err := s.payPalCheckoutBase(ctx)
 	if err != nil {
-		marketplaceError(c, marketInvalid("PayPal checkout is not configured. Contact the platform owner"))
+		marketplaceError(c, marketInvalid("PayPal checkout is not configured. Use In-Platform Payment or contact the platform owner"))
 		return
 	}
 	provider := s.payments["paypal"]
 	if provider == nil {
-		marketplaceError(c, marketInvalid("PayPal is unavailable"))
+		marketplaceError(c, marketInvalid("PayPal is unavailable. Use In-Platform Payment"))
 		return
 	}
-	transfer := models.MarketplaceTransfer{ID: primitive.NewObjectID(), UserID: user.ID, Kind: "topup", Amount: req.Amount, Status: "creating", CreatedAt: time.Now().UTC()}
+	transfer := models.MarketplaceTransfer{ID: primitive.NewObjectID(), UserID: hiringWalletID, Kind: "topup", Amount: req.Amount, Status: "creating", CreatedAt: time.Now().UTC()}
 	transfer.PaymentReference = paymentReference("TOPUP", user.ID, transfer.ID)
 	if _, err = s.store.C("marketplace_transfers").InsertOne(ctx, transfer); marketplaceError(c, err) {
 		return
@@ -125,8 +296,9 @@ func (s *Server) marketplaceCaptureTopup(c *gin.Context) {
 	}
 	user, _ := currentUser(c)
 	ctx := c.Request.Context()
+	hiringWalletID, _, _ := s.resolveWorkspaceHiringWallet(ctx, user)
 	var transfer models.MarketplaceTransfer
-	if marketplaceError(c, s.store.C("marketplace_transfers").FindOne(ctx, bson.M{"_id": id, "user_id": user.ID, "kind": "topup"}).Decode(&transfer)) {
+	if marketplaceError(c, s.store.C("marketplace_transfers").FindOne(ctx, bson.M{"_id": id, "kind": "topup", "$or": []bson.M{{"user_id": user.ID}, {"user_id": hiringWalletID}}}).Decode(&transfer)) {
 		return
 	}
 	if transfer.Status == "completed" {
@@ -156,6 +328,10 @@ func (s *Server) marketplaceCaptureTopup(c *gin.Context) {
 		marketplaceError(c, marketInvalid("Payment could not be verified; no balance has been credited"))
 		return
 	}
+	targetWalletID := transfer.UserID
+	if targetWalletID.IsZero() {
+		targetWalletID = user.ID
+	}
 	err = s.marketplaceTransaction(ctx, func(sc mongo.SessionContext) error {
 		result, err := s.store.C("marketplace_transfers").UpdateOne(sc, bson.M{"_id": id, "status": "pending"}, bson.M{"$set": bson.M{"status": "completed", "capture_id": capture.CaptureID}})
 		if err != nil {
@@ -164,7 +340,7 @@ func (s *Server) marketplaceCaptureTopup(c *gin.Context) {
 		if result.ModifiedCount == 0 {
 			return nil
 		}
-		_, err = s.store.C("marketplace_wallets").UpdateOne(sc, bson.M{"_id": user.ID}, bson.M{"$inc": bson.M{"deposits": transfer.Amount}}, options.Update().SetUpsert(true))
+		_, err = s.store.C("marketplace_wallets").UpdateOne(sc, bson.M{"_id": targetWalletID}, bson.M{"$inc": bson.M{"deposits": transfer.Amount}}, options.Update().SetUpsert(true))
 		return err
 	})
 	if !marketplaceError(c, err) {

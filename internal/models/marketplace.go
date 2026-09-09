@@ -52,11 +52,13 @@ type MarketplaceJob struct {
 	ScopeTasks     []MarketplaceScopeTask `bson:"scope_tasks,omitempty" json:"-"`
 	ScopeWebsiteID primitive.ObjectID     `bson:"scope_website_id,omitempty" json:"-"`
 	ScopePriceMode string                 `bson:"scope_price_mode,omitempty" json:"scope_price_mode,omitempty"`
-	SourceTaskID   primitive.ObjectID     `bson:"source_task_id,omitempty" json:"-"`
-	ID             primitive.ObjectID     `bson:"_id" json:"id"`
-	OwnerID        primitive.ObjectID     `bson:"owner_id" json:"owner_id"`
-	OwnerName      string                 `bson:"owner_name" json:"owner_name"`
-	FreelancerID   primitive.ObjectID     `bson:"freelancer_id,omitempty" json:"freelancer_id"`
+	SourceTaskID     primitive.ObjectID     `bson:"source_task_id,omitempty" json:"-"`
+	ID               primitive.ObjectID     `bson:"_id" json:"id"`
+	OwnerID          primitive.ObjectID     `bson:"owner_id" json:"owner_id"`
+	EmployerWalletID primitive.ObjectID     `bson:"employer_wallet_id,omitempty" json:"employer_wallet_id,omitempty"`
+	TeamID           primitive.ObjectID     `bson:"team_id,omitempty" json:"team_id,omitempty"`
+	OwnerName        string                 `bson:"owner_name" json:"owner_name"`
+	FreelancerID     primitive.ObjectID     `bson:"freelancer_id,omitempty" json:"freelancer_id"`
 	Title          string                 `bson:"title" json:"title"`
 	Description    string                 `bson:"description" json:"description"`
 	Skills         []string               `bson:"skills" json:"skills"`

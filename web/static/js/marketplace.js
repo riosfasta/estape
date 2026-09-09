@@ -242,7 +242,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     bindForm("#marketNewJob", async form => { const v = Object.fromEntries(new FormData(form)); const result = await post("/api/marketplace/jobs", { title: v.title, description: v.description, budget: cents(v.budget), skills: skillsValue(form) }); location.href = `/marketplace/jobs/${result.job.id}`; });
   }
   async function jobDetail(id) {
-    const data = await api(`/api/marketplace/jobs/${id}`); const j = data.job; const owner = state.me.id === j.owner_id; const hired = state.me.id === j.freelancer_id;
+    const data = await api(`/api/marketplace/jobs/${id}`); const j = data.job; const owner = state.me.id === j.owner_id || (j.team_id && j.team_id === state.me.team_id && (state.me.role === 'owner_admin' || state.me.role === 'user_admin')) || (j.employer_wallet_id && j.employer_wallet_id === state.me.id); const hired = state.me.id === j.freelancer_id;
     const me = await api("/api/marketplace/me");
     const ownProposal = data.proposals.find(p => p.freelancer_id === state.me.id);
     const hourly = j.billing_type === "hourly", payable = hourly ? (data.hourly?.cost || 0) : j.price;
@@ -351,11 +351,21 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     }
     const data = await api("/api/marketplace/wallet"); const w = data.wallet;
     page("Wallet", `${heading("YOUR MONEY", "Wallet & payments", "All balances are in USD. Track hiring funds, earnings and settlement requests.")}${captureMessage ? `<p class="market-notice">${esc(captureMessage)}</p>` : ""}${params.has("cancelled") ? '<p class="market-notice">Checkout cancelled. No wallet credit was added.</p>' : ""}
+      ${data.is_workspace_wallet ? `<div class="market-notice" style="background:var(--bg-card,#f8fafc);border-left:4px solid var(--primary,#3b82f6);margin-bottom:16px;"><strong>Workspace Hiring Balance:</strong> You are managing hiring funds for <strong>${esc(data.workspace_name || "Team Workspace")}</strong>. Hiring deposits and reserved amounts belong to the workspace owner (<strong>${esc(data.workspace_owner_name || "Admin Owner")}</strong>). Your earnings and withdrawals remain personal to your account.</div>` : ""}
       <section class="panel market-stats"><div><strong>${money(w.deposits)}</strong><span>Available hiring balance</span></div><div><strong>${money(w.reserved)}</strong><span>Reserved for active jobs</span></div><div><strong>${money(w.pending)}</strong><span>Earnings on 7-day hold</span></div><div><strong>${money(w.earnings)}</strong><span>Available to withdraw</span></div></section>
-      <div class="market-columns"><section class="panel"><h2>Top up hiring balance</h2><p class="market-notice">Your unused, unreserved balance is refundable. Actual payment/refund transaction costs may be deducted, so the refunded amount can be lower than the deposit. Funds reserved for active work cannot be refunded.</p><form id="marketTopup" class="market-form"><label class="field">Amount (USD)<input name="amount" type="number" min="1" max="100000" step="0.01" required></label><button type="submit" class="btn primary">Continue to payment</button></form></section>
+      <div class="market-columns"><section class="panel"><h2>Top up hiring balance</h2><p class="market-notice">Top up directly inside the platform or with PayPal. Unused, unreserved balance is refundable. Funds reserved for active work cannot be refunded.</p>
+        <form id="marketDirectTopup" class="market-form" style="margin-bottom:16px;">
+          <label class="field">Amount (USD)<input name="amount" type="number" min="1" max="100000" step="0.01" value="50" required></label>
+          <button type="submit" class="btn primary">In-Platform Top Up (Instant Credit)</button>
+        </form>
+        <details style="margin-top:12px;"><summary class="muted" style="cursor:pointer;font-size:13px;">Or pay with external PayPal checkout</summary>
+          <form id="marketTopup" class="market-form" style="margin-top:8px;"><label class="field">Amount (USD)<input name="amount" type="number" min="1" max="100000" step="0.01" required></label><button type="submit" class="btn">Continue to PayPal</button></form>
+        </details>
+      </section>
       <section class="panel"><h2>Request a refund or withdrawal</h2><p>Withdrawals require approved identity verification and earnings past the seven-day hold. Requests are reviewed and paid by the platform owner.</p><form id="marketTransfer" class="market-form"><label class="field">Request type<select name="kind"><option value="withdrawal">Withdraw available earnings</option><option value="refund">Refund unused hiring balance</option></select></label><label class="field">Amount (USD)<input name="amount" type="number" min="1" max="100000" step="0.01" required></label><label class="field">PayPal email / original payment reference<input name="destination" minlength="5" maxlength="250" required></label><label class="market-check"><input name="accept_fees" type="checkbox" required><span>I acknowledge that actual provider transaction costs will be deducted from this amount. Refunds return to the original payment method after verification. The 5% platform commission was already deducted from earnings.</span></label><button class="btn primary" type="submit">Submit request</button></form></section></div>
       <section class="panel"><h2>Earnings & release dates</h2>${data.earnings.length ? `<div class="market-table-wrap"><table><thead><tr><th>Job</th><th>Net earnings</th><th>Platform fee</th><th>Available from</th><th>Status</th></tr></thead><tbody>${data.earnings.map(e => `<tr><td><a href="/marketplace/jobs/${esc(e._id)}">View job</a></td><td>${money(e.amount)}</td><td>${money(e.fee)}</td><td>${esc(date(e.available_at))}</td><td>${badge(e.status)}</td></tr>`).join("")}</tbody></table></div>` : empty("No earnings yet.")}</section>
       <section class="panel"><h2>Payment history</h2>${data.transfers.length ? `<div class="market-table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Transaction fee</th><th>Status / reference</th></tr></thead><tbody>${data.transfers.map(t => `<tr><td>${esc(date(t.created_at))}</td><td>${esc(t.kind)}</td><td>${money(t.amount)}${t.status === "paid" ? `<small>Net sent ${money(t.amount - t.fee)}</small>` : ""}</td><td>${money(t.fee)}</td><td>${badge(t.status)}${t.payment_reference ? `<small style="overflow-wrap:anywhere">Reference: ${esc(t.payment_reference)}</small>` : ""}<small>${esc(t.external_id || "")}</small>${t.kind === "topup" && t.status === "pending" ? `<button class="btn" data-capture="${t.id}">Verify PayPal payment</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : empty("No payments yet.")}</section><p><a href="/marketplace/privacy">Marketplace privacy & payment terms</a></p>`);
+    bindForm("#marketDirectTopup", async form => { const amount = cents(new FormData(form).get("amount")); await post("/api/marketplace/topup/direct", { amount }); await wallet(); message("In-platform payment successful. Hiring balance credited!"); });
     bindForm("#marketTopup", async form => { const result = await post("/api/marketplace/topup", { amount: cents(new FormData(form).get("amount")) }); await openEmbeddedCheckout({ api, title: "Hiring balance", description: "Add funds to hire freelancers. Unused, unreserved balance is refundable; payment and refund transaction costs may be deducted.", amount: result.amount, orderID: result.order_id, captureURL: `/api/marketplace/topup/${encodeURIComponent(result.transfer_id)}/capture`, fallbackURL: result.url, onSuccess: async () => { await wallet(); message("Payment verified and wallet credited."); } }); });
     bindForm("#marketTransfer", async form => { const v = Object.fromEntries(new FormData(form)); await post("/api/marketplace/transfers", { kind: v.kind, amount: cents(v.amount), destination: v.destination, accept_fees: !!v.accept_fees }); await wallet(); message("Request queued for owner settlement. The requested amount is held out of your available balance."); });
     bindButtons("[data-capture]", async b => { await post(`/api/marketplace/topup/${b.dataset.capture}/capture`); await wallet(); message("Payment verified."); });
@@ -430,6 +440,37 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     dialog.className = "modal fh-dialog marketplace";
     dialog.setAttribute("aria-labelledby", "fhTitle");
     dialog.innerHTML = `<div class="modal-head"><div><h2 id="fhTitle">Find Freelancer Help</h2><p class="muted">${esc(websiteName)}</p></div><button type="button" class="btn" data-fh-close aria-label="Close freelancer finder">Close</button></div>
+      <div class="panel fh-balance-card" data-fh-balance-box style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;padding:12px 16px;background:var(--bg-card,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:8px;">
+        <div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted,#64748b);font-weight:600;">Available Hiring Balance</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:2px;">
+            <strong data-fh-balance-text style="font-size:20px;font-weight:700;">$0.00</strong>
+            <span data-fh-workspace-tag class="market-badge" style="display:none;"></span>
+          </div>
+        </div>
+        <button type="button" class="btn primary compact" data-fh-topup-btn>+ In-Platform Top Up</button>
+      </div>
+      <section class="panel fh-topup-section" data-fh-topup-section hidden style="margin-bottom:14px;background:var(--bg-subtle,#f1f5f9);border:1px solid var(--primary,#3b82f6);border-radius:8px;padding:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <strong>In-Platform Hiring Top Up</strong>
+          <button type="button" class="btn compact" data-fh-topup-close aria-label="Close top up section">&times;</button>
+        </div>
+        <p class="muted" style="font-size:13px;margin:0 0 10px;">Direct payment inside the platform. Instantly credits your hiring balance.</p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+          <button type="button" class="btn compact" data-fh-preset="25">+$25</button>
+          <button type="button" class="btn compact" data-fh-preset="50">+$50</button>
+          <button type="button" class="btn compact" data-fh-preset="100">+$100</button>
+          <button type="button" class="btn compact" data-fh-preset="250">+$250</button>
+          <button type="button" class="btn compact" data-fh-preset="500">+$500</button>
+        </div>
+        <form class="market-form" data-fh-topup-form style="display:flex;gap:8px;align-items:flex-end;">
+          <label class="field" style="margin:0;flex:1;">Amount (USD)
+            <input type="number" name="amount" min="1" max="100000" step="0.01" value="50" required placeholder="50.00">
+          </label>
+          <button type="submit" class="btn primary" style="margin:0;white-space:nowrap;">Confirm & Add Balance</button>
+        </form>
+        <p data-fh-topup-status role="status" style="margin:8px 0 0;font-size:13px;"></p>
+      </section>
       <details class="market-notice" open><summary>What is Find FH?</summary><p>Find freelancers to help with a task on this board. Review their profiles, then send an offer. They can accept or decline; you make the final hiring decision in <a href="/marketplace/jobs" target="_blank" rel="noopener">My jobs & offers</a>.</p><p>Complete your <a href="/dashboard" target="_blank" rel="noopener">profile</a> and <a href="/wallet" target="_blank" rel="noopener">fund your hiring balance</a> before publishing. Unused balance is refundable less actual transaction costs. Sending an offer does not hire anyone or reserve funds.</p></details>
       <form class="fh-filters" data-fh-filters>
         <label class="field">Skill<input name="skill" list="fhSkills" placeholder="Any skill, including custom skills"><datalist id="fhSkills"></datalist></label>
@@ -447,7 +488,66 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     dialog.showModal();
     const find = selector => dialog.querySelector(selector);
     let pageNumber = 1, request = 0, profiles = [], jobs = [], busy = false, closed = false;
-    let view = "grid";
+    let view = "grid", currentDeposits = 0, walletInfo = null, checkOfferDeficit = null;
+    function updateBalanceDisplay(amount, workspaceTag = "") {
+      currentDeposits = amount;
+      const textEl = find("[data-fh-balance-text]");
+      if (textEl) textEl.textContent = money(currentDeposits);
+      const tagEl = find("[data-fh-workspace-tag]");
+      if (tagEl) {
+        if (workspaceTag) {
+          tagEl.textContent = workspaceTag;
+          tagEl.style.display = "inline-block";
+        } else {
+          tagEl.style.display = "none";
+        }
+      }
+    }
+    const topupSection = find("[data-fh-topup-section]");
+    const topupForm = find("[data-fh-topup-form]");
+    const topupStatus = find("[data-fh-topup-status]");
+    find("[data-fh-topup-btn]").onclick = () => {
+      topupSection.hidden = false;
+      topupForm.elements.amount.focus();
+    };
+    find("[data-fh-topup-close]").onclick = () => {
+      topupSection.hidden = true;
+    };
+    dialog.querySelectorAll("[data-fh-preset]").forEach(button => {
+      button.onclick = () => {
+        topupForm.elements.amount.value = button.dataset.fhPreset;
+      };
+    });
+    topupForm.onsubmit = async event => {
+      event.preventDefault();
+      const amtVal = Number(topupForm.elements.amount.value || 0);
+      if (amtVal < 1) return;
+      topupStatus.textContent = "Processing in-platform payment...";
+      topupStatus.className = "muted";
+      const submitBtn = topupForm.querySelector('[type="submit"]');
+      submitBtn.disabled = true;
+      try {
+        const res = await post("/api/marketplace/topup/direct", { amount: cents(amtVal) });
+        const newDeposits = res.new_deposits ?? (currentDeposits + cents(amtVal));
+        let tag = "";
+        if (walletInfo?.is_workspace_wallet) {
+          tag = `${walletInfo.workspace_name || "Workspace"} (${walletInfo.workspace_owner_name || "Owner"})`;
+        }
+        updateBalanceDisplay(newDeposits, tag);
+        topupStatus.textContent = `Added ${money(cents(amtVal))}! Available balance: ${money(newDeposits)}.`;
+        topupStatus.className = "success";
+        setTimeout(() => {
+          topupSection.hidden = true;
+          topupStatus.textContent = "";
+        }, 1200);
+        if (typeof checkOfferDeficit === "function") checkOfferDeficit();
+      } catch (err) {
+        topupStatus.textContent = err.message;
+        topupStatus.className = "market-error";
+      } finally {
+        submitBtn.disabled = false;
+      }
+    };
     try { view = localStorage.getItem("fh-view") === "list" ? "list" : "grid"; } catch {}
     const status = (text, error = false) => { find("[data-fh-status]").textContent = text; find("[data-fh-status]").className = error ? "market-error" : "muted"; };
     const close = () => { if (busy) return; closed = true; dialog.close(); dialog.remove(); };
@@ -494,11 +594,40 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
         <section data-fh-domain hidden><p>Select exactly which tasks to share (up to 50). Invitees can read their titles and descriptions; hired freelancers can update statuses and post work notes. New tasks added later are not included.</p><label class="field">Pricing<select name="pricing_mode"><option value="domain">One price for selected domain tasks</option><option value="per_task">Price each task</option></select></label><label class="field">Search domain tasks<input type="search" data-fh-scope-search placeholder="Filter selected task list"></label><div class="toolbar"><button class="btn" type="button" data-fh-select-all>Select all tasks</button><button class="btn" type="button" data-fh-clear-tasks>Clear selection</button></div><div class="fh-scope-tasks">${tasks.map((task, index) => `<div class="fh-scope-row"><label class="market-check"><input type="checkbox" data-scope-task="${esc(task.id)}" checked><span>${esc(task.title)}</span></label><label data-scope-price-label hidden>Task price (USD)<input type="number" min="1" max="100000" step="0.01" data-scope-price="${esc(task.id)}" disabled></label></div>`).join("")}</div></section><p data-fh-private-scope>Sharing a task also shares its current description privately with invited freelancers. Review the task for confidential information before sending.</p>
         <section data-fh-billing><label class="field">Payment type<select name="billing_type"><option value="fixed">Fixed price</option><option value="hourly">Hourly price</option></select></label><div data-fh-hourly hidden class="grid-2"><label class="field">Hourly rate (USD)<input name="hourly_rate" type="number" min="1" max="100000" step="0.01"></label><label class="field">Maximum hours<input name="max_hours" type="number" min="0.02" max="10000" step="0.01"></label><p>One rate and hour limit apply across the selected tasks. The maximum cost below is reserved at hiring. Only the protected task timer is billable; unused funds return on approval.</p></div></section><label class="field"><span data-fh-price-label>Offer price / new job budget (USD)</span><input name="price" type="number" min="1" max="100000" step="0.01" required></label>
         <label class="field">Private invitation message<textarea name="message" minlength="20" maxlength="5000" rows="3" required></textarea></label>
+        <div data-fh-deficit-alert hidden class="market-notice" style="margin-bottom:12px;background:var(--bg-subtle,#fef2f2);border-left:4px solid var(--danger,#ef4444);padding:10px 14px;border-radius:4px;"></div>
         <button type="submit" class="btn primary">Send offer</button><p data-fh-offer-status role="status" aria-live="polite"></p>
       </form>`;
       const form = find("[data-fh-send]");
       const fields = form.elements;
       const note = find("[data-fh-offer-status]");
+      checkOfferDeficit = function() {
+        const priceVal = cents(fields.price.value || 0);
+        const deficitEl = find("[data-fh-deficit-alert]");
+        if (!deficitEl) return;
+        if (priceVal > currentDeposits) {
+          const shortBy = priceVal - currentDeposits;
+          deficitEl.hidden = false;
+          deficitEl.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <div>
+              <strong>Insufficient hiring balance:</strong> ${money(priceVal)} required &middot; ${money(currentDeposits)} available.
+              <br><span class="muted">Short by <strong>${money(shortBy)}</strong></span>
+            </div>
+            <button type="button" class="btn primary compact" data-fh-quick-topup="${(shortBy / 100).toFixed(2)}">Top up ${money(shortBy)} & Pay</button>
+          </div>`;
+          const quickBtn = deficitEl.querySelector("[data-fh-quick-topup]");
+          if (quickBtn) {
+            quickBtn.onclick = () => {
+              topupSection.hidden = false;
+              topupForm.elements.amount.value = quickBtn.dataset.fhQuickTopup;
+              topupSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
+              topupForm.elements.amount.focus();
+            };
+          }
+        } else {
+          deficitEl.hidden = true;
+        }
+      };
+      fields.price.addEventListener("input", checkOfferDeficit);
       fields.billing_type.value = "fixed";
       fields.message.value = "Hello, I would like your help with this task. Please review the scope and let me know if you are interested.";
       const selectedSkills = new Set(); let skillRequest = 0, skillDebounce;
@@ -572,6 +701,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
           if (perTask && checked) total += Math.round(Number(input.value || 0) * 100);
         });
         if (perTask) fields.price.value = (total / 100).toFixed(2);
+        if (typeof checkOfferDeficit === "function") checkOfferDeficit();
       }
       fields.pricing_mode.onchange = updateScopePrices;
       form.querySelectorAll("[data-scope-task], [data-scope-price]").forEach(input => { input.oninput = updateScopePrices; });
@@ -608,7 +738,19 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
           }
           await post(`/api/marketplace/jobs/${encodeURIComponent(jobID)}/proposals`, { freelancer_id: person.id, price, message: fields.message.value });
           mount.innerHTML = `<h3>Offer sent to ${esc(person.name)}</h3><p>Wait for their response, then choose whether to hire and reserve payment.</p><a class="btn primary" href="/marketplace/jobs/${esc(jobID)}" target="_blank" rel="noopener">Track offer & hire</a><p>You can offer this open job to other freelancers using their Offer task button.</p>`;
-        } catch (error) { note.textContent = error.message + " You can retry or check My jobs & offers."; }
+        } catch (error) {
+          note.innerHTML = `${esc(error.message)} <button type="button" class="btn compact primary" style="margin-left:8px;" data-fh-error-topup>Top up balance</button>`;
+          const errBtn = note.querySelector("[data-fh-error-topup]");
+          if (errBtn) {
+            errBtn.onclick = () => {
+              topupSection.hidden = false;
+              const short = Math.max(2500, cents(fields.price.value || 0) - currentDeposits);
+              topupForm.elements.amount.value = (short / 100).toFixed(2);
+              topupSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
+              topupForm.elements.amount.focus();
+            };
+          }
+        }
         finally {
           busy = false; button.disabled = false; find("[data-fh-close]").disabled = false;
           form.querySelectorAll("input,select,textarea").forEach(field => { field.disabled = false; });
@@ -621,11 +763,20 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
       mount.scrollIntoView({ behavior: "smooth", block: "nearest" });
       fields.source.focus();
     }
-    const preparations = await Promise.allSettled([api("/api/marketplace/skills"), api("/api/marketplace/me"), load()]);
+    const preparations = await Promise.allSettled([api("/api/marketplace/skills"), api("/api/marketplace/me"), api("/api/marketplace/wallet"), load()]);
     if (closed) return;
     if (preparations[0].status === "fulfilled") find("#fhSkills").innerHTML = preparations[0].value.skills.map(skill => `<option value="${esc(skill)}"></option>`).join("");
-    if (preparations[1].status === "fulfilled") jobs = preparations[1].value.jobs.filter(j => j.owner_id === state.me?.id && j.status === "open");
+    if (preparations[1].status === "fulfilled") jobs = preparations[1].value.jobs.filter(j => (j.owner_id === state.me?.id || (j.employer_wallet_id && j.employer_wallet_id === state.me?.id)) && j.status === "open");
     else status("Freelancers are available to browse. Complete your profile before sending offers.", true);
+    if (preparations[2].status === "fulfilled") {
+      walletInfo = preparations[2].value;
+      const w = walletInfo.wallet || {};
+      let tag = "";
+      if (walletInfo.is_workspace_wallet) {
+        tag = `${walletInfo.workspace_name || "Workspace"} (${walletInfo.workspace_owner_name || "Owner"})`;
+      }
+      updateBalanceDisplay(w.deposits || 0, tag);
+    }
   }
 
   async function render(path) {

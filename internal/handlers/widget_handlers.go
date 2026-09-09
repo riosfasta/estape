@@ -298,8 +298,15 @@ func (s *Server) widgetAuthenticatedUser(c *gin.Context) (models.User, bool) {
 		}
 	}
 	if cookie, err := c.Cookie("refresh_token"); err == nil && strings.TrimSpace(cookie) != "" {
+		tokenHash := auth.HashToken(strings.TrimSpace(cookie))
+		filter := bson.M{
+			"$or": []bson.M{
+				{"refresh_token_hash": tokenHash},
+				{"refresh_token_hashes": tokenHash},
+			},
+		}
 		var user models.User
-		err := s.store.C("users").FindOne(c.Request.Context(), bson.M{"refresh_token_hash": auth.HashToken(strings.TrimSpace(cookie))}).Decode(&user)
+		err := s.store.C("users").FindOne(c.Request.Context(), filter).Decode(&user)
 		if err == nil && user.Status == models.StatusActive {
 			access, refresh, err := s.issueTokens(c.Request.Context(), user)
 			if err == nil {

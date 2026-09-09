@@ -1516,6 +1516,149 @@ textarea { min-height: 94px; resize: vertical; }
 .performance-stats strong {
   color: var(--text-primary);
 }
+.report-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.report-kpi-card {
+  padding: 14px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.report-kpi-card.highlight {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-color));
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-surface));
+}
+.report-kpi-card.warning-card {
+  border-color: color-mix(in srgb, var(--warning, #f59e0b) 40%, var(--border-color));
+  background: color-mix(in srgb, var(--warning, #f59e0b) 5%, var(--bg-surface));
+}
+.report-kpi-label {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+.report-kpi-value {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+.report-kpi-sub {
+  font-size: 12px;
+  color: var(--text-muted, var(--text-secondary));
+  font-weight: 500;
+}
+.report-filters-panel {
+  margin-bottom: 18px;
+}
+.report-filters-panel .form-grid {
+  gap: 12px;
+}
+.report-tabs-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 18px;
+  padding-bottom: 2px;
+}
+.report-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: var(--radius) var(--radius) 0 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.report-tab-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface);
+}
+.report-tab-btn.active {
+  color: var(--accent-strong, var(--accent));
+  background: var(--bg-surface);
+  border-color: var(--border-color);
+  border-bottom: 2px solid var(--accent);
+  margin-bottom: -1px;
+}
+.report-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+}
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+.report-table th {
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  white-space: nowrap;
+}
+.report-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+.report-table tr:last-child td {
+  border-bottom: none;
+}
+.report-table tr:hover td {
+  background: var(--bg-primary);
+}
+.report-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.report-table th.num {
+  text-align: right;
+}
+.report-user-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.report-user-cell .user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.pill.paid {
+  background: color-mix(in srgb, var(--success, #10b981) 18%, transparent);
+  color: var(--success, #10b981);
+}
+.pill.unpaid {
+  background: color-mix(in srgb, var(--warning, #f59e0b) 18%, transparent);
+  color: var(--warning, #f59e0b);
+}
 .report-export-panel {
   margin-bottom: 18px;
 }

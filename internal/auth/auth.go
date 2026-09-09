@@ -54,7 +54,7 @@ func (tm *TokenManager) GenerateAccessToken(user models.User) (string, error) {
 		TeamID: teamID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   user.ID.Hex(),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(20 * time.Minute)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(12 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			Issuer:    "bugmega",
 		},

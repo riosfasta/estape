@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -733,6 +734,135 @@ func (s *Server) deleteTimeEntry(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"deleted": true})
 }
 
+func (s *Server) setMemberHourlyRate(c *gin.Context) {
+	userCtx, _ := currentUser(c)
+	if userCtx.Role != models.RoleOwnerAdmin && userCtx.Role != models.RoleTeamAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only admins can manage hourly rates"})
+		return
+	}
+	targetUserID, ok := objectIDParam(c, "userId")
+	if !ok {
+		return
+	}
+	var req struct {
+		HourlyRate float64 `json:"hourly_rate"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.HourlyRate < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid hourly rate"})
+		return
+	}
+	roundedRate := math.Round(req.HourlyRate*100) / 100.0
+
+	// If userCtx has a TeamID, save to team.member_hourly_rates
+	if !userCtx.TeamID.IsZero() {
+		_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), userCtx.TeamID, bson.M{
+			"$set": bson.M{"member_hourly_rates." + targetUserID.Hex(): roundedRate},
+		})
+	}
+	// Also update user's profile hourly_rate as default
+	_, _ = s.store.C("users").UpdateByID(c.Request.Context(), targetUserID, bson.M{
+		"$set": bson.M{"hourly_rate": roundedRate},
+	})
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":     true,
+		"user_id":     targetUserID.Hex(),
+		"hourly_rate": roundedRate,
+	})
+}
+
+func (s *Server) markTimeEntriesPaid(c *gin.Context) {
+	userCtx, _ := currentUser(c)
+	if userCtx.Role != models.RoleOwnerAdmin && userCtx.Role != models.RoleTeamAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only admins can manage payments"})
+		return
+	}
+
+	var req struct {
+		UserID   string   `json:"user_id"`
+		EntryIDs []string `json:"entry_ids"`
+		From     string   `json:"from"`
+		To       string   `json:"to"`
+		Paid     *bool    `json:"paid"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	isPaid := true
+	if req.Paid != nil {
+		isPaid = *req.Paid
+	}
+
+	filter := bson.M{}
+	if !userCtx.TeamID.IsZero() {
+		filter["team_id"] = userCtx.TeamID
+	}
+
+	hasTarget := false
+	if len(req.EntryIDs) > 0 {
+		var oids []primitive.ObjectID
+		for _, raw := range req.EntryIDs {
+			if id, err := objectIDFromString(strings.TrimSpace(raw)); err == nil {
+				oids = append(oids, id)
+			}
+		}
+		if len(oids) > 0 {
+			filter["_id"] = bson.M{"$in": oids}
+			hasTarget = true
+		}
+	}
+
+	if strings.TrimSpace(req.UserID) != "" {
+		if uid, err := objectIDFromString(strings.TrimSpace(req.UserID)); err == nil {
+			filter["user_id"] = uid
+			hasTarget = true
+		}
+	}
+
+	if from := strings.TrimSpace(req.From); from != "" {
+		if parsed, err := time.Parse("2006-01-02", from); err == nil {
+			filter["start_time"] = bson.M{"$gte": parsed}
+		}
+	}
+	if to := strings.TrimSpace(req.To); to != "" {
+		if parsed, err := time.Parse("2006-01-02", to); err == nil {
+			existing, _ := filter["start_time"].(bson.M)
+			if existing == nil {
+				existing = bson.M{}
+			}
+			existing["$lte"] = parsed.Add(24 * time.Hour)
+			filter["start_time"] = existing
+		}
+	}
+
+	if !hasTarget {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "must specify user_id or entry_ids to mark payment status"})
+		return
+	}
+
+	now := time.Now()
+	updateFields := bson.M{"paid": isPaid}
+	if isPaid {
+		updateFields["paid_at"] = now
+	} else {
+		updateFields["paid_at"] = nil
+	}
+
+	res, err := s.store.C("time_entries").UpdateMany(c.Request.Context(), filter, bson.M{"$set": updateFields})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update payment status"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":        true,
+		"modified_count": res.ModifiedCount,
+		"paid":           isPaid,
+	})
+}
+
 func (s *Server) timeReport(c *gin.Context) {
 	userCtx, _ := currentUser(c)
 	filter := s.timeEntryFilter(c, userCtx)
@@ -743,19 +873,248 @@ func (s *Server) timeReport(c *gin.Context) {
 	}
 	defer cursor.Close(c.Request.Context())
 	var entries []models.TimeEntry
-	total := 0
 	for cursor.Next(c.Request.Context()) {
 		var entry models.TimeEntry
 		if cursor.Decode(&entry) == nil {
-			total += entry.DurationMinutes
 			entries = append(entries, entry)
 		}
 	}
 	if entries == nil {
 		entries = []models.TimeEntry{}
 	}
+
+	var team models.Team
+	if !userCtx.TeamID.IsZero() {
+		_ = s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": userCtx.TeamID}).Decode(&team)
+	}
+
+	isAdmin := userCtx.Role == models.RoleOwnerAdmin || userCtx.Role == models.RoleTeamAdmin
+
 	usersMap := s.populateTimeEntryUsers(c.Request.Context(), entries)
-	c.JSON(http.StatusOK, gin.H{"entries": entries, "total_minutes": total, "users": usersMap, "group_by": c.Query("group_by")})
+	s.populateTimeEntryMetadata(c.Request.Context(), entries)
+
+	// If isAdmin, ensure all workspace team members are in usersMap so their rates & zero-hour stats are visible
+	if isAdmin && len(team.MemberIDs) > 0 {
+		mCursor, err := s.store.C("users").Find(c.Request.Context(), bson.M{"_id": bson.M{"$in": team.MemberIDs}})
+		if err == nil {
+			defer mCursor.Close(c.Request.Context())
+			for mCursor.Next(c.Request.Context()) {
+				var u models.User
+				if mCursor.Decode(&u) == nil {
+					uHex := u.ID.Hex()
+					if _, exists := usersMap[uHex]; !exists {
+						displayName := strings.TrimSpace(u.Name)
+						if displayName == "" {
+							displayName = strings.TrimSpace(u.Username)
+						}
+						if displayName == "" {
+							displayName = strings.TrimSpace(u.Email)
+						}
+						usersMap[uHex] = gin.H{
+							"id":          uHex,
+							"name":        displayName,
+							"email":       u.Email,
+							"username":    u.Username,
+							"avatar_url":  u.AvatarURL,
+							"role":        u.Role,
+							"hourly_rate": u.HourlyRate,
+						}
+					}
+				}
+			}
+		}
+	}
+
+	rates := s.resolveHourlyRates(team, usersMap)
+
+	type UserSummary struct {
+		UserID          string  `json:"user_id"`
+		Name            string  `json:"name"`
+		Email           string  `json:"email"`
+		AvatarURL       string  `json:"avatar_url"`
+		Role            string  `json:"role"`
+		HourlyRate      float64 `json:"hourly_rate"`
+		TotalMinutes    int     `json:"total_minutes"`
+		TotalHours      float64 `json:"total_hours"`
+		BillableMinutes int     `json:"billable_minutes"`
+		BillableHours   float64 `json:"billable_hours"`
+		TotalAmount     float64 `json:"total_amount"`
+		UnpaidAmount    float64 `json:"unpaid_amount"`
+		PaidAmount      float64 `json:"paid_amount"`
+		EntryCount      int     `json:"entry_count"`
+		UnpaidCount     int     `json:"unpaid_count"`
+	}
+
+	type TaskSummary struct {
+		TaskID          string  `json:"task_id"`
+		Title           string  `json:"title"`
+		ProjectName     string  `json:"project_name"`
+		WebsiteName     string  `json:"website_name"`
+		TotalMinutes    int     `json:"total_minutes"`
+		TotalHours      float64 `json:"total_hours"`
+		BillableMinutes int     `json:"billable_minutes"`
+		BillableHours   float64 `json:"billable_hours"`
+		TotalAmount     float64 `json:"total_amount"`
+		UnpaidAmount    float64 `json:"unpaid_amount"`
+		PaidAmount      float64 `json:"paid_amount"`
+		EntryCount      int     `json:"entry_count"`
+	}
+
+	userSummaryMap := make(map[string]*UserSummary)
+	for uHex, uInfo := range usersMap {
+		// Non-admins must only see their own summary
+		if !isAdmin && uHex != userCtx.ID.Hex() {
+			continue
+		}
+		name, _ := uInfo["name"].(string)
+		email, _ := uInfo["email"].(string)
+		avatar, _ := uInfo["avatar_url"].(string)
+		roleStr := ""
+		if r, ok := uInfo["role"].(models.Role); ok {
+			roleStr = string(r)
+		} else if r, ok := uInfo["role"].(string); ok {
+			roleStr = r
+		}
+		userSummaryMap[uHex] = &UserSummary{
+			UserID:     uHex,
+			Name:       name,
+			Email:      email,
+			AvatarURL:  avatar,
+			Role:       roleStr,
+			HourlyRate: rates[uHex],
+		}
+	}
+
+	taskSummaryMap := make(map[string]*TaskSummary)
+
+	totalMinutes := 0
+	billableMinutes := 0
+	totalAmount := 0.0
+	unpaidAmount := 0.0
+	paidAmount := 0.0
+	unpaidCount := 0
+
+	for i := range entries {
+		uHex := entries[i].UserID.Hex()
+		rate := rates[uHex]
+		if entries[i].HourlyRate == 0 {
+			entries[i].HourlyRate = rate
+		}
+		hrs := float64(entries[i].DurationMinutes) / 60.0
+		amount := math.Round(hrs*entries[i].HourlyRate*100) / 100.0
+		entries[i].Amount = amount
+
+		totalMinutes += entries[i].DurationMinutes
+		if entries[i].Billable {
+			billableMinutes += entries[i].DurationMinutes
+		}
+		totalAmount += amount
+		if entries[i].Paid {
+			paidAmount += amount
+		} else {
+			unpaidAmount += amount
+			unpaidCount++
+		}
+
+		if us, ok := userSummaryMap[uHex]; ok {
+			us.TotalMinutes += entries[i].DurationMinutes
+			if entries[i].Billable {
+				us.BillableMinutes += entries[i].DurationMinutes
+			}
+			us.TotalAmount += amount
+			if entries[i].Paid {
+				us.PaidAmount += amount
+			} else {
+				us.UnpaidAmount += amount
+				us.UnpaidCount++
+			}
+			us.EntryCount++
+		}
+
+		tKey := entries[i].TaskID.Hex()
+		if tKey == "" || entries[i].TaskID.IsZero() {
+			tKey = "unassigned_" + entries[i].TaskTitle
+		}
+		ts, ok := taskSummaryMap[tKey]
+		if !ok {
+			ts = &TaskSummary{
+				TaskID:      entries[i].TaskID.Hex(),
+				Title:       entries[i].TaskTitle,
+				ProjectName: entries[i].ProjectName,
+				WebsiteName: entries[i].WebsiteName,
+			}
+			taskSummaryMap[tKey] = ts
+		}
+		ts.TotalMinutes += entries[i].DurationMinutes
+		if entries[i].Billable {
+			ts.BillableMinutes += entries[i].DurationMinutes
+		}
+		ts.TotalAmount += amount
+		if entries[i].Paid {
+			ts.PaidAmount += amount
+		} else {
+			ts.UnpaidAmount += amount
+		}
+		ts.EntryCount++
+	}
+
+	var userSummaries []UserSummary
+	for _, us := range userSummaryMap {
+		us.TotalHours = math.Round((float64(us.TotalMinutes)/60.0)*100) / 100.0
+		us.BillableHours = math.Round((float64(us.BillableMinutes)/60.0)*100) / 100.0
+		us.TotalAmount = math.Round(us.TotalAmount*100) / 100.0
+		us.UnpaidAmount = math.Round(us.UnpaidAmount*100) / 100.0
+		us.PaidAmount = math.Round(us.PaidAmount*100) / 100.0
+		userSummaries = append(userSummaries, *us)
+	}
+
+	var taskSummaries []TaskSummary
+	for _, ts := range taskSummaryMap {
+		ts.TotalHours = math.Round((float64(ts.TotalMinutes)/60.0)*100) / 100.0
+		ts.BillableHours = math.Round((float64(ts.BillableMinutes)/60.0)*100) / 100.0
+		ts.TotalAmount = math.Round(ts.TotalAmount*100) / 100.0
+		ts.UnpaidAmount = math.Round(ts.UnpaidAmount*100) / 100.0
+		ts.PaidAmount = math.Round(ts.PaidAmount*100) / 100.0
+		taskSummaries = append(taskSummaries, *ts)
+	}
+
+	myRate := rates[userCtx.ID.Hex()]
+
+	summary := gin.H{
+		"total_minutes":    totalMinutes,
+		"total_hours":      math.Round((float64(totalMinutes)/60.0)*100) / 100.0,
+		"billable_minutes": billableMinutes,
+		"billable_hours":   math.Round((float64(billableMinutes)/60.0)*100) / 100.0,
+		"total_amount":     math.Round(totalAmount*100) / 100.0,
+		"unpaid_amount":    math.Round(unpaidAmount*100) / 100.0,
+		"paid_amount":      math.Round(paidAmount*100) / 100.0,
+		"entry_count":      len(entries),
+		"unpaid_count":     unpaidCount,
+		"is_admin":         isAdmin,
+		"can_manage_rates": isAdmin,
+		"my_hourly_rate":   myRate,
+	}
+
+	filteredUsersMap := make(map[string]gin.H)
+	if isAdmin {
+		filteredUsersMap = usersMap
+	} else {
+		if myInfo, ok := usersMap[userCtx.ID.Hex()]; ok {
+			filteredUsersMap[userCtx.ID.Hex()] = myInfo
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"entries":          entries,
+		"total_minutes":    totalMinutes,
+		"summary":          summary,
+		"user_summary":     userSummaries,
+		"task_summary":     taskSummaries,
+		"users":            filteredUsersMap,
+		"is_admin":         isAdmin,
+		"can_manage_rates": isAdmin,
+		"group_by":         c.Query("group_by"),
+	})
 }
 
 func (s *Server) timeReportCSV(c *gin.Context) {
@@ -774,13 +1133,66 @@ func (s *Server) timeReportCSV(c *gin.Context) {
 			entries = append(entries, entry)
 		}
 	}
-	s.populateTimeEntryUsers(c.Request.Context(), entries)
+
+	var team models.Team
+	if !userCtx.TeamID.IsZero() {
+		_ = s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": userCtx.TeamID}).Decode(&team)
+	}
+
+	usersMap := s.populateTimeEntryUsers(c.Request.Context(), entries)
+	s.populateTimeEntryMetadata(c.Request.Context(), entries)
+	rates := s.resolveHourlyRates(team, usersMap)
+
+	for i := range entries {
+		uHex := entries[i].UserID.Hex()
+		rate := rates[uHex]
+		if entries[i].HourlyRate == 0 {
+			entries[i].HourlyRate = rate
+		}
+		hrs := float64(entries[i].DurationMinutes) / 60.0
+		entries[i].Amount = math.Round(hrs*entries[i].HourlyRate*100) / 100.0
+	}
+
 	var buf bytes.Buffer
 	writer := csv.NewWriter(&buf)
-	_ = writer.Write([]string{"entry_id", "task_id", "user_id", "user_name", "date", "minutes", "hours", "manual", "billable", "note"})
+	_ = writer.Write([]string{
+		"entry_id",
+		"task_id",
+		"task_title",
+		"project_name",
+		"website_name",
+		"user_id",
+		"user_name",
+		"date",
+		"minutes",
+		"hours",
+		"hourly_rate",
+		"amount",
+		"billable",
+		"paid",
+		"note",
+	})
 	for _, entry := range entries {
 		hours := fmt.Sprintf("%.2f", float64(entry.DurationMinutes)/60.0)
-		_ = writer.Write([]string{entry.ID.Hex(), entry.TaskID.Hex(), entry.UserID.Hex(), entry.UserName, entry.StartTime.Format("2006-01-02"), strconv.Itoa(entry.DurationMinutes), hours, boolText(entry.IsManual), boolText(entry.Billable), entry.Note})
+		rateStr := fmt.Sprintf("%.2f", entry.HourlyRate)
+		amountStr := fmt.Sprintf("%.2f", entry.Amount)
+		_ = writer.Write([]string{
+			entry.ID.Hex(),
+			entry.TaskID.Hex(),
+			entry.TaskTitle,
+			entry.ProjectName,
+			entry.WebsiteName,
+			entry.UserID.Hex(),
+			entry.UserName,
+			entry.StartTime.Format("2006-01-02"),
+			strconv.Itoa(entry.DurationMinutes),
+			hours,
+			rateStr,
+			amountStr,
+			boolText(entry.Billable),
+			boolText(entry.Paid),
+			entry.Note,
+		})
 	}
 	writer.Flush()
 	c.Header("Content-Type", "text/csv")
@@ -842,11 +1254,13 @@ func (s *Server) populateTimeEntryUsers(ctx context.Context, entries []models.Ti
 				displayName = strings.TrimSpace(u.Email)
 			}
 			usersMap[u.ID.Hex()] = gin.H{
-				"id":         u.ID.Hex(),
-				"name":       displayName,
-				"email":      u.Email,
-				"username":   u.Username,
-				"avatar_url": u.AvatarURL,
+				"id":          u.ID.Hex(),
+				"name":        displayName,
+				"email":       u.Email,
+				"username":    u.Username,
+				"avatar_url":  u.AvatarURL,
+				"role":        u.Role,
+				"hourly_rate": u.HourlyRate,
 			}
 		}
 	}
@@ -863,6 +1277,185 @@ func (s *Server) populateTimeEntryUsers(ctx context.Context, entries []models.Ti
 	return usersMap
 }
 
+func (s *Server) populateTimeEntryMetadata(ctx context.Context, entries []models.TimeEntry) {
+	if len(entries) == 0 {
+		return
+	}
+	taskIDs := make([]primitive.ObjectID, 0, len(entries))
+	for _, e := range entries {
+		if !e.TaskID.IsZero() {
+			taskIDs = append(taskIDs, e.TaskID)
+		}
+	}
+	taskIDs = uniqueObjectIDs(taskIDs)
+	if len(taskIDs) == 0 {
+		for i := range entries {
+			if strings.TrimSpace(entries[i].Note) != "" {
+				entries[i].TaskTitle = entries[i].Note
+			} else {
+				entries[i].TaskTitle = "Unassigned time"
+			}
+		}
+		return
+	}
+
+	taskTitles := make(map[primitive.ObjectID]string)
+	taskProjects := make(map[primitive.ObjectID]string)
+	taskWebsites := make(map[primitive.ObjectID]string)
+
+	// 1. Regular space tasks
+	taskCursor, err := s.store.C("tasks").Find(ctx, bson.M{"_id": bson.M{"$in": taskIDs}})
+	if err == nil {
+		defer taskCursor.Close(ctx)
+		var listIDs []primitive.ObjectID
+		var tasks []models.Task
+		for taskCursor.Next(ctx) {
+			var t models.Task
+			if taskCursor.Decode(&t) == nil {
+				tasks = append(tasks, t)
+				taskTitles[t.ID] = t.Title
+				if !t.ListID.IsZero() {
+					listIDs = append(listIDs, t.ListID)
+				}
+			}
+		}
+		listIDs = uniqueObjectIDs(listIDs)
+		if len(listIDs) > 0 {
+			listMap := make(map[primitive.ObjectID]primitive.ObjectID)
+			listCursor, err := s.store.C("lists").Find(ctx, bson.M{"_id": bson.M{"$in": listIDs}})
+			if err == nil {
+				defer listCursor.Close(ctx)
+				var projectIDs []primitive.ObjectID
+				for listCursor.Next(ctx) {
+					var l models.List
+					if listCursor.Decode(&l) == nil {
+						listMap[l.ID] = l.ProjectID
+						if !l.ProjectID.IsZero() {
+							projectIDs = append(projectIDs, l.ProjectID)
+						}
+					}
+				}
+				projectIDs = uniqueObjectIDs(projectIDs)
+				if len(projectIDs) > 0 {
+					projectMap := make(map[primitive.ObjectID]string)
+					projCursor, err := s.store.C("projects").Find(ctx, bson.M{"_id": bson.M{"$in": projectIDs}})
+					if err == nil {
+						defer projCursor.Close(ctx)
+						for projCursor.Next(ctx) {
+							var p models.Project
+							if projCursor.Decode(&p) == nil {
+								projectMap[p.ID] = p.Name
+							}
+						}
+					}
+					for _, t := range tasks {
+						if projID, ok := listMap[t.ListID]; ok {
+							if projName, ok := projectMap[projID]; ok {
+								taskProjects[t.ID] = projName
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Client tasks
+	ctCursor, err := s.store.C("client_tasks").Find(ctx, bson.M{"_id": bson.M{"$in": taskIDs}})
+	if err == nil {
+		defer ctCursor.Close(ctx)
+		var clientIDs []primitive.ObjectID
+		var websiteIDs []primitive.ObjectID
+		var clientTasks []models.ClientTask
+		for ctCursor.Next(ctx) {
+			var ct models.ClientTask
+			if ctCursor.Decode(&ct) == nil {
+				clientTasks = append(clientTasks, ct)
+				taskTitles[ct.ID] = ct.Title
+				if !ct.ClientID.IsZero() {
+					clientIDs = append(clientIDs, ct.ClientID)
+				}
+				if !ct.WebsiteID.IsZero() {
+					websiteIDs = append(websiteIDs, ct.WebsiteID)
+				}
+			}
+		}
+		clientIDs = uniqueObjectIDs(clientIDs)
+		clientNames := make(map[primitive.ObjectID]string)
+		if len(clientIDs) > 0 {
+			cCursor, err := s.store.C("client_projects").Find(ctx, bson.M{"_id": bson.M{"$in": clientIDs}})
+			if err == nil {
+				defer cCursor.Close(ctx)
+				for cCursor.Next(ctx) {
+					var cp models.ClientProject
+					if cCursor.Decode(&cp) == nil {
+						clientNames[cp.ID] = cp.Name
+					}
+				}
+			}
+		}
+		websiteIDs = uniqueObjectIDs(websiteIDs)
+		websiteNames := make(map[primitive.ObjectID]string)
+		if len(websiteIDs) > 0 {
+			wCursor, err := s.store.C("client_websites").Find(ctx, bson.M{"_id": bson.M{"$in": websiteIDs}})
+			if err == nil {
+				defer wCursor.Close(ctx)
+				for wCursor.Next(ctx) {
+					var cw models.ClientWebsite
+					if wCursor.Decode(&cw) == nil {
+						websiteNames[cw.ID] = cw.Name
+					}
+				}
+			}
+		}
+		for _, ct := range clientTasks {
+			if name, ok := clientNames[ct.ClientID]; ok {
+				taskProjects[ct.ID] = name
+			}
+			if site, ok := websiteNames[ct.WebsiteID]; ok {
+				taskWebsites[ct.ID] = site
+			}
+		}
+	}
+
+	for i := range entries {
+		tID := entries[i].TaskID
+		if title, ok := taskTitles[tID]; ok && title != "" {
+			entries[i].TaskTitle = title
+		} else if strings.TrimSpace(entries[i].Note) != "" {
+			entries[i].TaskTitle = entries[i].Note
+		} else {
+			entries[i].TaskTitle = "Unassigned task"
+		}
+		if proj, ok := taskProjects[tID]; ok {
+			entries[i].ProjectName = proj
+		}
+		if site, ok := taskWebsites[tID]; ok {
+			entries[i].WebsiteName = site
+		}
+	}
+}
+
+func (s *Server) resolveHourlyRates(team models.Team, usersMap map[string]gin.H) map[string]float64 {
+	rates := make(map[string]float64)
+	for uIDHex, uInfo := range usersMap {
+		if team.MemberHourlyRates != nil {
+			if teamRate, ok := team.MemberHourlyRates[uIDHex]; ok && teamRate >= 0 {
+				rates[uIDHex] = teamRate
+				uInfo["hourly_rate"] = teamRate
+				continue
+			}
+		}
+		if uRate, ok := uInfo["hourly_rate"].(float64); ok && uRate > 0 {
+			rates[uIDHex] = uRate
+		} else {
+			rates[uIDHex] = 0.0
+			uInfo["hourly_rate"] = 0.0
+		}
+	}
+	return rates
+}
+
 func (s *Server) timeEntryFilter(c *gin.Context, userCtx middleware.UserContext) bson.M {
 	filter := bson.M{}
 	if userCtx.Role == models.RoleOwnerAdmin {
@@ -870,6 +1463,8 @@ func (s *Server) timeEntryFilter(c *gin.Context, userCtx middleware.UserContext)
 			if teamID, err := objectIDFromString(teamIDRaw); err == nil {
 				filter["team_id"] = teamID
 			}
+		} else if !userCtx.TeamID.IsZero() {
+			filter["team_id"] = userCtx.TeamID
 		}
 	} else {
 		filter["team_id"] = userCtx.TeamID
@@ -905,6 +1500,13 @@ func (s *Server) timeEntryFilter(c *gin.Context, userCtx middleware.UserContext)
 			}
 			existing["$lte"] = parsed.Add(24 * time.Hour)
 			filter["start_time"] = existing
+		}
+	}
+	if paidParam := strings.TrimSpace(c.Query("paid")); paidParam != "" {
+		if paidParam == "true" || paidParam == "1" {
+			filter["paid"] = true
+		} else if paidParam == "false" || paidParam == "0" {
+			filter["paid"] = bson.M{"$ne": true}
 		}
 	}
 	return filter

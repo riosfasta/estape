@@ -242,6 +242,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.DELETE("/time-entries/:id", s.deleteTimeEntry)
 	authed.GET("/reports/time", s.timeReport)
 	authed.GET("/reports/time/export", s.timeReportCSV)
+	authed.PUT("/reports/time/rates/:userId", s.setMemberHourlyRate)
+	authed.POST("/reports/time/payments/mark-paid", s.markTimeEntriesPaid)
 	authed.GET("/reports/tasks/preview", s.taskReportPreview)
 	authed.GET("/reports/tasks/export.pdf", s.taskReportPDF)
 	authed.GET("/team/performance", s.teamPerformance)

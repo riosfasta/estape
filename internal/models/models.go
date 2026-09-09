@@ -30,6 +30,7 @@ type User struct {
 	Username                string             `bson:"username,omitempty" json:"username,omitempty"`
 	PasswordHash            string             `bson:"password_hash" json:"-"`
 	RefreshTokenHash        string             `bson:"refresh_token_hash,omitempty" json:"-"`
+	RefreshTokenHashes      []string           `bson:"refresh_token_hashes,omitempty" json:"-"`
 	Role                    Role               `bson:"role" json:"role"`
 	StaffRole               string             `bson:"staff_role,omitempty" json:"staff_role,omitempty"`
 	TeamID                  primitive.ObjectID `bson:"team_id,omitempty" json:"team_id,omitempty"`
@@ -48,22 +49,24 @@ type User struct {
 	RegistrationCity        string             `bson:"registration_city,omitempty" json:"registration_city,omitempty"`
 	RegistrationNetworkName string             `bson:"registration_network_name,omitempty" json:"registration_network_name,omitempty"`
 	RegistrationTimezone    string             `bson:"registration_timezone,omitempty" json:"registration_timezone,omitempty"`
+	HourlyRate              float64            `bson:"hourly_rate,omitempty" json:"hourly_rate,omitempty"`
 	CreatedAt               time.Time          `bson:"created_at" json:"created_at"`
 	LastActiveAt            time.Time          `bson:"last_active_at,omitempty" json:"last_active_at,omitempty"`
 }
 
 type Team struct {
-	Groups          []TeamGroup          `bson:"groups,omitempty" json:"groups,omitempty"`
-	MemberGroups    map[string]string    `bson:"member_groups,omitempty" json:"member_groups,omitempty"`
-	ID              primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
-	Name            string               `bson:"name" json:"name"`
-	CompanyEmail    string               `bson:"company_email,omitempty" json:"company_email,omitempty"`
-	LogoURL         string               `bson:"logo_url,omitempty" json:"logo_url,omitempty"`
-	OwnerAdminID    primitive.ObjectID   `bson:"owner_admin_id" json:"owner_admin_id"`
-	MemberIDs       []primitive.ObjectID `bson:"member_ids" json:"member_ids"`
-	SubscriptionID  primitive.ObjectID   `bson:"subscription_id,omitempty" json:"subscription_id,omitempty"`
-	CreatedAt       time.Time            `bson:"created_at" json:"created_at"`
-	SeatLimitCached int                  `bson:"seat_limit_cached,omitempty" json:"seat_limit_cached,omitempty"`
+	Groups            []TeamGroup          `bson:"groups,omitempty" json:"groups,omitempty"`
+	MemberGroups      map[string]string    `bson:"member_groups,omitempty" json:"member_groups,omitempty"`
+	MemberHourlyRates map[string]float64   `bson:"member_hourly_rates,omitempty" json:"member_hourly_rates,omitempty"`
+	ID                primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	Name              string               `bson:"name" json:"name"`
+	CompanyEmail      string               `bson:"company_email,omitempty" json:"company_email,omitempty"`
+	LogoURL           string               `bson:"logo_url,omitempty" json:"logo_url,omitempty"`
+	OwnerAdminID      primitive.ObjectID   `bson:"owner_admin_id" json:"owner_admin_id"`
+	MemberIDs         []primitive.ObjectID `bson:"member_ids" json:"member_ids"`
+	SubscriptionID    primitive.ObjectID   `bson:"subscription_id,omitempty" json:"subscription_id,omitempty"`
+	CreatedAt         time.Time            `bson:"created_at" json:"created_at"`
+	SeatLimitCached   int                  `bson:"seat_limit_cached,omitempty" json:"seat_limit_cached,omitempty"`
 }
 
 type TeamGroup struct {
@@ -661,7 +664,14 @@ type TimeEntry struct {
 	IsManual         bool               `bson:"is_manual" json:"is_manual"`
 	Note             string             `bson:"note,omitempty" json:"note,omitempty"`
 	Billable         bool               `bson:"billable" json:"billable"`
+	Paid             bool               `bson:"paid,omitempty" json:"paid"`
+	PaidAt           *time.Time         `bson:"paid_at,omitempty" json:"paid_at,omitempty"`
+	HourlyRate       float64            `bson:"hourly_rate,omitempty" json:"hourly_rate,omitempty"`
 	CreatedAt        time.Time          `bson:"created_at" json:"created_at"`
 	UserName         string             `bson:"-" json:"user_name,omitempty"`
 	UserEmail        string             `bson:"-" json:"user_email,omitempty"`
+	TaskTitle        string             `bson:"-" json:"task_title,omitempty"`
+	ProjectName      string             `bson:"-" json:"project_name,omitempty"`
+	WebsiteName      string             `bson:"-" json:"website_name,omitempty"`
+	Amount           float64            `bson:"-" json:"amount,omitempty"`
 }
