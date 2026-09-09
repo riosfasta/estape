@@ -1808,48 +1808,565 @@ function activeDurationLabel(startTime) {
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-function taskTimeTrackerHTML(taskID, entries = [], activeEntry = null) {
+function taskMetaTimerHTML(taskID) {
+  const isRunning = state.activeTimer && String(state.activeTimer.task_id) === String(taskID);
+  const timeLabel = isRunning ? activeDurationLabel(state.activeTimer.start_time) : "";
+  return `<div class="task-meta-timer-bar" data-task-meta-timer-bar="${esc(taskID)}">
+    <button type="button" class="task-timer-label-btn ${isRunning ? "active" : ""}" data-open-task-timer-modal="${esc(taskID)}" title="View timer logs & details">
+      ${icon("clock")}<span data-meta-timer-text="${esc(taskID)}">${isRunning ? `Time Tracker · ${timeLabel}` : "Time Tracker"}</span>
+    </button>
+    <button type="button" class="task-timer-circle-btn ${isRunning ? "running" : ""}" data-meta-timer-circle="${esc(taskID)}" title="${isRunning ? "Stop timer" : "Start timer"}" aria-label="${isRunning ? "Stop timer" : "Start timer"}">
+      ${isRunning ? icon("square") : icon("play")}
+    </button>
+  </div>`;
+}
+
+function syncActiveTimerUI() {
+  const active = state.activeTimer;
+  const activeTaskID = active?.task_id ? String(active.task_id) : "";
+
+  // 1. Sync all task meta timer bars in DOM
+  document.querySelectorAll("[data-task-meta-timer-bar]").forEach((bar) => {
+    const taskID = bar.dataset.taskMetaTimerBar;
+    const isThisActive = active && String(taskID) === activeTaskID;
+    const labelBtn = bar.querySelector("[data-open-task-timer-modal]");
+    const textSpan = bar.querySelector("[data-meta-timer-text]");
+    const circleBtn = bar.querySelector("[data-meta-timer-circle]");
+
+    if (labelBtn) labelBtn.classList.toggle("active", Boolean(isThisActive));
+    if (textSpan) {
+      const label = isThisActive ? `Time Tracker · ${activeDurationLabel(active.start_time)}` : "Time Tracker";
+      if (textSpan.textContent !== label) textSpan.textContent = label;
+    }
+    if (circleBtn) {
+      const wasRunning = circleBtn.classList.contains("running");
+      if (wasRunning !== Boolean(isThisActive)) {
+        circleBtn.classList.toggle("running", Boolean(isThisActive));
+        circleBtn.title = isThisActive ? "Stop timer" : "Start timer";
+        circleBtn.setAttribute("aria-label", circleBtn.title);
+        circleBtn.innerHTML = isThisActive ? icon("square") : icon("play");
+        icons();
+      }
+    }
+  });
+
+  // 2. Sync any card/row quick timer buttons in DOM
+  document.querySelectorAll("[data-quick-task-timer]").forEach((btn) => {
+    const taskID = btn.dataset.quickTaskTimer;
+    const isThisActive = active && String(taskID) === activeTaskID;
+    const wasDanger = btn.classList.contains("danger");
+    if (wasDanger !== Boolean(isThisActive)) {
+      btn.classList.toggle("danger", Boolean(isThisActive));
+      btn.classList.toggle("active-pulse", Boolean(isThisActive));
+      btn.title = isThisActive ? "Stop timer" : "Start timer";
+      btn.innerHTML = isThisActive ? `${icon("square")}Stop` : `${icon("play")}Timer`;
+      icons();
+    }
+  });
+
+  // 3. Sync top navbar timerWidget
+  const widget = $("#timerWidget");
+  if (widget) {
+    if (!active) {
+      widget.classList.remove("active");
+      widget.innerHTML = "";
+    } else {
+      widget.classList.add("active");
+      const duration = activeDurationLabel(active.start_time);
+      const title = active.task?.title || "Timer";
+      widget.innerHTML = `<strong>${esc(title)}</strong><span class="pill">${esc(duration)}</span><button class="btn danger compact" id="stopTimerBtn">${icon("square")}Stop</button>`;
+      const stopBtn = widget.querySelector("#stopTimerBtn");
+      if (stopBtn) {
+        stopBtn.onclick = () => toggleTaskTimerOptimistic(active.task_id);
+      }
+      icons();
+    }
+  }
+
+  // 4. Sync modal live ticker if modal is open
+  const modalTicker = document.querySelector("[data-modal-timer-ticker]");
+  if (modalTicker && active) {
+    modalTicker.textContent = activeDurationLabel(active.start_time);
+  }
+
+  // Manage global 1-second interval
+  if (active) {
+    if (!state.globalTimerTick) {
+      state.globalTimerTick = setInterval(() => {
+        if (!state.activeTimer) {
+          clearInterval(state.globalTimerTick);
+          state.globalTimerTick = null;
+          return;
+        }
+        syncActiveTimerUI();
+      }, 1000);
+    }
+  } else {
+    if (state.globalTimerTick) {
+      clearInterval(state.globalTimerTick);
+      state.globalTimerTick = null;
+    }
+  }
+}
+
+async function toggleTaskTimerOptimistic(taskID) {
+  if (!taskID) return;
+  const isCurrentlyRunning = state.activeTimer && String(state.activeTimer.task_id) === String(taskID);
+
+  if (isCurrentlyRunning) {
+    const stopEntryID = state.activeTimer.id;
+    state.activeTimer = null;
+    syncActiveTimerUI();
+
+    try {
+      if (stopEntryID && !String(stopEntryID).startsWith("temp_")) {
+        await api(`/api/time-entries/${stopEntryID}/stop`, { method: "POST" });
+      } else {
+        const activeRes = await api("/api/time-entries/active").catch(() => ({ entry: null }));
+        if (activeRes.entry?.id) {
+          await api(`/api/time-entries/${activeRes.entry.id}/stop`, { method: "POST" });
+        }
+      }
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  } else {
+    const prevTimer = state.activeTimer;
+    state.activeTimer = {
+      id: "temp_" + Date.now(),
+      task_id: taskID,
+      start_time: new Date().toISOString(),
+    };
+    syncActiveTimerUI();
+
+    try {
+      const res = await api("/api/time-entries/start", {
+        method: "POST",
+        body: JSON.stringify({ task_id: taskID }),
+      });
+      if (state.activeTimer && String(state.activeTimer.task_id) === String(taskID)) {
+        state.activeTimer = res.entry || state.activeTimer;
+        syncActiveTimerUI();
+      }
+    } catch (err) {
+      state.activeTimer = prevTimer;
+      syncActiveTimerUI();
+      setStatus(err.message, true);
+    }
+  }
+}
+
+function fmtTime12h(val) {
+  if (!val) return "";
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return "";
+  let h = d.getHours();
+  const m = String(d.getMinutes()).padStart(2, "0");
+  const ampm = h >= 12 ? "pm" : "am";
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${h}:${m} ${ampm}`;
+}
+
+function fmtDateShort(val) {
+  if (!val) return "";
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
+function formatDurationShort(minutes) {
+  const min = Math.max(0, Number(minutes) || 0);
+  if (min === 0) return "0m";
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
+function parseDurationInput(str) {
+  if (!str) return 0;
+  const s = String(str).trim().toLowerCase();
+  let totalMin = 0;
+  const hourMatch = s.match(/(\d+(?:\.\d+)?)\s*h(?:ours?)?/);
+  const minMatch = s.match(/(\d+(?:\.\d+)?)\s*m(?:in(?:ute)?s?)?/);
+  if (hourMatch) totalMin += Math.round(parseFloat(hourMatch[1]) * 60);
+  if (minMatch) totalMin += Math.round(parseFloat(minMatch[1]));
+  if (!hourMatch && !minMatch) {
+    const num = parseFloat(s);
+    if (!isNaN(num)) totalMin = Math.round(num);
+  }
+  return totalMin;
+}
+
+async function openTaskTimerModal(taskID, taskTitle = "") {
+  if (!taskID) return;
+  let dialog = $("#taskTimerModal");
+  if (!dialog) {
+    dialog = document.createElement("dialog");
+    dialog.id = "taskTimerModal";
+    dialog.className = "modal time-tracker-dialog clickup-timer-dialog";
+    document.body.appendChild(dialog);
+  }
+
+  if (!taskTitle) {
+    const heading = $("#clientTaskPanel h2") || $("#taskDetailDialog h2");
+    if (heading) taskTitle = heading.textContent.trim();
+  }
+
+  dialog.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <span class="muted" style="font-size:12px;font-weight:600;">Time Tracking</span>
+      <button class="btn icon quiet" type="button" data-close-task-timer-modal title="Close">${icon("x")}</button>
+    </div>
+    <div class="time-tracker-modal-body" data-time-tracker-modal-body="${esc(taskID)}">
+      <div style="padding:28px 0;text-align:center;" class="muted">Loading timer logs...</div>
+    </div>
+  `;
+  dialog.querySelector("[data-close-task-timer-modal]")?.addEventListener("click", () => dialog.close());
+  dialog.onclick = (event) => {
+    if (event.target === dialog) dialog.close();
+  };
+  icons();
+  if (!dialog.open) dialog.showModal();
+
+  try {
+    const data = await api(`/api/time-entries?task_id=${encodeURIComponent(taskID)}`);
+    renderTimeTrackerModalBody(dialog, taskID, data.entries || [], taskTitle);
+  } catch (err) {
+    const body = dialog.querySelector(`[data-time-tracker-modal-body="${selectorEscape(taskID)}"]`);
+    if (body) body.innerHTML = `<p class="status-line danger" style="padding:16px;">Failed to load time entries: ${esc(err.message)}</p>`;
+  }
+}
+
+function renderTimeTrackerModalBody(dialog, taskID, entries = [], taskTitle = "") {
+  const isRunning = state.activeTimer && String(state.activeTimer.task_id) === String(taskID);
+  const totalMinutes = entries.reduce((sum, entry) => sum + (Number(entry.duration_minutes) || 0), 0);
+  const totalHoursNum = Math.floor(totalMinutes / 60);
+  const totalHeaderStats = `${totalHoursNum}h / ${totalMinutes}m`;
+
+  const now = new Date();
+  const startTime = isRunning ? new Date(state.activeTimer.start_time) : now;
+  const stopTime = isRunning ? now : now;
+
+  // Group entries by user
+  const userGroups = {};
+  entries.forEach((entry) => {
+    const uid = String(entry.user_id || "unknown");
+    if (!userGroups[uid]) {
+      userGroups[uid] = {
+        name: entry.user_name || (uid === String(state.me?.id) ? (state.me?.name || state.me?.username || "You") : "Teammate"),
+        totalMinutes: 0,
+        entries: [],
+      };
+    }
+    userGroups[uid].totalMinutes += Number(entry.duration_minutes) || 0;
+    userGroups[uid].entries.push(entry);
+  });
+
+  const body = dialog.querySelector(`[data-time-tracker-modal-body="${selectorEscape(taskID)}"]`);
+  if (!body) return;
+
+  body.innerHTML = `
+    <!-- Header row -->
+    <div class="cu-modal-top-bar">
+      <span class="cu-task-title">Time on all tasks</span>
+      <span class="cu-time-stats">${esc(totalHeaderStats)}</span>
+    </div>
+    <div class="cu-progress-track">
+      <div class="cu-progress-fill" style="width: ${totalMinutes > 0 ? "100%" : "0%"};"></div>
+    </div>
+    <div class="cu-subtasks-stat-bar">
+      <span>${icon("corner-down-right")} Without Subtasks</span>
+      <span>${esc(totalHeaderStats)}</span>
+    </div>
+
+    <!-- Logger card -->
+    <div class="cu-logger-card" data-cu-logger-card>
+      <div class="cu-input-box">
+        <input class="cu-duration-text-input" name="cu_duration" placeholder="Enter time (ex: 3h 20m) or start timer" value="${isRunning ? activeDurationLabel(state.activeTimer.start_time) : ""}">
+        <button type="button" class="cu-card-circle-btn ${isRunning ? "running" : ""}" data-card-toggle-timer="${esc(taskID)}" title="${isRunning ? "Stop timer" : "Start timer"}">
+          ${isRunning ? icon("square") : icon("play")}
+        </button>
+      </div>
+
+      <div class="cu-time-range-row">
+        ${icon("clock")}
+        <label class="cu-date-badge" title="Change date">
+          <span class="cu-date-text">${fmtDateShort(now)}</span>
+          <input type="date" class="cu-date-hidden-input" name="cu_date" value="${dateInputValue(now)}">
+        </label>
+        <div class="cu-time-hover-pill cu-start-pill" tabindex="0">
+          <span class="cu-start-time-text">${fmtTime12h(startTime)}</span>
+          <input type="time" class="cu-time-hidden-input cu-start-time-input" value="${startTime.toTimeString().slice(0, 5)}">
+          <div class="cu-hover-tooltip">Start time</div>
+        </div>
+        <span class="cu-time-sep">–</span>
+        <div class="cu-time-hover-pill cu-stop-pill" tabindex="0">
+          <span class="cu-stop-time-text">${fmtTime12h(stopTime)}</span>
+          <input type="time" class="cu-time-hidden-input cu-stop-time-input" value="${stopTime.toTimeString().slice(0, 5)}">
+          <div class="cu-hover-tooltip">Stop time</div>
+        </div>
+      </div>
+
+      <div class="cu-input-row">
+        ${icon("align-left")}
+        <input class="cu-clean-input" name="cu_note" placeholder="Notes">
+      </div>
+
+      <div class="cu-input-row">
+        ${icon("tag")}
+        <input class="cu-clean-input" name="cu_tag" placeholder="Add tags">
+      </div>
+
+      <div class="cu-card-footer">
+        <label class="cu-billable-toggle" title="Toggle billable">
+          <input type="checkbox" name="cu_billable" checked>
+          <span class="cu-billable-track">
+            <span class="cu-billable-knob">$</span>
+          </span>
+        </label>
+        <button type="button" class="cu-save-btn" data-cu-save-btn="${esc(taskID)}">Save</button>
+      </div>
+    </div>
+
+    <!-- Time entries section -->
+    <div class="cu-entries-section">
+      <div class="cu-entries-title">Time Entries</div>
+      ${Object.keys(userGroups).length ? Object.entries(userGroups).map(([uid, grp]) => {
+        const initial = (grp.name || "U").slice(0, 1).toUpperCase();
+        return `<div class="cu-user-group open" data-cu-user-group="${esc(uid)}">
+          <div class="cu-user-group-head" data-cu-toggle-group="${esc(uid)}">
+            <span class="cu-group-chevron">${icon("chevron-right")}</span>
+            <span class="cu-user-avatar">${esc(initial)}</span>
+            <strong class="cu-group-user-name">${esc(grp.name)}</strong>
+            <span class="cu-group-total-dur">${esc(formatDurationShort(grp.totalMinutes))}</span>
+          </div>
+          <div class="cu-user-entries-list">
+            ${grp.entries.map((entry) => {
+              const isEntryActive = !entry.end_time;
+              const startFmt = fmtTime12h(entry.start_time);
+              const fallbackEnd = new Date(new Date(entry.start_time).getTime() + (Number(entry.duration_minutes) || 1) * 60000);
+              const endFmt = isEntryActive ? "Running..." : fmtTime12h(entry.end_time || fallbackEnd);
+              return `<div class="cu-entry-row" data-cu-entry-row="${esc(entry.id)}">
+                <div class="cu-entry-range-wrap">
+                  <div class="cu-time-hover-pill" tabindex="0">
+                    <span>${esc(startFmt)}</span>
+                    <div class="cu-hover-tooltip">Start time: ${esc(startFmt)}</div>
+                  </div>
+                  <span class="cu-time-sep">–</span>
+                  <div class="cu-time-hover-pill" tabindex="0">
+                    <span>${esc(endFmt)}</span>
+                    <div class="cu-hover-tooltip">${isEntryActive ? "Currently running" : `Stop time: ${esc(endFmt)}`}</div>
+                  </div>
+                </div>
+                <div class="cu-entry-note-wrap" title="${esc(entry.note || "")}">
+                  <span>${esc(entry.note || "No note")}</span>
+                </div>
+                <div class="cu-entry-meta-wrap">
+                  ${entry.billable ? `<span class="cu-billable-tag" title="Billable">$</span>` : ""}
+                  <span class="cu-entry-dur">${esc(formatDurationShort(entry.duration_minutes))}</span>
+                  <button type="button" class="cu-entry-del-btn" data-cu-del-entry="${esc(entry.id)}" title="Delete entry">${icon("trash-2")}</button>
+                </div>
+              </div>`;
+            }).join("")}
+          </div>
+        </div>`;
+      }).join("") : `<p class="muted" style="text-align:center;padding:16px 0;font-size:12px;">No time entries logged yet.</p>`}
+    </div>
+  `;
+
+  // Time pill & input change event handlers
+  const card = body.querySelector("[data-cu-logger-card]");
+  const durationInput = card?.querySelector("input[name=cu_duration]");
+  const startInput = card?.querySelector(".cu-start-time-input");
+  const stopInput = card?.querySelector(".cu-stop-time-input");
+  const startText = card?.querySelector(".cu-start-time-text");
+  const stopText = card?.querySelector(".cu-stop-time-text");
+  const dateInput = card?.querySelector("input[name=cu_date]");
+  const dateText = card?.querySelector(".cu-date-text");
+
+  dateInput?.addEventListener("change", () => {
+    if (dateInput.value) {
+      const d = new Date(dateInput.value + "T00:00:00");
+      if (!isNaN(d.getTime())) dateText.textContent = fmtDateShort(d);
+    }
+  });
+
+  const syncTimeFromInputs = () => {
+    if (startInput?.value && startText) {
+      const [h, m] = startInput.value.split(":");
+      const d = new Date();
+      d.setHours(Number(h), Number(m), 0, 0);
+      startText.textContent = fmtTime12h(d);
+    }
+    if (stopInput?.value && stopText) {
+      const [h, m] = stopInput.value.split(":");
+      const d = new Date();
+      d.setHours(Number(h), Number(m), 0, 0);
+      stopText.textContent = fmtTime12h(d);
+    }
+  };
+
+  startInput?.addEventListener("change", () => {
+    syncTimeFromInputs();
+    if (startInput.value && stopInput.value) {
+      const [sh, sm] = startInput.value.split(":").map(Number);
+      const [eh, em] = stopInput.value.split(":").map(Number);
+      const diffMin = (eh * 60 + em) - (sh * 60 + sm);
+      if (diffMin > 0 && durationInput) {
+        durationInput.value = formatDurationShort(diffMin);
+      }
+    }
+  });
+
+  stopInput?.addEventListener("change", () => {
+    syncTimeFromInputs();
+    if (startInput.value && stopInput.value) {
+      const [sh, sm] = startInput.value.split(":").map(Number);
+      const [eh, em] = stopInput.value.split(":").map(Number);
+      const diffMin = (eh * 60 + em) - (sh * 60 + sm);
+      if (diffMin > 0 && durationInput) {
+        durationInput.value = formatDurationShort(diffMin);
+      }
+    }
+  });
+
+  durationInput?.addEventListener("change", () => {
+    const mins = parseDurationInput(durationInput.value);
+    if (mins > 0 && startInput?.value) {
+      const [sh, sm] = startInput.value.split(":").map(Number);
+      const endTotal = sh * 60 + sm + mins;
+      const eh = Math.floor(endTotal / 60) % 24;
+      const em = endTotal % 60;
+      const endStr = `${String(eh).padStart(2, "0")}:${String(em).padStart(2, "0")}`;
+      if (stopInput) stopInput.value = endStr;
+      syncTimeFromInputs();
+    }
+  });
+
+  // Save manual entry handler
+  card?.querySelector("[data-cu-save-btn]")?.addEventListener("click", async (event) => {
+    const btn = event.currentTarget;
+    btn.disabled = true;
+    let mins = parseDurationInput(durationInput?.value);
+    if (mins <= 0 && startInput?.value && stopInput?.value) {
+      const [sh, sm] = startInput.value.split(":").map(Number);
+      const [eh, em] = stopInput.value.split(":").map(Number);
+      mins = (eh * 60 + em) - (sh * 60 + sm);
+    }
+    if (mins <= 0) mins = 1;
+
+    const note = card.querySelector("input[name=cu_note]")?.value || "";
+    const billable = Boolean(card.querySelector("input[name=cu_billable]")?.checked);
+    const dateVal = dateInput?.value || dateInputValue(new Date());
+
+    const payload = {
+      task_id: taskID,
+      date: dateVal,
+      duration_minutes: mins,
+      note: note,
+      billable: billable,
+    };
+    if (startInput?.value) payload.start_time = startInput.value;
+    if (stopInput?.value) payload.end_time = stopInput.value;
+
+    try {
+      await api("/api/time-entries", { method: "POST", body: JSON.stringify(payload) });
+      const updated = await api(`/api/time-entries?task_id=${encodeURIComponent(taskID)}`);
+      renderTimeTrackerModalBody(dialog, taskID, updated.entries || [], taskTitle);
+    } catch (err) {
+      setStatus(err.message, true);
+      btn.disabled = false;
+    }
+  });
+
+  // Toggle card timer button (Play/Stop)
+  card?.querySelector("[data-card-toggle-timer]")?.addEventListener("click", async (event) => {
+    event.currentTarget.disabled = true;
+    await toggleTaskTimerOptimistic(taskID);
+    const updated = await api(`/api/time-entries?task_id=${encodeURIComponent(taskID)}`).catch(() => ({ entries }));
+    renderTimeTrackerModalBody(dialog, taskID, updated.entries || [], taskTitle);
+  });
+
+  // Expand / collapse user groups
+  body.querySelectorAll("[data-cu-toggle-group]").forEach((head) => {
+    head.addEventListener("click", () => {
+      const group = head.closest(".cu-user-group");
+      if (group) group.classList.toggle("open");
+    });
+  });
+
+  // Delete entry handler
+  body.querySelectorAll("[data-cu-del-entry]").forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      if (!confirm("Delete this time entry?")) return;
+      btn.disabled = true;
+      try {
+        await api(`/api/time-entries/${btn.dataset.cuDelEntry}`, { method: "DELETE" });
+        const updated = await api(`/api/time-entries?task_id=${encodeURIComponent(taskID)}`);
+        renderTimeTrackerModalBody(dialog, taskID, updated.entries || [], taskTitle);
+      } catch (err) {
+        setStatus(err.message, true);
+        btn.disabled = false;
+      }
+    });
+  });
+
+  icons();
+}
+
+function taskTimeTrackerHTML(taskID, entries = [], activeEntry = null, usersByID = {}) {
   const taskEntries = (entries || []).filter((entry) => String(entry.task_id) === String(taskID));
   const activeForTask = activeEntry && String(activeEntry.task_id) === String(taskID) ? activeEntry : null;
   const totalMinutes = taskEntries.reduce((sum, entry) => sum + (Number(entry.duration_minutes) || 0), 0);
+  const totalHours = (totalMinutes / 60).toFixed(2);
   return `<section class="task-time-tracker" data-time-tracker="${esc(taskID)}">
     <div class="task-time-head">
-      <div><h3>Time tracker</h3><span class="muted">${esc(minutesLabel(totalMinutes))} logged${activeForTask ? " plus active timer" : ""}</span></div>
+      <div>
+        <h3>${icon("timer")} Time Tracking</h3>
+        <span class="muted">${esc(minutesLabel(totalMinutes))} logged (${esc(totalHours)}h)${activeForTask ? " · Timer running" : ""}</span>
+      </div>
       <div class="toolbar compact-toolbar">
-        ${activeForTask ? `<button class="btn danger compact" type="button" data-stop-task-timer="${esc(activeForTask.id)}">${icon("square")}Stop</button>` : `<button class="btn primary compact" type="button" data-start-task-timer="${esc(taskID)}">${icon("play")}Start</button>`}
+        ${activeForTask ? `<button class="btn danger compact" type="button" data-stop-task-timer="${esc(activeForTask.id)}">${icon("square")}Stop timer</button>` : `<button class="btn primary compact" type="button" data-start-task-timer="${esc(taskID)}">${icon("play")}Start timer</button>`}
       </div>
     </div>
-    ${activeForTask ? `<p class="pill active-time-pill">${icon("timer")}<span data-active-task-time="${esc(activeForTask.start_time)}">${esc(activeDurationLabel(activeForTask.start_time))}</span></p>` : ""}
+    ${activeForTask ? `<div class="pill active-time-pill live-ticker">${icon("timer")}<span data-active-task-time="${esc(activeForTask.start_time)}">${esc(activeDurationLabel(activeForTask.start_time))}</span><span class="pulse-dot" title="Timer is active"></span></div>` : ""}
     <details class="manual-time-box">
-      <summary>${icon("chevron-right")}Manual Time</summary>
+      <summary>${icon("chevron-right")}Manual Time Log</summary>
       <form class="manual-time-form" data-manual-time-form="${esc(taskID)}">
         <div class="grid-3">
           <div class="field"><label>Date</label><input type="date" name="date" value="${esc(dateInputValue(new Date()))}"></div>
           <div class="field"><label>Minutes</label><input type="number" name="duration_minutes" min="1" step="1" value="30"></div>
-          <div class="field"><label>Billable</label><select name="billable"><option value="true">Billable</option><option value="false">Non-billable</option></select></div>
+          <div class="field"><label>Billable</label><select name="billable"><option value="true">Billable (hourly)</option><option value="false">Non-billable</option></select></div>
         </div>
-        <div class="field"><label>Note</label><input name="note" placeholder="What was worked on?"></div>
-        <button class="btn compact" type="submit">${icon("plus")}Insert manual time</button>
+        <div class="field"><label>Note / Work description</label><input name="note" placeholder="What was worked on?"></div>
+        <button class="btn compact" type="submit">${icon("plus")}Log manual time</button>
         <p class="status-line"></p>
       </form>
     </details>
-    <details class="time-history-box">
-      <summary>${icon("history")}Time history (${taskEntries.length})</summary>
+    <details class="time-history-box" ${taskEntries.length ? "open" : ""}>
+      <summary>${icon("history")}Timer log history (${taskEntries.length})</summary>
       <div class="time-history-list">
-        ${taskEntries.map((entry) => timeEntryRowHTML(entry)).join("") || `<p class="muted">No time entries yet.</p>`}
+        ${taskEntries.map((entry) => timeEntryRowHTML(entry, usersByID)).join("") || `<p class="muted">No time entries logged yet.</p>`}
       </div>
     </details>
   </section>`;
 }
 
-function timeEntryRowHTML(entry = {}) {
+function timeEntryRowHTML(entry = {}, usersByID = {}) {
   const isRunning = !entry.end_time;
+  const userName = entry.user_name || usersByID[entry.user_id]?.name || usersByID[entry.user_id]?.username || (String(entry.user_id) === String(state.me?.id) ? (state.me?.name || state.me?.username || "You") : "");
+  const durationMin = Number(entry.duration_minutes) || 0;
+  const hoursStr = (durationMin / 60).toFixed(2) + "h";
   return `<form class="time-entry-row" data-time-entry-form="${esc(entry.id)}">
     <div>
-      <strong>${esc(isRunning ? "Running" : minutesLabel(entry.duration_minutes))}</strong>
-      <span class="muted">${esc(fmtDate(entry.start_time))} ${entry.is_manual ? "manual" : "timer"}</span>
+      <strong>${esc(isRunning ? "Running..." : minutesLabel(durationMin) + " (" + hoursStr + ")")}</strong>
+      <span class="muted">${userName ? esc(userName) + " · " : ""}${esc(fmtDate(entry.start_time))} ${entry.is_manual ? "manual" : "timer"}</span>
     </div>
-    <input type="number" name="duration_minutes" min="1" step="1" value="${esc(entry.duration_minutes || 1)}" ${isRunning ? "disabled" : ""} title="Minutes">
+    <input type="number" name="duration_minutes" min="1" step="1" value="${esc(durationMin || 1)}" ${isRunning ? "disabled" : ""} title="Minutes">
     <input name="note" value="${esc(entry.note || "")}" placeholder="Note">
     <select name="billable"><option value="true" ${entry.billable ? "selected" : ""}>Billable</option><option value="false" ${!entry.billable ? "selected" : ""}>Non-billable</option></select>
     <button class="btn compact" type="submit" ${isRunning ? "disabled" : ""}>${icon("save")}Save</button>
@@ -2872,6 +3389,7 @@ function shell(title, html) {
             ${workspaceLink("/admin/identity", "ID verification", "shield-check")}
             ${workspaceChild("/admin/plans", "Pricing plans", "badge-dollar-sign")}
             ${workspaceChild("/admin/pages", "Pages", "file-pen")}
+            ${workspaceChild("/admin/backup", "Database & Backup", "database")}
             ${workspaceChild("/admin/settings", "Settings", "settings")}
           ` : ""}
         </nav>
@@ -3981,10 +4499,12 @@ function inboxRows(tasks, websites = [], quiet = false) {
 
 function taskRows(tasks) {
   if (!tasks.length) return `<p class="muted">No tasks yet.</p>`;
-  return tasks.map((task) => `
-    <article class="task-row task-row-with-comments">
+  return tasks.map((task) => {
+    const isActive = state.activeTimer && String(state.activeTimer.task_id) === String(task.id);
+    return `
+    <article class="task-row task-row-with-comments" data-task-id="${task.id}">
       <div>
-        <h3>${esc(task.title)}</h3>
+        <h3 data-open-task="${task.id}" style="cursor:pointer" title="View task details">${esc(task.title)}</h3>
         <span class="muted">${mentionText(task.description || "")}</span>
         <div class="comment-list">${(task.comments || []).slice(-2).map((comment) => `<p>${mentionText(comment.content)}</p>`).join("")}</div>
         <form class="inline-comment" data-task-comment="${task.id}">
@@ -3993,8 +4513,9 @@ function taskRows(tasks) {
         </form>
       </div>
       <span class="pill">${esc(task.status)}</span>
-      <button class="btn" data-start-timer="${task.id}">${icon("play")}Start</button>
-    </article>`).join("");
+      <button class="btn compact ${isActive ? "danger" : ""}" type="button" data-quick-task-timer="${task.id}" title="${isActive ? "Stop timer" : "Start timer"}">${isActive ? icon("square") + "Stop" : icon("play") + "Start"}</button>
+    </article>`;
+  }).join("");
 }
 
 function teamMemberRows(members, canManageTeam, team = {}) {
@@ -6146,6 +6667,7 @@ function clientTaskBoardHTML(tasks, tab, members, canManage, canManageStatuses =
         const canManageTask = canManageClientTaskUI(task, canManage);
         const canUpdateTaskProgress = Boolean(canUpdateProgress || canManageTask);
         const dueInfo = taskDueInfo(task);
+        const isActiveTimer = state.activeTimer && String(state.activeTimer.task_id) === String(task.id);
         return `<article class="task-card client-task-card" data-client-task-id="${esc(task.id)}" data-can-drag="${canUpdateTaskProgress ? "true" : "false"}">
           <button class="client-task-open" type="button" data-open-client-task="${esc(task.id)}">${esc(compactClientTaskTitle(task.title))}</button>
           <p>${chatText(taskPreviewText(task) || "No content yet.")}</p>
@@ -6155,6 +6677,7 @@ function clientTaskBoardHTML(tasks, tab, members, canManage, canManageStatuses =
             <span class="pill">${esc(fmtDateTime(task.created_at))}</span>
             ${dueInfo.text ? `<button class="pill warn due-count" type="button" data-due-calendar="${esc(dueInfo.date || task.due_date)}">${icon("calendar-days")}${esc(dueInfo.text)}</button>` : ""}
             ${assigneeAvatarsHTML(task.assignee_ids || [], usersByID)}
+            <button class="pill ${isActiveTimer ? "danger timer-pill active-pulse" : "timer-pill"}" type="button" data-quick-task-timer="${esc(task.id)}" title="${isActiveTimer ? "Stop timer" : "Start timer"}">${isActiveTimer ? icon("square") + "Stop" : icon("play") + "Timer"}</button>
           </div>
           ${(canUpdateTaskProgress || canManageTask) ? `<div class="toolbar compact-toolbar">
             ${canUpdateTaskProgress ? statusPickerHTML(statuses, task.status || "todo", "status", task.id, { canManageStatuses, tabID: tab.id }) : ""}
@@ -6441,12 +6964,6 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
   document.body.classList.add("annotation-viewer-open");
   const data = initialData || await api(`/api/client-tasks/${taskID}`);
   const task = data.task || {};
-  const [timeEntriesData, activeTimerData] = await Promise.all([
-    api(`/api/time-entries?task_id=${encodeURIComponent(taskID)}`).catch(() => ({ entries: [] })),
-    api("/api/time-entries/active").catch(() => ({ entry: null })),
-  ]);
-  const taskTimeEntries = timeEntriesData.entries || [];
-  const activeTimeEntry = activeTimerData.entry || null;
   const usersByID = clientTaskUsersByID(data.members || []);
   (data.log_users || []).forEach((user) => {
     if (user?.id) usersByID[user.id] = user;
@@ -6554,7 +7071,7 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     panel.querySelector("#annotationViewerListView")?.setAttribute("hidden", "");
     panel.querySelector("#annotationViewerDetailView")?.removeAttribute("hidden");
     body.innerHTML = `${clientAnnotationTaskDetailHTML(annotation, statuses, usersByID, data.comments || [], canManageFolder, { showStatus: false, commentTaskID: taskID, annotationStatusTaskID: taskID })}
-      ${taskTimeTrackerHTML(taskID, taskTimeEntries, activeTimeEntry)}`;
+      ${taskMetaTimerHTML(taskID)}`;
     panel.querySelectorAll("[data-client-annotation-item-row]").forEach((row) => row.classList.toggle("active", row.dataset.clientAnnotationItemRow === String(annotation.id)));
     panel.querySelectorAll("[data-feedback-pin]").forEach((pin) => {
       const active = pin.dataset.feedbackPin === String(annotation.id);
@@ -6571,7 +7088,6 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
       syncClientAnnotationItemStatusControls(panel, annotationID, statuses, status);
     });
     bindAnnotationViewerCommentForm(body);
-    bindTaskTimeTracker(body, taskID, async () => openClientAnnotationTaskViewer(taskID, null, activeAnnotationID));
     if (focusCommentID) setTimeout(() => focusClientTaskComment(body, focusCommentID), 60);
     icons();
   };
@@ -6863,6 +7379,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
           ${dueInfo.text ? `<button class="pill warn due-count" type="button" data-due-calendar="${esc(dueInfo.date || task.due_date)}">${icon("calendar-days")}${esc(dueInfo.text)}</button>` : ""}
           ${assigneeAvatarsHTML(task.assignee_ids || [], usersByID)}
         </div>`}
+        ${taskMetaTimerHTML(taskID)}
         ${taskContentBlocksHTML(taskContentBlocks(task), canUpdateProgress)}
         ${task.url ? `<h3>Annotation URL</h3><p><a class="text-link" href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">${esc(task.url)}</a></p>` : ""}
         ${task.pin_x !== undefined && task.pin_y !== undefined && task.pin_x !== null && task.pin_y !== null ? `<h3>Annotation Pin</h3><p class="muted">${Number(task.pin_x).toFixed(1)}%, ${Number(task.pin_y).toFixed(1)}%</p>` : ""}
@@ -8361,6 +8878,7 @@ function assignedTaskRowHTML(task, context) {
       <span class="assigned-task-category">${icon(task.type === "annotation" ? "map-pin" : "file-text")}${esc(categoryLabel)}</span>
     </button>
     <span class="assigned-transfer-icons">
+      <button class="pill ${state.activeTimer && String(state.activeTimer.task_id) === String(task.id) ? "danger timer-pill active-pulse" : "timer-pill"}" type="button" data-quick-task-timer="${esc(task.id)}" title="${state.activeTimer && String(state.activeTimer.task_id) === String(task.id) ? "Stop timer" : "Start timer"}">${state.activeTimer && String(state.activeTimer.task_id) === String(task.id) ? icon("square") + "Stop" : icon("play") + "Timer"}</button>
       <a class="assigned-export-icon" href="${esc(clientTaskTransferURL({ scope: "task", task_id: task.id }))}" target="_blank" rel="noopener" title="Export this task JSON" aria-label="Export this task JSON">${icon("download")}</a>
       <button class="assigned-export-icon" type="button" data-import-client-tasks data-import-website-id="${esc(task.website_id || "")}" title="Import task JSON into this domain" aria-label="Import task JSON into this domain">${icon("upload")}</button>
     </span>
@@ -8687,18 +9205,43 @@ function renderTaskView(view, tasks, list) {
 }
 
 function taskCard(task) {
+  const isActive = state.activeTimer && String(state.activeTimer.task_id) === String(task.id);
   return `<article class="task-card" draggable="true" data-task-id="${task.id}">
-    <strong>${esc(task.title)}</strong>
+    <strong data-open-task="${task.id}" style="cursor:pointer" title="View task details">${esc(task.title)}</strong>
     <p class="muted">${esc(task.priority)} ${task.due_date ? " · " + fmtDate(task.due_date) : ""}</p>
-    <button class="btn" data-start-timer="${task.id}">${icon("play")}Start</button>
+    <div class="toolbar compact-toolbar">
+      <button class="btn compact ${isActive ? "danger" : ""}" type="button" data-quick-task-timer="${task.id}" title="${isActive ? "Stop timer" : "Start timer"}">${isActive ? icon("square") + "Stop" : icon("play") + "Start"}</button>
+      <button class="btn compact quiet" type="button" data-open-task="${task.id}" title="View task details">${icon("maximize-2")}Details</button>
+    </div>
   </article>`;
 }
 
 function bindTaskActions() {
-  document.querySelectorAll("[data-start-timer]").forEach((btn) => btn.addEventListener("click", async () => {
-    await api("/api/time-entries/start", { method: "POST", body: JSON.stringify({ task_id: btn.dataset.startTimer }) });
-    refreshTimerWidget();
-  }));
+  document.querySelectorAll("[data-start-timer], [data-stop-timer], [data-quick-task-timer]").forEach((btn) => {
+    if (btn.dataset.timerBound === "1") return;
+    btn.dataset.timerBound = "1";
+    btn.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const taskID = btn.dataset.quickTaskTimer || btn.dataset.startTimer || (state.activeTimer?.task_id);
+      if (taskID) await toggleTaskTimerOptimistic(taskID);
+    });
+  });
+  document.querySelectorAll("[data-open-task]").forEach((el) => {
+    if (el.dataset.openTaskBound === "1") return;
+    el.dataset.openTaskBound = "1";
+    el.addEventListener("click", async (event) => {
+      event.preventDefault();
+      const taskID = el.dataset.openTask;
+      if (!taskID) return;
+      try {
+        const data = await api(`/api/tasks/${taskID}`);
+        await showTaskDetailDialog(data);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+  });
 }
 
 function bindTaskComments() {
@@ -8717,7 +9260,7 @@ function bindTaskComments() {
   }));
 }
 
-function showTaskDetailDialog(data, activeCommentID = "") {
+async function showTaskDetailDialog(data, activeCommentID = "") {
   const task = data.task || {};
   const project = data.project || {};
   const list = data.list || {};
@@ -8749,6 +9292,7 @@ function showTaskDetailDialog(data, activeCommentID = "") {
             <span class="priority-flag ${String(task.priority || "normal").toLowerCase()}">${icon("flag")}${esc(task.priority || "Normal")}</span>
             ${task.due_date ? `<span class="pill warn">${icon("calendar-days")}${esc(fmtDate(task.due_date))}</span>` : ""}
           </div>
+          ${taskMetaTimerHTML(task.id)}
           <h3>Description</h3>
           <p>${mentionText(task.description || "No description yet.")}</p>
           <h3>Comments</h3>
@@ -9472,7 +10016,7 @@ async function renderAdmin() {
   shell("Admin Users", `
     <div class="page-title">
       <div><h1>Manage users</h1><p class="muted">Owner admin controls for accounts, memberships, payments, projects, domains, and tasks.</p></div>
-      <div class="toolbar"><button class="btn primary" id="newOwnerUserBtn">${icon("user-plus")}Add user</button><a class="btn" href="/admin/settings">${icon("settings")}Settings</a><a class="btn" href="/admin/plans">${icon("badge-dollar-sign")}Pricing plans</a><a class="btn" href="/admin/pages">${icon("file-pen")}Pages</a></div>
+      <div class="toolbar"><button class="btn primary" id="newOwnerUserBtn">${icon("user-plus")}Add user</button><a class="btn" href="/admin/settings">${icon("settings")}Settings</a><a class="btn" href="/admin/plans">${icon("badge-dollar-sign")}Pricing plans</a><a class="btn" href="/admin/pages">${icon("file-pen")}Pages</a><a class="btn" href="/admin/backup">${icon("database")}Database</a></div>
     </div>
     <div class="admin-user-filters">
       <label><span>Search</span><input type="search" data-admin-filter-search placeholder="Name, email, company, plan"></label>
@@ -10238,6 +10782,458 @@ async function renderSettings() {
       setSettingsStatus("Saved");
     } catch (error) {
       setSettingsStatus(error.message, true);
+    }
+  });
+}
+
+async function renderDatabaseAdmin() {
+  if (state.me?.role !== "owner_adm") {
+    shell("Access Denied", `
+      <div class="page-title"><div><h1>Access Denied</h1><p class="muted">Only the platform owner can access database management.</p></div></div>
+      <section class="panel">
+        <p class="muted">You do not have permission to view or manage platform database backups.</p>
+        <div class="toolbar"><a class="btn primary" href="/dashboard">${icon("arrow-left")}Back to dashboard</a></div>
+      </section>`);
+    return;
+  }
+
+  let stats;
+  try {
+    const data = await api("/api/admin/database/overview");
+    stats = data.stats;
+  } catch (error) {
+    shell("Database & Backup", `
+      <div class="page-title">
+        <div><h1>Database & Backup</h1><p class="muted">MongoDB full data backup, restore, and live server migration.</p></div>
+      </div>
+      <section class="panel">
+        <h2>Unable to inspect database</h2>
+        <p class="muted">${esc(error.message)}</p>
+        <div class="toolbar">
+          <a class="btn primary" href="/dashboard">${icon("arrow-left")}Back to dashboard</a>
+          <button class="btn" type="button" onclick="window.location.reload()">${icon("refresh-cw")}Retry</button>
+        </div>
+      </section>`);
+    return;
+  }
+
+  const collections = stats.collections || [];
+  const collectionsRowsHTML = collections.map(c => `
+    <article class="task-row" style="display:flex; justify-content:space-between; align-items:center; padding:10px 14px;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="muted">${icon("database")}</span>
+        <strong>${esc(c.name)}</strong>
+      </div>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span class="pill">${Number(c.document_count || 0).toLocaleString()} documents</span>
+      </div>
+    </article>
+  `).join("") || `<p class="muted">No user collections found.</p>`;
+
+  shell("Database & Backup", `
+    <div class="page-title">
+      <div>
+        <h1>Database & Backup</h1>
+        <p class="muted">Platform owner controls for full MongoDB database backup, restore, and live server-to-server migration.</p>
+      </div>
+      <div class="toolbar">
+        <a class="btn" href="/admin/users">${icon("users")}Manage users</a>
+        <a class="btn" href="/admin/settings">${icon("settings")}Settings</a>
+        <a class="btn" href="/admin/plans">${icon("badge-dollar-sign")}Plans</a>
+        <a class="btn" href="/admin/pages">${icon("file-pen")}Pages</a>
+      </div>
+    </div>
+
+    <!-- Summary Metrics -->
+    <div class="grid-3" style="margin-bottom:20px;">
+      <section class="panel metric" style="margin-top:0;">
+        <p class="muted" style="margin:0 0 6px 0; font-size:13px;">Connected Database</p>
+        <h2 style="margin:0; font-size:22px; display:flex; align-items:center; gap:8px;">
+          ${icon("database")} ${esc(stats.database_name)}
+        </h2>
+        <small class="muted">Active MongoDB database</small>
+      </section>
+      <section class="panel metric" style="margin-top:0;">
+        <p class="muted" style="margin:0 0 6px 0; font-size:13px;">Total Collections</p>
+        <h2 style="margin:0; font-size:22px;">${stats.total_collections || collections.length}</h2>
+        <small class="muted">Collections in current database</small>
+      </section>
+      <section class="panel metric" style="margin-top:0;">
+        <p class="muted" style="margin:0 0 6px 0; font-size:13px;">Total Documents</p>
+        <h2 style="margin:0; font-size:22px;">${Number(stats.total_documents || 0).toLocaleString()}</h2>
+        <small class="muted">Stored records across all collections</small>
+      </section>
+    </div>
+
+    <div class="grid-2">
+      <!-- Card 1: Full Backup Export -->
+      <section class="panel">
+        <div class="panel-head">
+          <h2>${icon("download")} Export Full Backup</h2>
+          <span class="pill">BSON Archive</span>
+        </div>
+        <p class="muted">
+          Generates a complete, compressed binary archive (<code>.zip</code>) containing all collections and indexes in native MongoDB BSON format.
+        </p>
+        <ul style="color:var(--text-secondary); font-size:14px; margin: 0 0 18px 20px; line-height:1.6;">
+          <li>Preserves native ObjectIDs, ISODates, integers, and index specifications without type distortion.</li>
+          <li>Can be restored directly using Bugmega's Restore tool below.</li>
+          <li>Compatible with official <code>mongorestore</code> command:
+            <br><code style="font-size:12px; background:var(--bg-tertiary); padding:2px 6px; border-radius:4px; display:inline-block; margin-top:4px;">mongorestore -d &lt;dbname&gt; extracted_folder/&lt;dbname&gt;</code>
+          </li>
+        </ul>
+        <div class="toolbar">
+          <button class="btn primary" id="downloadBackupBtn" type="button">
+            ${icon("download")} Download Full Backup (.zip)
+          </button>
+        </div>
+        <p id="downloadBackupStatus" class="status-line" style="margin-top:12px;"></p>
+      </section>
+
+      <!-- Card 2: Restore from Backup Archive -->
+      <section class="panel">
+        <div class="panel-head">
+          <h2>${icon("upload")} Restore Database</h2>
+          <span class="pill warn">Caution</span>
+        </div>
+        <p class="muted">
+          Upload a <code>.zip</code> backup archive created by Bugmega or official <code>mongodump</code> to restore all collections and recreate indexes.
+        </p>
+        <form id="restoreBackupForm" class="form-grid">
+          <div class="field">
+            <label>Backup Archive (.zip)</label>
+            <input type="file" id="restoreFileInput" name="backup_file" accept=".zip" required>
+          </div>
+          <div class="field">
+            <label>Restore Mode</label>
+            <div style="display:grid; gap:8px; margin-top:6px;">
+              <label class="check-row" style="font-size:14px;">
+                <input type="radio" name="restore_mode" value="upsert" checked>
+                <span><strong>Safe Upsert (Merge)</strong> — Updates existing documents matching <code>_id</code> and inserts new ones.</span>
+              </label>
+              <label class="check-row" style="font-size:14px;">
+                <input type="radio" name="restore_mode" value="clean">
+                <span><strong>Clean Replace</strong> — Empties collections before restoring (recommended for fresh migration).</span>
+              </label>
+            </div>
+          </div>
+          <div class="toolbar">
+            <button class="btn danger" type="submit" id="restoreSubmitBtn">
+              ${icon("rotate-ccw")} Restore Database
+            </button>
+          </div>
+          <p id="restoreStatus" class="status-line"></p>
+        </form>
+      </section>
+    </div>
+
+    <!-- Card 3: Live Server-to-Server Migration -->
+    <section class="panel" style="margin-top:20px;">
+      <div class="panel-head">
+        <h2>${icon("server")} Live Migration to Remote MongoDB</h2>
+        <span class="pill">Direct Connection</span>
+      </div>
+      <p class="muted">
+        Directly copy all collections and indexes from this instance to a remote MongoDB server (e.g. MongoDB Atlas, AWS DocumentDB, or another VPS) over the network with zero file downloads.
+      </p>
+      <form id="liveMigrationForm" class="form-grid">
+        <div class="grid-2">
+          <div class="field">
+            <label>Target MongoDB Connection String (URI)</label>
+            <input type="password" id="targetMongoUri" name="target_uri" placeholder="mongodb+srv://username:password@cluster.mongodb.net" required autocomplete="off">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+              <small class="muted">Supports mongodb:// and mongodb+srv:// URIs</small>
+              <button class="btn quiet compact" type="button" id="toggleTargetUriVis" style="font-size:12px; padding:2px 8px;">Show URI</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Target Database Name</label>
+            <input type="text" id="targetMongoDb" name="target_db" value="${esc(stats.database_name)}" placeholder="bugmega" required>
+            <small class="muted">Database name to write data into on the remote server</small>
+          </div>
+        </div>
+        <div class="field">
+          <label class="check-row" style="font-size:14px;">
+            <input type="checkbox" id="cleanTargetMongo" name="clean_target">
+            <span>Drop/clean target collections before copying (fresh replica)</span>
+          </label>
+        </div>
+        <div class="toolbar">
+          <button class="btn" type="button" id="testMigrationConnectionBtn">
+            ${icon("activity")} Test Remote Connection
+          </button>
+          <button class="btn danger" type="submit" id="startMigrationBtn">
+            ${icon("arrow-right")} Start Live Migration
+          </button>
+        </div>
+        <div id="migrationOutputBox" style="display:none; margin-top:14px; padding:14px; border-radius:8px; background:var(--bg-tertiary); font-family:monospace; font-size:13px; line-height:1.5; max-height:220px; overflow-y:auto;">
+        </div>
+      </form>
+    </section>
+
+    <!-- Card 4: Detailed Collections Inspection -->
+    <section class="panel" style="margin-top:20px;">
+      <div class="panel-head">
+        <h2>${icon("layers")} Database Collections (${collections.length})</h2>
+        <span class="pill">${Number(stats.total_documents || 0).toLocaleString()} Total Documents</span>
+      </div>
+      <div class="task-list" style="margin-top:12px;">
+        ${collectionsRowsHTML}
+      </div>
+    </section>
+
+    <!-- Confirmation Dialog for Restore -->
+    <dialog id="confirmRestoreDialog" class="modal">
+      <form id="confirmRestoreModalForm" class="form-grid" method="dialog">
+        <div class="modal-head">
+          <h2 style="color:var(--danger);">${icon("alert-triangle")} Confirm Database Restore</h2>
+          <button class="btn icon quiet" type="button" data-close-dialog="confirmRestoreDialog" title="Close">${icon("x")}</button>
+        </div>
+        <p style="margin:0; line-height:1.5;">
+          You are about to restore the database from the selected backup archive.
+          <br><br>
+          <strong id="confirmRestoreModeDesc"></strong>
+          <br><br>
+          This operation will modify database records. Please ensure you have a recent backup before proceeding.
+        </p>
+        <div class="toolbar" style="margin-top:16px;">
+          <button class="btn danger" type="submit" id="executeRestoreBtn">Yes, Proceed with Restore</button>
+          <button class="btn" type="button" data-close-dialog="confirmRestoreDialog">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Confirmation Dialog for Live Migration -->
+    <dialog id="confirmMigrationDialog" class="modal">
+      <form id="confirmMigrationModalForm" class="form-grid" method="dialog">
+        <div class="modal-head">
+          <h2 style="color:var(--danger);">${icon("alert-triangle")} Confirm Live Migration</h2>
+          <button class="btn icon quiet" type="button" data-close-dialog="confirmMigrationDialog" title="Close">${icon("x")}</button>
+        </div>
+        <p style="margin:0; line-height:1.5;">
+          You are about to copy all collections and indexes to the remote MongoDB server:
+          <br><br>
+          Target Database: <strong id="confirmMigrationDbDesc"></strong>
+          <br><br>
+          The current local database will remain completely untouched (read-only during migration).
+        </p>
+        <div class="toolbar" style="margin-top:16px;">
+          <button class="btn danger" type="submit" id="executeMigrationBtn">Yes, Start Migration</button>
+          <button class="btn" type="button" data-close-dialog="confirmMigrationDialog">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+  `);
+
+  bindDialogCloseButtons();
+  icons();
+
+  // 1. Download Backup Event
+  $("#downloadBackupBtn")?.addEventListener("click", async () => {
+    const btn = $("#downloadBackupBtn");
+    const statusLine = $("#downloadBackupStatus");
+    try {
+      btn.disabled = true;
+      if (statusLine) {
+        statusLine.textContent = "Generating full MongoDB backup archive... This may take a few moments.";
+        statusLine.style.color = "var(--text-secondary)";
+      }
+
+      const res = await fetch("/api/admin/database/backup", {
+        headers: {
+          Authorization: `Bearer ${state.access || readStoredToken(AUTH_ACCESS_KEY)}`,
+        },
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        let errMsg = "Download failed";
+        try { errMsg = JSON.parse(text).error || errMsg; } catch {}
+        throw new Error(errMsg);
+      }
+
+      const disp = res.headers.get("Content-Disposition") || "";
+      let filename = `bugmega-backup-${stats.database_name}.zip`;
+      const match = disp.match(/filename="?([^"]+)"?/);
+      if (match && match[1]) filename = match[1];
+
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+
+      if (statusLine) {
+        statusLine.textContent = `Backup downloaded successfully: ${filename} (${(blob.size / 1024).toFixed(1)} KB)`;
+        statusLine.style.color = "var(--accent)";
+      }
+    } catch (err) {
+      if (statusLine) {
+        statusLine.textContent = `Error: ${err.message}`;
+        statusLine.style.color = "var(--danger)";
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // 2. Restore Form Events
+  $("#restoreBackupForm")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const file = $("#restoreFileInput")?.files?.[0];
+    if (!file) {
+      alert("Please select a .zip backup archive.");
+      return;
+    }
+    const mode = document.querySelector('input[name="restore_mode"]:checked')?.value || "upsert";
+    const desc = $("#confirmRestoreModeDesc");
+    if (desc) {
+      desc.textContent = mode === "clean"
+        ? "Clean Replace Mode: All existing user collections in the database will be dropped and recreated freshly from the backup."
+        : "Safe Upsert Mode: Existing documents matching by _id will be updated, and new documents will be inserted.";
+    }
+    $("#confirmRestoreDialog")?.showModal();
+  });
+
+  $("#confirmRestoreModalForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    $("#confirmRestoreDialog")?.close();
+    const file = $("#restoreFileInput")?.files?.[0];
+    if (!file) return;
+
+    const mode = document.querySelector('input[name="restore_mode"]:checked')?.value || "upsert";
+    const btn = $("#restoreSubmitBtn");
+    const status = $("#restoreStatus");
+
+    try {
+      btn.disabled = true;
+      if (status) {
+        status.textContent = "Restoring database from backup archive... Please do not leave or close this page.";
+        status.style.color = "var(--text-secondary)";
+      }
+
+      const formData = new FormData();
+      formData.append("backup_file", file);
+      formData.append("mode", mode);
+
+      const res = await fetch("/api/admin/database/restore", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${state.access || readStoredToken(AUTH_ACCESS_KEY)}`,
+        },
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Restore failed");
+
+      if (status) {
+        status.textContent = `Restore complete: ${data.result?.total_collections || 0} collections (${data.result?.total_documents || 0} documents) in ${data.result?.duration || ""}`;
+        status.style.color = "var(--accent)";
+      }
+      setTimeout(() => renderDatabaseAdmin(), 2500);
+    } catch (err) {
+      if (status) {
+        status.textContent = `Restore failed: ${err.message}`;
+        status.style.color = "var(--danger)";
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // 3. Live Migration Events
+  const uriInput = $("#targetMongoUri");
+  const toggleVisBtn = $("#toggleTargetUriVis");
+  toggleVisBtn?.addEventListener("click", () => {
+    if (!uriInput) return;
+    const isPass = uriInput.type === "password";
+    uriInput.type = isPass ? "text" : "password";
+    toggleVisBtn.textContent = isPass ? "Hide URI" : "Show URI";
+  });
+
+  const outputBox = $("#migrationOutputBox");
+  const logMigration = (msg, isError = false) => {
+    if (!outputBox) return;
+    outputBox.style.display = "block";
+    const p = document.createElement("div");
+    p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    if (isError) p.style.color = "var(--danger)";
+    outputBox.appendChild(p);
+    outputBox.scrollTop = outputBox.scrollHeight;
+  };
+
+  $("#testMigrationConnectionBtn")?.addEventListener("click", async () => {
+    const uri = String($("#targetMongoUri")?.value || "").trim();
+    const dbName = String($("#targetMongoDb")?.value || "").trim();
+    if (!uri) {
+      alert("Please enter the Target MongoDB URI.");
+      return;
+    }
+    const testBtn = $("#testMigrationConnectionBtn");
+    try {
+      testBtn.disabled = true;
+      logMigration(`Testing connection to ${dbName || "bugmega"}...`);
+      const res = await api("/api/admin/database/migrate/test", {
+        method: "POST",
+        body: JSON.stringify({ target_uri: uri, target_db: dbName }),
+      });
+      logMigration(`Connection test successful! Target database has ${res.collections_count} existing collections.`);
+    } catch (err) {
+      logMigration(`Connection test failed: ${err.message}`, true);
+    } finally {
+      testBtn.disabled = false;
+    }
+  });
+
+  $("#liveMigrationForm")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const uri = String($("#targetMongoUri")?.value || "").trim();
+    const dbName = String($("#targetMongoDb")?.value || "").trim();
+    if (!uri) {
+      alert("Please enter the Target MongoDB URI.");
+      return;
+    }
+    const dbDesc = $("#confirmMigrationDbDesc");
+    if (dbDesc) dbDesc.textContent = `${dbName} (${uri.split("@").pop() || "remote"})`;
+    $("#confirmMigrationDialog")?.showModal();
+  });
+
+  $("#confirmMigrationModalForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    $("#confirmMigrationDialog")?.close();
+
+    const uri = String($("#targetMongoUri")?.value || "").trim();
+    const dbName = String($("#targetMongoDb")?.value || "").trim();
+    const cleanTarget = Boolean($("#cleanTargetMongo")?.checked);
+    const startBtn = $("#startMigrationBtn");
+
+    try {
+      startBtn.disabled = true;
+      logMigration(`Initiating live migration to ${dbName}... Please wait.`);
+
+      const data = await api("/api/admin/database/migrate", {
+        method: "POST",
+        body: JSON.stringify({
+          target_uri: uri,
+          target_db: dbName,
+          clean_target: cleanTarget,
+        }),
+      });
+
+      const res = data.result;
+      logMigration(`Migration completed successfully in ${res.duration}!`);
+      logMigration(`Total documents copied: ${res.total_documents} across ${res.collections?.length || 0} collections:`);
+      for (const col of res.collections || []) {
+        logMigration(` - ${col.name}: ${col.document_count} documents`);
+      }
+    } catch (err) {
+      logMigration(`Migration failed: ${err.message}`, true);
+    } finally {
+      startBtn.disabled = false;
     }
   });
 }
@@ -12373,31 +13369,11 @@ function openSupportChatSocket(chatID, usersByID = {}) {
 }
 
 async function refreshTimerWidget() {
-  clearInterval(state.timerTick);
   const widget = $("#timerWidget");
   if (!widget || !state.access) return;
   const data = await api("/api/time-entries/active").catch(() => ({ entry: null }));
-  if (!data.entry) {
-    widget.classList.remove("active");
-    widget.innerHTML = "";
-    return;
-  }
-  state.activeTimer = data.entry;
-  function draw() {
-    const seconds = Math.floor((Date.now() - new Date(data.entry.start_time).getTime()) / 1000);
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    widget.classList.add("active");
-    widget.innerHTML = `<strong>${esc(data.task?.title || "Timer")}</strong><span class="pill">${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}</span><button class="btn danger" id="stopTimerBtn">${icon("square")}Stop</button>`;
-    $("#stopTimerBtn").onclick = async () => {
-      await api(`/api/time-entries/${data.entry.id}/stop`, { method: "POST" });
-      refreshTimerWidget();
-    };
-    icons();
-  }
-  draw();
-  state.timerTick = setInterval(draw, 1000);
+  state.activeTimer = data.entry || null;
+  syncActiveTimerUI();
 }
 
 function renderRouteError(error) {
@@ -12523,6 +13499,7 @@ async function route(options = {}) {
     if (path() === "/admin/settings") return await renderSettings();
     if (path() === "/admin/plans") return await renderPlansAdmin();
     if (path() === "/admin/pages") return await renderPages();
+    if (path() === "/admin/backup") return await renderDatabaseAdmin();
     if (matchPageEdit) return await renderPageEditor(matchPageEdit[1]);
     return await marketplace.render("/dashboard");
   } catch (error) {
@@ -12556,6 +13533,45 @@ app.addEventListener("click", async event => {
     await marketplace.openFreelancerHelp({ tasks: single ? [data.task] : data.tasks || [], websiteName: data.website.name, websiteID: data.website.id, domainScope: !single });
   } catch (error) { window.alert(error.message); }
   finally { button.disabled = false; }
+});
+document.addEventListener("click", async (event) => {
+  const circleBtn = event.target.closest("[data-meta-timer-circle]");
+  if (circleBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const taskID = circleBtn.dataset.metaTimerCircle;
+    await toggleTaskTimerOptimistic(taskID);
+    return;
+  }
+  const modalBtn = event.target.closest("[data-open-task-timer-modal]");
+  if (modalBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const taskID = modalBtn.dataset.openTaskTimerModal;
+    openTaskTimerModal(taskID);
+    return;
+  }
+  const btn = event.target.closest("[data-quick-task-timer]");
+  if (btn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const taskID = btn.dataset.quickTaskTimer;
+    await toggleTaskTimerOptimistic(taskID);
+    return;
+  }
+  const opener = event.target.closest("[data-open-task]");
+  if (opener && !event.target.closest("button, a, form, input, select, textarea")) {
+    event.preventDefault();
+    const taskID = opener.dataset.openTask;
+    if (taskID) {
+      try {
+        const data = await api(`/api/tasks/${taskID}`);
+        await showTaskDetailDialog(data);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+  }
 });
 bindAppNavigation();
 route().catch(renderRouteError);

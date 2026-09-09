@@ -77,6 +77,7 @@ func (s *Server) Router() *gin.Engine {
 	router.GET("/admin/plans", s.appPage)
 	router.GET("/admin/pages", s.appPage)
 	router.GET("/admin/pages/:slug/edit", s.appPage)
+	router.GET("/admin/backup", s.appPage)
 	router.GET("/settings/company", s.appPage)
 	router.GET("/settings/billing", s.appPage)
 	router.GET("/team/integrations", s.appPage)
@@ -270,6 +271,11 @@ func (s *Server) Router() *gin.Engine {
 	owner.POST("/pages/:slug/publish", s.publishPage)
 	owner.GET("/pages/:slug/versions", s.pageVersions)
 	owner.POST("/pages/:slug/restore/:versionId", s.restorePageVersion)
+	owner.GET("/database/overview", s.adminDatabaseOverview)
+	owner.GET("/database/backup", s.adminDownloadBackup)
+	owner.POST("/database/restore", s.adminRestoreBackup)
+	owner.POST("/database/migrate/test", s.adminTestMigrationTarget)
+	owner.POST("/database/migrate", s.adminExecuteMigration)
 
 	router.NoRoute(func(c *gin.Context) {
 		if strings.HasPrefix(c.Request.URL.Path, "/api/") {

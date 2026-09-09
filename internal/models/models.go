@@ -662,4 +662,6 @@ type TimeEntry struct {
 	Note             string             `bson:"note,omitempty" json:"note,omitempty"`
 	Billable         bool               `bson:"billable" json:"billable"`
 	CreatedAt        time.Time          `bson:"created_at" json:"created_at"`
+	UserName         string             `bson:"-" json:"user_name,omitempty"`
+	UserEmail        string             `bson:"-" json:"user_email,omitempty"`
 }

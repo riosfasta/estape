@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -522,17 +523,22 @@ func (s *Server) stopTimer(c *gin.Context) {
 		return
 	}
 	now := time.Now()
-	duration := int(now.Sub(entry.StartTime).Minutes())
+	seconds := int64(now.Sub(entry.StartTime) / time.Second)
+	if seconds < 1 {
+		seconds = 1
+	}
+	duration := int((seconds + 59) / 60)
 	if duration < 1 {
 		duration = 1
 	}
-	_, err := s.store.C("time_entries").UpdateByID(c.Request.Context(), id, bson.M{"$set": bson.M{"end_time": now, "duration_minutes": duration}})
+	_, err := s.store.C("time_entries").UpdateByID(c.Request.Context(), id, bson.M{"$set": bson.M{"end_time": now, "duration_minutes": duration, "duration_seconds": seconds}})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not stop timer"})
 		return
 	}
 	entry.EndTime = &now
 	entry.DurationMinutes = duration
+	entry.DurationSeconds = seconds
 	c.JSON(http.StatusOK, gin.H{"entry": entry})
 }
 
@@ -562,12 +568,14 @@ func (s *Server) createManualTimeEntry(c *gin.Context) {
 	var req struct {
 		TaskID          string `json:"task_id"`
 		Date            string `json:"date"`
+		StartTime       string `json:"start_time"`
+		EndTime         string `json:"end_time"`
 		DurationMinutes int    `json:"duration_minutes"`
 		Note            string `json:"note"`
 		Billable        *bool  `json:"billable"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil || req.DurationMinutes <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "task_id and positive duration_minutes are required"})
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid time entry payload"})
 		return
 	}
 	taskID, err := objectIDFromString(req.TaskID)
@@ -582,18 +590,51 @@ func (s *Server) createManualTimeEntry(c *gin.Context) {
 	date := time.Now()
 	if strings.TrimSpace(req.Date) != "" {
 		parsed, err := time.Parse("2006-01-02", req.Date)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "date must be YYYY-MM-DD"})
-			return
+		if err == nil {
+			date = parsed
 		}
-		date = parsed
+	}
+	startTime := date
+	if strings.TrimSpace(req.StartTime) != "" {
+		if t, err := time.Parse(time.RFC3339, req.StartTime); err == nil {
+			startTime = t
+		} else if t, err := time.Parse("15:04", req.StartTime); err == nil {
+			startTime = time.Date(date.Year(), date.Month(), date.Day(), t.Hour(), t.Minute(), 0, 0, date.Location())
+		}
+	}
+	endTime := startTime.Add(time.Duration(req.DurationMinutes) * time.Minute)
+	if strings.TrimSpace(req.EndTime) != "" {
+		if t, err := time.Parse(time.RFC3339, req.EndTime); err == nil {
+			endTime = t
+		} else if t, err := time.Parse("15:04", req.EndTime); err == nil {
+			endTime = time.Date(date.Year(), date.Month(), date.Day(), t.Hour(), t.Minute(), 0, 0, date.Location())
+		}
+	}
+	if req.DurationMinutes <= 0 && endTime.After(startTime) {
+		req.DurationMinutes = int(endTime.Sub(startTime) / time.Minute)
+	}
+	if req.DurationMinutes <= 0 {
+		req.DurationMinutes = 1
+		endTime = startTime.Add(time.Minute)
 	}
 	billable := true
 	if req.Billable != nil {
 		billable = *req.Billable
 	}
-	end := date.Add(time.Duration(req.DurationMinutes) * time.Minute)
-	entry := models.TimeEntry{ID: primitive.NewObjectID(), TaskID: taskID, UserID: userCtx.ID, TeamID: teamID, StartTime: date, EndTime: &end, DurationMinutes: req.DurationMinutes, IsManual: true, Note: strings.TrimSpace(req.Note), Billable: billable, CreatedAt: time.Now()}
+	entry := models.TimeEntry{
+		ID:              primitive.NewObjectID(),
+		TaskID:          taskID,
+		UserID:          userCtx.ID,
+		TeamID:          teamID,
+		StartTime:       startTime,
+		EndTime:         &endTime,
+		DurationMinutes: req.DurationMinutes,
+		DurationSeconds: int64(req.DurationMinutes * 60),
+		IsManual:        true,
+		Note:            strings.TrimSpace(req.Note),
+		Billable:        billable,
+		CreatedAt:       time.Now(),
+	}
 	if _, err := s.store.C("time_entries").InsertOne(c.Request.Context(), entry); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create time entry"})
 		return
@@ -618,7 +659,8 @@ func (s *Server) listTimeEntries(c *gin.Context) {
 	if entries == nil {
 		entries = []models.TimeEntry{}
 	}
-	c.JSON(http.StatusOK, gin.H{"entries": entries})
+	usersMap := s.populateTimeEntryUsers(c.Request.Context(), entries)
+	c.JSON(http.StatusOK, gin.H{"entries": entries, "users": usersMap})
 }
 
 func (s *Server) updateTimeEntry(c *gin.Context) {
@@ -712,7 +754,8 @@ func (s *Server) timeReport(c *gin.Context) {
 	if entries == nil {
 		entries = []models.TimeEntry{}
 	}
-	c.JSON(http.StatusOK, gin.H{"entries": entries, "total_minutes": total, "group_by": c.Query("group_by")})
+	usersMap := s.populateTimeEntryUsers(c.Request.Context(), entries)
+	c.JSON(http.StatusOK, gin.H{"entries": entries, "total_minutes": total, "users": usersMap, "group_by": c.Query("group_by")})
 }
 
 func (s *Server) timeReportCSV(c *gin.Context) {
@@ -724,14 +767,20 @@ func (s *Server) timeReportCSV(c *gin.Context) {
 		return
 	}
 	defer cursor.Close(c.Request.Context())
-	var buf bytes.Buffer
-	writer := csv.NewWriter(&buf)
-	_ = writer.Write([]string{"entry_id", "task_id", "user_id", "date", "minutes", "manual", "billable", "note"})
+	var entries []models.TimeEntry
 	for cursor.Next(c.Request.Context()) {
 		var entry models.TimeEntry
 		if cursor.Decode(&entry) == nil {
-			_ = writer.Write([]string{entry.ID.Hex(), entry.TaskID.Hex(), entry.UserID.Hex(), entry.StartTime.Format("2006-01-02"), strconv.Itoa(entry.DurationMinutes), boolText(entry.IsManual), boolText(entry.Billable), entry.Note})
+			entries = append(entries, entry)
 		}
+	}
+	s.populateTimeEntryUsers(c.Request.Context(), entries)
+	var buf bytes.Buffer
+	writer := csv.NewWriter(&buf)
+	_ = writer.Write([]string{"entry_id", "task_id", "user_id", "user_name", "date", "minutes", "hours", "manual", "billable", "note"})
+	for _, entry := range entries {
+		hours := fmt.Sprintf("%.2f", float64(entry.DurationMinutes)/60.0)
+		_ = writer.Write([]string{entry.ID.Hex(), entry.TaskID.Hex(), entry.UserID.Hex(), entry.UserName, entry.StartTime.Format("2006-01-02"), strconv.Itoa(entry.DurationMinutes), hours, boolText(entry.IsManual), boolText(entry.Billable), entry.Note})
 	}
 	writer.Flush()
 	c.Header("Content-Type", "text/csv")
@@ -749,13 +798,69 @@ func (s *Server) stopActiveTimers(c *gin.Context, userID primitive.ObjectID) {
 	for cursor.Next(c.Request.Context()) {
 		var entry models.TimeEntry
 		if cursor.Decode(&entry) == nil {
-			duration := int(now.Sub(entry.StartTime).Minutes())
+			seconds := int64(now.Sub(entry.StartTime) / time.Second)
+			if seconds < 1 {
+				seconds = 1
+			}
+			duration := int((seconds + 59) / 60)
 			if duration < 1 {
 				duration = 1
 			}
-			_, _ = s.store.C("time_entries").UpdateByID(c.Request.Context(), entry.ID, bson.M{"$set": bson.M{"end_time": now, "duration_minutes": duration}})
+			_, _ = s.store.C("time_entries").UpdateByID(c.Request.Context(), entry.ID, bson.M{"$set": bson.M{"end_time": now, "duration_minutes": duration, "duration_seconds": seconds}})
 		}
 	}
+}
+
+func (s *Server) populateTimeEntryUsers(ctx context.Context, entries []models.TimeEntry) map[string]gin.H {
+	usersMap := make(map[string]gin.H)
+	if len(entries) == 0 {
+		return usersMap
+	}
+	userIDs := make([]primitive.ObjectID, 0, len(entries))
+	for _, e := range entries {
+		if !e.UserID.IsZero() {
+			userIDs = append(userIDs, e.UserID)
+		}
+	}
+	userIDs = uniqueObjectIDs(userIDs)
+	if len(userIDs) == 0 {
+		return usersMap
+	}
+	cursor, err := s.store.C("users").Find(ctx, bson.M{"_id": bson.M{"$in": userIDs}})
+	if err != nil {
+		return usersMap
+	}
+	defer cursor.Close(ctx)
+	for cursor.Next(ctx) {
+		var u models.User
+		if cursor.Decode(&u) == nil {
+			displayName := strings.TrimSpace(u.Name)
+			if displayName == "" {
+				displayName = strings.TrimSpace(u.Username)
+			}
+			if displayName == "" {
+				displayName = strings.TrimSpace(u.Email)
+			}
+			usersMap[u.ID.Hex()] = gin.H{
+				"id":         u.ID.Hex(),
+				"name":       displayName,
+				"email":      u.Email,
+				"username":   u.Username,
+				"avatar_url": u.AvatarURL,
+			}
+		}
+	}
+	for i := range entries {
+		if u, ok := usersMap[entries[i].UserID.Hex()]; ok {
+			if name, ok := u["name"].(string); ok {
+				entries[i].UserName = name
+			}
+			if email, ok := u["email"].(string); ok {
+				entries[i].UserEmail = email
+			}
+		}
+	}
+	return usersMap
 }
 
 func (s *Server) timeEntryFilter(c *gin.Context, userCtx middleware.UserContext) bson.M {

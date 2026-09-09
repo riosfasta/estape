@@ -4430,6 +4430,613 @@ body.sidebar-collapsed .client-task-panel.annotation-task-viewer {
   justify-self: start;
   margin: 0;
 }
+.timer-pill {
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all .15s ease;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+.timer-pill:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.timer-pill.danger,
+.timer-pill.active-pulse {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #ef4444;
+}
+.live-ticker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  font-variant-numeric: tabular-nums;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+}
+.live-ticker .pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  animation: pulse-ring 1.5s infinite;
+}
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+.task-meta-timer-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+.task-timer-label-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.task-timer-label-btn:hover {
+  border-color: var(--accent);
+  background: var(--bg-secondary);
+}
+.task-timer-label-btn.active {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  font-variant-numeric: tabular-nums;
+}
+.task-timer-label-btn svg,
+.task-timer-label-btn i {
+  width: 14px;
+  height: 14px;
+}
+.task-timer-circle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+  user-select: none;
+  flex-shrink: 0;
+}
+.task-timer-circle-btn:hover {
+  background: #ef4444;
+  color: #fff;
+  transform: scale(1.06);
+}
+.task-timer-circle-btn.running {
+  background: #ef4444;
+  color: #fff;
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25);
+  animation: pulseTimerCircle 2s infinite ease-in-out;
+}
+@keyframes pulseTimerCircle {
+  0%, 100% {
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.08);
+  }
+}
+.task-timer-circle-btn svg,
+.task-timer-circle-btn i {
+  width: 13px;
+  height: 13px;
+}
+/* ClickUp Style Time Tracker Modal */
+.time-tracker-dialog {
+  width: min(490px, calc(100vw - 28px));
+  max-height: 90vh;
+  background: #111217;
+  color: #f3f4f6;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 18px 20px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.75);
+}
+.time-tracker-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(2px);
+}
+.cu-modal-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+}
+.cu-modal-top-bar .cu-task-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+}
+.cu-modal-top-bar .cu-time-stats {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+.cu-progress-track {
+  width: 100%;
+  height: 4px;
+  background: #282a36;
+  border-radius: 999px;
+  margin: 10px 0 8px;
+  overflow: hidden;
+}
+.cu-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #6366f1;
+  transition: width 0.3s ease;
+}
+.cu-subtasks-stat-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #9ca3af;
+  margin-bottom: 12px;
+}
+.cu-subtasks-stat-bar span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cu-subtasks-stat-bar i,
+.cu-subtasks-stat-bar svg {
+  width: 13px;
+  height: 13px;
+  color: #9ca3af;
+}
+
+/* Logger Card */
+.cu-logger-card {
+  background: #17181f;
+  border: 1px solid #282a36;
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cu-input-box {
+  border: 1.5px solid #6366f1;
+  border-radius: 8px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(99, 102, 241, 0.04);
+  gap: 8px;
+}
+.cu-duration-text-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 13.5px;
+  outline: none;
+  font-family: inherit;
+}
+.cu-duration-text-input::placeholder {
+  color: #6b7280;
+}
+.cu-card-circle-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: #4b5563;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+.cu-card-circle-btn:hover {
+  background: #6b7280;
+  transform: scale(1.06);
+}
+.cu-card-circle-btn.running {
+  background: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25);
+  animation: pulseTimerCircle 2s infinite ease-in-out;
+}
+.cu-card-circle-btn svg,
+.cu-card-circle-btn i {
+  width: 13px;
+  height: 13px;
+}
+
+/* Time range & tooltips */
+.cu-time-range-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #d1d5db;
+}
+.cu-time-range-row i,
+.cu-time-range-row svg {
+  width: 15px;
+  height: 15px;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+.cu-date-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #e5e7eb;
+}
+.cu-date-badge:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.cu-date-badge input[type="date"] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.cu-time-hover-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #f3f4f6;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.cu-time-hover-pill:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+.cu-time-hidden-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.cu-hover-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #23242c;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 9px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  z-index: 1000;
+}
+.cu-hover-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 5px;
+  border-style: solid;
+  border-color: #23242c transparent transparent transparent;
+}
+.cu-time-hover-pill:hover .cu-hover-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+.cu-time-sep {
+  color: #6b7280;
+  user-select: none;
+}
+
+/* Clean input rows */
+.cu-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cu-input-row i,
+.cu-input-row svg {
+  width: 15px;
+  height: 15px;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+.cu-clean-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #e5e7eb;
+  font-size: 13px;
+  outline: none;
+  padding: 2px 0;
+  font-family: inherit;
+}
+.cu-clean-input::placeholder {
+  color: #6b7280;
+}
+
+/* Card footer */
+.cu-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 4px;
+}
+.cu-billable-toggle {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+}
+.cu-billable-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.cu-billable-track {
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: #374151;
+  position: relative;
+  transition: background 0.2s ease;
+  display: flex;
+  align-items: center;
+}
+.cu-billable-knob {
+  position: absolute;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  color: #111827;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+.cu-billable-toggle input:checked + .cu-billable-track {
+  background: #6366f1;
+}
+.cu-billable-toggle input:checked + .cu-billable-track .cu-billable-knob {
+  transform: translateX(20px);
+  color: #6366f1;
+}
+.cu-save-btn {
+  background: #6366f1;
+  color: #ffffff;
+  border: none;
+  border-radius: 7px;
+  padding: 6px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.cu-save-btn:hover {
+  background: #4f46e5;
+}
+.cu-save-btn:active {
+  transform: scale(0.97);
+}
+
+/* Time Entries Section */
+.cu-entries-section {
+  margin-top: 20px;
+}
+.cu-entries-title {
+  color: #9ca3af;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  margin-bottom: 8px;
+}
+.cu-user-group {
+  margin-bottom: 8px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.cu-user-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+.cu-user-group-head:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.cu-group-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: #9ca3af;
+  transition: transform 0.2s ease;
+}
+.cu-group-chevron svg,
+.cu-group-chevron i {
+  width: 14px;
+  height: 14px;
+}
+.cu-user-group.open .cu-group-chevron {
+  transform: rotate(90deg);
+}
+.cu-user-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #374151;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.cu-group-user-name {
+  color: #f3f4f6;
+  font-size: 13px;
+  font-weight: 600;
+  flex: 1;
+}
+.cu-group-total-dur {
+  color: #d1d5db;
+  font-size: 12px;
+  font-weight: 600;
+}
+.cu-user-entries-list {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0 6px 24px;
+}
+.cu-user-group.open .cu-user-entries-list {
+  display: flex;
+}
+.cu-entry-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 12.5px;
+}
+.cu-entry-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.cu-entry-range-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cu-entry-note-wrap {
+  flex: 1;
+  color: #9ca3af;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cu-entry-meta-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cu-billable-tag {
+  color: #10b981;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.1);
+}
+.cu-entry-dur {
+  color: #e5e7eb;
+  font-size: 12px;
+  font-weight: 600;
+}
+.cu-entry-del-btn {
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0.5;
+  transition: opacity 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+}
+.cu-entry-del-btn:hover {
+  opacity: 1;
+  background: rgba(239, 68, 68, 0.1);
+}
+.cu-entry-del-btn svg,
+.cu-entry-del-btn i {
+  width: 13px;
+  height: 13px;
+}
 .attachment-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 150px));
