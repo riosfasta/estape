@@ -3469,10 +3469,6 @@ function shell(title, html) {
           <div>
             <strong>${esc(workspaceName)}</strong>
             <span>${esc(workspaceSubtitle)}</span>
-            <small style="color:#666; font-size:11px; display:block; margin-top:4px;">
-              Role: ${esc(state.me?.role || "unknown")} | 
-              Team: ${esc(activeWorkspaceTeamID()?.substring(0,8) || "none")}...
-            </small>
           </div>
         </div>
         ${workspaceContextPickerHTML(workspaceOptionList)}
