@@ -369,17 +369,22 @@ func (s *Server) marketplaceTaskTeam(c *gin.Context) {
 	if !ok {
 		return
 	}
-	ctx := c.Request.Context()
-	var client models.ClientProject
-	var website models.ClientWebsite
-	_ = s.store.C("client_projects").FindOne(ctx, bson.M{"_id": task.ClientID}).Decode(&client)
-	_ = s.store.C("client_websites").FindOne(ctx, bson.M{"_id": task.WebsiteID}).Decode(&website)
-	rows := s.mergeMemberRows(s.clientProjectMembers(ctx, client), s.clientWebsiteMembers(ctx, website), s.scopedTaskFreelancers(ctx, task.ID))
+	rows, _ := s.clientTaskPermittedMemberRows(c.Request.Context(), task)
 	users := []gin.H{}
+	seen := map[primitive.ObjectID]bool{}
 	for _, row := range rows {
 		member, ok := row["user"].(models.User)
-		if ok {
-			users = append(users, gin.H{"id": member.ID, "name": member.Name, "username": member.Username, "avatar_url": member.AvatarURL})
+		if ok && !seen[member.ID] && member.Status == models.StatusActive {
+			seen[member.ID] = true
+			users = append(users, gin.H{
+				"id":         member.ID,
+				"name":       member.Name,
+				"username":   member.Username,
+				"email":      member.Email,
+				"avatar_url": member.AvatarURL,
+				"staff_role": member.StaffRole,
+				"role":       member.Role,
+			})
 		}
 	}
 	c.JSON(200, gin.H{"users": users})

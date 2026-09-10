@@ -1594,6 +1594,58 @@ func (s *Server) listAssignedClientTasks(c *gin.Context) {
 	})
 }
 
+func (s *Server) clientTaskPermittedMemberRows(ctx context.Context, task models.ClientTask) ([]gin.H, []gin.H) {
+	var client models.ClientProject
+	_ = s.store.C("client_projects").FindOne(ctx, bson.M{"_id": task.ClientID}).Decode(&client)
+	var website models.ClientWebsite
+	_ = s.store.C("client_websites").FindOne(ctx, bson.M{"_id": task.WebsiteID}).Decode(&website)
+	members := s.mergeMemberRows(s.clientProjectMembers(ctx, client), s.clientWebsiteMembers(ctx, website))
+	scopedMembers := s.scopedTaskFreelancers(ctx, task.ID)
+	members = s.mergeMemberRows(members, scopedMembers)
+	if !client.TeamID.IsZero() {
+		members = s.mergeMemberRows(members, s.teamMemberRows(ctx, client.TeamID))
+	}
+	missingIDs := []primitive.ObjectID{}
+	for _, aID := range task.AssigneeIDs {
+		if !aID.IsZero() && !containsMemberRow(members, aID) {
+			missingIDs = append(missingIDs, aID)
+		}
+	}
+	if !task.CreatedBy.IsZero() && !containsMemberRow(members, task.CreatedBy) {
+		missingIDs = append(missingIDs, task.CreatedBy)
+	}
+	if len(missingIDs) > 0 {
+		members = s.mergeMemberRows(members, s.usersToMemberRows(ctx, missingIDs))
+	}
+	return members, scopedMembers
+}
+
+func (s *Server) clientTaskMembers(c *gin.Context) {
+	task, ok := s.loadClientTaskForAccess(c, false)
+	if !ok {
+		return
+	}
+	rows, _ := s.clientTaskPermittedMemberRows(c.Request.Context(), task)
+	users := []gin.H{}
+	seen := map[primitive.ObjectID]bool{}
+	for _, row := range rows {
+		member, ok := row["user"].(models.User)
+		if ok && !seen[member.ID] && member.Status == models.StatusActive {
+			seen[member.ID] = true
+			users = append(users, gin.H{
+				"id":         member.ID,
+				"name":       member.Name,
+				"username":   member.Username,
+				"email":      member.Email,
+				"avatar_url": member.AvatarURL,
+				"staff_role": member.StaffRole,
+				"role":       member.Role,
+			})
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"users": users})
+}
+
 func (s *Server) getClientTask(c *gin.Context) {
 	task, ok := s.loadClientTaskForAccess(c, false)
 	if !ok {
@@ -1607,21 +1659,7 @@ func (s *Server) getClientTask(c *gin.Context) {
 	_ = s.store.C("client_tabs").FindOne(c.Request.Context(), bson.M{"_id": task.TabID}).Decode(&tab)
 	comments, _ := s.clientTaskComments(c.Request.Context(), task.ID)
 	logs, _ := s.clientTaskLogs(c.Request.Context(), task.ID)
-	members := s.mergeMemberRows(s.clientProjectMembers(c.Request.Context(), client), s.clientWebsiteMembers(c.Request.Context(), website))
-	scopedMembers := s.scopedTaskFreelancers(c.Request.Context(), task.ID)
-	members = s.mergeMemberRows(members, scopedMembers)
-	if !client.TeamID.IsZero() {
-		members = s.mergeMemberRows(members, s.teamMemberRows(c.Request.Context(), client.TeamID))
-	}
-	missingIDs := []primitive.ObjectID{}
-	for _, aID := range task.AssigneeIDs {
-		if !aID.IsZero() && !containsMemberRow(members, aID) {
-			missingIDs = append(missingIDs, aID)
-		}
-	}
-	if len(missingIDs) > 0 {
-		members = s.mergeMemberRows(members, s.usersToMemberRows(c.Request.Context(), missingIDs))
-	}
+	members, scopedMembers := s.clientTaskPermittedMemberRows(c.Request.Context(), task)
 	userCtx, _ := currentUser(c)
 	c.JSON(http.StatusOK, gin.H{
 		"task":                task,
@@ -3512,13 +3550,26 @@ func (s *Server) notifyClientTaskCommentMentions(ctx context.Context, task model
 		s.notifyMentions(ctx, task.TeamID, actorID, content, "client_task_comment", commentID)
 		return nil
 	}
-	allowedIDs := uniqueObjectIDs(append(append([]primitive.ObjectID{}, client.MemberIDs...), client.ClientAdminIDs...))
+	rows, scopedRows := s.clientTaskPermittedMemberRows(ctx, task)
+	allowedIDs := []primitive.ObjectID{}
 	scopedJobs := map[primitive.ObjectID]primitive.ObjectID{}
-	for _, row := range s.scopedTaskFreelancers(ctx, task.ID) {
-		member := row["user"].(models.User)
-		allowedIDs = append(allowedIDs, member.ID)
-		scopedJobs[member.ID] = row["job_id"].(primitive.ObjectID)
+	for _, row := range rows {
+		if member, ok := row["user"].(models.User); ok {
+			allowedIDs = append(allowedIDs, member.ID)
+			if jobID, hasJob := row["job_id"].(primitive.ObjectID); hasJob {
+				scopedJobs[member.ID] = jobID
+			}
+		}
 	}
+	for _, row := range scopedRows {
+		if member, ok := row["user"].(models.User); ok {
+			allowedIDs = append(allowedIDs, member.ID)
+			if jobID, hasJob := row["job_id"].(primitive.ObjectID); hasJob {
+				scopedJobs[member.ID] = jobID
+			}
+		}
+	}
+	allowedIDs = uniqueObjectIDs(allowedIDs)
 	if len(allowedIDs) == 0 {
 		return nil
 	}

@@ -1516,3 +1516,51 @@ func (s *Server) teamWithinProjectLimit(c *gin.Context, teamID primitive.ObjectI
 	}
 	return count < plan.ProjectLimit, plan.ProjectLimit
 }
+
+func (s *Server) getTaskMembers(c *gin.Context) {
+	id, ok := objectIDParam(c, "id")
+	if !ok {
+		return
+	}
+	var task models.Task
+	if err := s.store.C("tasks").FindOne(c.Request.Context(), bson.M{"_id": id}).Decode(&task); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		return
+	}
+	teamID, err := s.teamForList(c.Request.Context(), task.ListID)
+	if err != nil || !s.canAccessTeam(c, teamID) {
+		return
+	}
+	rows := s.teamMemberRows(c.Request.Context(), teamID)
+	missingIDs := []primitive.ObjectID{}
+	for _, aID := range task.AssigneeIDs {
+		if !aID.IsZero() && !containsMemberRow(rows, aID) {
+			missingIDs = append(missingIDs, aID)
+		}
+	}
+	if !task.CreatedBy.IsZero() && !containsMemberRow(rows, task.CreatedBy) {
+		missingIDs = append(missingIDs, task.CreatedBy)
+	}
+	if len(missingIDs) > 0 {
+		rows = s.mergeMemberRows(rows, s.usersToMemberRows(c.Request.Context(), missingIDs))
+	}
+	users := []gin.H{}
+	seen := map[primitive.ObjectID]bool{}
+	for _, row := range rows {
+		member, ok := row["user"].(models.User)
+		if ok && !seen[member.ID] && member.Status == models.StatusActive {
+			seen[member.ID] = true
+			users = append(users, gin.H{
+				"id":         member.ID,
+				"name":       member.Name,
+				"username":   member.Username,
+				"email":      member.Email,
+				"avatar_url": member.AvatarURL,
+				"staff_role": member.StaffRole,
+				"role":       member.Role,
+			})
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"users": users})
+}
+

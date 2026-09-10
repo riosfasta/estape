@@ -101,6 +101,7 @@ const state = {
   chatReply: null,
   supportReply: null,
   mentionUsers: null,
+  taskMentionUsers: {},
   mentionTarget: null,
   mentionToken: null,
   mentionActiveIndex: 0,
@@ -229,7 +230,21 @@ function setTaskPanelActive(active) {
   if (active) requestAnimationFrame(syncTaskPanelOffset);
 }
 
+function isClientTaskModalMode(options = {}) {
+  if (options.asModal !== undefined) return Boolean(options.asModal);
+  const existing = $("#clientTaskPanel");
+  if (existing) {
+    if (existing.classList.contains("client-task-modal") || existing.tagName.toLowerCase() === "dialog") return true;
+  }
+  return path() === "/inbox";
+}
+
 function closeClientTaskPanel(panel = $("#clientTaskPanel")) {
+  if (panel?.tagName?.toLowerCase() === "dialog" && panel.open) {
+    try {
+      panel.close();
+    } catch {}
+  }
   panel?.remove();
   setTaskPanelActive(false);
   document.body.classList.remove("annotation-viewer-open");
@@ -237,48 +252,94 @@ function closeClientTaskPanel(panel = $("#clientTaskPanel")) {
   state.clientTaskCommentEdit = null;
 }
 
-function showClientTaskPanelLoading(label = "Opening task...") {
-  setTaskPanelActive(true);
-  document.body.classList.remove("annotation-viewer-open");
+function showClientTaskPanelLoading(label = "Opening task...", options = {}) {
+  const asModal = isClientTaskModalMode(options);
+  if (!asModal) {
+    setTaskPanelActive(true);
+    document.body.classList.remove("annotation-viewer-open");
+  } else {
+    setTaskPanelActive(false);
+  }
   let panel = $("#clientTaskPanel");
+  if (panel && (asModal ? panel.tagName.toLowerCase() !== "dialog" : panel.tagName.toLowerCase() !== "section")) {
+    panel.remove();
+    panel = null;
+  }
   if (!panel) {
-    panel = document.createElement("section");
+    panel = document.createElement(asModal ? "dialog" : "section");
     panel.id = "clientTaskPanel";
     document.body.appendChild(panel);
   }
-  panel.className = "client-task-panel task-panel-loading";
+  panel.className = asModal
+    ? "modal client-task-modal client-task-panel task-panel-loading"
+    : "client-task-panel task-panel-loading";
   panel.innerHTML = `<div class="task-panel-loader" role="status" aria-live="polite">
     <span class="inline-spinner" aria-hidden="true"></span>
     <span>${esc(label)}</span>
   </div>`;
+  if (asModal && typeof panel.showModal === "function" && !panel.open) {
+    try {
+      panel.showModal();
+    } catch {}
+  }
 }
 
-function showClientTaskPanelError(message = "Could not open task.") {
-  setTaskPanelActive(true);
+function showClientTaskPanelError(message = "Could not open task.", options = {}) {
+  const asModal = isClientTaskModalMode(options);
+  if (!asModal) {
+    setTaskPanelActive(true);
+  } else {
+    setTaskPanelActive(false);
+  }
   let panel = $("#clientTaskPanel");
+  if (panel && (asModal ? panel.tagName.toLowerCase() !== "dialog" : panel.tagName.toLowerCase() !== "section")) {
+    panel.remove();
+    panel = null;
+  }
   if (!panel) {
-    panel = document.createElement("section");
+    panel = document.createElement(asModal ? "dialog" : "section");
     panel.id = "clientTaskPanel";
     document.body.appendChild(panel);
   }
-  panel.className = "client-task-panel task-panel-loading";
+  panel.className = asModal
+    ? "modal client-task-modal client-task-panel task-panel-loading"
+    : "client-task-panel task-panel-loading";
   panel.innerHTML = `<div class="task-panel-loader task-panel-error">
     <strong>Could not open task</strong>
     <span>${esc(message)}</span>
     <button class="btn compact" type="button" data-close-client-task>${icon("x")}Close</button>
   </div>`;
   panel.querySelector("[data-close-client-task]")?.addEventListener("click", () => closeClientTaskPanel(panel));
+  if (asModal) {
+    panel.onclick = (event) => {
+      if (event.target !== panel) return;
+      const rect = panel.getBoundingClientRect();
+      const clickedInDialog = (
+        rect.top <= event.clientY &&
+        event.clientY <= rect.top + rect.height &&
+        rect.left <= event.clientX &&
+        event.clientX <= rect.left + rect.width
+      );
+      if (!clickedInDialog) closeClientTaskPanel(panel);
+    };
+    if (typeof panel.showModal === "function" && !panel.open) {
+      try {
+        panel.showModal();
+      } catch {}
+    }
+  }
   icons();
 }
 
-async function openClientTaskWithProgress(taskID, focusCommentID = "", trigger = null) {
+async function openClientTaskWithProgress(taskID, focusCommentID = "", trigger = null, options = {}) {
   if (!taskID) return;
+  const asModal = isClientTaskModalMode(options);
   const stopButton = setButtonLoading(trigger, true, "Opening...");
-  showClientTaskPanelLoading();
+  showClientTaskPanelLoading("Opening task...", { asModal });
   try {
-    await openClientTaskPanel(taskID, focusCommentID);
+    await openClientTaskPanel(taskID, focusCommentID, { asModal });
   } catch (error) {
-    showClientTaskPanelError(error.message);
+    showClientTaskPanelError(error.message, { asModal });
   } finally {
     stopButton();
   }
@@ -1274,6 +1335,7 @@ function bindWorkspaceContextSwitcher() {
       state.workspaceContext = targetValue;
       localStorage.setItem(WORKSPACE_CONTEXT_KEY, state.workspaceContext);
       state.mentionUsers = null;
+      state.taskMentionUsers = {};
       await loadMe();
       route();
     } catch (error) {
@@ -1285,12 +1347,50 @@ function bindWorkspaceContextSwitcher() {
 }
 
 async function loadMentionUsers(taskID = "") {
-  if (taskID) { const data = await api(`/api/marketplace/tasks/${encodeURIComponent(taskID)}/team`).catch(() => ({ users: [] })); return data.users || []; }
+  if (taskID) {
+    state.taskMentionUsers = state.taskMentionUsers || {};
+    if (state.taskMentionUsers[taskID]) return state.taskMentionUsers[taskID];
+    let users = [];
+    try {
+      const data = await api(`/api/client-tasks/${encodeURIComponent(taskID)}/members`);
+      if (Array.isArray(data.users) && data.users.length) users = data.users;
+    } catch {}
+    if (!users.length) {
+      try {
+        const data = await api(`/api/tasks/${encodeURIComponent(taskID)}/members`);
+        if (Array.isArray(data.users) && data.users.length) users = data.users;
+      } catch {}
+    }
+    if (!users.length) {
+      try {
+        const data = await api(`/api/marketplace/tasks/${encodeURIComponent(taskID)}/team`);
+        if (Array.isArray(data.users) && data.users.length) users = data.users;
+      } catch {}
+    }
+    if (!users.length) {
+      users = await loadMentionUsers("");
+    }
+    const seen = new Set();
+    const filtered = (users || []).filter((u) => {
+      const key = String(u.id || u.username || "");
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return Boolean(u.username);
+    });
+    state.taskMentionUsers[taskID] = filtered;
+    return filtered;
+  }
   if (state.mentionUsers) return state.mentionUsers;
   const teamID = activeWorkspaceTeamID();
   const url = teamID ? `/api/users/mentions?team_id=${encodeURIComponent(teamID)}` : "/api/users/mentions";
   const data = await api(url).catch(() => ({ users: [] }));
-  state.mentionUsers = (data.users || []).filter((user) => user.username);
+  const seen = new Set();
+  state.mentionUsers = (data.users || []).filter((u) => {
+    const key = String(u.id || u.username || "");
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return Boolean(u.username);
+  });
   return state.mentionUsers;
 }
 
@@ -1306,14 +1406,18 @@ function mentionToken(input) {
   };
 }
 
-function mentionBox() {
+function mentionBox(targetInput = null) {
   let box = document.getElementById("mentionSuggestions");
   if (!box) {
     box = document.createElement("div");
     box.id = "mentionSuggestions";
     box.className = "mention-suggestions";
     box.hidden = true;
-    document.body.appendChild(box);
+  }
+  const modalDialog = targetInput?.closest ? targetInput.closest("dialog[open]") : null;
+  const targetParent = modalDialog || document.body;
+  if (box.parentElement !== targetParent) {
+    targetParent.appendChild(box);
   }
   return box;
 }
@@ -1348,16 +1452,27 @@ async function updateMentionSuggestions(input) {
   state.mentionToken = token;
   state.mentionActiveIndex = Math.min(state.mentionActiveIndex, matches.length - 1);
   const rect = input.getBoundingClientRect();
-  const box = mentionBox();
-  box.style.left = `${Math.max(8, rect.left)}px`;
-  box.style.top = `${rect.bottom + 6}px`;
-  box.style.width = `${Math.min(360, Math.max(240, rect.width))}px`;
+  const box = mentionBox(input);
+  const boxWidth = Math.min(360, Math.max(260, rect.width));
+  const boxLeft = Math.max(8, Math.min(rect.left, window.innerWidth - boxWidth - 16));
+  const spaceBelow = window.innerHeight - rect.bottom;
+  box.style.left = `${boxLeft}px`;
+  box.style.width = `${boxWidth}px`;
+  if (spaceBelow < 210 && rect.top > 200) {
+    box.style.bottom = `${window.innerHeight - rect.top + 6}px`;
+    box.style.top = "auto";
+  } else {
+    box.style.top = `${rect.bottom + 6}px`;
+    box.style.bottom = "auto";
+  }
   box.innerHTML = matches.map((user, index) => `
     <button class="mention-suggestion ${index === state.mentionActiveIndex ? "active" : ""}" type="button" data-mention-username="${esc(user.username)}">
       <strong>@${esc(user.username)}</strong>
       <span>${esc(user.name || user.email || "")}${user.staff_role ? " · " + esc(staffRoleLabel(user.staff_role)) : ""}</span>
     </button>`).join("");
   box.hidden = false;
+  const activeBtn = box.querySelector(".mention-suggestion.active");
+  activeBtn?.scrollIntoView({ block: "nearest" });
   box.querySelectorAll("[data-mention-username]").forEach((btn) => btn.addEventListener("mousedown", (event) => {
     event.preventDefault();
     insertMention(btn.dataset.mentionUsername);
@@ -3682,19 +3797,33 @@ async function renderDashboard() {
   bindNotificationActions();
   const focusTaskID = params.get("task_id") || "";
   const focusCommentID = params.get("comment_id") || "";
-  if (focusTaskID && (params.get("source_type") || "task") === "task") {
-    setTimeout(async () => {
-      try {
-        if (focusCommentID) {
-          const readData = await api(`/api/tasks/${focusTaskID}/comments/${focusCommentID}/read`, { method: "POST", body: JSON.stringify({}) }).catch(() => ({}));
-          if (readData.unread_count !== undefined) updateInboxBadge(readData.unread_count);
+  const sourceType = params.get("source_type") || "task";
+  if (focusTaskID) {
+    if (sourceType === "client_task") {
+      setTimeout(async () => {
+        try {
+          if (focusCommentID) {
+            await api(`/api/client-task-comments/${focusCommentID}/read`, { method: "POST", body: JSON.stringify({}) }).catch(() => ({}));
+          }
+          await openClientTaskWithProgress(focusTaskID, focusCommentID, null, { asModal: true });
+        } catch (error) {
+          setStatus(error.message, true);
         }
-        const data = await api(`/api/tasks/${focusTaskID}`);
-        showTaskDetailDialog(data, focusCommentID);
-      } catch (error) {
-        setStatus(error.message, true);
-      }
-    }, 0);
+      }, 0);
+    } else if (sourceType === "task") {
+      setTimeout(async () => {
+        try {
+          if (focusCommentID) {
+            const readData = await api(`/api/tasks/${focusTaskID}/comments/${focusCommentID}/read`, { method: "POST", body: JSON.stringify({}) }).catch(() => ({}));
+            if (readData.unread_count !== undefined) updateInboxBadge(readData.unread_count);
+          }
+          const data = await api(`/api/tasks/${focusTaskID}`);
+          showTaskDetailDialog(data, focusCommentID);
+        } catch (error) {
+          setStatus(error.message, true);
+        }
+      }, 0);
+    }
   }
 }
 
@@ -3839,7 +3968,7 @@ async function openNotificationTarget(data = {}) {
     }
   }
   if (target.source_type === "client_task" && target.task_id) {
-    await openClientTaskWithProgress(target.task_id, target.comment_id || "");
+    await openClientTaskWithProgress(target.task_id, target.comment_id || "", null, { asModal: true });
     return;
   }
   if (target.source_type === "chat" && target.chat_id) {
@@ -3869,7 +3998,8 @@ function notificationTaskTargetFromURL(url) {
       return { source_type: "client_task", task_id: taskID, comment_id: commentID, url: parsed.pathname + parsed.search };
     }
     if (parsed.pathname === "/inbox" || parsed.pathname === "/dashboard") {
-      return { source_type: "task", task_id: taskID, comment_id: commentID, url: parsed.pathname + parsed.search };
+      const sourceType = parsed.searchParams.get("source_type") || "task";
+      return { source_type: sourceType, task_id: taskID, comment_id: commentID, url: parsed.pathname + parsed.search };
     }
   } catch {
     return null;
@@ -4309,17 +4439,19 @@ async function refreshOpenClientTaskPanelLive() {
     const signature = clientTaskDetailLiveSignature(data);
     if (signature && signature !== panel.dataset.liveSignature) {
       const annotationID = panel.dataset.liveAnnotationId || "";
+      const asModal = isClientTaskModalMode();
       if ((data.task || {}).type === "annotation" || panel.classList.contains("annotation-task-viewer")) {
-        await openClientAnnotationTaskViewer(taskID, data, annotationID);
+        await openClientAnnotationTaskViewer(taskID, data, annotationID, "", { asModal });
       } else {
-        await openClientTaskPanel(taskID);
+        await openClientTaskPanel(taskID, "", { asModal });
       }
       const nextPanel = $("#clientTaskPanel");
       if (nextPanel) nextPanel.dataset.liveSignature = signature;
     }
   } catch {
+    const asModal = isClientTaskModalMode();
     closeClientTaskPanel(panel);
-    if (!livePageRefreshBlocked()) route();
+    if (!livePageRefreshBlocked() && !asModal) route();
   }
 }
 
@@ -4530,7 +4662,7 @@ function bindInboxCommentRows() {
         marker.setAttribute("aria-label", "Read comment");
       }
       if (sourceType === "client_task") {
-        await openClientTaskWithProgress(taskID, commentID, row);
+        await openClientTaskWithProgress(taskID, commentID, row, { asModal: true });
       } else {
         const data = await api(`/api/tasks/${taskID}`);
         showTaskDetailDialog(data, commentID);
@@ -4621,7 +4753,7 @@ function taskRows(tasks) {
         <span class="muted">${mentionText(task.description || "")}</span>
         <div class="comment-list">${(task.comments || []).slice(-2).map((comment) => `<p>${mentionText(comment.content)}</p>`).join("")}</div>
         <form class="inline-comment" data-task-comment="${task.id}">
-          <input name="content" data-mentionable placeholder="Comment @username">
+          <input name="content" data-mentionable data-mention-task-id="${task.id}" placeholder="Comment @username">
           <button class="btn icon quiet" title="Add comment">${icon("send")}</button>
         </form>
       </div>
@@ -7082,12 +7214,23 @@ function setClientTaskCommentEdit(comment, root = $("#clientTaskPanel") || docum
   icons();
 }
 
-async function openClientAnnotationTaskViewer(taskID, initialData = null, openAnnotationID = "", focusCommentID = "") {
-  setTaskPanelActive(true);
-  document.body.classList.add("annotation-viewer-open");
+async function openClientAnnotationTaskViewer(taskID, initialData = null, openAnnotationID = "", focusCommentID = "", options = {}) {
+  const asModal = isClientTaskModalMode(options);
+  if (!asModal) {
+    setTaskPanelActive(true);
+    document.body.classList.add("annotation-viewer-open");
+  } else {
+    setTaskPanelActive(false);
+  }
   const data = initialData || await api(`/api/client-tasks/${taskID}`);
   const task = data.task || {};
   const usersByID = clientTaskUsersByID(data.members || []);
+  if (Array.isArray(data.members)) {
+    state.taskMentionUsers = state.taskMentionUsers || {};
+    state.taskMentionUsers[taskID] = data.members
+      .map((m) => m.user || m)
+      .filter((u) => u && u.username);
+  }
   (data.log_users || []).forEach((user) => {
     if (user?.id) usersByID[user.id] = user;
   });
@@ -7104,12 +7247,18 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
   let activeAnnotationID = String(openAnnotationID || "");
   if (!activeAnnotationID && focusCommentID && annotationItems[0]?.id) activeAnnotationID = String(annotationItems[0].id);
   let panel = $("#clientTaskPanel");
+  if (panel && (asModal ? panel.tagName.toLowerCase() !== "dialog" : panel.tagName.toLowerCase() !== "section")) {
+    panel.remove();
+    panel = null;
+  }
   if (!panel) {
-    panel = document.createElement("section");
+    panel = document.createElement(asModal ? "dialog" : "section");
     panel.id = "clientTaskPanel";
     document.body.appendChild(panel);
   }
-  panel.className = "client-task-panel annotation-task-viewer";
+  panel.className = asModal
+    ? "modal client-task-modal client-task-panel annotation-task-viewer"
+    : "client-task-panel annotation-task-viewer";
   panel.dataset.liveTaskId = taskID;
   panel.dataset.liveTaskMode = "annotation";
   panel.dataset.liveAnnotationId = activeAnnotationID;
@@ -7186,6 +7335,28 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     closeClientTaskPanel(panel);
   };
   panel.querySelector("[data-close-client-task]")?.addEventListener("click", close);
+  if (asModal) {
+    panel.onclick = (event) => {
+      if (event.target !== panel) return;
+      const rect = panel.getBoundingClientRect();
+      const clickedInDialog = (
+        rect.top <= event.clientY &&
+        event.clientY <= rect.top + rect.height &&
+        rect.left <= event.clientX &&
+        event.clientX <= rect.left + rect.width
+      );
+      if (!clickedInDialog) close();
+    };
+    panel.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      close();
+    });
+    if (typeof panel.showModal === "function" && !panel.open) {
+      try {
+        panel.showModal();
+      } catch {}
+    }
+  }
   const openViewerAnnotationDetail = (annotationID) => {
     const annotation = annotationItems.find((item) => String(item.id) === String(annotationID)) || annotationItems[0];
     const body = panel.querySelector("#annotationViewerDetailBody");
@@ -7256,7 +7427,8 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     if (!typedConfirm("Delete this annotation task? Comments, logs, and attachments linked to this task will be removed.")) return;
     await api(`/api/client-tasks/${taskID}`, { method: "DELETE" });
     close();
-    route();
+    if (!asModal) route();
+    else if (path() === "/inbox") renderDashboard();
   });
   panel.querySelector("#taskUpdateLogBtn")?.addEventListener("click", async () => {
     const dialog = panel.querySelector("#taskUpdateLogDialog");
@@ -7291,8 +7463,8 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     try {
       await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify(body) });
       panel.querySelector("#editClientAnnotationTaskDialog")?.close();
-      await openClientAnnotationTaskViewer(taskID, null, activeAnnotationID);
-      route();
+      await openClientAnnotationTaskViewer(taskID, null, activeAnnotationID, "", { asModal });
+      if (!asModal) route();
     } catch (error) {
       setFormStatus(form, error.message, true);
     }
@@ -7306,11 +7478,11 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     syncClientAnnotationItemStatusControls(panel, annotationID, statuses, status);
   });
   bindStatusAddControls(panel, data.tab, [task], async () => {
-    await openClientAnnotationTaskViewer(taskID, null, activeAnnotationID);
-    route();
+    await openClientAnnotationTaskViewer(taskID, null, activeAnnotationID, "", { asModal });
+    if (!asModal) route();
   });
   bindClientTaskQuickAutosave(panel, taskID, async () => {
-    route();
+    if (!asModal) route();
   }, task);
   bindRichEditors(panel);
   bindRecurrenceControls(panel);
@@ -7396,7 +7568,7 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
         return;
       }
       const submit = commentForm.querySelector("[type='submit']");
-      if (submit) submit.disabled = true;
+      const stopLoading = setButtonLoading(submit, true, "Sending...");
       try {
         if (state.clientTaskCommentEdit) {
           const body = { content };
@@ -7426,7 +7598,7 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
       } catch (error) {
         setFormStatus(commentForm, error.message, true);
       } finally {
-        if (submit) submit.disabled = false;
+        stopLoading();
       }
     });
   }
@@ -7445,26 +7617,43 @@ function scopedFreelancerTeamHTML(data) {
   return '<section class="panel scoped-task-team"><h3>Freelancers on this task</h3><p class="muted">Task access only. Mention these teammates in the comments below.</p><div class="toolbar">' + members.map(row => '<a class="btn" href="/marketplace/jobs/' + esc(row.job_id) + '">' + esc(row.user.name || row.user.username || "Freelancer") + ' &middot; Chat &amp; shared tasks</a>').join("") + '</div></section>';
 }
 
-async function openClientTaskPanel(taskID, focusCommentID = "") {
+async function openClientTaskPanel(taskID, focusCommentID = "", options = {}) {
+  const asModal = isClientTaskModalMode(options);
   const data = await api(`/api/client-tasks/${taskID}`);
   const task = data.task || {};
   if (task.type === "annotation") {
-    await openClientAnnotationTaskViewer(taskID, data, "", focusCommentID);
+    await openClientAnnotationTaskViewer(taskID, data, "", focusCommentID, { asModal });
     return;
   }
-  setTaskPanelActive(true);
-  document.body.classList.remove("annotation-viewer-open");
+  if (!asModal) {
+    setTaskPanelActive(true);
+    document.body.classList.remove("annotation-viewer-open");
+  } else {
+    setTaskPanelActive(false);
+  }
   const usersByID = clientTaskUsersByID(data.members || []);
+  if (Array.isArray(data.members)) {
+    state.taskMentionUsers = state.taskMentionUsers || {};
+    state.taskMentionUsers[taskID] = data.members
+      .map((m) => m.user || m)
+      .filter((u) => u && u.username);
+  }
   (data.log_users || []).forEach((user) => {
     if (user?.id) usersByID[user.id] = user;
   });
   let panel = $("#clientTaskPanel");
+  if (panel && (asModal ? panel.tagName.toLowerCase() !== "dialog" : panel.tagName.toLowerCase() !== "section")) {
+    panel.remove();
+    panel = null;
+  }
   if (!panel) {
-    panel = document.createElement("section");
+    panel = document.createElement(asModal ? "dialog" : "section");
     panel.id = "clientTaskPanel";
     document.body.appendChild(panel);
   }
-  panel.className = "client-task-panel";
+  panel.className = asModal
+    ? "modal client-task-modal client-task-panel"
+    : "client-task-panel";
   const canManageFolder = Boolean(data.can_manage);
   const canManageTask = Boolean(data.can_manage_task || canManageClientTaskUI(task, canManageFolder));
   const canUpdateProgress = Boolean(data.can_update_progress || canManageTask);
@@ -7550,6 +7739,28 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
   panel.querySelector("[data-close-client-task]")?.addEventListener("click", () => {
     closeClientTaskPanel(panel);
   });
+  if (asModal) {
+    panel.onclick = (event) => {
+      if (event.target !== panel) return;
+      const rect = panel.getBoundingClientRect();
+      const clickedInDialog = (
+        rect.top <= event.clientY &&
+        event.clientY <= rect.top + rect.height &&
+        rect.left <= event.clientX &&
+        event.clientX <= rect.left + rect.width
+      );
+      if (!clickedInDialog) closeClientTaskPanel(panel);
+    };
+    panel.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      closeClientTaskPanel(panel);
+    });
+    if (typeof panel.showModal === "function" && !panel.open) {
+      try {
+        panel.showModal();
+      } catch {}
+    }
+  }
   panel.querySelector("#editClientTaskBtn")?.addEventListener("click", () => panel.querySelector("#editClientTaskDialog")?.showModal());
   panel.querySelector("#taskUpdateLogBtn")?.addEventListener("click", async () => {
     const dialog = panel.querySelector("#taskUpdateLogDialog");
@@ -7571,7 +7782,8 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
     if (!confirm("Delete this task?")) return;
     await api(`/api/client-tasks/${taskID}`, { method: "DELETE" });
     closeClientTaskPanel(panel);
-    route();
+    if (!asModal) route();
+    else if (path() === "/inbox") renderDashboard();
   });
   panel.querySelector("#editClientTaskForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -7595,7 +7807,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
     try {
       await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify(body) });
       panel.querySelector("#editClientTaskDialog")?.close();
-      await openClientTaskPanel(taskID);
+      await openClientTaskPanel(taskID, "", { asModal });
     } catch (error) {
       setFormStatus(form, error.message, true);
     }
@@ -7604,11 +7816,11 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
   bindAssigneePickers(panel);
   bindStatusPickers(panel);
   bindStatusAddControls(panel, data.tab, [task], async () => {
-    await openClientTaskPanel(taskID);
-    route();
+    await openClientTaskPanel(taskID, "", { asModal });
+    if (!asModal) route();
   });
   bindClientTaskQuickAutosave(panel, taskID, async () => {
-    route();
+    if (!asModal) route();
   }, task);
   bindRichEditors(panel);
   bindChecklistBuilders(panel);
@@ -7685,6 +7897,8 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
     const content = textarea.value.trim();
     const file = form.elements.attachment.files?.[0];
     if (!content && !file) return;
+    const submitBtn = form.querySelector("[type='submit']");
+    const stopLoading = setButtonLoading(submitBtn, true, "Sending...");
     try {
       if (state.clientTaskCommentEdit) {
         const body = { content };
@@ -7713,6 +7927,8 @@ async function openClientTaskPanel(taskID, focusCommentID = "") {
       await refreshTaskPanelComments();
     } catch (error) {
       setFormStatus(form, error.message, true);
+    } finally {
+      stopLoading();
     }
   });
   setClientTaskReply(null);
@@ -9388,12 +9604,16 @@ function bindTaskComments() {
     const input = form.content;
     const content = input.value.trim();
     if (!content) return;
+    const submitBtn = form.querySelector("button");
+    const stopLoading = setButtonLoading(submitBtn, true, "");
     try {
       await api(`/api/tasks/${form.dataset.taskComment}/comments`, { method: "POST", body: JSON.stringify({ content }) });
       input.value = "";
       route();
     } catch (error) {
       setStatus(error.message, true);
+    } finally {
+      stopLoading();
     }
   }));
 }
@@ -9403,6 +9623,10 @@ async function showTaskDetailDialog(data, activeCommentID = "") {
   const project = data.project || {};
   const list = data.list || {};
   const usersByID = Object.fromEntries((data.users || []).map((user) => [user.id, user]));
+  if (Array.isArray(data.users) && task.id) {
+    state.taskMentionUsers = state.taskMentionUsers || {};
+    state.taskMentionUsers[task.id] = data.users.filter((u) => u && u.username);
+  }
   let dialog = $("#taskDetailDialog");
   if (!dialog) {
     dialog = document.createElement("dialog");
@@ -9448,7 +9672,7 @@ async function showTaskDetailDialog(data, activeCommentID = "") {
             }).join("") : `<p class="muted">No comments yet.</p>`}
           </div>
           <form class="inline-comment detail-comment-form" data-detail-task-comment="${esc(task.id)}">
-            <input name="content" data-mentionable placeholder="Comment @username">
+            <input name="content" data-mentionable data-mention-task-id="${esc(task.id)}" placeholder="Comment @username">
             <button class="btn icon primary" title="Add comment">${icon("send")}</button>
           </form>
         </section>
@@ -9463,12 +9687,16 @@ async function showTaskDetailDialog(data, activeCommentID = "") {
     const form = event.currentTarget;
     const content = form.content.value.trim();
     if (!content) return;
+    const submitBtn = form.querySelector("[type='submit']") || form.querySelector("button");
+    const stopLoading = setButtonLoading(submitBtn, true, "Sending...");
     try {
       const created = await api(`/api/tasks/${form.dataset.detailTaskComment}/comments`, { method: "POST", body: JSON.stringify({ content }) });
       const refreshed = await api(`/api/tasks/${form.dataset.detailTaskComment}`);
       showTaskDetailDialog(refreshed, created.comment?.id || "");
     } catch (error) {
       setStatus(error.message, true);
+    } finally {
+      stopLoading();
     }
   });
   bindMentionSuggestions(dialog);
