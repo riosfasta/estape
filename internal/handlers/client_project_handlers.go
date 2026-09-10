@@ -1919,6 +1919,11 @@ func (s *Server) updateClientTask(c *gin.Context) {
 		s.notifyUserIDs(c.Request.Context(), recipients, userCtx.ID, "client_task_updated", message, task.ID)
 	}
 	s.broadcastClientTaskChanged(c.Request.Context(), notificationTask, userCtx.ID, "client_task_updated")
+	var updated models.ClientTask
+	if err := s.store.C("client_tasks").FindOne(c.Request.Context(), bson.M{"_id": task.ID}).Decode(&updated); err == nil {
+		c.JSON(http.StatusOK, gin.H{"updated": true, "task": updated})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"updated": true})
 }
 

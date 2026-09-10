@@ -5987,6 +5987,193 @@ function bindStatusAddControls(root, tab, tasks = [], onSaved = () => {}) {
   }));
 }
 
+function syncTaskStatusEverywhere(taskID, newStatus, updatedTask = null) {
+  if (!taskID) return;
+  const statusValue = normalizeClientTaskStatusValue(newStatus || updatedTask?.status || "todo") || "todo";
+
+  let label = clientTaskStatusLabel(statusValue);
+  let iconColor = "";
+  let textColor = "";
+
+  const sampleOption = document.querySelector(`[data-status-option="${selectorEscape(statusValue)}"]`);
+  if (sampleOption) {
+    label = sampleOption.querySelector("[data-status-option-label]")?.textContent?.trim() || label;
+    iconColor = sampleOption.style.getPropertyValue("--status-icon-color");
+    textColor = sampleOption.style.getPropertyValue("--status-text-color");
+  }
+
+  const targetCol = document.querySelector(`.client-board .kanban-column[data-client-status="${selectorEscape(statusValue)}"]`);
+  if (targetCol) {
+    const headingBadge = targetCol.querySelector(".status-heading");
+    if (headingBadge) {
+      const headingText = headingBadge.querySelector("span:not(.status-dot)")?.textContent?.trim() || headingBadge.textContent?.trim();
+      if (headingText) label = headingText;
+      iconColor = headingBadge.style.getPropertyValue("--status-icon-color") || iconColor;
+      textColor = headingBadge.style.getPropertyValue("--status-text-color") || textColor;
+    }
+  }
+
+  const statusObj = {
+    value: statusValue,
+    label,
+    icon_color: normalizeStatusColor(iconColor, "#8b5cf6"),
+    text_color: readableStatusTextColor(textColor, "#e5e7eb"),
+  };
+
+  const card = document.querySelector(`.client-task-card[data-client-task-id="${selectorEscape(taskID)}"]`);
+  if (card) {
+    if (targetCol && card.parentElement !== targetCol) {
+      targetCol.appendChild(card);
+    }
+
+    const board = card.closest(".client-board") || document.querySelector(".client-board");
+    if (board) {
+      board.querySelectorAll(".kanban-column").forEach((col) => {
+        const hasCards = col.querySelectorAll(".client-task-card").length > 0;
+        const emptyP = Array.from(col.children).find((child) => child.tagName.toLowerCase() === "p" && child.classList.contains("muted") && child.textContent.includes("No tasks"));
+        if (hasCards && emptyP) {
+          emptyP.remove();
+        } else if (!hasCards && !emptyP) {
+          const p = document.createElement("p");
+          p.className = "muted";
+          p.textContent = "No tasks.";
+          col.appendChild(p);
+        }
+      });
+    }
+
+    const cardBadge = card.querySelector(".client-task-card-meta .status-badge");
+    if (cardBadge) {
+      cardBadge.style.setProperty("--status-icon-color", statusObj.icon_color);
+      cardBadge.style.setProperty("--status-text-color", statusObj.text_color);
+      const textSpan = cardBadge.querySelector("span:not(.status-dot)") || cardBadge.lastElementChild;
+      if (textSpan) textSpan.textContent = statusObj.label;
+    }
+
+    const cardPicker = card.querySelector("[data-status-picker]");
+    if (cardPicker) {
+      const cardInput = cardPicker.querySelector("input[name='status']");
+      if (cardInput) cardInput.value = statusValue;
+      const cardTrigger = cardPicker.querySelector("[data-status-trigger]");
+      const cardTriggerLabel = cardPicker.querySelector("[data-status-trigger-label]");
+      if (cardTriggerLabel) cardTriggerLabel.textContent = statusObj.label;
+      if (cardTrigger) {
+        cardTrigger.style.setProperty("--status-icon-color", statusObj.icon_color);
+        cardTrigger.style.setProperty("--status-text-color", statusObj.text_color);
+      }
+    }
+
+    if (updatedTask && updatedTask.completion_count !== undefined) {
+      const meta = card.querySelector(".client-task-card-meta");
+      if (meta) {
+        let completionBadge = meta.querySelector(".completion-pill");
+        if (updatedTask.completion_count > 0) {
+          if (!completionBadge) {
+            completionBadge = document.createElement("span");
+            completionBadge.className = "pill completion-pill";
+            const firstPill = meta.querySelector(".status-badge") || meta.firstElementChild;
+            if (firstPill && firstPill.nextSibling) {
+              meta.insertBefore(completionBadge, firstPill.nextSibling);
+            } else {
+              meta.appendChild(completionBadge);
+            }
+          }
+          completionBadge.innerHTML = `${icon("check-check")}Completed ${esc(updatedTask.completion_count)}x`;
+        } else if (completionBadge) {
+          completionBadge.remove();
+        }
+      }
+    }
+  }
+
+  const panel = $("#clientTaskPanel");
+  if (panel && String(panel.dataset.liveTaskId) === String(taskID)) {
+    const quickForm = panel.querySelector("#clientTaskQuickEditForm");
+    if (quickForm) {
+      const input = quickForm.querySelector("input[name='status']");
+      if (input) input.value = statusValue;
+      const picker = input?.closest("[data-status-picker]");
+      const trigger = picker?.querySelector("[data-status-trigger]");
+      const triggerLabel = picker?.querySelector("[data-status-trigger-label]");
+      if (triggerLabel) triggerLabel.textContent = statusObj.label;
+      if (trigger) {
+        trigger.style.setProperty("--status-icon-color", statusObj.icon_color);
+        trigger.style.setProperty("--status-text-color", statusObj.text_color);
+      }
+
+      if (updatedTask && updatedTask.completion_count !== undefined) {
+        let completionBadge = quickForm.querySelector(".completion-pill");
+        if (updatedTask.completion_count > 0) {
+          if (!completionBadge) {
+            completionBadge = document.createElement("span");
+            completionBadge.className = "pill completion-pill";
+            const typePill = quickForm.querySelector(".pill");
+            if (typePill && typePill.nextSibling) {
+              quickForm.insertBefore(completionBadge, typePill.nextSibling);
+            } else {
+              quickForm.appendChild(completionBadge);
+            }
+          }
+          completionBadge.innerHTML = `${icon("check-check")}Completed ${esc(updatedTask.completion_count)}x`;
+        } else if (completionBadge) {
+          completionBadge.remove();
+        }
+      }
+    }
+
+    const readOnlyBadge = panel.querySelector(".task-detail-meta:not(.task-detail-meta-form) .status-badge");
+    if (readOnlyBadge) {
+      readOnlyBadge.style.setProperty("--status-icon-color", statusObj.icon_color);
+      readOnlyBadge.style.setProperty("--status-text-color", statusObj.text_color);
+      const textSpan = readOnlyBadge.querySelector("span:not(.status-dot)") || readOnlyBadge.lastElementChild;
+      if (textSpan) textSpan.textContent = statusObj.label;
+    }
+
+    const editForm = panel.querySelector("#editClientTaskForm") || panel.querySelector("#editClientAnnotationTaskForm");
+    if (editForm) {
+      const editInput = editForm.querySelector("input[name='status']");
+      if (editInput) editInput.value = statusValue;
+      const editPicker = editInput?.closest("[data-status-picker]");
+      const editTrigger = editPicker?.querySelector("[data-status-trigger]");
+      const editTriggerLabel = editPicker?.querySelector("[data-status-trigger-label]");
+      if (editTriggerLabel) editTriggerLabel.textContent = statusObj.label;
+      if (editTrigger) {
+        editTrigger.style.setProperty("--status-icon-color", statusObj.icon_color);
+        editTrigger.style.setProperty("--status-text-color", statusObj.text_color);
+      }
+    }
+  }
+
+  const assignedRow = document.querySelector(`[data-assigned-task] [data-open-client-task="${selectorEscape(taskID)}"]`)?.closest("[data-assigned-task]");
+  if (assignedRow) {
+    assignedRow.dataset.status = statusValue;
+  }
+
+  icons();
+}
+
+function syncTaskDueDateOnBoard(taskID, dueDate, task = {}) {
+  const card = document.querySelector(`.client-task-card[data-client-task-id="${selectorEscape(taskID)}"]`);
+  if (!card) return;
+  const meta = card.querySelector(".client-task-card-meta");
+  if (!meta) return;
+  const dueInfo = taskDueInfo({ due_date: dueDate, recurrence: task.recurrence || {} });
+  let btn = meta.querySelector(".due-count");
+  if (dueInfo.text) {
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.className = "pill warn due-count";
+      btn.type = "button";
+      meta.appendChild(btn);
+    }
+    btn.dataset.dueCalendar = dueInfo.date || dueDate || "";
+    btn.innerHTML = `${icon("calendar-days")}${esc(dueInfo.text)}`;
+    btn.onclick = () => showDueDateCalendar(btn.dataset.dueCalendar);
+  } else if (btn) {
+    btn.remove();
+  }
+}
+
 function bindClientTaskQuickAutosave(root, taskID, afterSave = () => {}, task = {}) {
   const form = root.querySelector("#clientTaskQuickEditForm");
   if (!form || !taskID) return;
@@ -5996,11 +6183,11 @@ function bindClientTaskQuickAutosave(root, taskID, afterSave = () => {}, task = 
     const currentVersion = ++saveVersion;
     setFormStatus(form, "Saving...");
     try {
-      await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify(body) });
+      const resp = await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify(body) });
       if (currentVersion === saveVersion) {
         setFormStatus(form, "Saved");
       }
-      await afterSave();
+      await afterSave(body, resp);
     } catch (error) {
       if (currentVersion === saveVersion) {
         setFormStatus(form, error.message, true);
@@ -6052,8 +6239,8 @@ function bindClientBoardDrag(root, onMoved = () => {}) {
           const status = event.to?.dataset.clientStatus;
           if (!taskID || !status) return;
           try {
-            await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify({ status }) });
-            await onMoved();
+            const resp = await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify({ status }) });
+            syncTaskStatusEverywhere(taskID, resp?.task?.status || status, resp?.task);
           } catch (error) {
             setStatus(error.message, true);
             await onMoved();
@@ -7461,10 +7648,12 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     body.page_width = Number(body.page_width || pageWidth);
     body.page_height = Number(body.page_height || pageHeight);
     try {
-      await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify(body) });
+      const resp = await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify(body) });
       panel.querySelector("#editClientAnnotationTaskDialog")?.close();
+      if (body.status) {
+        syncTaskStatusEverywhere(taskID, resp?.task?.status || body.status, resp?.task);
+      }
       await openClientAnnotationTaskViewer(taskID, null, activeAnnotationID, "", { asModal });
-      if (!asModal) route();
     } catch (error) {
       setFormStatus(form, error.message, true);
     }
@@ -7479,10 +7668,15 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
   });
   bindStatusAddControls(panel, data.tab, [task], async () => {
     await openClientAnnotationTaskViewer(taskID, null, activeAnnotationID, "", { asModal });
-    if (!asModal) route();
   });
-  bindClientTaskQuickAutosave(panel, taskID, async () => {
-    if (!asModal) route();
+  bindClientTaskQuickAutosave(panel, taskID, async (body, resp) => {
+    const nextStatus = resp?.task?.status || body?.status;
+    if (nextStatus) {
+      syncTaskStatusEverywhere(taskID, nextStatus, resp?.task);
+    }
+    if (body?.due_date !== undefined) {
+      syncTaskDueDateOnBoard(taskID, body.due_date, resp?.task || task);
+    }
   }, task);
   bindRichEditors(panel);
   bindRecurrenceControls(panel);
@@ -7805,8 +7999,11 @@ async function openClientTaskPanel(taskID, focusCommentID = "", options = {}) {
     body.assignee_ids = selectedAssigneeIDs(form);
     body.recurrence = recurrencePayloadFromForm(form);
     try {
-      await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify(body) });
+      const resp = await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify(body) });
       panel.querySelector("#editClientTaskDialog")?.close();
+      if (body.status) {
+        syncTaskStatusEverywhere(taskID, resp?.task?.status || body.status, resp?.task);
+      }
       await openClientTaskPanel(taskID, "", { asModal });
     } catch (error) {
       setFormStatus(form, error.message, true);
@@ -7817,10 +8014,15 @@ async function openClientTaskPanel(taskID, focusCommentID = "", options = {}) {
   bindStatusPickers(panel);
   bindStatusAddControls(panel, data.tab, [task], async () => {
     await openClientTaskPanel(taskID, "", { asModal });
-    if (!asModal) route();
   });
-  bindClientTaskQuickAutosave(panel, taskID, async () => {
-    if (!asModal) route();
+  bindClientTaskQuickAutosave(panel, taskID, async (body, resp) => {
+    const nextStatus = resp?.task?.status || body?.status;
+    if (nextStatus) {
+      syncTaskStatusEverywhere(taskID, nextStatus, resp?.task);
+    }
+    if (body?.due_date !== undefined) {
+      syncTaskDueDateOnBoard(taskID, body.due_date, resp?.task || task);
+    }
   }, task);
   bindRichEditors(panel);
   bindChecklistBuilders(panel);
@@ -9054,8 +9256,14 @@ async function renderClientWebsite(clientID, websiteID) {
     }
   });
   document.querySelectorAll("[data-auto-client-task-status]").forEach((btn) => btn.addEventListener("click", async () => {
-    await api(`/api/client-tasks/${btn.dataset.autoClientTaskStatus}`, { method: "PATCH", body: JSON.stringify({ status: btn.dataset.statusOption }) });
-    renderClientWebsite(clientID, websiteID);
+    const taskID = btn.dataset.autoClientTaskStatus;
+    const nextStatus = btn.dataset.statusOption;
+    try {
+      const resp = await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify({ status: nextStatus }) });
+      syncTaskStatusEverywhere(taskID, resp?.task?.status || nextStatus, resp?.task);
+    } catch (error) {
+      setStatus(error.message, true);
+    }
   }));
   document.querySelectorAll("[data-due-calendar]").forEach((btn) => btn.addEventListener("click", () => showDueDateCalendar(btn.dataset.dueCalendar)));
   document.querySelectorAll("[data-open-client-task]").forEach((btn) => btn.addEventListener("click", () => openClientTaskWithProgress(btn.dataset.openClientTask, "", btn)));
