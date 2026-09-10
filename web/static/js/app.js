@@ -12452,6 +12452,297 @@ function bindPageBuilderShortcodes(root = document) {
   });
 }
 
+function formatMediaBytes(bytes) {
+  if (!bytes || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(i ? 1 : 0)} ${units[i]}`;
+}
+
+async function openMediaManagerModal({ currentUrl = "", onSelect = () => {} } = {}) {
+  const existing = document.querySelector("#mediaManagerDialog");
+  if (existing) existing.remove();
+
+  const dialog = document.createElement("dialog");
+  dialog.id = "mediaManagerDialog";
+  dialog.className = "modal media-manager-dialog";
+  dialog.setAttribute("aria-labelledby", "mediaManagerTitle");
+
+  let mediaItems = [];
+  let selectedUrl = currentUrl || "";
+  let currentTab = "library";
+  let searchQuery = "";
+  let isUploading = false;
+
+  dialog.innerHTML = `
+    <header class="media-manager-head">
+      <div class="media-manager-title-tabs">
+        <h2 id="mediaManagerTitle">Image Manager</h2>
+        <nav class="media-manager-tabs" role="tablist">
+          <button type="button" class="media-tab-btn ${currentTab === "library" ? "active" : ""}" data-tab="library">${icon("image")}Media Library</button>
+          <button type="button" class="media-tab-btn ${currentTab === "upload" ? "active" : ""}" data-tab="upload">${icon("upload")}Upload Files</button>
+        </nav>
+      </div>
+      <button class="btn icon quiet" type="button" data-close title="Close">${icon("x")}</button>
+    </header>
+    <div class="media-manager-content">
+      <section class="media-panel" data-panel="upload" ${currentTab === "upload" ? "" : "hidden"}>
+        <div class="media-upload-view">
+          <div class="media-upload-dropzone" data-dropzone>
+            ${icon("upload")}
+            <h3>Drop files anywhere to upload</h3>
+            <p>or</p>
+            <button type="button" class="btn primary" data-browse>${icon("folder-open")}Select Files from PC</button>
+            <input type="file" accept="image/png,image/jpeg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp" data-file-input hidden>
+            <p class="muted">Supports PNG, JPG, GIF, WebP up to 16 MB.</p>
+            <p class="media-upload-status" data-upload-status role="status" aria-live="polite"></p>
+          </div>
+        </div>
+      </section>
+      <section class="media-panel" data-panel="library" ${currentTab === "library" ? "" : "hidden"}>
+        <div class="media-library-toolbar">
+          <input type="search" class="media-search-input" placeholder="Search by name..." data-search>
+          <div class="toolbar">
+            <span class="muted" data-count>Loading images...</span>
+            <button type="button" class="btn icon compact" data-refresh title="Refresh library">${icon("rotate-cw")}</button>
+          </div>
+        </div>
+        <div class="media-library-split">
+          <div class="media-grid-wrap">
+            <div class="media-grid" data-grid></div>
+          </div>
+          <aside class="media-sidebar" data-sidebar></aside>
+        </div>
+      </section>
+    </div>
+    <footer class="media-manager-footer">
+      <span class="media-manager-status" data-footer-status>No image selected</span>
+      <div class="media-manager-actions">
+        <button type="button" class="btn" data-cancel>Cancel</button>
+        <button type="button" class="btn primary" data-confirm disabled>${icon("check")}Use this image</button>
+      </div>
+    </footer>`;
+
+  document.body.appendChild(dialog);
+  dialog.showModal();
+  icons();
+
+  const closeDialog = () => {
+    dialog.close();
+    dialog.remove();
+  };
+
+  dialog.querySelector("[data-close]").onclick = closeDialog;
+  dialog.querySelector("[data-cancel]").onclick = closeDialog;
+  dialog.addEventListener("cancel", closeDialog);
+
+  const setTab = (tab) => {
+    currentTab = tab;
+    dialog.querySelectorAll("[data-tab]").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.tab === tab);
+    });
+    dialog.querySelectorAll("[data-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.panel !== tab;
+    });
+    icons();
+  };
+
+  dialog.querySelectorAll("[data-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => setTab(btn.dataset.tab));
+  });
+
+  const loadMedia = async () => {
+    try {
+      const countEl = dialog.querySelector("[data-count]");
+      if (countEl) countEl.textContent = "Loading...";
+      const res = await api("/api/admin/media");
+      mediaItems = res.media || [];
+      if (mediaItems.length === 0 && !selectedUrl) {
+        setTab("upload");
+      }
+      renderLibrary();
+    } catch {
+      const countEl = dialog.querySelector("[data-count]");
+      if (countEl) countEl.textContent = "Could not load media";
+    }
+  };
+
+  const renderLibrary = () => {
+    const q = searchQuery.toLowerCase().trim();
+    const filtered = mediaItems.filter((item) => !q || item.name.toLowerCase().includes(q) || item.url.toLowerCase().includes(q));
+
+    const countEl = dialog.querySelector("[data-count]");
+    if (countEl) countEl.textContent = `${filtered.length} image${filtered.length === 1 ? "" : "s"}`;
+    const grid = dialog.querySelector("[data-grid]");
+    if (!grid) return;
+
+    if (filtered.length === 0) {
+      grid.innerHTML = `
+        <div class="media-empty-state" style="grid-column: 1 / -1;">
+          ${icon("image")}
+          <p>${mediaItems.length === 0 ? "No images uploaded yet." : "No images matching search."}</p>
+          <button type="button" class="btn primary compact" data-go-upload>${icon("upload")}Upload image from PC</button>
+        </div>`;
+      grid.querySelector("[data-go-upload]")?.addEventListener("click", () => setTab("upload"));
+    } else {
+      grid.innerHTML = filtered.map((item) => {
+        const isSelected = item.url === selectedUrl;
+        return `
+          <button type="button" class="media-card ${isSelected ? "selected" : ""}" data-item-url="${esc(item.url)}" title="${esc(item.name)}">
+            <img src="${esc(item.url)}" alt="${esc(item.name)}" class="media-card-img" loading="lazy">
+            ${isSelected ? `<span class="media-card-check">${icon("check")}</span>` : ""}
+          </button>`;
+      }).join("");
+
+      grid.querySelectorAll("[data-item-url]").forEach((card) => {
+        card.addEventListener("click", () => {
+          selectedUrl = card.dataset.itemUrl;
+          renderLibrary();
+        });
+        card.addEventListener("dblclick", () => {
+          selectedUrl = card.dataset.itemUrl;
+          confirmSelection();
+        });
+      });
+    }
+
+    const sidebar = dialog.querySelector("[data-sidebar]");
+    const selectedItem = mediaItems.find((item) => item.url === selectedUrl);
+    const confirmBtn = dialog.querySelector("[data-confirm]");
+    const footerStatus = dialog.querySelector("[data-footer-status]");
+
+    if (selectedItem) {
+      if (confirmBtn) confirmBtn.disabled = false;
+      if (footerStatus) footerStatus.textContent = `Selected: ${selectedItem.name}`;
+      if (sidebar) {
+        sidebar.innerHTML = `
+          <h3>Attachment Details</h3>
+          <img src="${esc(selectedItem.url)}" alt="${esc(selectedItem.name)}" class="media-sidebar-preview">
+          <div class="media-sidebar-meta">
+            <strong>${esc(selectedItem.name)}</strong>
+            <span>${fmtDate(selectedItem.updated_at)}</span>
+            <span>${formatMediaBytes(selectedItem.size)}</span>
+            <div class="field" style="margin-top: 8px;">
+              <label style="font-size: 11px;">Image URL</label>
+              <input type="text" readonly value="${esc(selectedItem.url)}" data-sidebar-url style="font-size: 11px;">
+            </div>
+            <button type="button" class="btn compact" data-copy-url>${icon("copy")}Copy URL</button>
+          </div>`;
+
+        sidebar.querySelector("[data-copy-url]")?.addEventListener("click", async (e) => {
+          try {
+            await navigator.clipboard.writeText(selectedItem.url);
+            e.currentTarget.textContent = "Copied!";
+            setTimeout(() => icons(), 1500);
+          } catch {
+            const input = sidebar.querySelector("[data-sidebar-url]");
+            input?.select();
+          }
+        });
+      }
+    } else {
+      if (confirmBtn) confirmBtn.disabled = !selectedUrl;
+      if (footerStatus) footerStatus.textContent = selectedUrl ? `URL: ${selectedUrl}` : "No image selected";
+      if (sidebar) {
+        sidebar.innerHTML = `<p class="media-sidebar-empty">Click an image on the left to view details and select it.</p>`;
+      }
+    }
+
+    icons();
+  };
+
+  const confirmSelection = () => {
+    if (!selectedUrl) return;
+    onSelect(selectedUrl);
+    closeDialog();
+  };
+
+  dialog.querySelector("[data-confirm]").onclick = confirmSelection;
+
+  dialog.querySelector("[data-search]")?.addEventListener("input", (e) => {
+    searchQuery = e.target.value;
+    renderLibrary();
+  });
+
+  dialog.querySelector("[data-refresh]")?.addEventListener("click", () => {
+    loadMedia();
+  });
+
+  const dropzone = dialog.querySelector("[data-dropzone]");
+  const fileInput = dialog.querySelector("[data-file-input]");
+  const browseBtn = dialog.querySelector("[data-browse]");
+  const uploadStatus = dialog.querySelector("[data-upload-status]");
+
+  browseBtn?.addEventListener("click", () => fileInput?.click());
+
+  const handleUploadFile = async (file) => {
+    if (!file || isUploading) return;
+    const allowed = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
+    const ext = "." + (file.name.split(".").pop() || "").toLowerCase();
+    if (!allowed.includes(ext)) {
+      if (uploadStatus) {
+        uploadStatus.textContent = "Unsupported format. Please select a PNG, JPG, GIF, or WebP image.";
+        uploadStatus.classList.add("error-text");
+      }
+      return;
+    }
+
+    isUploading = true;
+    if (browseBtn) browseBtn.disabled = true;
+    if (uploadStatus) {
+      uploadStatus.textContent = `Uploading ${file.name}...`;
+      uploadStatus.classList.remove("error-text");
+    }
+
+    try {
+      const uploadedUrl = await upload(file);
+      await loadMedia();
+      selectedUrl = uploadedUrl;
+      setTab("library");
+      renderLibrary();
+      if (uploadStatus) {
+        uploadStatus.textContent = "Uploaded successfully!";
+      }
+    } catch (err) {
+      if (uploadStatus) {
+        uploadStatus.textContent = err.message || "Upload failed. Please try again.";
+        uploadStatus.classList.add("error-text");
+      }
+    } finally {
+      isUploading = false;
+      if (browseBtn) browseBtn.disabled = false;
+      if (fileInput) fileInput.value = "";
+    }
+  };
+
+  fileInput?.addEventListener("change", (e) => {
+    const file = e.target.files?.[0];
+    if (file) handleUploadFile(file);
+  });
+
+  dropzone?.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropzone.classList.add("drag-over");
+  });
+
+  dropzone?.addEventListener("dragleave", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropzone.classList.remove("drag-over");
+  });
+
+  dropzone?.addEventListener("drop", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropzone.classList.remove("drag-over");
+    const file = e.dataTransfer?.files?.[0];
+    if (file) handleUploadFile(file);
+  });
+
+  loadMedia();
+}
+
 async function renderPageEditor(slug) {
   const data = await api(`/api/admin/pages/${slug}`);
   const plans = (await api("/api/admin/plans").catch(() => ({ plans: [] }))).plans || [];
@@ -12581,6 +12872,20 @@ async function renderPageEditor(slug) {
     bindPageRichEditors($("#blockSettings"));
     bindBuilderColorPickers($("#blockSettings"));
     bindPageBuilderShortcodes($("#blockSettings"));
+    if (block.type === "image") {
+      bindBuilderImageSettings(
+        $("#blockSettings"),
+        block,
+        () => {
+          applyCurrentSettings();
+          draw();
+          drawSettings();
+        },
+        () => {
+          draw();
+        }
+      );
+    }
     icons();
   }
   function bindPageSettingsOnly() {
@@ -12836,6 +13141,77 @@ function bindBuilderColorPickers(root = document) {
   });
 }
 
+function pageBlockImageSettingsFields(props = {}) {
+  const url = String(props.url || "").trim();
+  const custom = customCSSField(props);
+  return `
+    <div class="field builder-image-setting">
+      <label>Image source</label>
+      <div class="builder-image-setting-preview" data-builder-image-preview-wrap ${url ? "" : "hidden"}>
+        <img src="${esc(url)}" alt="${esc(props.alt || "Preview")}" class="builder-image-setting-thumb" data-builder-image-preview-thumb>
+        <div class="builder-image-setting-info">
+          <strong>Selected image</strong>
+          <span title="${esc(url)}">${esc(url)}</span>
+        </div>
+      </div>
+      <div class="toolbar">
+        <button type="button" class="btn primary compact" data-open-media-manager>${icon("image")}Choose or upload image</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>Image URL</label>
+      <input name="url" value="${esc(url)}" placeholder="https://... or /uploads/..." data-builder-image-url>
+      <small class="muted">Click "Choose or upload image" to select from uploaded images or upload from PC, or paste an external URL.</small>
+    </div>
+    ${textInput("alt", "Alt text", props.alt)}
+    ${custom}`;
+}
+
+function bindBuilderImageSettings(root = document, block = {}, onSelectImage = () => {}, onUrlInput = () => {}) {
+  const managerBtn = root.querySelector("[data-open-media-manager]");
+  const urlInput = root.querySelector("[data-builder-image-url]");
+  const previewWrap = root.querySelector("[data-builder-image-preview-wrap]");
+  const previewThumb = root.querySelector("[data-builder-image-preview-thumb]");
+  const previewText = root.querySelector(".builder-image-setting-info span");
+
+  managerBtn?.addEventListener("click", () => {
+    openMediaManagerModal({
+      currentUrl: urlInput?.value || block.props?.url || "",
+      onSelect: (chosenUrl) => {
+        if (urlInput) urlInput.value = chosenUrl;
+        if (previewThumb && previewWrap) {
+          previewThumb.src = chosenUrl;
+          previewWrap.hidden = false;
+          if (previewText) {
+            previewText.textContent = chosenUrl;
+            previewText.title = chosenUrl;
+          }
+        }
+        if (block.props) block.props.url = chosenUrl;
+        onSelectImage(chosenUrl);
+      },
+    });
+  });
+
+  urlInput?.addEventListener("input", () => {
+    const val = urlInput.value.trim();
+    if (previewThumb && previewWrap) {
+      if (val) {
+        previewThumb.src = val;
+        previewWrap.hidden = false;
+        if (previewText) {
+          previewText.textContent = val;
+          previewText.title = val;
+        }
+      } else {
+        previewWrap.hidden = true;
+      }
+    }
+    if (block.props) block.props.url = val;
+    onUrlInput(val);
+  });
+}
+
 function customCSSField(props = {}) {
   return `<div class="field"><label>Custom CSS</label><textarea name="custom_css" placeholder="margin-top: 20px; padding: 24px;">${esc(props.custom_css || "")}</textarea><small class="muted">Inline CSS for this component. Unsafe scripts/styles are ignored when published.</small></div>`;
 }
@@ -12968,7 +13344,7 @@ function pageBlockSettingsFields(block) {
   if (block.type === "text") return `${textAreaInput("text", "Text", props.text)}${typography}${custom}`;
   if (block.type === "rich_text") return `<div class="field"><label>WYSIWYG text</label>${pageRichEditorHTML("text", props.text || "", "Write formatted page content")}</div>${textInput("class_name", "Custom class", props.class_name || "")}${typography}${custom}`;
   if (block.type === "html") return `${textAreaInput("html", "Safe HTML", props.html)}${custom}`;
-  if (block.type === "image") return `${textInput("url", "Image URL", props.url)}${textInput("alt", "Alt text", props.alt)}${custom}`;
+  if (block.type === "image") return pageBlockImageSettingsFields(props);
   if (block.type === "video") return `${textInput("url", "YouTube or Vimeo URL", props.url)}${custom}`;
   if (block.type === "feature_grid") return `${[1, 2, 3].map((i) => `<div class="builder-field-group"><strong>Feature ${i}</strong>${textInput(`title_${i}`, "Title", props[`title_${i}`])}${textAreaInput(`text_${i}`, "Text", props[`text_${i}`])}</div>`).join("")}${custom}`;
   if (block.type === "button") return `${textInput("label", "Button label", props.label)}${textInput("url", "Button URL", props.url)}${typography}${custom}`;
