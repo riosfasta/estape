@@ -1209,11 +1209,7 @@ func (s *Server) notifyMentions(ctx context.Context, teamID primitive.ObjectID, 
 		return
 	}
 	defer cursor.Close(ctx)
-	actor := "Someone"
-	if actorUser, err := s.loadUser(ctx, actorID); err == nil {
-		s.ensureUserIdentity(ctx, &actorUser)
-		actor = "@" + actorUser.Username
-	}
+	actor := s.notificationActorName(ctx, actorID)
 	for cursor.Next(ctx) {
 		var user models.User
 		if cursor.Decode(&user) != nil || user.ID == actorID {
@@ -1295,8 +1291,9 @@ func (s *Server) enqueueClientAccessEmail(ctx context.Context, recipient string,
 
 func trimForNotification(value string) string {
 	value = strings.Join(strings.Fields(value), " ")
-	if len(value) > 160 {
-		return value[:157] + "..."
+	runes := []rune(value)
+	if len(runes) > 160 {
+		return string(runes[:157]) + "..."
 	}
 	return value
 }

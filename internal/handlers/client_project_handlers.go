@@ -1710,11 +1710,14 @@ func (s *Server) updateClientTask(c *gin.Context) {
 	if task.Type == "annotation" && req.ScreenshotURL != nil {
 		set["screenshot_url"] = strings.TrimSpace(*req.ScreenshotURL)
 	}
+	var updatedStatus string
+	statusChanged := false
 	if req.Status != nil {
 		status := normalizeClientTaskStatus(*req.Status)
 		if status == "" {
 			status = "todo"
 		}
+		updatedStatus = status
 		var tab models.ClientTab
 		statuses := defaultClientTaskStatuses()
 		if err := s.store.C("client_tabs").FindOne(c.Request.Context(), bson.M{"_id": task.TabID}).Decode(&tab); err == nil {
@@ -1741,6 +1744,7 @@ func (s *Server) updateClientTask(c *gin.Context) {
 			}
 		} else {
 			if status != task.Status {
+				statusChanged = true
 				activityLogs = append(activityLogs, struct {
 					action string
 					detail string
@@ -1836,6 +1840,11 @@ func (s *Server) updateClientTask(c *gin.Context) {
 		notificationTask.LastCompletedAt = &now
 	}
 	actor := s.notificationActorName(c.Request.Context(), userCtx.ID)
+	siteRef := s.clientTaskSiteReference(c.Request.Context(), notificationTask.WebsiteID)
+	sitePrefix := ""
+	if siteRef != "" {
+		sitePrefix = " on site " + siteRef
+	}
 	newAssignees := []primitive.ObjectID{}
 	if assigneesChanged {
 		removedAssignees := removedObjectIDs(task.AssigneeIDs, updatedAssigneeIDs)
@@ -1845,14 +1854,31 @@ func (s *Server) updateClientTask(c *gin.Context) {
 				newAssignees = append(newAssignees, assigneeID)
 			}
 		}
-		s.notifyUserIDs(c.Request.Context(), newAssignees, userCtx.ID, "client_task_assigned", actor+" assigned you a client task: "+notificationTask.Title, task.ID)
+		var assignMsg string
+		if siteRef != "" {
+			assignMsg = actor + " assigned you to task " + notificationTask.Title + " on site " + siteRef
+		} else {
+			assignMsg = actor + " assigned you a client task: " + notificationTask.Title
+		}
+		s.notifyUserIDs(c.Request.Context(), newAssignees, userCtx.ID, "client_task_assigned", assignMsg, task.ID)
 	}
 	if recurringCompleted {
 		recipients := withoutObjectIDs(s.clientTaskNotificationRecipients(c.Request.Context(), notificationTask), newAssignees)
-		s.notifyUserIDs(c.Request.Context(), recipients, userCtx.ID, "client_task_updated", actor+" completed recurring task "+strconv.Itoa(recurringCompletionCount)+"x: "+notificationTask.Title, task.ID)
+		s.notifyUserIDs(c.Request.Context(), recipients, userCtx.ID, "client_task_updated", actor+" completed recurring task ("+strconv.Itoa(recurringCompletionCount)+"x)"+sitePrefix+" in task: "+notificationTask.Title, task.ID)
+	} else if statusChanged {
+		recipients := withoutObjectIDs(s.clientTaskNotificationRecipients(c.Request.Context(), notificationTask), newAssignees)
+		s.notifyUserIDs(c.Request.Context(), recipients, userCtx.ID, "client_task_updated", actor+" has set the status as "+clientTaskStatusLogLabel(updatedStatus)+sitePrefix+" in task: "+notificationTask.Title, task.ID)
 	} else if len(set) > 1 || req.Recurrence != nil {
 		recipients := withoutObjectIDs(s.clientTaskNotificationRecipients(c.Request.Context(), notificationTask), newAssignees)
-		s.notifyUserIDs(c.Request.Context(), recipients, userCtx.ID, "client_task_updated", actor+" updated task: "+notificationTask.Title, task.ID)
+		var message string
+		if req.DueDate != nil && effectiveDueDate != nil {
+			message = actor + " updated the due date to " + effectiveDueDate.Format("2006-01-02") + sitePrefix + " in task: " + notificationTask.Title
+		} else if updatedTitle != "" && updatedTitle != task.Title {
+			message = actor + " renamed task to \"" + notificationTask.Title + "\"" + sitePrefix
+		} else {
+			message = actor + " updated task" + sitePrefix + ": " + notificationTask.Title
+		}
+		s.notifyUserIDs(c.Request.Context(), recipients, userCtx.ID, "client_task_updated", message, task.ID)
 	}
 	s.broadcastClientTaskChanged(c.Request.Context(), notificationTask, userCtx.ID, "client_task_updated")
 	c.JSON(http.StatusOK, gin.H{"updated": true})
@@ -1935,7 +1961,12 @@ func (s *Server) updateClientTaskAnnotationStatus(c *gin.Context) {
 		userCtx, _ := currentUser(c)
 		s.recordClientTaskLog(c.Request.Context(), task, userCtx.ID, "updated_status", "changed annotation status from "+clientTaskStatusLogLabel(oldStatus)+" to "+clientTaskStatusLogLabel(status))
 		actor := s.notificationActorName(c.Request.Context(), userCtx.ID)
-		s.notifyUserIDs(c.Request.Context(), s.clientTaskNotificationRecipients(c.Request.Context(), task), userCtx.ID, "client_task_updated", actor+" updated annotation status on: "+task.Title, task.ID)
+		siteRef := s.clientTaskSiteReference(c.Request.Context(), task.WebsiteID)
+		sitePrefix := ""
+		if siteRef != "" {
+			sitePrefix = " on site " + siteRef
+		}
+		s.notifyUserIDs(c.Request.Context(), s.clientTaskNotificationRecipients(c.Request.Context(), task), userCtx.ID, "client_task_updated", actor+" has set annotation status as "+clientTaskStatusLogLabel(status)+sitePrefix+" in task: "+task.Title, task.ID)
 		s.broadcastClientTaskChanged(c.Request.Context(), task, userCtx.ID, "client_task_updated")
 		c.JSON(http.StatusOK, gin.H{"status": status, "annotations": annotations})
 		return
@@ -1951,7 +1982,12 @@ func (s *Server) updateClientTaskAnnotationStatus(c *gin.Context) {
 	userCtx, _ := currentUser(c)
 	s.recordClientTaskLog(c.Request.Context(), task, userCtx.ID, "updated_status", "changed annotation status from "+clientTaskStatusLogLabel(oldStatus)+" to "+clientTaskStatusLogLabel(status))
 	actor := s.notificationActorName(c.Request.Context(), userCtx.ID)
-	s.notifyUserIDs(c.Request.Context(), s.clientTaskNotificationRecipients(c.Request.Context(), task), userCtx.ID, "client_task_updated", actor+" updated annotation status on: "+task.Title, task.ID)
+	siteRef := s.clientTaskSiteReference(c.Request.Context(), task.WebsiteID)
+	sitePrefix := ""
+	if siteRef != "" {
+		sitePrefix = " on site " + siteRef
+	}
+	s.notifyUserIDs(c.Request.Context(), s.clientTaskNotificationRecipients(c.Request.Context(), task), userCtx.ID, "client_task_updated", actor+" has set annotation status as "+clientTaskStatusLogLabel(status)+sitePrefix+" in task: "+task.Title, task.ID)
 	s.broadcastClientTaskChanged(c.Request.Context(), task, userCtx.ID, "client_task_updated")
 	c.JSON(http.StatusOK, gin.H{"status": status, "annotations": annotations})
 }
@@ -2021,7 +2057,14 @@ func (s *Server) createClientTaskComment(c *gin.Context) {
 	mentionedIDs := s.notifyClientTaskCommentMentions(c.Request.Context(), task, userCtx.ID, comment.Content, comment.ID)
 	actor := s.notificationActorName(c.Request.Context(), userCtx.ID)
 	recipients := withoutObjectIDs(s.clientTaskNotificationRecipients(c.Request.Context(), task), mentionedIDs)
-	s.notifyUserIDs(c.Request.Context(), recipients, userCtx.ID, "client_task_comment", actor+" commented on task: "+task.Title, comment.ID)
+	siteRef := s.clientTaskSiteReference(c.Request.Context(), task.WebsiteID)
+	var commentMsg string
+	if siteRef != "" {
+		commentMsg = actor + " sent a comment on site " + siteRef + " in task: " + task.Title
+	} else {
+		commentMsg = actor + " sent a comment in task: " + task.Title
+	}
+	s.notifyUserIDs(c.Request.Context(), recipients, userCtx.ID, "client_task_comment", commentMsg, comment.ID)
 	s.broadcastClientTaskChanged(c.Request.Context(), task, userCtx.ID, "client_task_comment")
 	c.JSON(http.StatusCreated, gin.H{"comment": comment})
 }
@@ -2042,10 +2085,10 @@ func (s *Server) updateClientTaskComment(c *gin.Context) {
 		AttachmentName *string `json:"attachment_name"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid comment update"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid comment body"})
 		return
 	}
-	set := bson.M{}
+	set := bson.M{"updated_at": time.Now()}
 	if req.Content != nil {
 		set["content"] = strings.TrimSpace(*req.Content)
 	}
@@ -2055,7 +2098,7 @@ func (s *Server) updateClientTaskComment(c *gin.Context) {
 	if req.AttachmentName != nil {
 		set["attachment_name"] = strings.TrimSpace(*req.AttachmentName)
 	}
-	if len(set) == 0 {
+	if len(set) == 1 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no changes supplied"})
 		return
 	}
@@ -2068,7 +2111,12 @@ func (s *Server) updateClientTaskComment(c *gin.Context) {
 	}
 	s.recordClientTaskLog(c.Request.Context(), task, userCtx.ID, "edited_comment", "edited a comment")
 	actor := s.notificationActorName(c.Request.Context(), userCtx.ID)
-	s.notifyUserIDs(c.Request.Context(), s.clientTaskNotificationRecipients(c.Request.Context(), task), userCtx.ID, "client_task_updated", actor+" edited a comment on task: "+task.Title, task.ID)
+	siteRef := s.clientTaskSiteReference(c.Request.Context(), task.WebsiteID)
+	sitePrefix := ""
+	if siteRef != "" {
+		sitePrefix = " on site " + siteRef
+	}
+	s.notifyUserIDs(c.Request.Context(), s.clientTaskNotificationRecipients(c.Request.Context(), task), userCtx.ID, "client_task_updated", actor+" edited a comment"+sitePrefix+" in task: "+task.Title, task.ID)
 	s.broadcastClientTaskChanged(c.Request.Context(), task, userCtx.ID, "client_task_comment_updated")
 	c.JSON(http.StatusOK, gin.H{"updated": true})
 }
@@ -2091,7 +2139,12 @@ func (s *Server) deleteClientTaskComment(c *gin.Context) {
 	s.deleteLocalUploadFile(comment.AttachmentURL)
 	s.recordClientTaskLog(c.Request.Context(), task, userCtx.ID, "deleted_comment", "deleted a comment")
 	actor := s.notificationActorName(c.Request.Context(), userCtx.ID)
-	s.notifyUserIDs(c.Request.Context(), s.clientTaskNotificationRecipients(c.Request.Context(), task), userCtx.ID, "client_task_updated", actor+" deleted a comment on task: "+task.Title, task.ID)
+	siteRef := s.clientTaskSiteReference(c.Request.Context(), task.WebsiteID)
+	sitePrefix := ""
+	if siteRef != "" {
+		sitePrefix = " on site " + siteRef
+	}
+	s.notifyUserIDs(c.Request.Context(), s.clientTaskNotificationRecipients(c.Request.Context(), task), userCtx.ID, "client_task_updated", actor+" deleted a comment"+sitePrefix+" in task: "+task.Title, task.ID)
 	s.broadcastClientTaskChanged(c.Request.Context(), task, userCtx.ID, "client_task_comment_deleted")
 	c.JSON(http.StatusOK, gin.H{"deleted": true})
 }
@@ -3383,6 +3436,20 @@ func (s *Server) notifyClientTaskAssignees(ctx context.Context, task models.Clie
 	}
 }
 
+func (s *Server) clientTaskSiteReference(ctx context.Context, websiteID primitive.ObjectID) string {
+	if websiteID.IsZero() {
+		return ""
+	}
+	var site models.ClientWebsite
+	if err := s.store.C("client_websites").FindOne(ctx, bson.M{"_id": websiteID}).Decode(&site); err == nil {
+		if rawURL := strings.TrimSpace(site.URL); rawURL != "" {
+			return rawURL
+		}
+		return strings.TrimSpace(site.Name)
+	}
+	return ""
+}
+
 func (s *Server) clientTaskNotificationRecipients(ctx context.Context, task models.ClientTask) []primitive.ObjectID {
 	recipients := append([]primitive.ObjectID{}, task.AssigneeIDs...)
 	recipients = append(recipients, task.CreatedBy)
@@ -3464,10 +3531,11 @@ func (s *Server) notifyClientTaskCommentMentions(ctx context.Context, task model
 			usernames = append(usernames, username)
 		}
 	}
-	actor := "Someone"
-	if actorUser, err := s.loadUser(ctx, actorID); err == nil {
-		s.ensureUserIdentity(ctx, &actorUser)
-		actor = "@" + actorUser.Username
+	actor := s.notificationActorName(ctx, actorID)
+	siteRef := s.clientTaskSiteReference(ctx, task.WebsiteID)
+	sitePrefix := ""
+	if strings.TrimSpace(siteRef) != "" {
+		sitePrefix = " on site " + siteRef
 	}
 	cursor, err := s.store.C("users").Find(ctx, bson.M{"_id": bson.M{"$in": allowedIDs}, "username": bson.M{"$in": usernames}, "status": models.StatusActive, "role": bson.M{"$ne": models.RoleOwnerAdmin}})
 	if err != nil {
@@ -3482,7 +3550,7 @@ func (s *Server) notifyClientTaskCommentMentions(ctx context.Context, task model
 		}
 		mentionedIDs = append(mentionedIDs, user.ID)
 		if jobID, scoped := scopedJobs[user.ID]; scoped {
-			_ = s.marketplaceNotify(ctx, user.ID, jobID, "marketplace_job", actor+" mentioned you on task "+task.Title+": "+trimForNotification(content))
+			_ = s.marketplaceNotify(ctx, user.ID, jobID, "marketplace_job", actor+" mentioned you"+sitePrefix+" in task "+task.Title+": "+trimForNotification(content))
 			_, _ = s.store.C("marketplace_task_notes").InsertOne(ctx, bson.M{"_id": primitive.NewObjectID(), "job_id": jobID, "task_id": task.ID, "sender_id": actorID, "content": content, "created_at": time.Now().UTC()})
 			continue
 		}
@@ -3490,7 +3558,7 @@ func (s *Server) notifyClientTaskCommentMentions(ctx context.Context, task model
 			ID:        primitive.NewObjectID(),
 			UserID:    user.ID,
 			Type:      "client_task_comment_mention",
-			Content:   actor + " mentioned you: " + trimForNotification(content),
+			Content:   actor + " mentioned you" + sitePrefix + " in task " + task.Title + ": " + trimForNotification(content),
 			RelatedID: commentID,
 			Read:      false,
 			CreatedAt: time.Now(),

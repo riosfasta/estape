@@ -3761,6 +3761,7 @@ function bindInvitationCancels(refresh, teamID = state.team?.id) {
 function notificationRow(note, deleted = false) {
   const id = esc(note.id || "");
   const label = notificationTypeLabel(note.type);
+  const rawText = note.content || label;
   const title = note.content ? mentionText(note.content) : esc(label);
   const isRead = Boolean(note.read);
   const statusText = deleted ? "bin" : isRead ? "read" : "new";
@@ -3771,7 +3772,7 @@ function notificationRow(note, deleted = false) {
     <article class="inbox-row notification-row ${deleted ? "is-deleted" : isRead ? "is-read" : "is-unread"}" data-notification-row="${id}">
       <${openTag} class="notification-open"${openAttrs}>
         <span class="inbox-row-icon">${icon(deleted ? "trash-2" : "bell")}</span>
-        <div class="inbox-row-title notification-title"><strong>${title}</strong></div>
+        <div class="inbox-row-title notification-title" title="${esc(rawText)}"><strong>${title}</strong></div>
         <span class="priority-flag">${icon(deleted ? "archive-restore" : "bell")} ${esc(label)}</span>
         <span class="mention-filter-pill">Notification</span>
         <span class="mini-count ${deleted || isRead ? "is-read" : "is-new"}" title="${esc(statusTitle)}" aria-label="${esc(statusTitle)}">${esc(statusText)}</span>

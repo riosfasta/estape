@@ -897,7 +897,9 @@ func (s *Server) updateTask(c *gin.Context) {
 		}
 		s.notifyUserIDs(c.Request.Context(), newAssignees, userCtx.ID, "task_assigned", actor+" assigned you: "+updatedTitle, id)
 	}
-	if req.Title != nil || req.Description != nil || req.Status != nil || req.Priority != nil || assigneesChanged || req.DueDate != nil || req.StartDate != nil || req.Tags != nil || req.EstimateMinutes != nil {
+	if req.Status != nil && strings.TrimSpace(*req.Status) != strings.TrimSpace(task.Status) {
+		s.notifyUserIDs(c.Request.Context(), recipients, userCtx.ID, "task_updated", actor+" has set the status as "+clientTaskStatusLogLabel(*req.Status)+" on task: "+updatedTitle, id)
+	} else if req.Title != nil || req.Description != nil || req.Priority != nil || assigneesChanged || req.DueDate != nil || req.StartDate != nil || req.Tags != nil || req.EstimateMinutes != nil {
 		s.notifyUserIDs(c.Request.Context(), recipients, userCtx.ID, "task_updated", actor+" updated task: "+updatedTitle, id)
 	}
 	if req.Title != nil || req.Description != nil {
@@ -983,7 +985,7 @@ func (s *Server) addTaskComment(c *gin.Context) {
 	s.notifyMentions(c.Request.Context(), teamID, userCtx.ID, content, "comment", comment.ID)
 	actor := s.notificationActorName(c.Request.Context(), userCtx.ID)
 	recipients := uniqueObjectIDs(append(append([]primitive.ObjectID{}, task.AssigneeIDs...), task.CreatedBy))
-	s.notifyUserIDs(c.Request.Context(), recipients, userCtx.ID, "task_comment", actor+" commented on task: "+task.Title, task.ID)
+	s.notifyUserIDs(c.Request.Context(), recipients, userCtx.ID, "task_comment", actor+" sent a comment on task: "+task.Title, task.ID)
 	c.JSON(http.StatusCreated, gin.H{"comment": comment})
 }
 
