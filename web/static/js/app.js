@@ -10939,6 +10939,10 @@ function adminUserRowHTML(user = {}) {
   const ipPill = user.registration_ip ? `<span class="pill" title="Registration IP address">${icon("wifi")}${esc(user.registration_ip)}</span>` : "";
   const netPill = user.registration_network_name ? `<span class="pill" title="Registration network / ISP" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${icon("globe")}${esc(String(user.registration_network_name).replace(/^AS\d+\s*/, ""))}</span>` : "";
   const locPill = (flag || user.registration_country) ? `<span class="pill" title="Registration location">${locationText.trim()}</span>` : "";
+  const wallet = user.wallet || {};
+  const hiringBal = wallet.deposits || 0;
+  const earningsBal = wallet.earnings || 0;
+  const reservedBal = wallet.reserved || 0;
   return `<article class="admin-user-row" data-admin-user-row data-user-id="${esc(user.id)}" data-level="${esc(user.role || "")}" data-membership="${esc(membership)}" data-payment="${esc(paymentText.toLowerCase())}" data-search="${esc(adminUserSearchText(user))}">
     <div class="admin-user-identity">
       ${userChip(user)}
@@ -10952,6 +10956,8 @@ function adminUserRowHTML(user = {}) {
       <span class="pill">${esc(staffRoleLabel(user.staff_role) || "No staff role")}</span>
       <span class="pill ${user.status === "suspended" ? "danger" : user.status === "pending_approval" ? "warn" : ""}">${esc(user.status || "unknown")}</span>
       <span class="pill ${adminMembershipClass(membership)}">${esc(adminMembershipLabel(membership))}</span>
+      <span class="pill" title="Available Hiring Balance" style="font-weight:600;">${icon("wallet")}&nbsp;$${dollars(hiringBal)}</span>
+      ${earningsBal > 0 ? `<span class="pill" title="Freelancer Earnings Balance" style="font-weight:600;color:var(--color-success, #059669);">${icon("dollar-sign")}&nbsp;$${dollars(earningsBal)}</span>` : ""}
       ${providerPill}
       ${locPill}
       ${ipPill}
@@ -10962,9 +10968,16 @@ function adminUserRowHTML(user = {}) {
       <span>${esc(user.team?.name || "No company workspace")}</span>
       <span>${esc(expiryText)}</span>
       <span>${esc(paymentText)}${user.payment_transaction ? ` - ${esc(user.payment_transaction)}` : ""}</span>
+      <span style="display:flex;gap:8px;align-items:center;font-weight:600;margin-top:2px;">
+        <span title="Available Hiring Balance">${icon("wallet")} Hiring: <strong>$${dollars(hiringBal)}</strong></span>
+        ${reservedBal > 0 ? `<span class="muted" title="Reserved in escrow" style="font-weight:normal;">($${dollars(reservedBal)} reserved)</span>` : ""}
+        ${earningsBal > 0 ? `<span style="color:var(--color-success, #059669);" title="Freelancer Earnings">${icon("dollar-sign")} Earned: <strong>$${dollars(earningsBal)}</strong></span>` : ""}
+      </span>
     </div>
     <div class="admin-user-actions">
       <button class="btn compact" type="button" data-view-user="${esc(user.id)}">${icon("panel-right-open")}Details</button>
+      <button class="btn compact" type="button" data-topup-user="${esc(user.id)}">${icon("plus-circle")}+ Top Up</button>
+      <button class="btn compact" type="button" data-transactions-user="${esc(user.id)}">${icon("receipt")}Transactions</button>
       ${user.status === "pending_approval" ? `<button class="btn compact" type="button" data-approve-user="${esc(user.id)}">${icon("check")}Approve</button>` : ""}
       ${user.role !== "owner_adm" ? `<button class="btn compact" type="button" data-membership-user="${esc(user.id)}">${icon("badge-dollar-sign")}Membership</button>` : ""}
       <button class="btn compact" type="button" data-edit-user="${esc(user.id)}">${icon("pencil")}Edit</button>
@@ -11000,6 +11013,8 @@ function adminUserDetailHTML(data = {}) {
     <div class="admin-detail-head">
       <div class="admin-user-identity">${userChip(user)}<div><h2>${esc(user.name || user.email || "User details")}</h2><span class="muted">@${esc(user.username || "pending")} - ${esc(user.email || "")}</span></div></div>
       <div class="toolbar compact-toolbar">
+        <button class="btn compact primary" type="button" data-topup-user="${esc(user.id)}">${icon("plus-circle")}+ Top Up</button>
+        <button class="btn compact" type="button" data-transactions-user="${esc(user.id)}">${icon("receipt")}Transactions</button>
         ${user.status === "pending_approval" ? `<button class="btn compact" type="button" data-approve-user="${esc(user.id)}">${icon("check")}Approve</button>` : ""}
         ${user.role !== "owner_adm" ? `<button class="btn compact" type="button" data-membership-user="${esc(user.id)}">${icon("badge-dollar-sign")}Membership</button>` : ""}
         <button class="btn compact" type="button" data-edit-user="${esc(user.id)}">${icon("pencil")}Edit</button>
@@ -11020,6 +11035,21 @@ function adminUserDetailHTML(data = {}) {
       ${adminStatHTML("2FA", user.two_factor_enabled ? "Enabled" : "Not enabled")}
       ${adminStatHTML("Tasks", String(clientTasks.length + workspaceTasks.length))}
     </div>
+    <section class="admin-detail-section">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+        <h3 style="margin:0;">Funds &amp; Wallet Overview</h3>
+        <div class="toolbar compact-toolbar" style="margin:0;">
+          <button class="btn compact primary" type="button" data-topup-user="${esc(user.id)}">${icon("plus-circle")}+ Add Top Up</button>
+          <button class="btn compact" type="button" data-transactions-user="${esc(user.id)}">${icon("receipt")}View Transactions</button>
+        </div>
+      </div>
+      <div class="admin-detail-stats">
+        ${adminStatHTML("Hiring Balance (Available)", "$" + dollars(user.wallet?.deposits || 0))}
+        ${adminStatHTML("Reserved / Escrow", "$" + dollars(user.wallet?.reserved || 0))}
+        ${adminStatHTML("Freelancer Earnings", "$" + dollars(user.wallet?.earnings || 0))}
+        ${adminStatHTML("Pending Hold", "$" + dollars(user.wallet?.pending || 0))}
+      </div>
+    </section>
     <section class="admin-detail-section"><h3>Sign-up location &amp; network</h3>
       <div class="admin-detail-stats">
         ${adminStatHTML("Registration IP", user.registration_ip || "Not recorded")}
@@ -11186,6 +11216,38 @@ async function renderAdmin() {
       setFormStatus(form, error.message, true);
     }
   });
+  $("#userTopupForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submitBtn = form.querySelector("button[type='submit']");
+    if (submitBtn) submitBtn.disabled = true;
+    try {
+      const amountVal = parseFloat(form.elements.amount.value);
+      const noteVal = form.elements.note.value;
+      const userID = form.elements.id.value;
+      const result = await api(`/api/admin/users/${encodeURIComponent(userID)}/topup`, {
+        method: "POST",
+        body: JSON.stringify({ amount_float: amountVal, note: noteVal }),
+      });
+      $("#userTopupDialog")?.close();
+      await renderAdmin();
+      if (userID) loadDetail(userID);
+      setStatus(result.message || `Successfully credited $${amountVal.toFixed(2)} to user.`);
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
+    }
+  });
+  document.querySelectorAll("[data-topup-preset]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const amountInput = $("#userTopupForm input[name='amount']");
+      if (amountInput) {
+        amountInput.value = btn.dataset.topupPreset;
+        amountInput.focus();
+      }
+    });
+  });
   $("#emailForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
@@ -11245,6 +11307,50 @@ function adminUserDialogsHTML(plans = []) {
       <p class="muted" id="membershipPreview">Select a plan and duration.</p>
       <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save membership</button><button class="btn" type="button" data-close-dialog="userMembershipDialog">Cancel</button></div><p class="status-line"></p>
     </form>
+  </dialog>
+  <dialog id="userTopupDialog" class="modal">
+    <form id="userTopupForm" class="form-grid" method="dialog">
+      <div class="modal-head">
+        <h2>Manual Fund Top Up</h2>
+        <button class="btn icon quiet" type="button" data-close-dialog="userTopupDialog" title="Close">${icon("x")}</button>
+      </div>
+      <input type="hidden" name="id">
+      <p class="muted" id="topupTarget"></p>
+      <div class="field">
+        <label>Amount (USD)</label>
+        <input type="number" name="amount" min="1" max="100000" step="0.01" placeholder="e.g. 50.00" required autofocus>
+      </div>
+      <div class="toolbar compact-toolbar" style="margin-top:-4px;margin-bottom:8px;">
+        <button class="btn compact" type="button" data-topup-preset="25">+$25</button>
+        <button class="btn compact" type="button" data-topup-preset="50">+$50</button>
+        <button class="btn compact" type="button" data-topup-preset="100">+$100</button>
+        <button class="btn compact" type="button" data-topup-preset="250">+$250</button>
+        <button class="btn compact" type="button" data-topup-preset="500">+$500</button>
+      </div>
+      <div class="field">
+        <label>Administrative Note / Reason</label>
+        <input type="text" name="note" placeholder="e.g. Manual top-up by platform owner, Bank transfer credit">
+      </div>
+      <p class="muted" style="font-size:12px;line-height:1.4;">Credits the user's available hiring balance instantly. Creates a recorded payment transaction and notifies the user.</p>
+      <div class="toolbar">
+        <button class="btn primary" type="submit">${icon("plus-circle")}Credit Balance</button>
+        <button class="btn" type="button" data-close-dialog="userTopupDialog">Cancel</button>
+      </div>
+      <p class="status-line"></p>
+    </form>
+  </dialog>
+  <dialog id="userTransactionsDialog" class="modal" style="max-width:860px;width:95vw;">
+    <div class="modal-head">
+      <h2>Transaction History</h2>
+      <button class="btn icon quiet" type="button" data-close-dialog="userTransactionsDialog" title="Close">${icon("x")}</button>
+    </div>
+    <div class="modal-body" style="max-height:75vh;overflow-y:auto;padding-right:4px;">
+      <div id="userTransactionsHeader"></div>
+      <div id="userTransactionsContent"><p class="muted">Loading transactions...</p></div>
+    </div>
+    <div class="toolbar" style="margin-top:16px;">
+      <button class="btn" type="button" data-close-dialog="userTransactionsDialog">Close</button>
+    </div>
   </dialog>`;
 }
 
@@ -11363,6 +11469,121 @@ function bindAdminUserActions(usersByID = {}, afterAction = () => {}, plans = []
       $("#membershipTarget").textContent = `${user.name || user.email} - ${user.team?.name || "Company workspace"}`;
       updateMembershipPreview(form, plans);
       $("#userMembershipDialog").showModal();
+    });
+  });
+  document.querySelectorAll("[data-topup-user]").forEach((btn) => {
+    if (btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => {
+      const user = usersByID[btn.dataset.topupUser];
+      const form = $("#userTopupForm");
+      if (!user || !form) return;
+      form.reset();
+      form.elements.id.value = user.id;
+      const targetEl = $("#topupTarget");
+      if (targetEl) {
+        targetEl.textContent = `Credit hiring balance for ${user.name || user.email} (@${user.username || "pending"}) — Current balance: $${dollars(user.wallet?.deposits || 0)}`;
+      }
+      $("#userTopupDialog")?.showModal();
+      form.elements.amount?.focus();
+    });
+  });
+  document.querySelectorAll("[data-transactions-user]").forEach((btn) => {
+    if (btn.dataset.bound === "1") return;
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", async () => {
+      const userID = btn.dataset.transactionsUser;
+      const user = usersByID[userID];
+      const dialog = $("#userTransactionsDialog");
+      const headerEl = $("#userTransactionsHeader");
+      const contentEl = $("#userTransactionsContent");
+      if (!dialog || !contentEl) return;
+      if (headerEl) {
+        headerEl.innerHTML = `
+          <div class="admin-user-identity" style="margin-bottom:12px;">
+            ${user ? userChip(user) : ""}
+            <div>
+              <h3 style="margin:0;">${esc(user?.name || user?.email || "User Transactions")}</h3>
+              <span class="muted">@${esc(user?.username || "pending")} - ${esc(user?.email || "")}</span>
+            </div>
+          </div>
+        `;
+      }
+      contentEl.innerHTML = `<p class="muted" style="padding:16px 0;">Loading transaction history...</p>`;
+      dialog.showModal();
+      try {
+        const res = await api(`/api/admin/users/${encodeURIComponent(userID)}/transactions`);
+        const w = res.wallet || {};
+        const txs = res.transactions || [];
+        if (headerEl) {
+          headerEl.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+              <div class="admin-user-identity">
+                ${userChip(res.user || user || {})}
+                <div>
+                  <h3 style="margin:0;">${esc(res.user?.name || user?.name || user?.email || "User Transactions")}</h3>
+                  <span class="muted">@${esc(res.user?.username || user?.username || "pending")} - ${esc(res.user?.email || user?.email || "")}</span>
+                </div>
+              </div>
+              <button class="btn compact primary" type="button" data-tx-dialog-topup="${esc(userID)}">${icon("plus-circle")}+ Add Top Up</button>
+            </div>
+            <div class="admin-detail-stats" style="margin-bottom:16px;">
+              <div class="admin-detail-stat"><span>Available Hiring Balance</span><strong style="color:var(--accent);">$${dollars(w.deposits || 0)}</strong></div>
+              <div class="admin-detail-stat"><span>Reserved in Escrow</span><strong>$${dollars(w.reserved || 0)}</strong></div>
+              <div class="admin-detail-stat"><span>Freelancer Earnings</span><strong style="color:var(--color-success, #059669);">$${dollars(w.earnings || 0)}</strong></div>
+              <div class="admin-detail-stat"><span>Pending Hold</span><strong>$${dollars(w.pending || 0)}</strong></div>
+            </div>
+          `;
+          headerEl.querySelector("[data-tx-dialog-topup]")?.addEventListener("click", () => {
+            dialog.close();
+            const topupBtn = document.querySelector(`[data-topup-user="${userID}"]`);
+            if (topupBtn) topupBtn.click();
+          });
+        }
+        if (!txs.length) {
+          contentEl.innerHTML = `<p class="muted" style="padding:24px 0;text-align:center;">No transactions recorded for this user yet.</p>`;
+        } else {
+          contentEl.innerHTML = `
+            <div style="overflow-x:auto;">
+              <table class="report-table">
+                <thead>
+                  <tr>
+                    <th>Date &amp; Time</th>
+                    <th>Type</th>
+                    <th>Details / Reference</th>
+                    <th class="num">Amount</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${txs.map((tx) => {
+                    const isCredit = tx.direction === "credit";
+                    const amtStyle = isCredit ? "color:var(--color-success, #059669);" : "color:var(--color-danger, #dc2626);";
+                    const prefix = isCredit ? "+" : "-";
+                    const statusClass = tx.status === "paid" || tx.status === "completed" ? "primary" : tx.status === "failed" ? "danger" : "warn";
+                    return `
+                      <tr>
+                        <td style="white-space:nowrap;">${esc(fmtDateTime(tx.created_at))}</td>
+                        <td style="white-space:nowrap;"><span class="pill" style="font-size:11px;">${esc(tx.kind || tx.source)}</span></td>
+                        <td>
+                          <div>${esc(tx.description || "")}</div>
+                          ${tx.reference ? `<small class="muted" style="display:block;font-size:11px;">Ref: ${esc(tx.reference)}</small>` : ""}
+                          ${tx.external_id ? `<small class="muted" style="display:block;font-size:11px;">ID: ${esc(tx.external_id)}</small>` : ""}
+                        </td>
+                        <td class="num" style="${amtStyle}white-space:nowrap;">${prefix}$${dollars(tx.amount)}</td>
+                        <td><span class="pill ${statusClass}" style="font-size:11px;">${esc(tx.status || "")}</span></td>
+                      </tr>
+                    `;
+                  }).join("")}
+                </tbody>
+              </table>
+            </div>
+          `;
+        }
+        icons();
+      } catch (err) {
+        contentEl.innerHTML = `<p class="status-line danger">Failed to load transactions: ${esc(err.message)}</p>`;
+      }
     });
   });
 }

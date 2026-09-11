@@ -266,6 +266,8 @@ func (s *Server) Router() *gin.Engine {
 	owner.PATCH("/users/:id/membership", s.adminSetUserMembership)
 	owner.DELETE("/users/:id", s.adminRemoveUser)
 	owner.POST("/users/:id/message", s.adminMessageUser)
+	owner.POST("/users/:id/topup", s.adminUserTopup)
+	owner.GET("/users/:id/transactions", s.adminUserTransactions)
 	owner.POST("/subscriptions/:id/approve", s.approveSubscription)
 	owner.GET("/plans", s.listPlans)
 	owner.PATCH("/plans/:id", s.adminUpdatePlan)

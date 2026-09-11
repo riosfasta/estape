@@ -167,3 +167,121 @@ test("platform owner navigation and settlements management UI are registered and
   assert.match(marketSource, /data-reject-transfer=/);
 });
 
+test("adminUserRowHTML renders fund balances and quick action buttons", () => {
+  const code = appSource.slice(appSource.indexOf("function adminUserRowHTML"), appSource.indexOf("function adminStatHTML"));
+  const ctx = vm.createContext({
+    esc: v => v,
+    icon: name => `[icon:${name}]`,
+    userChip: () => `[chip]`,
+    roleLabel: v => v,
+    staffRoleLabel: v => v,
+    adminMembershipClass: () => "active",
+    adminMembershipLabel: () => "Active",
+    adminPaymentMethodsText: () => "PayPal",
+    adminUserSearchText: () => "",
+    flagEmojiForCountry: () => "",
+    authProviderLabel: () => "Email",
+    dollars: cents => ((cents || 0) / 100).toFixed(2),
+    fmtDate: () => "Jan 1, 2026",
+    NIL_OBJECT_ID: "000000000000000000000000",
+  });
+  vm.runInContext(code, ctx);
+
+  const html = ctx.adminUserRowHTML({
+    id: "user123",
+    name: "Alice Bob",
+    wallet: {
+      deposits: 12550, // $125.50
+      earnings: 4500,  // $45.00
+      reserved: 2000,  // $20.00
+      pending: 0,
+    },
+  });
+
+  // Balance pill in meta and membership section
+  assert.match(html, /\[icon:wallet\]&nbsp;\$125\.50/);
+  assert.match(html, /Hiring:\s*<strong>\$125\.50<\/strong>/);
+  assert.match(html, /\[icon:dollar-sign\]&nbsp;\$45\.00/);
+  assert.match(html, /Earned:\s*<strong>\$45\.00<\/strong>/);
+
+  // Top Up and Transactions buttons in actions
+  assert.match(html, /data-topup-user="user123"/);
+  assert.match(html, /\+ Top Up/);
+  assert.match(html, /data-transactions-user="user123"/);
+  assert.match(html, /Transactions/);
+});
+
+test("adminUserDetailHTML renders Funds & Wallet Overview with 4 balance metrics and action buttons", () => {
+  const code = appSource.slice(appSource.indexOf("function adminUserDetailHTML"), appSource.indexOf("async function renderAdmin()"));
+  const ctx = vm.createContext({
+    esc: v => v,
+    icon: name => `[icon:${name}]`,
+    userChip: () => `[chip]`,
+    roleLabel: v => v,
+    staffRoleLabel: v => v,
+    adminMembershipLabel: () => "Active",
+    adminPaymentMethodsText: () => "Manual",
+    authProviderLabel: () => "Google",
+    dollars: cents => ((cents || 0) / 100).toFixed(2),
+    fmtDate: () => "Jan 1, 2026",
+    fmtDateTime: () => "Jan 1, 2026 12:00",
+    subscriptionDurationText: () => "1 month",
+    flagEmojiForCountry: () => "",
+    adminStatHTML: (label, value) => `<div class="stat">${label}: ${value}</div>`,
+    adminMiniRows: () => "",
+    adminUserProtectedHTML: () => "",
+    NIL_OBJECT_ID: "000000000000000000000000",
+  });
+  vm.runInContext(code, ctx);
+
+  const html = ctx.adminUserDetailHTML({
+    user: {
+      id: "user456",
+      name: "Carol Danvers",
+      wallet: {
+        deposits: 50000,
+        reserved: 10000,
+        earnings: 25000,
+        pending: 5000,
+      },
+    },
+  });
+
+  assert.match(html, /Funds &amp; Wallet Overview/);
+  assert.match(html, /Hiring Balance \(Available\): \$500\.00/);
+  assert.match(html, /Reserved \/ Escrow: \$100\.00/);
+  assert.match(html, /Freelancer Earnings: \$250\.00/);
+  assert.match(html, /Pending Hold: \$50\.00/);
+  assert.match(html, /data-topup-user="user456"/);
+  assert.match(html, /data-transactions-user="user456"/);
+});
+
+test("adminUserDialogsHTML renders userTopupDialog and userTransactionsDialog", () => {
+  const code = appSource.slice(appSource.indexOf("function adminUserDialogsHTML"), appSource.indexOf("function updateMembershipPreview"));
+  const ctx = vm.createContext({
+    esc: v => v,
+    icon: name => `[icon:${name}]`,
+    staffRoleOptions: () => "",
+    planOptionsHTML: () => "",
+  });
+  vm.runInContext(code, ctx);
+
+  const html = ctx.adminUserDialogsHTML([]);
+
+  // Top Up Dialog
+  assert.match(html, /id="userTopupDialog"/);
+  assert.match(html, /id="userTopupForm"/);
+  assert.match(html, /Manual Fund Top Up/);
+  assert.match(html, /name="amount"/);
+  assert.match(html, /data-topup-preset="25"/);
+  assert.match(html, /data-topup-preset="100"/);
+  assert.match(html, /data-topup-preset="500"/);
+  assert.match(html, /name="note"/);
+
+  // Transactions Dialog
+  assert.match(html, /id="userTransactionsDialog"/);
+  assert.match(html, /id="userTransactionsHeader"/);
+  assert.match(html, /id="userTransactionsContent"/);
+});
+
+

@@ -226,6 +226,9 @@ func TestTeamPaymentIntegration(t *testing.T) {
 	authed.POST("/marketplace/transfers", s.marketplaceRequestTransfer)
 	authed.GET("/marketplace/admin/transfers", s.marketplaceAdminTransfers)
 	authed.POST("/marketplace/admin/transfers/:id", s.marketplaceSettleTransfer)
+	authed.GET("/admin/users", s.adminUsers)
+	authed.POST("/admin/users/:id/topup", s.adminUserTopup)
+	authed.GET("/admin/users/:id/transactions", s.adminUserTransactions)
 
 	// 1. Request OTP for admin
 	var otpDevCode string
@@ -611,6 +614,127 @@ func TestTeamPaymentIntegration(t *testing.T) {
 		}
 		if settledTransfer.Fee != 150 {
 			t.Errorf("expected fee 150, got %d", settledTransfer.Fee)
+		}
+	}
+
+	// 7. Platform owner manual top-up, user transactions history, and wallet in admin users list
+	{
+		// A. Check GET /api/admin/users returns wallet info
+		reqUsers := httptest.NewRequest("GET", "/api/admin/users", nil)
+		wUsers := httptest.NewRecorder()
+		router.ServeHTTP(wUsers, reqUsers)
+		if wUsers.Code != http.StatusOK {
+			t.Fatalf("adminUsers failed: %d %s", wUsers.Code, wUsers.Body.String())
+		}
+		var usersResp struct {
+			Users []map[string]interface{} `json:"users"`
+		}
+		if err := json.Unmarshal(wUsers.Body.Bytes(), &usersResp); err != nil {
+			t.Fatalf("failed to parse adminUsers response: %v", err)
+		}
+		if len(usersResp.Users) == 0 {
+			t.Fatalf("expected at least 1 user in adminUsers response")
+		}
+		foundMember := false
+		for _, u := range usersResp.Users {
+			if u["id"] == memberID.Hex() {
+				foundMember = true
+				wallet, ok := u["wallet"].(map[string]interface{})
+				if !ok {
+					t.Fatalf("expected wallet map in user, got %T", u["wallet"])
+				}
+				if int64(wallet["earnings"].(float64)) != 17000 {
+					t.Errorf("expected member earnings 17000, got %v", wallet["earnings"])
+				}
+			}
+		}
+		if !foundMember {
+			t.Errorf("did not find member in adminUsers list")
+		}
+
+		// B. Manual top-up by platform owner to member's account ($100.00 = 10000 cents)
+		topupPayload, _ := json.Marshal(map[string]interface{}{
+			"amount_float": 100.00,
+			"note":         "Comp bonus by platform owner",
+		})
+		reqTopup := httptest.NewRequest("POST", "/api/admin/users/"+memberID.Hex()+"/topup", bytes.NewReader(topupPayload))
+		reqTopup.Header.Set("Content-Type", "application/json")
+		wTopup := httptest.NewRecorder()
+		router.ServeHTTP(wTopup, reqTopup)
+		if wTopup.Code != http.StatusOK {
+			t.Fatalf("adminUserTopup failed: %d %s", wTopup.Code, wTopup.Body.String())
+		}
+		var topupResp struct {
+			OK       bool                     `json:"ok"`
+			Wallet   models.MarketplaceWallet `json:"wallet"`
+			Transfer models.MarketplaceTransfer `json:"transfer"`
+			Message  string                   `json:"message"`
+		}
+		if err := json.Unmarshal(wTopup.Body.Bytes(), &topupResp); err != nil {
+			t.Fatalf("failed to decode topup response: %v", err)
+		}
+		if !topupResp.OK {
+			t.Errorf("expected topup ok=true")
+		}
+		if topupResp.Wallet.Deposits != 10000 {
+			t.Errorf("expected member deposits 10000, got %d", topupResp.Wallet.Deposits)
+		}
+		if topupResp.Transfer.Amount != 10000 {
+			t.Errorf("expected transfer amount 10000, got %d", topupResp.Transfer.Amount)
+		}
+		if topupResp.Transfer.Status != "paid" {
+			t.Errorf("expected transfer status paid, got %q", topupResp.Transfer.Status)
+		}
+
+		// Check member wallet directly in MongoDB
+		var updatedMemberW models.MarketplaceWallet
+		_ = st.C("marketplace_wallets").FindOne(ctx, bson.M{"_id": memberID}).Decode(&updatedMemberW)
+		if updatedMemberW.Deposits != 10000 {
+			t.Errorf("expected member deposits in db 10000, got %d", updatedMemberW.Deposits)
+		}
+
+		// Check in-platform notification created for member
+		var notif models.Notification
+		_ = st.C("notifications").FindOne(ctx, bson.M{"user_id": memberID, "type": "marketplace_topup"}).Decode(&notif)
+		if notif.ID.IsZero() {
+			t.Errorf("expected topup notification for member")
+		}
+
+		// C. Query GET /api/admin/users/:id/transactions
+		reqTx := httptest.NewRequest("GET", "/api/admin/users/"+memberID.Hex()+"/transactions", nil)
+		wTx := httptest.NewRecorder()
+		router.ServeHTTP(wTx, reqTx)
+		if wTx.Code != http.StatusOK {
+			t.Fatalf("adminUserTransactions failed: %d %s", wTx.Code, wTx.Body.String())
+		}
+		var txResp struct {
+			User         map[string]interface{}     `json:"user"`
+			Wallet       models.MarketplaceWallet   `json:"wallet"`
+			Transactions []AdminUserTransactionItem `json:"transactions"`
+		}
+		if err := json.Unmarshal(wTx.Body.Bytes(), &txResp); err != nil {
+			t.Fatalf("failed to decode transactions response: %v", err)
+		}
+		if txResp.Wallet.Deposits != 10000 {
+			t.Errorf("expected wallet deposits 10000 in transactions view, got %d", txResp.Wallet.Deposits)
+		}
+		if len(txResp.Transactions) == 0 {
+			t.Fatalf("expected at least 1 transaction, got 0")
+		}
+		foundTopupTx := false
+		for _, tx := range txResp.Transactions {
+			if tx.Kind == "topup" && tx.Amount == 10000 {
+				foundTopupTx = true
+				if tx.Direction != "credit" {
+					t.Errorf("expected direction credit, got %q", tx.Direction)
+				}
+				if tx.Status != "paid" {
+					t.Errorf("expected status paid, got %q", tx.Status)
+				}
+			}
+		}
+		if !foundTopupTx {
+			t.Errorf("did not find topup transaction in member's transaction history")
 		}
 	}
 }

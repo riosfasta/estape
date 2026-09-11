@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"html"
 	template "html/template"
 	"net/http"
@@ -619,6 +620,246 @@ func (s *Server) adminMessageUser(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"chat": chat, "message": msg})
 }
 
+func (s *Server) adminUserTopup(c *gin.Context) {
+	userCtx, _ := currentUser(c)
+	id, ok := objectIDParam(c, "id")
+	if !ok {
+		return
+	}
+	var target models.User
+	if err := s.store.C("users").FindOne(c.Request.Context(), bson.M{"_id": id}).Decode(&target); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	var req struct {
+		Amount      int64   `json:"amount"`
+		AmountFloat float64 `json:"amount_float"`
+		Note        string  `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid top up payload"})
+		return
+	}
+	amount := req.Amount
+	if amount <= 0 && req.AmountFloat > 0 {
+		amount = int64(req.AmountFloat * 100)
+	}
+	if amount <= 0 || amount > 100000000 { // $0.01 to $1,000,000
+		c.JSON(http.StatusBadRequest, gin.H{"error": "amount must be greater than zero and at most $1,000,000"})
+		return
+	}
+
+	note := strings.TrimSpace(req.Note)
+	if note == "" {
+		note = "Manual balance credit by platform owner"
+	}
+
+	now := time.Now().UTC()
+	transfer := models.MarketplaceTransfer{
+		ID:               primitive.NewObjectID(),
+		UserID:           target.ID,
+		Kind:             "topup",
+		Amount:           amount,
+		Fee:              0,
+		Status:           "paid",
+		ExternalID:       "MANUAL-ADMIN-TOPUP",
+		Destination:      note,
+		PaymentReference: paymentReference("ADMIN_TOPUP", userCtx.ID, primitive.NewObjectID()),
+		CreatedAt:        now,
+		SettledBy:        userCtx.ID,
+		SettledAt:        &now,
+	}
+
+	// Atomically increment deposits
+	_, err := s.store.C("marketplace_wallets").UpdateOne(
+		c.Request.Context(),
+		bson.M{"_id": target.ID},
+		bson.M{"$inc": bson.M{"deposits": amount}},
+		options.Update().SetUpsert(true),
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not credit wallet deposits"})
+		return
+	}
+
+	_, _ = s.store.C("marketplace_transfers").InsertOne(c.Request.Context(), transfer)
+
+	s.audit(c.Request.Context(), userCtx.ID, "user.wallet.manual_topup", "user", target.ID)
+
+	// Send in-platform notification to target user
+	s.notifyUserIDs(
+		c.Request.Context(),
+		[]primitive.ObjectID{target.ID},
+		userCtx.ID,
+		"marketplace_topup",
+		fmt.Sprintf("Your hiring balance was credited with $%.2f by the platform owner.", float64(amount)/100.0),
+		transfer.ID,
+	)
+	s.broadcastAdminUsersChanged(c.Request.Context(), userCtx.ID, "wallet_topup", target.ID)
+
+	var updatedWallet models.MarketplaceWallet
+	_ = s.store.C("marketplace_wallets").FindOne(c.Request.Context(), bson.M{"_id": target.ID}).Decode(&updatedWallet)
+
+	c.JSON(http.StatusOK, gin.H{
+		"ok":       true,
+		"wallet":   updatedWallet,
+		"transfer": transfer,
+		"message":  fmt.Sprintf("Successfully credited $%.2f to %s.", float64(amount)/100.0, firstNonEmpty(target.Name, target.Username, target.Email)),
+	})
+}
+
+type AdminUserTransactionItem struct {
+	ID          string    `json:"id"`
+	Source      string    `json:"source"`
+	Kind        string    `json:"kind"`
+	Amount      int64     `json:"amount"`
+	Direction   string    `json:"direction"`
+	Status      string    `json:"status"`
+	Description string    `json:"description"`
+	Reference   string    `json:"reference"`
+	ExternalID  string    `json:"external_id,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+func (s *Server) adminUserTransactions(c *gin.Context) {
+	id, ok := objectIDParam(c, "id")
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
+	var target models.User
+	if err := s.store.C("users").FindOne(ctx, bson.M{"_id": id}).Decode(&target); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	var wallet models.MarketplaceWallet
+	_ = s.store.C("marketplace_wallets").FindOne(ctx, bson.M{"_id": id}).Decode(&wallet)
+	wallet.ID = id
+
+	items := []AdminUserTransactionItem{}
+
+	// 1. Marketplace Transfers (topup, refund, withdrawal)
+	curTransfers, err := s.store.C("marketplace_transfers").Find(ctx, bson.M{"user_id": id}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(100))
+	if err == nil {
+		defer curTransfers.Close(ctx)
+		var transfers []models.MarketplaceTransfer
+		_ = curTransfers.All(ctx, &transfers)
+		for _, t := range transfers {
+			direction := "credit"
+			desc := "Top up"
+			if t.Kind == "refund" {
+				direction = "debit"
+				desc = "Refund: " + t.Destination
+			} else if t.Kind == "withdrawal" {
+				direction = "debit"
+				desc = "Withdrawal: " + t.Destination
+			} else if t.ExternalID == "MANUAL-ADMIN-TOPUP" {
+				desc = "Manual Owner Top Up: " + t.Destination
+			} else if t.Destination != "" {
+				desc = "Top up: " + t.Destination
+			}
+			items = append(items, AdminUserTransactionItem{
+				ID:          t.ID.Hex(),
+				Source:      "transfer",
+				Kind:        t.Kind,
+				Amount:      t.Amount,
+				Direction:   direction,
+				Status:      t.Status,
+				Description: desc,
+				Reference:   t.PaymentReference,
+				ExternalID:  t.ExternalID,
+				CreatedAt:   t.CreatedAt,
+			})
+		}
+	}
+
+	// 2. Task Payments (where payer or payee)
+	curPayments, err := s.store.C("task_payments").Find(ctx, bson.M{
+		"$or": []bson.M{{"payer_id": id}, {"payee_id": id}},
+	}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(100))
+	if err == nil {
+		defer curPayments.Close(ctx)
+		var payments []models.TaskPayment
+		_ = curPayments.All(ctx, &payments)
+		for _, p := range payments {
+			direction := "debit"
+			role := "Sent to " + p.PayeeName
+			if p.PayeeID == id {
+				direction = "credit"
+				role = "Received payment"
+			}
+			desc := role
+			if p.CustomMessage != "" {
+				desc += " (" + p.CustomMessage + ")"
+			}
+			if p.TaskTitle != "" {
+				desc += " - Task: " + p.TaskTitle
+			}
+			items = append(items, AdminUserTransactionItem{
+				ID:          p.ID.Hex(),
+				Source:      "task_payment",
+				Kind:        p.Kind,
+				Amount:      p.AmountCents,
+				Direction:   direction,
+				Status:      p.Status,
+				Description: desc,
+				Reference:   p.TaskTitle,
+				CreatedAt:   p.CreatedAt,
+			})
+		}
+	}
+
+	// 3. Marketplace Earnings
+	curEarnings, err := s.store.C("marketplace_earnings").Find(ctx, bson.M{"user_id": id}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(100))
+	if err == nil {
+		defer curEarnings.Close(ctx)
+		var earnings []struct {
+			ID          primitive.ObjectID `bson:"_id"`
+			Amount      int64              `bson:"amount"`
+			Fee         int64              `bson:"fee"`
+			Status      string             `bson:"status"`
+			AvailableAt time.Time          `bson:"available_at"`
+			CreatedAt   time.Time          `bson:"created_at"`
+		}
+		_ = curEarnings.All(ctx, &earnings)
+		for _, e := range earnings {
+			items = append(items, AdminUserTransactionItem{
+				ID:          e.ID.Hex(),
+				Source:      "earning",
+				Kind:        "job_earning",
+				Amount:      e.Amount,
+				Direction:   "credit",
+				Status:      e.Status,
+				Description: fmt.Sprintf("Job Earning (Net: $%.2f, Fee: $%.2f)", float64(e.Amount)/100.0, float64(e.Fee)/100.0),
+				CreatedAt:   e.CreatedAt,
+			})
+		}
+	}
+
+	// Sort items descending by CreatedAt
+	for i := 0; i < len(items)-1; i++ {
+		for j := i + 1; j < len(items); j++ {
+			if items[i].CreatedAt.Before(items[j].CreatedAt) {
+				items[i], items[j] = items[j], items[i]
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"user": gin.H{
+			"id":       target.ID,
+			"name":     target.Name,
+			"email":    target.Email,
+			"username": target.Username,
+			"role":     target.Role,
+		},
+		"wallet":       wallet,
+		"transactions": items,
+	})
+}
+
 func (s *Server) adminUserRows(ctx context.Context, users []models.User) []gin.H {
 	userIDs := []primitive.ObjectID{}
 	teamIDs := []primitive.ObjectID{}
@@ -697,6 +938,21 @@ func (s *Server) adminUserRows(ctx context.Context, users []models.User) []gin.H
 			}
 		}
 	}
+
+	walletsByID := map[primitive.ObjectID]models.MarketplaceWallet{}
+	if len(userIDs) > 0 {
+		cursor, err := s.store.C("marketplace_wallets").Find(ctx, bson.M{"_id": bson.M{"$in": userIDs}})
+		if err == nil {
+			defer cursor.Close(ctx)
+			for cursor.Next(ctx) {
+				var wallet models.MarketplaceWallet
+				if cursor.Decode(&wallet) == nil {
+					walletsByID[wallet.ID] = wallet
+				}
+			}
+		}
+	}
+
 	rows := []gin.H{}
 	for _, user := range users {
 		team := s.adminPrimaryTeam(user, teamsByID, ownedTeams)
@@ -710,6 +966,7 @@ func (s *Server) adminUserRows(ctx context.Context, users []models.User) []gin.H
 			invoices = invoicesByTeam[team.ID]
 			paymentMethods = adminPaymentMethods(sub, invoices)
 		}
+		wallet := walletsByID[user.ID]
 		rows = append(rows, gin.H{
 			"id":                         user.ID,
 			"name":                       user.Name,
@@ -741,6 +998,7 @@ func (s *Server) adminUserRows(ctx context.Context, users []models.User) []gin.H
 			"payment_methods":            paymentMethods,
 			"invoice_count":              len(invoices),
 			"latest_invoice":             adminLatestInvoice(invoices),
+			"wallet":                     wallet,
 		})
 	}
 	return rows
