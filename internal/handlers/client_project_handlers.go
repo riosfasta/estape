@@ -2,6 +2,9 @@ package handlers
 
 import (
 	"context"
+	"fmt"
+	"html"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1214,6 +1217,10 @@ func (s *Server) createClientTask(c *gin.Context) {
 		AssigneeIDs   []string                      `json:"assignee_ids"`
 		DueDate       string                        `json:"due_date"`
 		Recurrence    models.ClientTaskRecurrence   `json:"recurrence"`
+		BillingType   string                        `json:"billing_type"`
+		Price         float64                       `json:"price"`
+		HourlyRate    float64                       `json:"hourly_rate"`
+		MaxHours      float64                       `json:"max_hours"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task body"})
@@ -1345,6 +1352,22 @@ func (s *Server) createClientTask(c *gin.Context) {
 	if teamID.IsZero() {
 		teamID = userCtx.TeamID
 	}
+	billingType := strings.ToLower(strings.TrimSpace(req.BillingType))
+	if billingType == "" {
+		if req.HourlyRate > 0 {
+			billingType = "hourly"
+		} else if req.Price > 0 {
+			billingType = "fixed"
+		}
+	}
+	price := math.Round(req.Price*100) / 100
+	hourlyRate := math.Round(req.HourlyRate*100) / 100
+	maxHours := req.MaxHours
+	if maxHours < 0 {
+		maxHours = 0
+	}
+	maxSeconds := int64(math.Round(maxHours * 3600))
+
 	task := models.ClientTask{
 		ID:            primitive.NewObjectID(),
 		ClientID:      tab.ClientID,
@@ -1368,6 +1391,11 @@ func (s *Server) createClientTask(c *gin.Context) {
 		AssigneeIDs:   assigneeIDs,
 		DueDate:       dueDate,
 		Recurrence:    normalizeClientTaskRecurrence(req.Recurrence, dueDate),
+		BillingType:   billingType,
+		Price:         price,
+		HourlyRate:    hourlyRate,
+		MaxHours:      maxHours,
+		MaxSeconds:    maxSeconds,
 		Status:        status,
 		CreatedBy:     userCtx.ID,
 		CreatedAt:     now,
@@ -1699,6 +1727,10 @@ func (s *Server) updateClientTask(c *gin.Context) {
 		AssigneeIDs   []string                       `json:"assignee_ids"`
 		DueDate       *string                        `json:"due_date"`
 		Recurrence    *models.ClientTaskRecurrence   `json:"recurrence"`
+		BillingType   *string                        `json:"billing_type"`
+		Price         *float64                       `json:"price"`
+		HourlyRate    *float64                       `json:"hourly_rate"`
+		MaxHours      *float64                       `json:"max_hours"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task update"})
@@ -1857,6 +1889,114 @@ func (s *Server) updateClientTask(c *gin.Context) {
 	}
 	if req.Recurrence != nil {
 		set["recurrence"] = normalizeClientTaskRecurrence(*req.Recurrence, effectiveDueDate)
+	}
+	if req.BillingType != nil {
+		bt := strings.ToLower(strings.TrimSpace(*req.BillingType))
+		set["billing_type"] = bt
+		task.BillingType = bt
+	}
+	if req.Price != nil {
+		p := math.Round(*req.Price*100) / 100
+		set["price"] = p
+		task.Price = p
+	}
+	if req.HourlyRate != nil {
+		hr := math.Round(*req.HourlyRate*100) / 100
+		set["hourly_rate"] = hr
+		task.HourlyRate = hr
+	}
+	if req.MaxHours != nil {
+		mh := *req.MaxHours
+		if mh < 0 {
+			mh = 0
+		}
+		ms := int64(math.Round(mh * 3600))
+		set["max_hours"] = mh
+		set["max_seconds"] = ms
+		task.MaxHours = mh
+		task.MaxSeconds = ms
+	}
+
+	if statusChanged && clientTaskIsDoneStatus(updatedStatus) && task.PaymentStatus != "paid" && task.PaymentStatus != "pending" {
+		amount := 0.0
+		if task.BillingType == "hourly" || (task.HourlyRate > 0 && task.Price <= 0) {
+			cursor, err := s.store.C("time_entries").Find(c.Request.Context(), bson.M{"task_id": task.ID})
+			if err == nil {
+				var entries []models.TimeEntry
+				_ = cursor.All(c.Request.Context(), &entries)
+				cursor.Close(c.Request.Context())
+				var totalSeconds int64
+				for _, e := range entries {
+					if e.DurationSeconds > 0 {
+						totalSeconds += e.DurationSeconds
+					} else if e.DurationMinutes > 0 {
+						totalSeconds += int64(e.DurationMinutes * 60)
+					}
+				}
+				if task.MaxSeconds > 0 && totalSeconds > task.MaxSeconds {
+					totalSeconds = task.MaxSeconds
+				}
+				hours := float64(totalSeconds) / 3600.0
+				amount = math.Round(hours*task.HourlyRate*100) / 100
+			}
+		} else if task.Price > 0 {
+			amount = math.Round(task.Price*100) / 100
+		}
+
+		if amount >= 1.0 {
+			payeeID := primitive.NilObjectID
+			if len(task.AssigneeIDs) > 0 {
+				payeeID = task.AssigneeIDs[0]
+			} else {
+				payeeID = userCtx.ID
+			}
+
+			payerID := userCtx.ID
+			var team models.Team
+			if s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": task.TeamID}).Decode(&team) == nil && !team.OwnerAdminID.IsZero() {
+				payerID = team.OwnerAdminID
+			}
+
+			paymentID := primitive.NewObjectID()
+			autoSettleAt := now.Add(7 * 24 * time.Hour)
+			taskPayment := models.TaskPayment{
+				ID:            paymentID,
+				TeamID:        task.TeamID,
+				TaskID:        task.ID,
+				TaskTitle:     task.Title,
+				PayerID:       payerID,
+				PayeeID:       payeeID,
+				Amount:        amount,
+				AmountCents:   int64(amount * 100),
+				Kind:          "task_completion",
+				CustomMessage: fmt.Sprintf("Payment for task \"%s\"", task.Title),
+				Status:        "pending",
+				CreatedAt:     now,
+				AutoSettleAt:  autoSettleAt,
+			}
+			if _, err := s.store.C("task_payments").InsertOne(c.Request.Context(), taskPayment); err == nil {
+				set["payment_status"] = "pending"
+				set["pending_payment_id"] = paymentID
+
+				// Notify admin via inbox
+				s.notifyUserIDs(c.Request.Context(), []primitive.ObjectID{payerID}, userCtx.ID, "client_task_payment_pending",
+					fmt.Sprintf("Task \"%s\" was completed. A pending payment of $%.2f is scheduled to auto-settle in 7 days. Please review and confirm payment.", task.Title, amount), task.ID)
+
+				// Enqueue email to admin
+				var payerUser models.User
+				if s.store.C("users").FindOne(c.Request.Context(), bson.M{"_id": payerID}).Decode(&payerUser) == nil {
+					if s.mailer != nil && s.mailer.CanSend(c.Request.Context()) {
+						_ = s.mailer.Enqueue(c.Request.Context(), models.EmailQueueItem{
+							Recipient: strings.ToLower(strings.TrimSpace(payerUser.Email)),
+							Type:      "task_payment_pending",
+							Subject:   fmt.Sprintf("Action Required: Confirm payment of $%.2f for task \"%s\"", amount, task.Title),
+							BodyHTML: fmt.Sprintf(`<p>Hello %s,</p><p>Task <strong>"%s"</strong> was marked as completed.</p><p>A pending payment of <strong>$%.2f</strong> has been created with a 7-day auto-settlement period (settling on %s).</p><p>You can review and approve this payment anytime on your Team page.</p><p><a href="%s">Review Team Payments</a></p>`,
+								html.EscapeString(payerUser.Name), html.EscapeString(task.Title), amount, autoSettleAt.Format("Jan 02, 2006"), s.cfg.AppURL+"/team"),
+						})
+					}
+				}
+			}
+		}
 	}
 	if _, err := s.store.C("client_tasks").UpdateByID(c.Request.Context(), task.ID, bson.M{"$set": set}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update task"})

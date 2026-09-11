@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"html"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ const (
 	ownerEmailNewRegistration ownerEmailNotificationKind = "owner_new_registration"
 	ownerEmailPurchaseSuccess ownerEmailNotificationKind = "owner_purchase_success"
 	ownerEmailNewChat         ownerEmailNotificationKind = "owner_new_chat"
+	ownerEmailManualTransfer  ownerEmailNotificationKind = "owner_manual_transfer"
 )
 
 func (s *Server) ownerEmailNotificationConfig(ctx context.Context, kind ownerEmailNotificationKind) (models.SiteSettings, string, bool) {
@@ -156,3 +158,96 @@ func (s *Server) enqueueOwnerNewChatEmail(ctx context.Context, chat models.Chat,
 	}
 	s.enqueueOwnerBehaviorEmail(ctx, ownerEmailNewChat, subject, introduction, rows, "Open chat", "/chat?id="+chat.ID.Hex())
 }
+
+func (s *Server) enqueueOwnerManualTransferEmail(ctx context.Context, transfer models.MarketplaceTransfer, requesterID primitive.ObjectID) {
+	if s.mailer == nil {
+		return
+	}
+	requester, err := s.loadUser(ctx, requesterID)
+	requesterName := "User"
+	requesterEmail := ""
+	requesterUsername := ""
+	if err == nil {
+		s.ensureUserIdentity(ctx, &requester)
+		requesterName = firstNonEmpty(requester.Name, requester.Username, requester.Email, "User")
+		requesterEmail = requester.Email
+		requesterUsername = requester.Username
+	}
+
+	settings, _ := s.loadSiteSettings(ctx)
+	settings = s.settingsWithConfigFallback(settings)
+	appName := firstNonEmpty(settings.SiteName, s.cfg.AppName, "bugmega")
+
+	// Collect owner recipients: configured owner email + active owner_adm accounts
+	recipientSet := make(map[string]bool)
+	if email := strings.ToLower(strings.TrimSpace(settings.OwnerNotificationEmail)); email != "" && strings.Contains(email, "@") {
+		recipientSet[email] = true
+	}
+	if email := strings.ToLower(strings.TrimSpace(s.cfg.OwnerEmail)); email != "" && strings.Contains(email, "@") {
+		recipientSet[email] = true
+	}
+
+	var ownerAdmins []models.User
+	if s.store != nil {
+		cur, err := s.store.C("users").Find(ctx, bson.M{"role": models.RoleOwnerAdmin, "status": models.StatusActive})
+		if err == nil {
+			defer cur.Close(ctx)
+			_ = cur.All(ctx, &ownerAdmins)
+		}
+	}
+	for _, admin := range ownerAdmins {
+		if email := strings.ToLower(strings.TrimSpace(admin.Email)); email != "" && strings.Contains(email, "@") {
+			recipientSet[email] = true
+		}
+	}
+
+	// Prepare email content
+	kindTitle := strings.Title(transfer.Kind)
+	amountStr := fmt.Sprintf("$%.2f", float64(transfer.Amount)/100.0)
+	subject := fmt.Sprintf("[%s] Action Required: New manual %s request (%s) from %s", appName, transfer.Kind, amountStr, requesterName)
+	intro := fmt.Sprintf("A new manual %s request of %s has been submitted by %s and is awaiting your review and settlement.", transfer.Kind, amountStr, requesterName)
+
+	rows := [][2]string{
+		{"Request type", kindTitle},
+		{"Amount requested", amountStr},
+		{"Requester name", requesterName},
+		{"Requester email", requesterEmail},
+		{"Requester username", requesterUsername},
+		{"User ID", transfer.UserID.Hex()},
+		{"Payout destination", transfer.Destination},
+		{"PayPal payment note / reference", transfer.PaymentReference},
+		{"Requested at", ownerEmailTime(transfer.CreatedAt)},
+		{"Processing instructions", "Send the payout manually using your external payment provider. Then record the completed payment reference and actual transaction fee in the Settlements & Refunds dashboard."},
+	}
+
+	var table strings.Builder
+	for _, row := range rows {
+		table.WriteString(ownerEmailRow(row[0], row[1]))
+	}
+	actionURL := s.appAbsoluteURL("/admin/settlements")
+	body := `<p style="font-size:15px;color:#10211d;">` + html.EscapeString(intro) + `</p>` +
+		`<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;max-width:720px;border:1px solid #d7e4df;border-radius:8px;overflow:hidden;margin:16px 0;">` +
+		table.String() +
+		`</table>` +
+		`<p style="margin-top:20px;"><a href="` + html.EscapeString(actionURL) + `" style="display:inline-block;padding:10px 18px;background:#0f766e;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">Open Settlements &amp; Refunds</a></p>`
+
+	for recipient := range recipientSet {
+		_ = s.mailer.Enqueue(ctx, models.EmailQueueItem{
+			Recipient: recipient,
+			Type:      string(ownerEmailManualTransfer),
+			Subject:   subject,
+			BodyHTML:  body,
+		})
+	}
+
+	// In-platform notifications to all active owner admins
+	if len(ownerAdmins) > 0 {
+		ownerIDs := make([]primitive.ObjectID, len(ownerAdmins))
+		for i, o := range ownerAdmins {
+			ownerIDs[i] = o.ID
+		}
+		notifyMsg := fmt.Sprintf("New manual %s request: %s from %s awaiting settlement.", transfer.Kind, amountStr, requesterName)
+		s.notifyUserIDs(ctx, ownerIDs, requesterID, "manual_transfer_request", notifyMsg, transfer.ID)
+	}
+}
+

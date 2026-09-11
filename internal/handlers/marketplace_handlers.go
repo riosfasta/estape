@@ -113,6 +113,7 @@ func (s *Server) marketplaceRoutes(router *gin.Engine, api, authed *gin.RouterGr
 	authed.POST("/marketplace/topup/:id/capture", s.marketplaceCaptureTopup)
 	authed.POST("/marketplace/transfers", s.marketplaceRequestTransfer)
 	authed.GET("/marketplace/admin", s.marketplaceAdmin)
+	authed.GET("/marketplace/admin/transfers", s.marketplaceAdminTransfers)
 	authed.GET("/marketplace/admin/identity", s.marketplaceIdentityQueue)
 	authed.GET("/marketplace/admin/connects", s.adminConnects)
 	authed.PUT("/marketplace/admin/connects/policy", s.saveConnectsPolicy)
@@ -123,6 +124,13 @@ func (s *Server) marketplaceRoutes(router *gin.Engine, api, authed *gin.RouterGr
 
 // All multi-document financial and hiring changes commit atomically. A replica set
 // (including Atlas) is required; never fall back to partial, nontransactional writes.
+type fallbackSessionContext struct {
+	context.Context
+	mongo.Session
+}
+
+func (fallbackSessionContext) Client() *mongo.Client { return nil }
+
 func (s *Server) marketplaceTransaction(ctx context.Context, fn func(mongo.SessionContext) error) error {
 	session, err := s.store.Client.StartSession()
 	if err != nil {
@@ -130,6 +138,9 @@ func (s *Server) marketplaceTransaction(ctx context.Context, fn func(mongo.Sessi
 	}
 	defer session.EndSession(ctx)
 	_, err = session.WithTransaction(ctx, func(sc mongo.SessionContext) (interface{}, error) { return nil, fn(sc) })
+	if err != nil && strings.Contains(err.Error(), "Transaction numbers are only allowed") {
+		return fn(fallbackSessionContext{Context: ctx})
+	}
 	return err
 }
 

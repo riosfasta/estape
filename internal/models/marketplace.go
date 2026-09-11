@@ -123,4 +123,9 @@ type MarketplaceTransfer struct {
 	ExternalID       string             `bson:"external_id,omitempty" json:"external_id,omitempty"`
 	Destination      string             `bson:"destination,omitempty" json:"destination,omitempty"`
 	CreatedAt        time.Time          `bson:"created_at" json:"created_at"`
+	SettledBy        primitive.ObjectID `bson:"settled_by,omitempty" json:"settled_by,omitempty"`
+	SettledAt        *time.Time         `bson:"settled_at,omitempty" json:"settled_at,omitempty"`
+	UserName         string             `bson:"-" json:"user_name,omitempty"`
+	UserEmail        string             `bson:"-" json:"user_email,omitempty"`
+	UserUsername     string             `bson:"-" json:"user_username,omitempty"`
 }

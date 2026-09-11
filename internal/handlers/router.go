@@ -152,6 +152,12 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/teams/:id/members/:userId/tasks", s.listTeamMemberClientTasks)
 	authed.PATCH("/teams/:id/members/:userId", s.updateTeamMember)
 	authed.DELETE("/teams/:id/members/:userId", s.removeTeamMember)
+	authed.PUT("/teams/:id/members/:userId/rate", s.setTeamMemberRate)
+	authed.POST("/teams/:id/members/:userId/pay", s.payTeamMember)
+	authed.GET("/teams/:id/pending-payments", s.listTeamPendingPayments)
+	authed.POST("/teams/:id/pending-payments/:paymentId/approve", s.approveTeamPendingPayment)
+	authed.POST("/wallet/otp", s.requestTransactionOTP)
+	authed.POST("/marketplace/otp", s.requestTransactionOTP)
 	authed.POST("/invitations/:id/:action", s.respondInvitation)
 
 	authed.GET("/client-projects", s.listClientProjects)

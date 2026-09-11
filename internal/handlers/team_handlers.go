@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -111,6 +112,16 @@ func (s *Server) getTeam(c *gin.Context) {
 		members = append(members, pendingMember)
 		seenMembers[pendingMember.ID] = true
 	}
+	for i := range members {
+		hexID := members[i].ID.Hex()
+		if members[i].RateType == "" && team.MemberRateTypes != nil && team.MemberRateTypes[hexID] != "" {
+			members[i].RateType = team.MemberRateTypes[hexID]
+		}
+		if members[i].RateAmount <= 0 && team.MemberRates != nil && team.MemberRates[hexID] > 0 {
+			members[i].RateAmount = team.MemberRates[hexID]
+		}
+	}
+	_ = s.autoSettlePendingPayments(c.Request.Context(), teamID)
 	c.JSON(http.StatusOK, gin.H{"team": team, "members": members})
 }
 
@@ -303,11 +314,13 @@ func (s *Server) addTeamMember(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name      string `json:"name"`
-		Email     string `json:"email"`
-		Username  string `json:"username"`
-		Password  string `json:"password"`
-		StaffRole string `json:"staff_role"`
+		Name       string  `json:"name"`
+		Email      string  `json:"email"`
+		Username   string  `json:"username"`
+		Password   string  `json:"password"`
+		StaffRole  string  `json:"staff_role"`
+		RateType   string  `json:"rate_type"`
+		RateAmount float64 `json:"rate_amount"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid member body"})
@@ -347,6 +360,8 @@ func (s *Server) addTeamMember(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not hash password"})
 		return
 	}
+	rateType := normalizeRateType(req.RateType)
+	rateAmount := math.Round(req.RateAmount*100) / 100
 	member := models.User{
 		ID:              primitive.NewObjectID(),
 		Name:            req.Name,
@@ -355,6 +370,8 @@ func (s *Server) addTeamMember(c *gin.Context) {
 		PasswordHash:    hash,
 		Role:            teamRoleForStaffRole(staffRole),
 		StaffRole:       staffRole,
+		RateType:        rateType,
+		RateAmount:      rateAmount,
 		TeamID:          teamID,
 		Status:          models.StatusActive,
 		ThemePreference: "system",
@@ -368,7 +385,14 @@ func (s *Server) addTeamMember(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create member"})
 		return
 	}
-	_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), teamID, bson.M{"$addToSet": bson.M{"member_ids": member.ID}})
+	teamUpdate := bson.M{"$addToSet": bson.M{"member_ids": member.ID}}
+	if rateAmount > 0 || rateType != "" {
+		teamUpdate["$set"] = bson.M{
+			"member_rate_types." + member.ID.Hex(): rateType,
+			"member_rates." + member.ID.Hex():      rateAmount,
+		}
+	}
+	_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), teamID, teamUpdate)
 	s.audit(c.Request.Context(), userCtx.ID, "team.member.added", "user", member.ID)
 	c.JSON(http.StatusCreated, gin.H{"member": member, "temporary_password": req.Password})
 }
@@ -391,17 +415,30 @@ func (s *Server) updateTeamMember(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name      *string `json:"name"`
-		Email     *string `json:"email"`
-		Username  *string `json:"username"`
-		StaffRole *string `json:"staff_role"`
-		Status    *string `json:"status"`
+		Name       *string  `json:"name"`
+		Email      *string  `json:"email"`
+		Username   *string  `json:"username"`
+		StaffRole  *string  `json:"staff_role"`
+		Status     *string  `json:"status"`
+		RateType   *string  `json:"rate_type"`
+		RateAmount *float64 `json:"rate_amount"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid member update body"})
 		return
 	}
 	set := bson.M{}
+	teamRateSet := bson.M{}
+	if req.RateType != nil {
+		rType := normalizeRateType(*req.RateType)
+		set["rate_type"] = rType
+		teamRateSet["member_rate_types."+memberID.Hex()] = rType
+	}
+	if req.RateAmount != nil {
+		rAmount := math.Round(*req.RateAmount*100) / 100
+		set["rate_amount"] = rAmount
+		teamRateSet["member_rates."+memberID.Hex()] = rAmount
+	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
@@ -460,6 +497,9 @@ func (s *Server) updateTeamMember(c *gin.Context) {
 	if res.MatchedCount == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "member not found"})
 		return
+	}
+	if len(teamRateSet) > 0 {
+		_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), teamID, bson.M{"$set": teamRateSet})
 	}
 	if req.Status != nil {
 		if models.UserStatus(*req.Status) == models.StatusActive {

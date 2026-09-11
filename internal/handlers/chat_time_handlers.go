@@ -462,6 +462,26 @@ func (s *Server) startTimer(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if clientTask, ok := taskPayload.(models.ClientTask); ok && clientTask.MaxSeconds > 0 {
+		cursor, err := s.store.C("time_entries").Find(c.Request.Context(), bson.M{"task_id": clientTask.ID})
+		if err == nil {
+			var entries []models.TimeEntry
+			_ = cursor.All(c.Request.Context(), &entries)
+			cursor.Close(c.Request.Context())
+			var totalSeconds int64
+			for _, e := range entries {
+				if e.DurationSeconds > 0 {
+					totalSeconds += e.DurationSeconds
+				} else if e.DurationMinutes > 0 {
+					totalSeconds += int64(e.DurationMinutes * 60)
+				}
+			}
+			if totalSeconds >= clientTask.MaxSeconds {
+				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Maximum timer limit of %.1f hours reached for this task", clientTask.MaxHours)})
+				return
+			}
+		}
+	}
 	s.stopActiveTimers(c, userCtx.ID)
 	entry := models.TimeEntry{ID: primitive.NewObjectID(), TaskID: taskID, UserID: userCtx.ID, TeamID: teamID, StartTime: time.Now(), DurationMinutes: 0, IsManual: false, Billable: true, CreatedAt: time.Now()}
 	if _, err := s.store.C("time_entries").InsertOne(c.Request.Context(), entry); err != nil {
@@ -527,6 +547,32 @@ func (s *Server) stopTimer(c *gin.Context) {
 	seconds := int64(now.Sub(entry.StartTime) / time.Second)
 	if seconds < 1 {
 		seconds = 1
+	}
+	var clientTask models.ClientTask
+	if s.store.C("client_tasks").FindOne(c.Request.Context(), bson.M{"_id": entry.TaskID}).Decode(&clientTask) == nil && clientTask.MaxSeconds > 0 {
+		cursor, err := s.store.C("time_entries").Find(c.Request.Context(), bson.M{
+			"task_id": clientTask.ID,
+			"_id":     bson.M{"$ne": entry.ID},
+		})
+		if err == nil {
+			var entries []models.TimeEntry
+			_ = cursor.All(c.Request.Context(), &entries)
+			cursor.Close(c.Request.Context())
+			var prevSeconds int64
+			for _, e := range entries {
+				if e.DurationSeconds > 0 {
+					prevSeconds += e.DurationSeconds
+				} else if e.DurationMinutes > 0 {
+					prevSeconds += int64(e.DurationMinutes * 60)
+				}
+			}
+			if prevSeconds+seconds > clientTask.MaxSeconds {
+				seconds = clientTask.MaxSeconds - prevSeconds
+				if seconds < 1 {
+					seconds = 1
+				}
+			}
+		}
 	}
 	duration := int((seconds + 59) / 60)
 	if duration < 1 {

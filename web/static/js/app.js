@@ -3612,6 +3612,7 @@ function shell(title, html) {
           ${state.me?.role === "owner_adm" ? `
             <p class="nav-kicker">Owner</p>
             ${workspaceLink("/admin/users", "Manage users", "users")}
+            ${workspaceLink("/admin/settlements", "Settlements & Refunds", "wallet")}
             ${workspaceLink("/admin/marketplace", "Marketplace", "briefcase")}
             ${workspaceLink("/admin/identity", "ID verification", "shield-check")}
             ${workspaceChild("/admin/plans", "Pricing plans", "badge-dollar-sign")}
@@ -4763,7 +4764,7 @@ function taskRows(tasks) {
   }).join("");
 }
 
-function teamMemberRows(members, canManageTeam, team = {}) {
+function teamMemberRows(members, canManageTeam, team = {}, pendingPaymentsByMember = {}) {
   if (!members.length) return `<p class="muted">No listed members yet.</p>`;
   return members.map((member) => {
     const hasLeft = member.status === "left";
@@ -4771,10 +4772,18 @@ function teamMemberRows(members, canManageTeam, team = {}) {
     const isSuspended = member.status === "suspended";
     const statusText = hasLeft ? "left company" : (isSuspended ? "blocked" : (member.status || "active"));
     const canGroup = canManageTeam && canGroupTeamMember(member, team);
+    const rateType = member.rate_type || team.member_rate_types?.[member.id] || "";
+    const rateAmount = Number(member.rate_amount || team.member_rates?.[member.id] || 0);
+    const rateText = rateAmount > 0 ? `$${rateAmount.toFixed(2)}/${rateType || "hr"}` : "";
+    const memberPending = pendingPaymentsByMember[member.id] || [];
+    const memberPendingSum = memberPending.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
     return `<article class="task-row" ${canGroup ? `draggable="true" data-drag-team-member="${esc(member.id)}"` : ""}>
       <div><h3>${esc(member.name)}</h3><span class="muted">@${esc(member.username || "pending")} · ${esc(member.email)}</span></div>
       <div class="team-member-actions">
         <span class="pill ${isSuspended || hasLeft ? "danger" : ""}">${esc(statusText)}</span>
+        ${rateText ? `<span class="pill" title="Configured member rate: ${esc(rateText)}">${icon("dollar-sign")}${esc(rateText)}</span>` : ""}
+        ${memberPending.length > 0 ? `<button class="btn compact warn" type="button" data-show-member-pending="${esc(member.id)}" title="Pending payments awaiting review/approval">${icon("clock")}Pending ($${memberPendingSum.toFixed(2)})</button>` : ""}
+        ${canManageMember ? `<button class="btn compact primary" type="button" data-pay-team-member="${esc(member.id)}" data-member-name="${esc(member.name || member.username || "Member")}" data-rate-amount="${rateAmount}" data-rate-type="${esc(rateType)}" title="Pay member directly (bonus / salary)">${icon("credit-card")}Pay</button>` : ""}
         ${member.id && !hasLeft ? `<button class="btn compact" type="button" data-team-member-tasks="${esc(member.id)}">${icon("list-checks")}Tasks</button>` : ""}
         ${canGroup ? `<button class="btn compact" type="button" data-person-access="${esc(member.id)}">${icon("folder-lock")}Access</button><select aria-label="Group for ${esc(member.name || member.email)}" data-move-team-member="${esc(member.id)}"><option value="">Ungrouped</option>${(team.groups || []).map(group => `<option value="${esc(group.id)}" ${team.member_groups?.[member.id] === group.id ? "selected" : ""}>${esc(group.name)}</option>`).join("")}</select>` : ""}
       </div>
@@ -4783,6 +4792,7 @@ function teamMemberRows(members, canManageTeam, team = {}) {
           <summary class="btn icon quiet" title="Manage staff">${icon("more-horizontal")}</summary>
           <div class="row-menu-list">
             <button type="button" data-edit-member="${member.id}">${icon("pencil")}Edit</button>
+            <button type="button" data-edit-member-rate="${esc(member.id)}" data-rate-type="${esc(rateType || "hourly")}" data-rate-amount="${rateAmount}">${icon("dollar-sign")}Set rate</button>
             <button type="button" class="${isSuspended ? "" : "danger-text"}" data-member-status="${member.id}" data-next-status="${isSuspended ? "active" : "suspended"}">${icon(isSuspended ? "rotate-ccw" : "ban")}${isSuspended ? "Reactivate" : "Block"}</button>
             <button type="button" class="danger-text" data-delete-member="${member.id}">${icon("trash-2")}Delete</button>
           </div>
@@ -4860,7 +4870,7 @@ function canGroupTeamMember(member, team) {
   return member.status === "active" && (team.member_ids || []).includes(member.id) && member.id !== team.owner_admin_id && member.role !== "owner_adm" && !(member.role === "users_admin" && member.team_id === team.id);
 }
 
-function teamGroupsHTML(team, members, canManage) {
+function teamGroupsHTML(team, members, canManage, pendingPaymentsByMember = {}) {
   const groups = team.groups || [];
   const known = new Set(groups.map(group => group.id));
   const buckets = [{ id: "", name: "Ungrouped" }, ...groups];
@@ -4874,7 +4884,7 @@ function teamGroupsHTML(team, members, canManage) {
       });
       return `<section class="team-group" data-drop-team-group="${esc(group.id)}" aria-label="${esc(group.name)} group">
         <div class="panel-head"><h3>${esc(group.name)} <span class="pill">${people.length}</span></h3>${canManage && group.id ? `<div class="toolbar"><button class="btn compact" type="button" data-edit-team-group="${esc(group.id)}">${icon("settings-2")}Name & access</button><button class="btn icon quiet" type="button" data-delete-team-group="${esc(group.id)}" aria-label="Delete ${esc(group.name)} group">${icon("trash-2")}</button></div>` : ""}</div>
-        <div class="task-list">${people.length ? teamMemberRows(people, canManage, team) : '<p class="muted team-group-empty">Drop staff here</p>'}</div>
+        <div class="task-list">${people.length ? teamMemberRows(people, canManage, team, pendingPaymentsByMember) : '<p class="muted team-group-empty">Drop staff here</p>'}</div>
       </section>`;
     }).join("")}</div>`;
 }
@@ -4985,6 +4995,20 @@ async function openTeamAccessDialog(team, group, member) {
 
 function staffInvitationFields() {
   return `<div class="field"><label>Emails or @usernames, separated by commas</label><textarea name="recipient" required rows="2" placeholder="alex@company.com, sam@company.com, @alex_dev" autocomplete="off"></textarea></div>
+    <div class="grid-2" style="margin-bottom:12px">
+      <div class="field"><label>Rate Type</label>
+        <select name="rate_type">
+          <option value="hourly">Hourly</option>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+          <option value="fixed">Fixed price</option>
+        </select>
+      </div>
+      <div class="field"><label>Rate (USD)</label>
+        <input type="number" name="rate_amount" step="0.01" min="0" placeholder="e.g. 25.00">
+      </div>
+    </div>
     <fieldset class="staff-invitation-access"><legend>Folder / domain access</legend>
       <p class="muted">Select folders to include all their domains, or select individual domains. Leave empty to invite staff without project access. Access starts after acceptance.</p>
       <input type="search" data-invitation-search placeholder="Search folders and domains" aria-label="Search folders and domains">
@@ -5030,6 +5054,8 @@ async function bindStaffInvitationForm(form, teamID) {
     if (!recipients.length || recipients.length > 50) return setFormStatus(form, "Enter between 1 and 50 emails or @usernames.", true);
     const fields = new FormData(form);
     const access = { client_ids: fields.getAll("client_ids"), website_ids: fields.getAll("website_ids") };
+    const rate_type = form.elements.rate_type ? form.elements.rate_type.value : "hourly";
+    const rate_amount = form.elements.rate_amount ? parseFloat(form.elements.rate_amount.value || 0) : 0;
     const failures = [];
     let sent = 0;
     submit.disabled = true;
@@ -5037,7 +5063,7 @@ async function bindStaffInvitationForm(form, teamID) {
       for (const recipient of recipients) {
         setFormStatus(form, `Sending invitation ${sent + failures.length + 1} of ${recipients.length}…`);
         try {
-          await api(`/api/teams/${teamID}/invitations`, { method: "POST", body: JSON.stringify({ recipient, ...access }) });
+          await api(`/api/teams/${teamID}/invitations`, { method: "POST", body: JSON.stringify({ recipient, rate_type, rate_amount, ...access }) });
           sent++;
         } catch (error) {
           failures.push({ recipient, message: error.message });
@@ -5060,6 +5086,25 @@ async function bindStaffInvitationForm(form, teamID) {
   });
 }
 
+function renderPendingPaymentsHTML(payments = [], filterMemberID = "") {
+  const filtered = filterMemberID ? payments.filter(p => p.payee_id === filterMemberID) : payments;
+  if (!filtered.length) return `<p class="muted">No pending task payments to approve.</p>`;
+  return filtered.map((p) => {
+    const settleDate = p.auto_settle_at ? fmtDateTime(p.auto_settle_at) : "in 7 days";
+    return `<article class="task-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;">
+      <div>
+        <h4 style="margin:0 0 4px 0;">${esc(p.task_title || "Completed Task")}</h4>
+        <span class="muted" style="font-size:12px;">Payee: <strong>${esc(p.payee_name || "Team Member")}</strong> · Auto-settles: ${esc(settleDate)}</span>
+        ${p.custom_message ? `<p class="muted" style="margin:4px 0 0 0;font-size:12px;"><em>${esc(p.custom_message)}</em></p>` : ""}
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <strong style="font-size:1.15em;color:var(--primary);">$${Number(p.amount).toFixed(2)}</strong>
+        <button class="btn compact primary" type="button" data-approve-pending-payment="${esc(p.id)}">${icon("check")}Approve</button>
+      </div>
+    </article>`;
+  }).join("");
+}
+
 async function renderTeam() {
   const teamID = activeWorkspaceTeamID() || state.personalTeam?.id || state.team?.id;
   if (!teamID) return renderDashboard();
@@ -5068,10 +5113,38 @@ async function renderTeam() {
   const canManageTeam = state.me?.role === "owner_adm" || data.team?.owner_admin_id === state.me?.id || (isPersonalWorkspaceContext() && state.me?.role === "users_admin" && [state.me?.team_id, state.personalTeam?.id].filter(Boolean).includes(teamID));
   const invitationData = canManageTeam ? await api(`/api/teams/${teamID}/invitations`).catch(() => ({ invitations: [] })) : { invitations: [] };
   const invitations = invitationData.invitations || [];
+  let walletData = { wallet: { deposits: 0, reserved: 0, pending: 0, earnings: 0 } };
+  let pendingPaymentsData = { payments: [] };
+  if (canManageTeam) {
+    [walletData, pendingPaymentsData] = await Promise.all([
+      api("/api/marketplace/wallet").catch(() => ({ wallet: { deposits: 0 } })),
+      api(`/api/teams/${teamID}/pending-payments`).catch(() => ({ payments: [] })),
+    ]);
+  }
+  const deposits = Number(walletData.wallet?.deposits || 0);
+  const pendingPayments = pendingPaymentsData.payments || [];
+  const pendingPaymentsByMember = {};
+  for (const p of pendingPayments) {
+    if (!pendingPaymentsByMember[p.payee_id]) pendingPaymentsByMember[p.payee_id] = [];
+    pendingPaymentsByMember[p.payee_id].push(p);
+  }
+
   shell("Team", `
     <div class="page-title"><div><h1>Team</h1><p class="muted">${esc(data.team.name)}</p></div></div>
+    ${canManageTeam ? `
+    <section class="panel" style="margin-bottom:16px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;border:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div><span class="muted" style="font-size:12px;display:block;text-transform:uppercase;font-weight:600;">Hiring Balance</span><strong style="font-size:1.35em;color:var(--primary);">$${(deposits / 100).toFixed(2)}</strong></div>
+        ${deposits <= 0 ? `<span class="pill warn">${icon("alert-circle")}Balance empty — top up to pay team</span>` : ""}
+      </div>
+      <div class="toolbar" style="margin:0;">
+        <button class="btn compact primary" type="button" id="openTeamTopupBtn">${icon("plus")}Top up</button>
+        ${deposits > 0 ? `<button class="btn compact" type="button" id="openTeamRefundBtn">${icon("rotate-ccw")}Refund</button>` : ""}
+        ${pendingPayments.length ? `<button class="btn compact warn" type="button" id="openPendingPaymentsBtn">${icon("clock")}Pending Payments (${pendingPayments.length})</button>` : ""}
+      </div>
+    </section>` : ""}
     <div class="grid-2">
-      <section class="panel team-groups-panel">${teamGroupsHTML(data.team, members, canManageTeam)}</section>
+      <section class="panel team-groups-panel">${teamGroupsHTML(data.team, members, canManageTeam, pendingPaymentsByMember)}</section>
       ${canManageTeam ? `<section class="panel">
         <h2>Invite Staff</h2>
         <form id="inviteForm" class="form-grid">
@@ -5091,18 +5164,349 @@ async function renderTeam() {
           <div class="field"><label>Email</label><input type="email" name="email" required></div>
         </div>
         <div class="field"><label>Username</label><input name="username" required pattern="[a-zA-Z0-9_]{3,24}"></div>
+        <div class="grid-2">
+          <div class="field"><label>Rate Type</label>
+            <select name="rate_type">
+              <option value="hourly">Hourly</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="fixed">Fixed price</option>
+            </select>
+          </div>
+          <div class="field"><label>Rate (USD)</label>
+            <input type="number" name="rate_amount" step="0.01" min="0" placeholder="e.g. 25.00">
+          </div>
+        </div>
         <div class="field"><label>Status</label><select name="status"><option value="active">active</option><option value="suspended">suspended</option></select></div>
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="memberEditDialog">Cancel</button></div>
         <p class="status-line"></p>
+      </form>
+    </dialog>
+    <dialog id="memberRateDialog" class="modal">
+      <form id="memberRateForm" class="form-grid" method="dialog">
+        <div class="modal-head"><h2>Configure Member Rate</h2><button class="btn icon quiet" type="button" data-close-dialog="memberRateDialog" title="Close">${icon("x")}</button></div>
+        <input type="hidden" name="member_id">
+        <div class="grid-2">
+          <div class="field"><label>Rate Type</label>
+            <select name="rate_type">
+              <option value="hourly">Hourly</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="fixed">Fixed price</option>
+            </select>
+          </div>
+          <div class="field"><label>Rate (USD)</label>
+            <input type="number" name="rate_amount" step="0.01" min="0" placeholder="e.g. 25.00" required>
+          </div>
+        </div>
+        <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save Rate</button><button class="btn" type="button" data-close-dialog="memberRateDialog">Cancel</button></div>
+        <p class="status-line"></p>
+      </form>
+    </dialog>
+    <dialog id="payTeamMemberDialog" class="modal">
+      <form id="payTeamMemberForm" class="form-grid" method="dialog">
+        <div class="modal-head"><h2>Pay Team Member</h2><button class="btn icon quiet" type="button" data-close-dialog="payTeamMemberDialog" title="Close">${icon("x")}</button></div>
+        <input type="hidden" name="member_id">
+        <div class="field"><label>Team Member</label><input name="member_name" readonly disabled style="font-weight:bold;"></div>
+        <p class="muted" id="payMemberRateNotice" style="margin:-6px 0 6px 0;font-size:13px;"></p>
+        <div class="field"><label>Amount (USD)</label><input type="number" name="amount" min="1" step="0.01" placeholder="e.g. 150.00" required></div>
+        <div class="field"><label>Custom message / Reason</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+            <button type="button" class="btn compact quiet" data-quick-msg="Monthly salary">Monthly salary</button>
+            <button type="button" class="btn compact quiet" data-quick-msg="Performance bonus">Performance bonus</button>
+            <button type="button" class="btn compact quiet" data-quick-msg="Task completion bonus">Task completion bonus</button>
+            <button type="button" class="btn compact quiet" data-quick-msg="Overtime payment">Overtime payment</button>
+          </div>
+          <input name="custom_message" placeholder="e.g. Monthly salary, Bonus..." required maxlength="250">
+        </div>
+        <div class="field" style="display:flex;gap:8px;align-items:flex-end;">
+          <div style="flex:1;"><label>Email Security Code (OTP)<input name="otp_code" placeholder="6-digit code" required autocomplete="off"></label></div>
+          <button type="button" class="btn" id="sendPayMemberOTPBtn">Send Code</button>
+        </div>
+        <p class="status-line" id="payMemberOTPStatus" style="font-size:12px;margin:0;"></p>
+        <div class="toolbar"><button class="btn primary" type="submit">${icon("credit-card")}Confirm Payment</button><button class="btn" type="button" data-close-dialog="payTeamMemberDialog">Cancel</button></div>
+        <p class="status-line" id="payMemberStatus"></p>
+      </form>
+    </dialog>
+    <dialog id="teamPendingPaymentsDialog" class="modal" style="max-width:700px;">
+      <div class="modal-head"><h2>Pending Task Payments</h2><button class="btn icon quiet" type="button" data-close-dialog="teamPendingPaymentsDialog" title="Close">${icon("x")}</button></div>
+      <p class="muted">Payments for completed tasks with configured rates are held for 7 days before auto-settling. You can review and approve them early.</p>
+      <div id="teamPendingPaymentsList" class="task-list" style="margin:12px 0;"></div>
+      <div class="field" style="display:flex;gap:8px;align-items:flex-end;margin-top:12px;">
+        <div style="flex:1;"><label>Approval Security Code (OTP)<input id="pendingApproveOTP" placeholder="6-digit code" autocomplete="off"></label></div>
+        <button type="button" class="btn" id="sendPendingApproveOTPBtn">Send Code</button>
+      </div>
+      <p class="status-line" id="pendingApproveOTPStatus" style="font-size:12px;margin:4px 0 12px 0;"></p>
+      <div class="toolbar"><button class="btn" type="button" data-close-dialog="teamPendingPaymentsDialog">Close</button></div>
+    </dialog>
+    <dialog id="teamTopupDialog" class="modal">
+      <div class="modal-head"><h2>Top Up Hiring Balance</h2><button class="btn icon quiet" type="button" data-close-dialog="teamTopupDialog" title="Close">${icon("x")}</button></div>
+      <p class="muted">Add funds to your hiring balance to pay team members and approve task payments.</p>
+      <form id="teamDirectTopupForm" class="form-grid" style="margin-bottom:16px;">
+        <div class="field"><label>Amount (USD)</label><input type="number" name="amount" min="1" max="100000" step="0.01" value="50" required></div>
+        <button class="btn primary" type="submit">${icon("plus")}In-Platform Top Up (Instant Credit)</button>
+        <p class="status-line"></p>
+      </form>
+      <details><summary class="muted" style="cursor:pointer;font-size:13px;">Or pay with PayPal</summary>
+        <form id="teamPayPalTopupForm" class="form-grid" style="margin-top:8px;">
+          <div class="field"><label>Amount (USD)</label><input type="number" name="amount" min="1" max="100000" step="0.01" value="50" required></div>
+          <button class="btn" type="submit">Continue to PayPal</button>
+          <p class="status-line"></p>
+        </form>
+      </details>
+      <div class="toolbar" style="margin-top:16px;"><button class="btn" type="button" data-close-dialog="teamTopupDialog">Close</button></div>
+    </dialog>
+    <dialog id="teamRefundDialog" class="modal">
+      <form id="teamRefundForm" class="form-grid" method="dialog">
+        <div class="modal-head"><h2>Request Refund</h2><button class="btn icon quiet" type="button" data-close-dialog="teamRefundDialog" title="Close">${icon("x")}</button></div>
+        <div class="panel" style="background:var(--bg-subtle,#f1f5f9);border-left:4px solid var(--primary,#3b82f6);padding:10px 14px;margin-bottom:12px;font-size:13px;">
+          <strong>Manual Processing by Platform Owner:</strong> Refund requests are reviewed and sent manually by the platform owner to your payment destination. Processing typically takes 1–3 business days.
+        </div>
+        <p class="muted">Available for refund: <strong>$${(deposits / 100).toFixed(2)}</strong>. Unused hiring balance will be held out of your available balance during review.</p>
+        <div class="field"><label>Refund Amount (USD)</label><input type="number" name="amount" min="1" max="${(deposits / 100).toFixed(2)}" step="0.01" value="${(deposits / 100).toFixed(2)}" required></div>
+        <div class="field"><label>PayPal Email or Payment Reference</label><input name="destination" minlength="5" maxlength="250" placeholder="e.g. your-email@example.com" required></div>
+        <label class="market-check"><input type="checkbox" name="accept_fees" required><span>I acknowledge that provider transaction fees will be deducted from this refund.</span></label>
+        <div class="field" style="display:flex;gap:8px;align-items:flex-end;">
+          <div style="flex:1;"><label>Email Security Code (OTP)<input name="otp_code" placeholder="6-digit code" required autocomplete="off"></label></div>
+          <button type="button" class="btn" id="sendRefundOTPBtn">Send Code</button>
+        </div>
+        <p class="status-line" id="refundOTPStatus" style="font-size:12px;margin:0;"></p>
+        <div class="toolbar"><button class="btn primary" type="submit">${icon("rotate-ccw")}Submit Refund Request</button><button class="btn" type="button" data-close-dialog="teamRefundDialog">Cancel</button></div>
+        <p class="status-line" id="refundFormStatus"></p>
       </form>
     </dialog>
     <dialog id="teamMemberTasksDialog" class="modal team-member-tasks-dialog">
       <div class="modal-head"><h2>Assigned Tasks</h2><button class="btn icon quiet" type="button" data-close-dialog="teamMemberTasksDialog" title="Close">${icon("x")}</button></div>
       <div id="teamMemberTasksBody"></div>
     </dialog>`);
+
   const membersByID = Object.fromEntries(members.map((member) => [member.id, member]));
   if (canManageTeam) bindTeamGroups(data.team, members);
   bindStaffInvitationForm($("#inviteForm"), teamID);
+
+  // Top up handling
+  $("#openTeamTopupBtn")?.addEventListener("click", () => $("#teamTopupDialog")?.showModal());
+  $("#teamDirectTopupForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const amt = Math.round(parseFloat(form.elements.amount.value || 0) * 100);
+    try {
+      await api("/api/marketplace/topup/direct", { method: "POST", body: JSON.stringify({ amount: amt }) });
+      $("#teamTopupDialog")?.close();
+      await renderTeam();
+    } catch (err) {
+      setFormStatus(form, err.message, true);
+    }
+  });
+  $("#teamPayPalTopupForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const amt = Math.round(parseFloat(form.elements.amount.value || 0) * 100);
+    try {
+      const res = await api("/api/marketplace/topup", { method: "POST", body: JSON.stringify({ amount: amt }) });
+      if (res.url) window.location.href = res.url;
+    } catch (err) {
+      setFormStatus(form, err.message, true);
+    }
+  });
+
+  // Refund handling with Email OTP
+  $("#openTeamRefundBtn")?.addEventListener("click", () => $("#teamRefundDialog")?.showModal());
+  $("#sendRefundOTPBtn")?.addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const line = $("#refundOTPStatus");
+    btn.disabled = true;
+    if (line) line.textContent = "Sending verification code…";
+    try {
+      const res = await api("/api/wallet/otp", { method: "POST", body: JSON.stringify({ purpose: "refund" }) });
+      if (line) {
+        if (res.dev_code) {
+          line.textContent = `Security code sent (test mode code: ${res.dev_code})`;
+        } else {
+          line.textContent = `Verification code sent to your registered email (${res.email || "email"}). Valid for 15 minutes.`;
+        }
+        line.style.color = "var(--primary)";
+      }
+    } catch (err) {
+      if (line) { line.textContent = err.message || "Could not send code"; line.style.color = "var(--danger)"; }
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  $("#teamRefundForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const amt = Math.round(parseFloat(form.elements.amount.value || 0) * 100);
+    const dest = form.elements.destination.value.trim();
+    const code = form.elements.otp_code.value.trim();
+    try {
+      await api("/api/marketplace/transfers", {
+        method: "POST",
+        body: JSON.stringify({ kind: "refund", amount: amt, destination: dest, accept_fees: true, otp_code: code })
+      });
+      $("#teamRefundDialog")?.close();
+      await renderTeam();
+    } catch (err) {
+      setFormStatus(form, err.message, true);
+    }
+  });
+
+  // Pending payments review and approval with Email OTP
+  const openPendingDialog = (filterMemberID = "") => {
+    const list = $("#teamPendingPaymentsList");
+    if (list) {
+      list.innerHTML = renderPendingPaymentsHTML(pendingPayments, filterMemberID);
+      icons();
+      list.querySelectorAll("[data-approve-pending-payment]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const otp = $("#pendingApproveOTP")?.value.trim() || "";
+          const status = $("#pendingApproveOTPStatus");
+          if (!otp) {
+            if (status) { status.textContent = "Please enter or request the security code first."; status.style.color = "var(--danger)"; }
+            return;
+          }
+          btn.disabled = true;
+          try {
+            await api(`/api/teams/${teamID}/pending-payments/${btn.dataset.approvePendingPayment}/approve`, {
+              method: "POST",
+              body: JSON.stringify({ otp_code: otp })
+            });
+            $("#teamPendingPaymentsDialog")?.close();
+            await renderTeam();
+          } catch (err) {
+            if (status) { status.textContent = err.message; status.style.color = "var(--danger)"; }
+            btn.disabled = false;
+          }
+        });
+      });
+    }
+    $("#teamPendingPaymentsDialog")?.showModal();
+  };
+  $("#openPendingPaymentsBtn")?.addEventListener("click", () => openPendingDialog(""));
+  document.querySelectorAll("[data-show-member-pending]").forEach((btn) => {
+    btn.addEventListener("click", () => openPendingDialog(btn.dataset.showMemberPending));
+  });
+  $("#sendPendingApproveOTPBtn")?.addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const line = $("#pendingApproveOTPStatus");
+    btn.disabled = true;
+    if (line) line.textContent = "Sending verification code…";
+    try {
+      const res = await api("/api/wallet/otp", { method: "POST", body: JSON.stringify({ purpose: "payment" }) });
+      if (line) {
+        if (res.dev_code) {
+          line.textContent = `Security code sent (test mode code: ${res.dev_code})`;
+        } else {
+          line.textContent = `Verification code sent to your registered email (${res.email || "email"}). Valid for 15 minutes.`;
+        }
+        line.style.color = "var(--primary)";
+      }
+    } catch (err) {
+      if (line) { line.textContent = err.message || "Could not send code"; line.style.color = "var(--danger)"; }
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // Direct Pay Member with custom message chips & Email OTP
+  document.querySelectorAll("[data-pay-team-member]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const member = membersByID[btn.dataset.payTeamMember];
+      const form = $("#payTeamMemberForm");
+      if (!form) return;
+      form.elements.member_id.value = btn.dataset.payTeamMember;
+      form.elements.member_name.value = btn.dataset.memberName || member?.name || "Member";
+      const notice = $("#payMemberRateNotice");
+      const rAmount = parseFloat(btn.dataset.rateAmount || member?.rate_amount || 0);
+      const rType = btn.dataset.rateType || member?.rate_type || "";
+      if (notice) {
+        notice.textContent = rAmount > 0 ? `Configured member rate: $${rAmount.toFixed(2)}/${rType || "hr"}` : "No specific rate configured for this member.";
+      }
+      form.elements.amount.value = rAmount > 0 ? rAmount.toFixed(2) : "";
+      form.elements.custom_message.value = "Monthly salary";
+      form.elements.otp_code.value = "";
+      $("#payMemberOTPStatus").textContent = "";
+      $("#payMemberStatus").textContent = "";
+      $("#payTeamMemberDialog")?.showModal();
+    });
+  });
+  document.querySelectorAll("#payTeamMemberDialog [data-quick-msg]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const form = $("#payTeamMemberForm");
+      if (form) form.elements.custom_message.value = btn.dataset.quickMsg;
+    });
+  });
+  $("#sendPayMemberOTPBtn")?.addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const line = $("#payMemberOTPStatus");
+    btn.disabled = true;
+    if (line) line.textContent = "Sending verification code…";
+    try {
+      const res = await api("/api/wallet/otp", { method: "POST", body: JSON.stringify({ purpose: "payment" }) });
+      if (line) {
+        if (res.dev_code) {
+          line.textContent = `Security code sent (test mode code: ${res.dev_code})`;
+        } else {
+          line.textContent = `Verification code sent to your registered email (${res.email || "email"}). Valid for 15 minutes.`;
+        }
+        line.style.color = "var(--primary)";
+      }
+    } catch (err) {
+      if (line) { line.textContent = err.message || "Could not send code"; line.style.color = "var(--danger)"; }
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  $("#payTeamMemberForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const memberID = form.elements.member_id.value;
+    const amount = parseFloat(form.elements.amount.value || 0);
+    const customMessage = form.elements.custom_message.value.trim();
+    const otpCode = form.elements.otp_code.value.trim();
+    try {
+      await api(`/api/teams/${teamID}/members/${memberID}/pay`, {
+        method: "POST",
+        body: JSON.stringify({ amount, custom_message: customMessage, otp_code: otpCode })
+      });
+      $("#payTeamMemberDialog")?.close();
+      await renderTeam();
+    } catch (err) {
+      setFormStatus(form, err.message, true);
+    }
+  });
+
+  // Quick configure member rate dialog
+  document.querySelectorAll("[data-edit-member-rate]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const form = $("#memberRateForm");
+      if (!form) return;
+      form.elements.member_id.value = btn.dataset.editMemberRate;
+      form.elements.rate_type.value = btn.dataset.rateType || "hourly";
+      form.elements.rate_amount.value = parseFloat(btn.dataset.rateAmount || 0) || "";
+      $("#memberRateDialog")?.showModal();
+    });
+  });
+  $("#memberRateForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const memberID = form.elements.member_id.value;
+    const rateType = form.elements.rate_type.value;
+    const rateAmount = parseFloat(form.elements.rate_amount.value || 0);
+    try {
+      await api(`/api/teams/${teamID}/members/${memberID}/rate`, {
+        method: "PUT",
+        body: JSON.stringify({ rate_type: rateType, rate_amount: rateAmount })
+      });
+      $("#memberRateDialog")?.close();
+      await renderTeam();
+    } catch (err) {
+      setFormStatus(form, err.message, true);
+    }
+  });
+
   document.querySelectorAll("[data-team-member-tasks]").forEach((btn) => btn.addEventListener("click", () => {
     openTeamMemberTasks(teamID, btn.dataset.teamMemberTasks, btn);
   }));
@@ -5114,6 +5518,8 @@ async function renderTeam() {
     form.elements.email.value = member.email || "";
     form.elements.username.value = member.username || "";
     form.elements.status.value = member.status || "active";
+    if (form.elements.rate_type) form.elements.rate_type.value = member.rate_type || data.team?.member_rate_types?.[member.id] || "hourly";
+    if (form.elements.rate_amount) form.elements.rate_amount.value = member.rate_amount || data.team?.member_rates?.[member.id] || "";
     $("#memberEditDialog").showModal();
   }));
   document.querySelectorAll("[data-delete-member]").forEach((btn) => btn.addEventListener("click", async () => {
@@ -5143,6 +5549,8 @@ async function renderTeam() {
           email: form.elements.email.value,
           username: form.elements.username.value,
           status: form.elements.status.value,
+          rate_type: form.elements.rate_type ? form.elements.rate_type.value : "hourly",
+          rate_amount: form.elements.rate_amount ? parseFloat(form.elements.rate_amount.value || 0) : 0,
         }),
       });
       $("#memberEditDialog").close();
@@ -5671,6 +6079,67 @@ function taskCompletionBadgeHTML(task = {}) {
   const count = taskCompletionCount(task);
   return count ? `<span class="pill completion-pill">${icon("check-check")}Completed ${esc(count)}x</span>` : "";
 }
+
+function taskPricingBadgeHTML(task = {}) {
+  const parts = [];
+  if (task.billing_type === "hourly" || (task.hourly_rate && !task.price)) {
+    const rate = task.hourly_rate ? `$${Number(task.hourly_rate).toFixed(2)}/hr` : "Hourly";
+    const maxH = task.max_hours ? ` (max ${task.max_hours}h)` : (task.max_seconds ? ` (max ${(task.max_seconds / 3600).toFixed(1)}h)` : "");
+    parts.push(`<span class="pill" title="Hourly price limit" style="background:var(--primary-subtle,#eff6ff);color:var(--primary,#2563eb);font-weight:600;">${icon("clock")}${esc(rate)}${esc(maxH)}</span>`);
+  } else if (task.price) {
+    parts.push(`<span class="pill" title="Fixed task price" style="background:var(--primary-subtle,#eff6ff);color:var(--primary,#2563eb);font-weight:600;">${icon("credit-card")}$${Number(task.price).toFixed(2)}</span>`);
+  }
+  if (task.payment_status) {
+    const isPending = task.payment_status === "pending";
+    const isPaid = task.payment_status === "paid" || task.payment_status === "settled";
+    const color = isPaid ? "var(--success,#16a34a)" : (isPending ? "var(--warning,#ca8a04)" : "var(--muted)");
+    const bg = isPaid ? "var(--success-subtle,#f0fdf4)" : (isPending ? "var(--warning-subtle,#fefce8)" : "var(--bg-card)");
+    const label = isPending ? "Payment Pending (7-day hold)" : `Payment: ${task.payment_status}`;
+    parts.push(`<span class="pill" style="background:${bg};color:${color};font-weight:600;" title="Payment status">${icon("check-check")}${esc(label)}</span>`);
+  }
+  return parts.join(" ");
+}
+
+function taskPricingFieldsHTML(task = {}) {
+  const billingType = task.billing_type || (task.hourly_rate ? "hourly" : (task.price ? "fixed" : ""));
+  const priceVal = task.price ? Number(task.price).toFixed(2) : "";
+  const hourlyRateVal = task.hourly_rate ? Number(task.hourly_rate).toFixed(2) : "";
+  const maxHoursVal = task.max_hours || (task.max_seconds ? (task.max_seconds / 3600).toFixed(1) : "");
+
+  return `
+    <fieldset class="task-pricing-fieldset" style="border:1px solid var(--border-color,#e2e8f0);border-radius:6px;padding:10px 14px;margin-top:8px;">
+      <legend style="font-size:12px;font-weight:600;padding:0 6px;color:var(--muted);">Task Pricing & Timer Limit (Optional)</legend>
+      <div class="grid-2">
+        <div class="field">
+          <label>Billing Type</label>
+          <select name="billing_type" onchange="const fs = this.closest('.task-pricing-fieldset'); const isH = this.value === 'hourly'; const isF = this.value === 'fixed'; fs.querySelector('.pricing-fixed-row').hidden = !isF; fs.querySelector('.pricing-hourly-row').hidden = !isH;">
+            <option value="" ${!billingType ? "selected" : ""}>None / Unpriced</option>
+            <option value="fixed" ${billingType === "fixed" ? "selected" : ""}>Fixed Price</option>
+            <option value="hourly" ${billingType === "hourly" ? "selected" : ""}>Hourly Rate</option>
+          </select>
+        </div>
+      </div>
+      <div class="field pricing-fixed-row" ${billingType === "fixed" ? "" : "hidden"}>
+        <label>Fixed Price (USD)</label>
+        <input name="price" type="number" min="0" max="100000" step="0.01" value="${esc(priceVal)}" placeholder="0.00">
+      </div>
+      <div class="pricing-hourly-row" ${billingType === "hourly" ? "" : "hidden"}>
+        <div class="grid-2">
+          <div class="field">
+            <label>Hourly Rate (USD)</label>
+            <input name="hourly_rate" type="number" min="0" max="100000" step="0.01" value="${esc(hourlyRateVal)}" placeholder="0.00">
+          </div>
+          <div class="field">
+            <label>Max Timer Limit (Hours)</label>
+            <input name="max_hours" type="number" min="0" max="10000" step="0.1" value="${esc(maxHoursVal)}" placeholder="e.g. 10">
+          </div>
+        </div>
+        <small class="muted" style="display:block;margin-top:4px;">Freelancer timer will be capped at this maximum hours limit.</small>
+      </div>
+    </fieldset>
+  `;
+}
+
 
 function taskDueInfo(task = {}) {
   const nextDue = nextRecurringDueDate(task.due_date, task.recurrence || {});
@@ -7116,6 +7585,7 @@ function clientTaskBoardHTML(tasks, tab, members, canManage, canManageStatuses =
           <div class="client-task-card-meta">
             ${statusBadgeHTML(status, "status-badge status-pill")}
             ${taskCompletionBadgeHTML(task)}
+            ${taskPricingBadgeHTML(task)}
             <span class="pill">${esc(fmtDateTime(task.created_at))}</span>
             ${dueInfo.text ? `<button class="pill warn due-count" type="button" data-due-calendar="${esc(dueInfo.date || task.due_date)}">${icon("calendar-days")}${esc(dueInfo.text)}</button>` : ""}
             ${assigneeAvatarsHTML(task.assignee_ids || [], usersByID)}
@@ -7481,6 +7951,7 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
         ${canUpdateProgress ? `<form id="clientTaskQuickEditForm" class="task-detail-meta task-detail-meta-form annotation-viewer-progress">
           ${statusPickerHTML(statuses, task.status || "todo", "status", "", { canManageStatuses, tabID: data.tab?.id })}
           ${taskCompletionBadgeHTML(task)}
+          ${taskPricingBadgeHTML(task)}
           <span class="pill warn due-edit-pill"><button class="due-icon-btn" type="button" data-due-edit-open title="Change due date">${icon("calendar-days")}</button><button class="due-date-text-btn" type="button" data-due-edit-open><span data-due-edit-label>${esc(taskDueInfo(task).text || "No due date")}</span></button><input class="due-edit-input" type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}" title="Due date"></span>
           ${assigneePickerHTML(data.members || [], task.assignee_ids || [])}
           <span class="status-line"></span>
@@ -7875,6 +8346,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "", options = {}) {
           ${statusPickerHTML(statuses, task.status || "todo", "status", "", { canManageStatuses, tabID: data.tab?.id })}
           <span class="pill">${esc(task.type || "description")}</span>
           ${taskCompletionBadgeHTML(task)}
+          ${taskPricingBadgeHTML(task)}
           <span class="pill">${icon("calendar-days")}${esc(fmtDateTime(task.created_at))}</span>
           <span class="pill warn due-edit-pill"><button class="due-icon-btn" type="button" data-due-edit-open title="Change due date">${icon("calendar-days")}</button><button class="due-date-text-btn" type="button" data-due-edit-open><span data-due-edit-label>${esc(dueInfo.text || "No due date")}</span></button><input class="due-edit-input" type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}" title="Due date"></span>
           ${assigneePickerHTML(data.members || [], task.assignee_ids || [])}
@@ -7883,6 +8355,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "", options = {}) {
           ${statusBadgeHTML(statuses.find((item) => item.value === (task.status || "todo")) || statuses[0], "status-badge status-pill")}
           <span class="pill">${esc(task.type || "description")}</span>
           ${taskCompletionBadgeHTML(task)}
+          ${taskPricingBadgeHTML(task)}
           <span class="pill">${icon("calendar-days")}${esc(fmtDateTime(task.created_at))}</span>
           ${dueInfo.text ? `<button class="pill warn due-count" type="button" data-due-calendar="${esc(dueInfo.date || task.due_date)}">${icon("calendar-days")}${esc(dueInfo.text)}</button>` : ""}
           ${assigneeAvatarsHTML(task.assignee_ids || [], usersByID)}
@@ -7922,6 +8395,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "", options = {}) {
         ${task.type === "annotation" ? `<div class="field"><label>Comment</label>${richEditorHTML("comment", taskContent || "", "Write task details")}</div>` : `<div class="field"><label>Task body</label>${contentBlockEditorHTML(taskContentBlocks(task))}</div>`}
         <div class="field" ${task.type === "annotation" ? "" : "hidden"}><label>Annotation URL</label><input name="url" value="${esc(task.url || "")}" placeholder="https://example.com/page"></div>
         <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [], task.assignee_ids || [])}</div>
+        ${taskPricingFieldsHTML(task)}
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="editClientTaskDialog">Cancel</button></div>
         <p class="status-line"></p>
       </form>
@@ -7998,6 +8472,10 @@ async function openClientTaskPanel(taskID, focusCommentID = "", options = {}) {
     }
     body.assignee_ids = selectedAssigneeIDs(form);
     body.recurrence = recurrencePayloadFromForm(form);
+    body.billing_type = String(body.billing_type || "").trim();
+    body.price = parseFloat(body.price || 0) || 0;
+    body.hourly_rate = parseFloat(body.hourly_rate || 0) || 0;
+    body.max_hours = parseFloat(body.max_hours || 0) || 0;
     try {
       const resp = await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify(body) });
       panel.querySelector("#editClientTaskDialog")?.close();
@@ -8582,6 +9060,7 @@ async function renderClientWebsite(clientID, websiteID) {
           <div class="field"><label>Task body</label>${contentBlockEditorHTML()}</div>
         </div>
         <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [])}</div>
+        ${taskPricingFieldsHTML()}
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Create task</button><button class="btn" type="button" data-close-dialog="clientTaskDialog">Cancel</button></div>
         <p class="status-line"></p>
       </form>
@@ -9143,6 +9622,10 @@ async function renderClientWebsite(clientID, websiteID) {
       body.content = contentFromBlocks(body.blocks);
       body.checklist = checklistFromBlocks(body.blocks);
       body.recurrence = recurrencePayloadFromForm(form);
+      body.billing_type = String(body.billing_type || "").trim();
+      body.price = parseFloat(body.price || 0) || 0;
+      body.hourly_rate = parseFloat(body.hourly_rate || 0) || 0;
+      body.max_hours = parseFloat(body.max_hours || 0) || 0;
       body.attachments = [];
       if (body.type === "annotation") {
         body.comment = String(body.comment || "").trim();
@@ -15063,7 +15546,7 @@ async function route(options = {}) {
       if (["task_id", "comment_id", "mention", "project_id"].some(key => legacy.has(key))) { location.replace("/inbox" + location.search); return; }
     }
     if (path() === "/inbox") return await renderDashboard();
-    if (["/dashboard", "/wallet", "/marketplace/jobs", "/admin/marketplace", "/admin/identity"].includes(path()) || path().startsWith("/marketplace/jobs/")) return await marketplace.render(path());
+    if (["/dashboard", "/wallet", "/marketplace/jobs", "/admin/marketplace", "/admin/identity", "/admin/settlements"].includes(path()) || path().startsWith("/marketplace/jobs/")) return await marketplace.render(path());
     if (path() === "/team") {
       if (await guardPaidFeaturePage("staff management")) await renderTeam();
       return;

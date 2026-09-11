@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"html"
+	"math"
 	"net/http"
 	"regexp"
 	"strings"
@@ -236,6 +237,8 @@ func (s *Server) createTeamInvitation(c *gin.Context) {
 		Email      string               `json:"email"`
 		Username   string               `json:"username"`
 		StaffRole  string               `json:"staff_role"`
+		RateType   string               `json:"rate_type"`
+		RateAmount float64              `json:"rate_amount"`
 		ClientIDs  []primitive.ObjectID `json:"client_ids"`
 		WebsiteIDs []primitive.ObjectID `json:"website_ids"`
 	}
@@ -357,6 +360,8 @@ func (s *Server) createTeamInvitation(c *gin.Context) {
 		Email:          email,
 		Username:       username,
 		StaffRole:      staffRole,
+		RateType:       normalizeRateType(req.RateType),
+		RateAmount:     math.Round(req.RateAmount*100) / 100,
 		InvitedBy:      userCtx.ID,
 		ExistingUserID: existingUserID,
 		Token:          token,
@@ -490,6 +495,8 @@ func (s *Server) listMyInvitations(c *gin.Context) {
 			"email":            invitation.Email,
 			"username":         invitation.Username,
 			"staff_role":       invitation.StaffRole,
+			"rate_type":        invitation.RateType,
+			"rate_amount":      invitation.RateAmount,
 			"invited_by":       invitation.InvitedBy,
 			"existing_user_id": invitation.ExistingUserID,
 			"status":           invitation.Status,
@@ -677,6 +684,12 @@ func (s *Server) respondInvitation(c *gin.Context) {
 			"username": username,
 			"status":   models.StatusActive,
 		}
+		if invitation.RateType != "" {
+			userUpdate["rate_type"] = invitation.RateType
+		}
+		if invitation.RateAmount > 0 {
+			userUpdate["rate_amount"] = invitation.RateAmount
+		}
 		if user.TeamID.IsZero() {
 			if personalTeam, err := s.personalTeamForUser(c.Request.Context(), user, now); err == nil {
 				userUpdate["team_id"] = personalTeam.ID
@@ -695,7 +708,18 @@ func (s *Server) respondInvitation(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not grant project access; please retry accepting the invitation"})
 			return
 		}
-		if _, err := s.store.C("teams").UpdateByID(c.Request.Context(), invitation.TeamID, bson.M{"$addToSet": bson.M{"member_ids": userCtx.ID}}); err != nil {
+		teamUpdate := bson.M{"$addToSet": bson.M{"member_ids": userCtx.ID}}
+		if invitation.RateType != "" || invitation.RateAmount > 0 {
+			rateSets := bson.M{}
+			if invitation.RateType != "" {
+				rateSets["member_rate_types."+userCtx.ID.Hex()] = invitation.RateType
+			}
+			if invitation.RateAmount > 0 {
+				rateSets["member_rates."+userCtx.ID.Hex()] = invitation.RateAmount
+			}
+			teamUpdate["$set"] = rateSets
+		}
+		if _, err := s.store.C("teams").UpdateByID(c.Request.Context(), invitation.TeamID, teamUpdate); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not join team; please retry"})
 			return
 		}

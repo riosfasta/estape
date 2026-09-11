@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -359,9 +360,14 @@ func (s *Server) marketplaceRequestTransfer(c *gin.Context) {
 		Amount      int64  `json:"amount"`
 		Destination string `json:"destination"`
 		AcceptFees  bool   `json:"accept_fees"`
+		OTPCode     string `json:"otp_code"`
 	}
 	if c.ShouldBindJSON(&req) != nil || (req.Kind != "refund" && req.Kind != "withdrawal") || req.Amount < 100 || req.Amount > maximumMarketplaceAmount || len(strings.TrimSpace(req.Destination)) < 5 || len(req.Destination) > 250 || !req.AcceptFees {
 		marketplaceError(c, marketInvalid("Choose refund or withdrawal, an amount, payout details and acknowledge transaction fees"))
+		return
+	}
+	if err := s.verifyTransactionOTP(ctx, user.ID, req.Kind, req.OTPCode); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error(), "need_otp": true})
 		return
 	}
 	if marketplaceError(c, s.marketplaceReleaseEarnings(ctx, user.ID)) {
@@ -389,6 +395,7 @@ func (s *Server) marketplaceRequestTransfer(c *gin.Context) {
 		return err
 	})
 	if !marketplaceError(c, err) {
+		s.enqueueOwnerManualTransferEmail(c.Request.Context(), transfer, user.ID)
 		c.JSON(201, gin.H{"transfer": transfer})
 	}
 }
@@ -407,6 +414,40 @@ func (s *Server) marketplaceOwner(c *gin.Context) bool {
 	return true
 }
 
+func (s *Server) enrichMarketplaceTransfers(ctx context.Context, transfers []models.MarketplaceTransfer) []models.MarketplaceTransfer {
+	if len(transfers) == 0 {
+		return transfers
+	}
+	userIDs := make([]primitive.ObjectID, 0, len(transfers))
+	for _, t := range transfers {
+		if !t.UserID.IsZero() {
+			userIDs = append(userIDs, t.UserID)
+		}
+	}
+	if len(userIDs) == 0 {
+		return transfers
+	}
+	cur, err := s.store.C("users").Find(ctx, bson.M{"_id": bson.M{"$in": userIDs}})
+	if err != nil {
+		return transfers
+	}
+	defer cur.Close(ctx)
+	var users []models.User
+	_ = cur.All(ctx, &users)
+	userMap := make(map[primitive.ObjectID]models.User, len(users))
+	for _, u := range users {
+		userMap[u.ID] = u
+	}
+	for i := range transfers {
+		if u, ok := userMap[transfers[i].UserID]; ok {
+			transfers[i].UserName = firstNonEmpty(u.Name, u.Username, u.Email, "User")
+			transfers[i].UserEmail = u.Email
+			transfers[i].UserUsername = u.Username
+		}
+	}
+	return transfers
+}
+
 func (s *Server) marketplaceAdmin(c *gin.Context) {
 	if !s.marketplaceOwner(c) {
 		return
@@ -421,6 +462,7 @@ func (s *Server) marketplaceAdmin(c *gin.Context) {
 	if marketplaceError(c, cur.All(ctx, &transfers)) {
 		return
 	}
+	transfers = s.enrichMarketplaceTransfers(ctx, transfers)
 	profiles, err := s.store.C("freelancer_profiles").Find(ctx, bson.M{"identity_status": "pending"}, options.Find().SetLimit(200))
 	if marketplaceError(c, err) {
 		return
@@ -446,6 +488,67 @@ func (s *Server) marketplaceAdmin(c *gin.Context) {
 		total = totals[0].Total
 	}
 	c.JSON(200, gin.H{"transfers": transfers, "profiles": pending, "commission": total})
+}
+
+func (s *Server) marketplaceAdminTransfers(c *gin.Context) {
+	if !s.marketplaceOwner(c) {
+		return
+	}
+	ctx := c.Request.Context()
+	statusFilter := strings.TrimSpace(c.Query("status"))
+	searchQuery := strings.TrimSpace(c.Query("q"))
+
+	filter := bson.M{}
+	if statusFilter != "" && statusFilter != "all" {
+		filter["status"] = statusFilter
+	}
+	if searchQuery != "" {
+		filter["$or"] = []bson.M{
+			{"destination": bson.M{"$regex": primitive.Regex{Pattern: searchQuery, Options: "i"}}},
+			{"payment_reference": bson.M{"$regex": primitive.Regex{Pattern: searchQuery, Options: "i"}}},
+			{"external_id": bson.M{"$regex": primitive.Regex{Pattern: searchQuery, Options: "i"}}},
+		}
+	}
+
+	cur, err := s.store.C("marketplace_transfers").Find(ctx, filter, options.Find().SetLimit(200).SetSort(bson.D{{Key: "created_at", Value: -1}}))
+	if marketplaceError(c, err) {
+		return
+	}
+	defer cur.Close(ctx)
+	transfers := []models.MarketplaceTransfer{}
+	if marketplaceError(c, cur.All(ctx, &transfers)) {
+		return
+	}
+	transfers = s.enrichMarketplaceTransfers(ctx, transfers)
+
+	pendingCount, _ := s.store.C("marketplace_transfers").CountDocuments(ctx, bson.M{"status": "requested"})
+	paidCount, _ := s.store.C("marketplace_transfers").CountDocuments(ctx, bson.M{"status": "paid"})
+	rejectedCount, _ := s.store.C("marketplace_transfers").CountDocuments(ctx, bson.M{"status": "rejected"})
+
+	pendingPipe := mongo.Pipeline{
+		{{Key: "$match", Value: bson.M{"status": "requested"}}},
+		{{Key: "$group", Value: bson.M{"_id": nil, "total": bson.M{"$sum": "$amount"}}}},
+	}
+	sumCur, _ := s.store.C("marketplace_transfers").Aggregate(ctx, pendingPipe)
+	var pendingSum []struct {
+		Total int64 `bson:"total"`
+	}
+	totalPending := int64(0)
+	if sumCur != nil {
+		defer sumCur.Close(ctx)
+		_ = sumCur.All(ctx, &pendingSum)
+		if len(pendingSum) > 0 {
+			totalPending = pendingSum[0].Total
+		}
+	}
+
+	c.JSON(200, gin.H{
+		"transfers":            transfers,
+		"pending_count":        pendingCount,
+		"paid_count":           paidCount,
+		"rejected_count":       rejectedCount,
+		"total_pending_amount": totalPending,
+	})
 }
 
 func (s *Server) marketplaceIdentityQueue(c *gin.Context) {

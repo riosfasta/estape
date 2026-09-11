@@ -362,12 +362,41 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
           <form id="marketTopup" class="market-form" style="margin-top:8px;"><label class="field">Amount (USD)<input name="amount" type="number" min="1" max="100000" step="0.01" required></label><button type="submit" class="btn">Continue to PayPal</button></form>
         </details>
       </section>
-      <section class="panel"><h2>Request a refund or withdrawal</h2><p>Withdrawals require approved identity verification and earnings past the seven-day hold. Requests are reviewed and paid by the platform owner.</p><form id="marketTransfer" class="market-form"><label class="field">Request type<select name="kind"><option value="withdrawal">Withdraw available earnings</option><option value="refund">Refund unused hiring balance</option></select></label><label class="field">Amount (USD)<input name="amount" type="number" min="1" max="100000" step="0.01" required></label><label class="field">PayPal email / original payment reference<input name="destination" minlength="5" maxlength="250" required></label><label class="market-check"><input name="accept_fees" type="checkbox" required><span>I acknowledge that actual provider transaction costs will be deducted from this amount. Refunds return to the original payment method after verification. The 5% platform commission was already deducted from earnings.</span></label><button class="btn primary" type="submit">Submit request</button></form></section></div>
+      <section class="panel"><h2>Request a refund or withdrawal</h2>
+        <div class="market-notice" style="background:var(--bg-subtle,#f1f5f9);border-left:4px solid var(--primary,#3b82f6);margin-bottom:12px;padding:10px 14px;">
+          <strong>Manual Processing by Platform Owner:</strong> All withdrawal and refund requests are reviewed and processed manually by the platform owner to your designated payout details. Processing typically takes 1–3 business days. The platform owner is notified by email upon submission.
+        </div>
+        <p class="muted">Withdrawals require approved identity verification and earnings past the seven-day hold. Refunds return unused hiring balance.</p>
+        <form id="marketTransfer" class="market-form"><label class="field">Request type<select name="kind"><option value="withdrawal">Withdraw available earnings</option><option value="refund">Refund unused hiring balance</option></select></label><label class="field">Amount (USD)<input name="amount" type="number" min="1" max="100000" step="0.01" required></label><label class="field">PayPal email / original payment reference<input name="destination" minlength="5" maxlength="250" required></label><div class="field" style="margin-top:6px;"><label style="display:flex;justify-content:space-between;align-items:center;"><span>Email verification code</span><button type="button" class="btn small" id="marketTransferSendOTP" style="padding:2px 8px;font-size:12px;">Send code to email</button></label><input name="otp_code" id="marketTransferOTPInput" placeholder="Enter 6-digit code sent to your email" minlength="4" maxlength="12" required style="letter-spacing:2px;font-weight:600;"><small id="marketTransferOTPHint" class="muted" style="display:block;margin-top:4px;">A verification code will be sent to your registered email address for security.</small></div><label class="market-check"><input name="accept_fees" type="checkbox" required><span>I acknowledge that actual provider transaction costs will be deducted from this amount. Refunds return to the original payment method after verification. The 5% platform commission was already deducted from earnings.</span></label><button class="btn primary" type="submit">Submit request</button></form></section></div>
       <section class="panel"><h2>Earnings & release dates</h2>${data.earnings.length ? `<div class="market-table-wrap"><table><thead><tr><th>Job</th><th>Net earnings</th><th>Platform fee</th><th>Available from</th><th>Status</th></tr></thead><tbody>${data.earnings.map(e => `<tr><td><a href="/marketplace/jobs/${esc(e._id)}">View job</a></td><td>${money(e.amount)}</td><td>${money(e.fee)}</td><td>${esc(date(e.available_at))}</td><td>${badge(e.status)}</td></tr>`).join("")}</tbody></table></div>` : empty("No earnings yet.")}</section>
-      <section class="panel"><h2>Payment history</h2>${data.transfers.length ? `<div class="market-table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Transaction fee</th><th>Status / reference</th></tr></thead><tbody>${data.transfers.map(t => `<tr><td>${esc(date(t.created_at))}</td><td>${esc(t.kind)}</td><td>${money(t.amount)}${t.status === "paid" ? `<small>Net sent ${money(t.amount - t.fee)}</small>` : ""}</td><td>${money(t.fee)}</td><td>${badge(t.status)}${t.payment_reference ? `<small style="overflow-wrap:anywhere">Reference: ${esc(t.payment_reference)}</small>` : ""}<small>${esc(t.external_id || "")}</small>${t.kind === "topup" && t.status === "pending" ? `<button class="btn" data-capture="${t.id}">Verify PayPal payment</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : empty("No payments yet.")}</section><p><a href="/marketplace/privacy">Marketplace privacy & payment terms</a></p>`);
+      <section class="panel"><h2>Payment history</h2>${data.transfers.length ? `<div class="market-table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Transaction fee</th><th>Status / reference</th></tr></thead><tbody>${data.transfers.map(t => `<tr><td>${esc(date(t.created_at))}</td><td>${esc(t.kind)}</td><td>${money(t.amount)}${t.status === "paid" ? `<small>Net sent ${money(t.amount - t.fee)}</small>` : ""}</td><td>${money(t.fee)}</td><td>${t.status === "requested" ? `<span class="market-badge" style="background:#fef3c7;color:#92400e;font-weight:600;">Pending Owner Settlement</span>` : badge(t.status)}${t.payment_reference ? `<small style="overflow-wrap:anywhere">Reference: ${esc(t.payment_reference)}</small>` : ""}<small>${esc(t.external_id || "")}</small>${t.kind === "topup" && t.status === "pending" ? `<button class="btn" data-capture="${t.id}">Verify PayPal payment</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : empty("No payments yet.")}</section><p><a href="/marketplace/privacy">Marketplace privacy & payment terms</a></p>`);
     bindForm("#marketDirectTopup", async form => { const amount = cents(new FormData(form).get("amount")); await post("/api/marketplace/topup/direct", { amount }); await wallet(); message("In-platform payment successful. Hiring balance credited!"); });
     bindForm("#marketTopup", async form => { const result = await post("/api/marketplace/topup", { amount: cents(new FormData(form).get("amount")) }); await openEmbeddedCheckout({ api, title: "Hiring balance", description: "Add funds to hire freelancers. Unused, unreserved balance is refundable; payment and refund transaction costs may be deducted.", amount: result.amount, orderID: result.order_id, captureURL: `/api/marketplace/topup/${encodeURIComponent(result.transfer_id)}/capture`, fallbackURL: result.url, onSuccess: async () => { await wallet(); message("Payment verified and wallet credited."); } }); });
-    bindForm("#marketTransfer", async form => { const v = Object.fromEntries(new FormData(form)); await post("/api/marketplace/transfers", { kind: v.kind, amount: cents(v.amount), destination: v.destination, accept_fees: !!v.accept_fees }); await wallet(); message("Request queued for owner settlement. The requested amount is held out of your available balance."); });
+    bindButtons("#marketTransferSendOTP", async btn => {
+      const kind = document.querySelector('#marketTransfer select[name="kind"]')?.value || "refund";
+      btn.disabled = true;
+      btn.textContent = "Sending...";
+      try {
+        const res = await post("/api/marketplace/otp", { purpose: kind });
+        btn.textContent = "Code sent!";
+        const hint = $("#marketTransferOTPHint");
+        if (hint) {
+          hint.textContent = `Verification code sent to ${res.email || "your email"}. Valid for 15 minutes.`;
+          hint.style.color = "var(--primary,#3b82f6)";
+        }
+        if (res.dev_code) {
+          const inp = $("#marketTransferOTPInput");
+          if (inp) inp.value = res.dev_code;
+        }
+        message(`Verification code sent to ${res.email || "your registered email"}.`);
+        setTimeout(() => { btn.disabled = false; btn.textContent = "Resend code"; }, 15000);
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = "Send code to email";
+        message(err.message, true);
+      }
+    });
+    bindForm("#marketTransfer", async form => { const v = Object.fromEntries(new FormData(form)); await post("/api/marketplace/transfers", { kind: v.kind, amount: cents(v.amount), destination: v.destination, accept_fees: !!v.accept_fees, otp_code: v.otp_code }); await wallet(); message("Request submitted! Your request will be reviewed and processed manually by the platform owner."); });
     bindButtons("[data-capture]", async b => { await post(`/api/marketplace/topup/${b.dataset.capture}/capture`); await wallet(); message("Payment verified."); });
   }
   let connectSearch = "", connectPage = 1;
@@ -421,18 +450,159 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
   }
   async function admin() {
     const [data, connects] = await Promise.all([api("/api/marketplace/admin"), api("/api/marketplace/admin/connects?" + new URLSearchParams({ q: connectSearch, page: connectPage }))]);
-    page("Marketplace administration", `${heading("PLATFORM OWNER", "Marketplace administration", "Review identity submissions and settle refund / withdrawal requests.")}<section class="panel"><h2>Platform commission earned</h2><strong class="market-large">${money(data.commission)}</strong><p class="muted">5% of approved job payments. Commission is recorded at approval.</p></section>
+    page("Marketplace administration", `${heading("PLATFORM OWNER", "Marketplace administration", "Review identity submissions and settle refund / withdrawal requests.", '<a class="btn primary" href="/admin/settlements">Settlements & Refunds Manager</a>')}<section class="panel"><h2>Platform commission earned</h2><strong class="market-large">${money(data.commission)}</strong><p class="muted">5% of approved job payments. Commission is recorded at approval.</p></section>
       <section class="panel"><h2>ID verification</h2><p>${data.profiles.length} ID submissions in the current review queue.</p><a class="btn primary" href="/admin/identity">Review IDs · Approve / Decline</a></section>
       ${connectsAdminHTML(connects)}
       <h2>Identity review</h2>${data.profiles.map(p => `<article class="panel"><div class="toolbar"><strong>${esc(p.name)}</strong><span>${esc(p.id)}</span><button class="btn" data-id-view="${p.id}">View private ID</button><button class="btn primary" data-id-review="${p.id}" data-revision="${p.identity_revision}" data-status="verified">Approve verification</button><button class="btn" data-id-review="${p.id}" data-revision="${p.identity_revision}" data-status="rejected">Reject</button></div></article>`).join("") || empty("No IDs waiting for review.")}
-      <h2>Settlement queue</h2><p class="market-notice">Send payments through your payment provider before marking them paid. Verify identity for withdrawals and return refunds to the original payment method. Record the actual transaction fee and a unique payment reference. This screen records settlement; it does not send money.</p>
-      ${data.transfers.map(t => `<section class="panel"><h3>${esc(t.kind)} · ${money(t.amount)}</h3><p>User: ${esc(t.user_id)}</p><p>Destination / reference: ${esc(t.destination)}</p><p>Requested: ${esc(date(t.created_at))}</p>${t.payment_reference ? `<label class="field">Copy this code into the PayPal payment note<input readonly value="${esc(t.payment_reference)}" onclick="this.select()"></label>` : ""}<form class="market-settlement market-form" data-transfer="${t.id}"><label class="field">Actual transaction fee (USD)<input type="number" name="fee" min="0" max="${(t.amount - 1) / 100}" step="0.01" value="0" required></label><label class="field">Completed payment reference<input name="reference" minlength="5" maxlength="200" required></label><label class="market-check"><input type="checkbox" required><span>I have verified the recipient and sent the requested amount minus the recorded fee.</span></label><button class="btn primary" type="submit">Record as paid</button><button class="btn" type="button" data-reject-transfer="${t.id}">Reject & restore balance</button></form></section>`).join("") || empty("No pending settlement requests.")}`);
+      <h2>Settlement queue</h2><p class="market-notice">Send payments through your payment provider before marking them paid. Verify identity for withdrawals and return refunds to the original payment method. Record the actual transaction fee and a unique payment reference. This screen records settlement; it does not send money. <a href="/admin/settlements" style="font-weight:600;">Open full Settlements &amp; Refunds manager &rarr;</a></p>
+      ${data.transfers.map(t => `<section class="panel"><h3>${esc(t.kind)} · ${money(t.amount)}</h3><p>Requester: <strong>${esc(t.user_name || "User")}</strong> ${t.user_email ? `(${esc(t.user_email)})` : ""} <small>@${esc(t.user_username || "")} · User ID: ${esc(t.user_id)}</small></p><p>Destination / reference: ${esc(t.destination)}</p><p>Requested: ${esc(date(t.created_at))}</p>${t.payment_reference ? `<label class="field">Copy this code into the PayPal payment note<input readonly value="${esc(t.payment_reference)}" onclick="this.select()"></label>` : ""}<form class="market-settlement market-form" data-transfer="${t.id}"><label class="field">Actual transaction fee (USD)<input type="number" name="fee" min="0" max="${(t.amount - 1) / 100}" step="0.01" value="0" required></label><label class="field">Completed payment reference<input name="reference" minlength="5" maxlength="200" required></label><label class="market-check"><input type="checkbox" required><span>I have verified the recipient and sent the requested amount minus the recorded fee.</span></label><button class="btn primary" type="submit">Record as paid</button><button class="btn" type="button" data-reject-transfer="${t.id}">Reject & restore balance</button></form></section>`).join("") || empty("No pending settlement requests.")}`);
     bindConnectsAdmin(connects);
     bindButtons("[data-id-view]", b => showIdentity(b.dataset.idView));
     bindButtons("[data-id-review]", async b => { await post(`/api/marketplace/admin/identity/${b.dataset.idReview}`, { status: b.dataset.status, revision: b.dataset.revision }); await admin(); });
     document.querySelectorAll(".market-settlement").forEach((form, i) => { form.id = `marketSettlement${i}`; bindForm(`#${form.id}`, async f => { const v = Object.fromEntries(new FormData(f)); await post(`/api/marketplace/admin/transfers/${f.dataset.transfer}`, { status: "paid", reference: v.reference, fee: cents(v.fee) }); await admin(); }); });
     bindButtons("[data-reject-transfer]", async b => { await post(`/api/marketplace/admin/transfers/${b.dataset.rejectTransfer}`, { status: "rejected", fee: 0 }); await admin(); });
   }
+
+  let settlementsFilter = "requested";
+  let settlementsSearch = "";
+
+  async function settlementsAdmin() {
+    const params = new URLSearchParams();
+    if (settlementsFilter) params.set("status", settlementsFilter);
+    if (settlementsSearch) params.set("q", settlementsSearch);
+    const data = await api(`/api/marketplace/admin/transfers?${params}`);
+    const pendingCount = data.pending_count || 0;
+    const paidCount = data.paid_count || 0;
+    const rejectedCount = data.rejected_count || 0;
+    const allCount = pendingCount + paidCount + rejectedCount;
+    const totalPending = data.total_pending_amount || 0;
+
+    page("Settlements & Refunds", `${heading("PLATFORM OWNER", "Settlements & Refunds", "Review pending refund and withdrawal requests, send manual payouts, and record settlement details.", '<a class="btn" href="/admin/marketplace">Marketplace Administration</a><button class="btn" id="refreshSettlementsBtn">Refresh queue</button>')}
+      <section class="panel market-stats">
+        <div><strong>${pendingCount}</strong><span>Pending requests</span></div>
+        <div><strong>${money(totalPending)}</strong><span>Total pending payout</span></div>
+        <div><strong>${paidCount}</strong><span>Paid / Settled</span></div>
+        <div><strong>${rejectedCount}</strong><span>Rejected</span></div>
+      </section>
+      <section class="panel">
+        <h2>Manual Settlement Workflow</h2>
+        <p class="market-notice">
+          <strong>Instructions for Platform Owner:</strong>
+          <br>1. Verify recipient details and ensure freelancer identity has been approved before processing withdrawals.
+          <br>2. Manually send the payment to the user's provided destination using your external payment provider (e.g. PayPal, bank transfer).
+          <br>3. When using PayPal, paste the generated reference note into the payment note field for easy reconciliation.
+          <br>4. Record the completed external payment reference and any actual transaction fee below, then click <em>Record as paid</em>.
+          <br>5. To decline a fraudulent or invalid request, click <em>Reject & restore balance</em> to safely restore funds to the user's wallet.
+        </p>
+      </section>
+      <div class="toolbar" style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div role="tablist" style="display:flex;gap:4px;flex-wrap:wrap;">
+          <button type="button" class="btn ${settlementsFilter === "requested" ? "primary" : ""}" data-settlement-filter="requested">Pending (${pendingCount})</button>
+          <button type="button" class="btn ${settlementsFilter === "paid" ? "primary" : ""}" data-settlement-filter="paid">Paid / Settled (${paidCount})</button>
+          <button type="button" class="btn ${settlementsFilter === "rejected" ? "primary" : ""}" data-settlement-filter="rejected">Rejected (${rejectedCount})</button>
+          <button type="button" class="btn ${settlementsFilter === "all" ? "primary" : ""}" data-settlement-filter="all">All (${allCount})</button>
+        </div>
+        <form id="settlementsSearchForm" class="market-filters" style="margin:0;">
+          <label class="field" style="margin:0;"><input name="q" placeholder="Search destination, user, reference..." value="${esc(settlementsSearch)}"></label>
+          <button class="btn" type="submit">Search</button>
+          ${settlementsSearch ? `<button class="btn" type="button" id="clearSettlementsSearch">Clear</button>` : ""}
+        </form>
+      </div>
+      <h2>${settlementsFilter === "requested" ? "Pending Requests" : settlementsFilter === "paid" ? "Settled Requests" : settlementsFilter === "rejected" ? "Rejected Requests" : "All Requests"} (${data.transfers.length})</h2>
+      ${data.transfers.map(t => `<section class="panel" style="margin-bottom:16px;">
+        <div class="toolbar" style="margin-bottom:8px;">
+          <span class="market-badge" style="${t.kind === "refund" ? "background:#ede9fe;color:#5b21b6;" : "background:#ccfbf1;color:#0f766e;"};font-weight:700;text-transform:uppercase;">${esc(t.kind)}</span>
+          <strong class="market-large">${money(t.amount)}</strong>
+          ${t.status === "requested" ? `<span class="market-badge" style="background:#fef3c7;color:#92400e;font-weight:600;">Pending Owner Settlement</span>` : badge(t.status)}
+          <span class="muted">${esc(date(t.created_at))}</span>
+        </div>
+        <div class="grid-2" style="margin-bottom:12px;gap:12px;">
+          <div>
+            <span class="muted" style="font-size:12px;text-transform:uppercase;font-weight:600;display:block;">Requester</span>
+            <strong>${esc(t.user_name || "User")}</strong> ${t.user_email ? `<a href="mailto:${esc(t.user_email)}" style="font-size:13px;display:block;">${esc(t.user_email)}</a>` : ""}
+            <small class="muted">@${esc(t.user_username || "")} · User ID: ${esc(t.user_id)}</small>
+          </div>
+          <div>
+            <span class="muted" style="font-size:12px;text-transform:uppercase;font-weight:600;display:block;">Payout Destination</span>
+            <input readonly value="${esc(t.destination)}" onclick="this.select()" style="width:100%;font-weight:600;background:var(--bg-subtle,#f8fafc);">
+          </div>
+        </div>
+        ${t.payment_reference ? `
+        <div style="margin-bottom:14px;">
+          <label class="field">Copy this code into PayPal payment note
+            <div style="display:flex;gap:6px;">
+              <input readonly value="${esc(t.payment_reference)}" id="pref_${t.id}" onclick="this.select()" style="font-family:monospace;letter-spacing:1px;font-weight:600;">
+              <button type="button" class="btn compact" data-copy-ref="${esc(t.payment_reference)}">Copy</button>
+            </div>
+          </label>
+        </div>` : ""}
+        ${t.status === "requested" ? `
+        <form class="market-settlement market-form" data-transfer="${t.id}" style="background:var(--bg-card,#f8fafc);padding:14px;border:1px solid var(--border,#e2e8f0);border-radius:8px;">
+          <h4 style="margin:0 0 10px 0;">Record Manual Settlement</h4>
+          <div class="grid-2">
+            <label class="field">Actual transaction fee (USD)
+              <input type="number" name="fee" min="0" max="${(t.amount - 1) / 100}" step="0.01" value="0" required>
+            </label>
+            <label class="field">Completed payment reference / Transaction ID
+              <input name="reference" minlength="5" maxlength="200" placeholder="e.g. PayPal Transaction ID or Wire Ref" required>
+            </label>
+          </div>
+          <label class="market-check" style="margin:10px 0;">
+            <input type="checkbox" required>
+            <span>I confirm that I have manually transferred the requested payout to the user's destination minus the recorded transaction fee.</span>
+          </label>
+          <div class="toolbar" style="margin:8px 0 0 0;">
+            <button class="btn primary" type="submit">Record as Paid & Complete</button>
+            <button class="btn" type="button" data-reject-transfer="${t.id}" style="color:var(--danger,#ef4444);">Reject & Restore Balance</button>
+          </div>
+        </form>` : t.status === "paid" ? `
+        <div style="background:var(--bg-subtle,#f1f5f9);padding:12px 14px;border-radius:6px;font-size:13px;">
+          <strong>Settled:</strong> Sent net <strong>${money(t.amount - t.fee)}</strong> (Fee deducted: ${money(t.fee)}) · Reference: <code>${esc(t.external_id || "-")}</code> · Settled at: ${esc(date(t.settled_at || t.created_at))}
+        </div>` : `
+        <div style="background:var(--bg-subtle,#f1f5f9);padding:12px 14px;border-radius:6px;font-size:13px;color:var(--danger,#b91c1c);">
+          <strong>Rejected:</strong> Request was rejected and funds were automatically restored to the user's wallet.
+        </div>`}
+      </section>`).join("") || empty("No transfer requests found.")}`);
+
+    bindButtons("#refreshSettlementsBtn", async () => await settlementsAdmin());
+    bindButtons("[data-settlement-filter]", async b => {
+      settlementsFilter = b.dataset.settlementFilter;
+      await settlementsAdmin();
+    });
+    bindButtons("#clearSettlementsSearch", async () => {
+      settlementsSearch = "";
+      await settlementsAdmin();
+    });
+    bindForm("#settlementsSearchForm", async form => {
+      settlementsSearch = new FormData(form).get("q").trim();
+      await settlementsAdmin();
+    });
+    bindButtons("[data-copy-ref]", b => {
+      navigator.clipboard.writeText(b.dataset.copyRef);
+      b.textContent = "Copied!";
+      setTimeout(() => { b.textContent = "Copy"; }, 2000);
+    });
+    document.querySelectorAll(".market-settlement").forEach((form, i) => {
+      form.id = `marketSettlementPage${i}`;
+      bindForm(`#${form.id}`, async f => {
+        const v = Object.fromEntries(new FormData(f));
+        await post(`/api/marketplace/admin/transfers/${f.dataset.transfer}`, {
+          status: "paid",
+          reference: v.reference,
+          fee: cents(v.fee)
+        });
+        await settlementsAdmin();
+        message("Payment recorded as paid successfully.");
+      });
+    });
+    bindButtons("[data-reject-transfer]", async b => {
+      if (!confirm("Are you sure you want to reject this request? The requested amount will be restored to the user's wallet balance.")) return;
+      await post(`/api/marketplace/admin/transfers/${b.dataset.rejectTransfer}`, { status: "rejected", fee: 0 });
+      await settlementsAdmin();
+      message("Transfer request rejected and balance restored to user.");
+    });
+  }
+
   async function openFreelancerHelp({ tasks = [], websiteName = "Website", websiteID = "", domainScope = false } = {}) {
     if (document.querySelector("#freelancerHelpDialog")) return;
     const dialog = document.createElement("dialog");
@@ -591,7 +761,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
         <label class="field">Find a task or job<input type="search" data-fh-task-search placeholder="Search by title"></label><label class="field">Task or existing job<select name="source" required><option value="">Choose a task or job</option>${(tasks.length > 1 || domainScope) ? `<option value="domain">All tasks in this domain</option>` : ""}${tasks.map(t => `<option value="task:${esc(t.id)}">Board task: ${esc(t.title)}</option>`).join("")}${jobs.map(j => `<option value="job:${esc(j.id)}">Open job: ${esc(j.title)}</option>`).join("")}</select></label>
         ${!tasks.length && !jobs.length ? '<p>Add a board task or <a href="/marketplace/jobs" target="_blank" rel="noopener">publish a job</a> first.</p>' : ""}
         <div data-fh-new hidden><label class="field">Public job title<input name="title" minlength="5" maxlength="160"></label><label class="field">Public scope and deliverables<textarea name="description" minlength="30" maxlength="10000" rows="4"></textarea></label><input name="skills" type="hidden"><details class="fh-skill-dropdown"><summary>Required skills <span data-fh-skill-count></span></summary><label class="field">Search existing skills<input type="search" data-fh-skill-search placeholder="Search predefined and freelancer skills" maxlength="60"></label><div data-fh-skill-options></div><p data-fh-skill-status role="status"></p></details><div class="market-skills" data-fh-selected-skills></div><label class="market-check"><input type="checkbox" name="publish_consent"><span>I reviewed this description and agree to publish it as an open marketplace job. It contains no private client details or credentials.</span></label></div>
-        <section data-fh-domain hidden><p>Select exactly which tasks to share (up to 50). Invitees can read their titles and descriptions; hired freelancers can update statuses and post work notes. New tasks added later are not included.</p><label class="field">Pricing<select name="pricing_mode"><option value="domain">One price for selected domain tasks</option><option value="per_task">Price each task</option></select></label><label class="field">Search domain tasks<input type="search" data-fh-scope-search placeholder="Filter selected task list"></label><div class="toolbar"><button class="btn" type="button" data-fh-select-all>Select all tasks</button><button class="btn" type="button" data-fh-clear-tasks>Clear selection</button></div><div class="fh-scope-tasks">${tasks.map((task, index) => `<div class="fh-scope-row"><label class="market-check"><input type="checkbox" data-scope-task="${esc(task.id)}" checked><span>${esc(task.title)}</span></label><label data-scope-price-label hidden>Task price (USD)<input type="number" min="1" max="100000" step="0.01" data-scope-price="${esc(task.id)}" disabled></label></div>`).join("")}</div></section><p data-fh-private-scope>Sharing a task also shares its current description privately with invited freelancers. Review the task for confidential information before sending.</p>
+        <section data-fh-domain hidden><p>Select exactly which tasks to share (up to 50). Invitees can read their titles and descriptions; hired freelancers can update statuses and post work notes. New tasks added later are not included.</p><label class="field">Pricing<select name="pricing_mode"><option value="domain">One price for selected domain tasks</option><option value="per_task">Price each task</option></select></label><label class="field">Search domain tasks<input type="search" data-fh-scope-search placeholder="Filter selected task list"></label><div class="toolbar"><button class="btn" type="button" data-fh-select-all>Select all tasks</button><button class="btn" type="button" data-fh-clear-tasks>Clear selection</button></div><div class="fh-scope-tasks">${tasks.map((task, index) => `<div class="fh-scope-row"><label class="market-check"><input type="checkbox" data-scope-task="${esc(task.id)}" checked><span>${esc(task.title)}</span></label><label data-scope-price-label hidden>Task price (USD)<input type="number" min="1" max="100000" step="0.01" data-scope-price="${esc(task.id)}" value="${task.price ? Number(task.price).toFixed(2) : ""}" disabled></label></div>`).join("")}</div></section><p data-fh-private-scope>Sharing a task also shares its current description privately with invited freelancers. Review the task for confidential information before sending.</p>
         <section data-fh-billing><label class="field">Payment type<select name="billing_type"><option value="fixed">Fixed price</option><option value="hourly">Hourly price</option></select></label><div data-fh-hourly hidden class="grid-2"><label class="field">Hourly rate (USD)<input name="hourly_rate" type="number" min="1" max="100000" step="0.01"></label><label class="field">Maximum hours<input name="max_hours" type="number" min="0.02" max="10000" step="0.01"></label><p>One rate and hour limit apply across the selected tasks. The maximum cost below is reserved at hiring. Only the protected task timer is billable; unused funds return on approval.</p></div></section><label class="field"><span data-fh-price-label>Offer price / new job budget (USD)</span><input name="price" type="number" min="1" max="100000" step="0.01" required></label>
         <label class="field">Private invitation message<textarea name="message" minlength="20" maxlength="5000" rows="3" required></textarea></label>
         <div data-fh-deficit-alert hidden class="market-notice" style="margin-bottom:12px;background:var(--bg-subtle,#fef2f2);border-left:4px solid var(--danger,#ef4444);padding:10px 14px;border-radius:4px;"></div>
@@ -682,6 +852,21 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
           const parsed = new DOMParser().parseFromString(task?.content || task?.comment || "", "text/html");
           fields.description.value = isDomain ? `Help complete the selected tasks for ${websiteName}. Invited freelancers can review the private task list before accepting.` : parsed.body.textContent || "";
           selectedSkills.clear(); showSelectedSkills();
+          if (task) {
+            if (task.billing_type === "hourly" || (task.hourly_rate && !task.price)) {
+              fields.billing_type.value = "hourly";
+              if (task.hourly_rate) fields.hourly_rate.value = Number(task.hourly_rate).toFixed(2);
+              if (task.max_hours) fields.max_hours.value = task.max_hours;
+              else if (task.max_seconds) fields.max_hours.value = (task.max_seconds / 3600).toFixed(2);
+              if (task.hourly_rate && (task.max_hours || task.max_seconds)) {
+                const hrs = task.max_hours || (task.max_seconds / 3600);
+                fields.price.value = (task.hourly_rate * hrs).toFixed(2);
+              }
+            } else if (task.price) {
+              fields.billing_type.value = "fixed";
+              fields.price.value = Number(task.price).toFixed(2);
+            }
+          }
         } else {
           const job = jobs.find(j => "job:" + j.id === fields.source.value);
           fields.price.value = job ? (job.budget / 100).toFixed(2) : "";
@@ -790,6 +975,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     if (path === "/marketplace/jobs") return myJobs();
     if (path.startsWith("/marketplace/jobs/")) return jobDetail(path.split("/")[3]);
     if (path === "/admin/marketplace") return admin();
+    if (path === "/admin/settlements") return settlementsAdmin();
     return dashboard();
   }
   return { render, openFreelancerHelp };

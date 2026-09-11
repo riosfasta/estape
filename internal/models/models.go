@@ -50,6 +50,8 @@ type User struct {
 	RegistrationNetworkName string             `bson:"registration_network_name,omitempty" json:"registration_network_name,omitempty"`
 	RegistrationTimezone    string             `bson:"registration_timezone,omitempty" json:"registration_timezone,omitempty"`
 	HourlyRate              float64            `bson:"hourly_rate,omitempty" json:"hourly_rate,omitempty"`
+	RateType                string             `bson:"rate_type,omitempty" json:"rate_type,omitempty"`
+	RateAmount              float64            `bson:"rate_amount,omitempty" json:"rate_amount,omitempty"`
 	CreatedAt               time.Time          `bson:"created_at" json:"created_at"`
 	LastActiveAt            time.Time          `bson:"last_active_at,omitempty" json:"last_active_at,omitempty"`
 }
@@ -58,6 +60,8 @@ type Team struct {
 	Groups            []TeamGroup          `bson:"groups,omitempty" json:"groups,omitempty"`
 	MemberGroups      map[string]string    `bson:"member_groups,omitempty" json:"member_groups,omitempty"`
 	MemberHourlyRates map[string]float64   `bson:"member_hourly_rates,omitempty" json:"member_hourly_rates,omitempty"`
+	MemberRateTypes   map[string]string    `bson:"member_rate_types,omitempty" json:"member_rate_types,omitempty"`
+	MemberRates       map[string]float64   `bson:"member_rates,omitempty" json:"member_rates,omitempty"`
 	ID                primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
 	Name              string               `bson:"name" json:"name"`
 	CompanyEmail      string               `bson:"company_email,omitempty" json:"company_email,omitempty"`
@@ -235,6 +239,13 @@ type ClientTask struct {
 	DueDate         *time.Time             `bson:"due_date,omitempty" json:"due_date,omitempty"`
 	Recurrence      ClientTaskRecurrence   `bson:"recurrence,omitempty" json:"recurrence,omitempty"`
 	Status          string                 `bson:"status" json:"status"`
+	BillingType     string                 `bson:"billing_type,omitempty" json:"billing_type,omitempty"`
+	Price           float64                `bson:"price,omitempty" json:"price,omitempty"`
+	HourlyRate      float64                `bson:"hourly_rate,omitempty" json:"hourly_rate,omitempty"`
+	MaxHours        float64                `bson:"max_hours,omitempty" json:"max_hours,omitempty"`
+	MaxSeconds      int64                  `bson:"max_seconds,omitempty" json:"max_seconds,omitempty"`
+	PaymentStatus   string                 `bson:"payment_status,omitempty" json:"payment_status,omitempty"`
+	PendingPaymentID primitive.ObjectID    `bson:"pending_payment_id,omitempty" json:"pending_payment_id,omitempty"`
 	CompletionCount int                    `bson:"completion_count,omitempty" json:"completion_count,omitempty"`
 	LastCompletedAt *time.Time             `bson:"last_completed_at,omitempty" json:"last_completed_at,omitempty"`
 	CreatedBy       primitive.ObjectID     `bson:"created_by" json:"created_by"`
@@ -472,9 +483,40 @@ type TeamInvitation struct {
 	ExistingUserID primitive.ObjectID   `bson:"existing_user_id,omitempty" json:"existing_user_id,omitempty"`
 	Token          string               `bson:"token" json:"-"`
 	Status         string               `bson:"status" json:"status"`
+	RateType       string               `bson:"rate_type,omitempty" json:"rate_type,omitempty"`
+	RateAmount     float64              `bson:"rate_amount,omitempty" json:"rate_amount,omitempty"`
 	CreatedAt      time.Time            `bson:"created_at" json:"created_at"`
 	ExpiresAt      time.Time            `bson:"expires_at" json:"expires_at"`
 	RespondedAt    *time.Time           `bson:"responded_at,omitempty" json:"responded_at,omitempty"`
+}
+
+type TaskPayment struct {
+	ID            primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	TeamID        primitive.ObjectID `bson:"team_id" json:"team_id"`
+	TaskID        primitive.ObjectID `bson:"task_id,omitempty" json:"task_id,omitempty"`
+	TaskTitle     string             `bson:"task_title,omitempty" json:"task_title,omitempty"`
+	PayerID       primitive.ObjectID `bson:"payer_id" json:"payer_id"`
+	PayeeID       primitive.ObjectID `bson:"payee_id" json:"payee_id"`
+	PayeeName     string             `bson:"payee_name,omitempty" json:"payee_name,omitempty"`
+	Amount        float64            `bson:"amount" json:"amount"`
+	AmountCents   int64              `bson:"amount_cents" json:"amount_cents"`
+	Kind          string             `bson:"kind" json:"kind"` // "task_completion", "bonus", "salary", "direct"
+	CustomMessage string             `bson:"custom_message,omitempty" json:"custom_message,omitempty"`
+	Status        string             `bson:"status" json:"status"` // "pending", "approved", "auto_settled", "rejected"
+	CreatedAt     time.Time          `bson:"created_at" json:"created_at"`
+	AutoSettleAt  time.Time          `bson:"auto_settle_at" json:"auto_settle_at"`
+	ApprovedAt    *time.Time         `bson:"approved_at,omitempty" json:"approved_at,omitempty"`
+}
+
+type TransactionOTP struct {
+	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	UserID    primitive.ObjectID `bson:"user_id" json:"user_id"`
+	Email     string             `bson:"email" json:"email"`
+	Purpose   string             `bson:"purpose" json:"purpose"` // "payment", "refund", "withdraw"
+	CodeHash  string             `bson:"code_hash" json:"-"`
+	ExpiresAt time.Time          `bson:"expires_at" json:"expires_at"`
+	UsedAt    *time.Time         `bson:"used_at,omitempty" json:"used_at,omitempty"`
+	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
 }
 
 type EmailQueueItem struct {
