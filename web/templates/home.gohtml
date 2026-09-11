@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ .AppName }} | Task management with visual website feedback</title>
   {{ if .FaviconURL }}<link rel="icon" href="{{ .FaviconURL }}">{{ end }}
-  <link rel="stylesheet" href="/static/css/styles.css?v=20260719-0013">
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260911-0001">
   <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-W8Y0879PES"></script>
 <script>
@@ -19,20 +19,29 @@
 </head>
 <body class="public-page">
   <header class="public-nav">
-    <a class="brand" href="/">
-      {{ if .NavLogoURL }}<span class="brand-mark brand-image"><img src="{{ .NavLogoURL }}" alt=""></span>{{ else }}<span class="brand-mark">{{ .NavBrandInitial }}</span>{{ end }}
-      {{ .NavBrandName }}
-    </a>
-    <nav>
-      {{ range .NavItems }}
-      <a href="{{ .URL }}">{{ .Label }}</a>
-      {{ end }}
-    </nav>
-    {{ if and .NavButtonText .NavButtonURL }}
-    <div class="nav-actions">
-      <a class="btn {{ .NavButtonClass }}" href="{{ .NavButtonURL }}">{{ .NavButtonText }}</a>
+    <div class="public-nav-bar">
+      <a class="brand" href="/">
+        {{ if .NavLogoURL }}<span class="brand-mark brand-image"><img src="{{ .NavLogoURL }}" alt=""></span>{{ else }}<span class="brand-mark">{{ .NavBrandInitial }}</span>{{ end }}
+        {{ .NavBrandName }}
+      </a>
+      <button class="public-nav-toggle" type="button" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="publicNavMenu">
+        <span class="hamburger-bar"></span>
+        <span class="hamburger-bar"></span>
+        <span class="hamburger-bar"></span>
+      </button>
     </div>
-    {{ end }}
+    <div class="public-nav-menu" id="publicNavMenu">
+      <nav>
+        {{ range .NavItems }}
+        <a href="{{ .URL }}">{{ .Label }}</a>
+        {{ end }}
+      </nav>
+      {{ if and .NavButtonText .NavButtonURL }}
+      <div class="nav-actions">
+        <a class="btn {{ .NavButtonClass }}" href="{{ .NavButtonURL }}">{{ .NavButtonText }}</a>
+      </div>
+      {{ end }}
+    </div>
   </header>
 
   <main>
@@ -144,5 +153,45 @@
   </footer>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <script>window.lucide && lucide.createIcons();</script>
+  <script>
+    (function() {
+      var nav = document.querySelector('.public-nav');
+      if (!nav) return;
+      var toggle = nav.querySelector('.public-nav-toggle');
+      if (!toggle) return;
+
+      function setOpen(open) {
+        nav.classList.toggle('is-open', open);
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      }
+
+      toggle.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var isOpen = nav.classList.contains('is-open');
+        setOpen(!isOpen);
+      });
+
+      nav.querySelectorAll('.public-nav-menu a').forEach(function(link) {
+        link.addEventListener('click', function() {
+          if (nav.classList.contains('is-open')) {
+            setOpen(false);
+          }
+        });
+      });
+
+      document.addEventListener('click', function(e) {
+        if (nav.classList.contains('is-open') && !nav.contains(e.target)) {
+          setOpen(false);
+        }
+      });
+
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && nav.classList.contains('is-open')) {
+          setOpen(false);
+          toggle.focus();
+        }
+      });
+    })();
+  </script>
 </body>
 </html>
