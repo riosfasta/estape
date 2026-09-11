@@ -981,6 +981,66 @@ body.annotation-viewer-open .sidebar-toggle {
   border-bottom: 1px solid var(--border-color);
 }
 .command-topbar { justify-content: center; }
+.topbar-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px 3px 12px;
+  min-height: 40px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  white-space: nowrap;
+  user-select: none;
+  flex-shrink: 0;
+}
+.topbar-timer[hidden] {
+  display: none !important;
+}
+.topbar-timer-body {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding-right: 4px;
+}
+.topbar-timer .pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  animation: pulse-ring 1.5s infinite;
+  flex-shrink: 0;
+}
+.topbar-timer-time {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  color: var(--text-primary);
+}
+.topbar-timer-task {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.topbar-timer-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  height: 28px;
+  cursor: pointer;
+}
 .command-search-wrap {
   position: relative;
   flex: 1;
@@ -6320,6 +6380,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .34); }
     flex-wrap: wrap;
     padding: 12px 16px;
   }
+  .topbar-timer-task { display: none; }
   .topbar-actions { flex-wrap: wrap; justify-content: flex-end; }
   .inbox-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .inbox-row {

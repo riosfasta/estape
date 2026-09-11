@@ -5,6 +5,7 @@ import vm from "node:vm";
 
 const appSource = await readFile(new URL("../web/static/js/app.js", import.meta.url), "utf8");
 const marketSource = await readFile(new URL("../web/static/js/marketplace.js", import.meta.url), "utf8");
+const stylesSource = await readFile(new URL("../web/static/css/styles.css", import.meta.url), "utf8");
 
 test("staffInvitationFields includes rate type options and rate amount input", () => {
   const code = appSource.slice(appSource.indexOf("function staffInvitationFields()"), appSource.indexOf("function splitStaffInvitationRecipients"));
@@ -283,5 +284,84 @@ test("adminUserDialogsHTML renders userTopupDialog and userTransactionsDialog", 
   assert.match(html, /id="userTransactionsHeader"/);
   assert.match(html, /id="userTransactionsContent"/);
 });
+
+test("shell renders #topbarTimer before command search bar in topbar header", () => {
+  // Shell HTML template contains #topbarTimer before .command-search-wrap
+  assert.match(appSource, /id="topbarTimer"\s+class="topbar-timer"\s+hidden/);
+  assert.match(appSource, /data-topbar-timer-time/);
+  assert.match(appSource, /data-topbar-timer-task/);
+  assert.match(appSource, /id="topbarStopTimerBtn"/);
+
+  const topbarTimerIndex = appSource.indexOf('id="topbarTimer"');
+  const searchWrapIndex = appSource.indexOf('class="command-search-wrap"');
+  assert.ok(topbarTimerIndex > 0, "topbarTimer exists in appSource");
+  assert.ok(searchWrapIndex > topbarTimerIndex, "topbarTimer is placed before command-search-wrap");
+});
+
+test("styles.css defines styling for topbar-timer, pulse-dot, and stop button", () => {
+  assert.match(stylesSource, /\.topbar-timer\s*\{/);
+  assert.match(stylesSource, /\.topbar-timer\[hidden\]\s*\{/);
+  assert.match(stylesSource, /\.topbar-timer\s+\.pulse-dot\s*\{/);
+  assert.match(stylesSource, /\.topbar-timer-time\s*\{/);
+  assert.match(stylesSource, /\.topbar-timer-stop\s*\{/);
+});
+
+test("syncActiveTimerUI updates #topbarTimer when active timer is running and hides when stopped", () => {
+  const code = appSource.slice(appSource.indexOf("function activeDurationLabel"), appSource.indexOf("async function toggleTaskTimerOptimistic"));
+  const topbarTimerEl = {
+    hidden: true,
+    classList: {
+      contains: name => false,
+      add: name => {},
+      remove: name => {},
+    },
+    querySelector: selector => {
+      if (selector === "[data-topbar-timer-time]") return { textContent: "" };
+      if (selector === "[data-topbar-timer-task]") return { textContent: "", title: "", hidden: true };
+      if (selector === "#topbarStopTimerBtn") return { onclick: null };
+      if (selector === "[data-open-active-timer-modal]") return { dataset: {}, addEventListener: () => {} };
+      return null;
+    },
+  };
+
+  const state = {
+    activeTimer: {
+      task_id: "task999",
+      start_time: new Date(Date.now() - 45000).toISOString(),
+      task: { id: "task999", title: "Refactor backend" },
+    },
+  };
+
+  const ctx = vm.createContext({
+    state,
+    esc: v => v,
+    icon: name => `[icon:${name}]`,
+    icons: () => {},
+    $: selector => {
+      if (selector === "#topbarTimer") return topbarTimerEl;
+      if (selector === "#timerWidget") return null;
+      return null;
+    },
+    document: {
+      querySelectorAll: () => [],
+      querySelector: () => null,
+    },
+    setInterval: () => 123,
+    clearInterval: () => {},
+    toggleTaskTimerOptimistic: () => {},
+    openTaskTimerModal: () => {},
+  });
+  vm.runInContext(code, ctx);
+
+  // 1. Run syncActiveTimerUI with active timer
+  ctx.syncActiveTimerUI();
+  assert.equal(topbarTimerEl.hidden, false, "topbarTimer should be visible when timer is active");
+
+  // 2. Run syncActiveTimerUI with no active timer
+  state.activeTimer = null;
+  ctx.syncActiveTimerUI();
+  assert.equal(topbarTimerEl.hidden, true, "topbarTimer should be hidden when timer is null");
+});
+
 
 

@@ -2016,7 +2016,54 @@ function syncActiveTimerUI() {
     }
   });
 
-  // 3. Sync top navbar timerWidget
+  // 3a. Sync topbar header timer (#topbarTimer)
+  const topbarTimer = $("#topbarTimer");
+  if (topbarTimer) {
+    if (!active) {
+      topbarTimer.hidden = true;
+      topbarTimer.classList.remove("active");
+    } else {
+      topbarTimer.hidden = false;
+      topbarTimer.classList.add("active");
+      const duration = activeDurationLabel(active.start_time);
+      const title = active.task?.title || "";
+      const timeEl = topbarTimer.querySelector("[data-topbar-timer-time]");
+      const taskEl = topbarTimer.querySelector("[data-topbar-timer-task]");
+      if (timeEl && timeEl.textContent !== duration) {
+        timeEl.textContent = duration;
+      }
+      if (taskEl) {
+        if (title) {
+          taskEl.textContent = title;
+          taskEl.title = title;
+          taskEl.hidden = false;
+        } else {
+          taskEl.hidden = true;
+        }
+      }
+      const stopBtn = topbarTimer.querySelector("#topbarStopTimerBtn");
+      if (stopBtn) {
+        stopBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          toggleTaskTimerOptimistic(active.task_id);
+        };
+      }
+      const bodyEl = topbarTimer.querySelector("[data-open-active-timer-modal]");
+      if (bodyEl && bodyEl.dataset.bound !== "1") {
+        bodyEl.dataset.bound = "1";
+        bodyEl.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (state.activeTimer?.task_id) {
+            openTaskTimerModal(state.activeTimer.task_id, state.activeTimer.task?.title);
+          }
+        });
+      }
+    }
+  }
+
+  // 3b. Sync floating timerWidget
   const widget = $("#timerWidget");
   if (widget) {
     if (!active) {
@@ -2084,10 +2131,13 @@ async function toggleTaskTimerOptimistic(taskID) {
     }
   } else {
     const prevTimer = state.activeTimer;
+    const taskCardEl = document.querySelector(`[data-task-id="${taskID}"]`);
+    const cardTitle = taskCardEl?.querySelector("strong")?.textContent?.trim() || "";
     state.activeTimer = {
       id: "temp_" + Date.now(),
       task_id: taskID,
       start_time: new Date().toISOString(),
+      task: cardTitle ? { id: taskID, title: cardTitle } : null,
     };
     syncActiveTimerUI();
 
@@ -2097,7 +2147,7 @@ async function toggleTaskTimerOptimistic(taskID) {
         body: JSON.stringify({ task_id: taskID }),
       });
       if (state.activeTimer && String(state.activeTimer.task_id) === String(taskID)) {
-        state.activeTimer = res.entry || state.activeTimer;
+        state.activeTimer = res.entry ? { ...res.entry, task: res.task || state.activeTimer?.task } : state.activeTimer;
         syncActiveTimerUI();
       }
     } catch (err) {
@@ -3626,6 +3676,17 @@ function shell(title, html) {
       <button class="sidebar-toggle" id="sidebarToggle" type="button" title="${state.sidebarCollapsed ? "Expand menu" : "Collapse menu"}">${icon(state.sidebarCollapsed ? "panel-left-open" : "panel-left-close")}</button>
       <main class="main-area">
         <header class="topbar command-topbar">
+          <div id="topbarTimer" class="topbar-timer" hidden>
+            <div class="topbar-timer-body" data-open-active-timer-modal title="View timer logs &amp; details">
+              <span class="pulse-dot" aria-hidden="true"></span>
+              ${icon("clock")}
+              <span class="topbar-timer-time" data-topbar-timer-time>0:00:00</span>
+              <span class="topbar-timer-task" data-topbar-timer-task hidden></span>
+            </div>
+            <button type="button" class="btn compact danger topbar-timer-stop" id="topbarStopTimerBtn" title="Stop timer" aria-label="Stop timer">
+              ${icon("square")}Stop
+            </button>
+          </div>
           <div class="command-search-wrap">
             <label class="command-bar" for="commandSearch">
               ${icon("search")}
@@ -3727,6 +3788,7 @@ function shell(title, html) {
     }
   };
   icons();
+  syncActiveTimerUI();
   refreshTimerWidget();
 }
 
@@ -15687,9 +15749,13 @@ function openSupportChatSocket(chatID, usersByID = {}) {
 
 async function refreshTimerWidget() {
   const widget = $("#timerWidget");
-  if (!widget || !state.access) return;
+  const topbar = $("#topbarTimer");
+  if ((!widget && !topbar) || !state.access) return;
   const data = await api("/api/time-entries/active").catch(() => ({ entry: null }));
   state.activeTimer = data.entry || null;
+  if (state.activeTimer && data.task) {
+    state.activeTimer.task = data.task;
+  }
   syncActiveTimerUI();
 }
 
