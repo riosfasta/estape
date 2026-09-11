@@ -289,8 +289,10 @@ test("shell renders #topbarTimer before command search bar in topbar header", ()
   // Shell HTML template contains #topbarTimer before .command-search-wrap
   assert.match(appSource, /id="topbarTimer"\s+class="topbar-timer"\s+hidden/);
   assert.match(appSource, /data-topbar-timer-time/);
-  assert.match(appSource, /data-topbar-timer-task/);
+  assert.match(appSource, /class="topbar-timer-stop-wrap"/);
+  assert.match(appSource, /id="topbarTimerTooltip"/);
   assert.match(appSource, /id="topbarStopTimerBtn"/);
+  assert.equal(appSource.includes("data-topbar-timer-task"), false, "data-topbar-timer-task should be removed from shell");
 
   const topbarTimerIndex = appSource.indexOf('id="topbarTimer"');
   const searchWrapIndex = appSource.indexOf('class="command-search-wrap"');
@@ -303,11 +305,18 @@ test("styles.css defines styling for topbar-timer, pulse-dot, and stop button", 
   assert.match(stylesSource, /\.topbar-timer\[hidden\]\s*\{/);
   assert.match(stylesSource, /\.topbar-timer\s+\.pulse-dot\s*\{/);
   assert.match(stylesSource, /\.topbar-timer-time\s*\{/);
+  assert.match(stylesSource, /\.topbar-timer-stop-wrap\s*\{/);
   assert.match(stylesSource, /\.topbar-timer-stop\s*\{/);
+  assert.match(stylesSource, /\.topbar-timer-tooltip\s*\{/);
 });
 
 test("syncActiveTimerUI updates #topbarTimer when active timer is running and hides when stopped", () => {
   const code = appSource.slice(appSource.indexOf("function activeDurationLabel"), appSource.indexOf("async function toggleTaskTimerOptimistic"));
+  const timeMock = { textContent: "" };
+  const tooltipMock = { textContent: "" };
+  const stopBtnMock = { onclick: null, title: "" };
+  const bodyMock = { dataset: {}, addEventListener: () => {} };
+
   const topbarTimerEl = {
     hidden: true,
     classList: {
@@ -316,10 +325,10 @@ test("syncActiveTimerUI updates #topbarTimer when active timer is running and hi
       remove: name => {},
     },
     querySelector: selector => {
-      if (selector === "[data-topbar-timer-time]") return { textContent: "" };
-      if (selector === "[data-topbar-timer-task]") return { textContent: "", title: "", hidden: true };
-      if (selector === "#topbarStopTimerBtn") return { onclick: null };
-      if (selector === "[data-open-active-timer-modal]") return { dataset: {}, addEventListener: () => {} };
+      if (selector === "[data-topbar-timer-time]") return timeMock;
+      if (selector === "#topbarTimerTooltip") return tooltipMock;
+      if (selector === "#topbarStopTimerBtn") return stopBtnMock;
+      if (selector === "[data-open-active-timer-modal]") return bodyMock;
       return null;
     },
   };
@@ -356,6 +365,9 @@ test("syncActiveTimerUI updates #topbarTimer when active timer is running and hi
   // 1. Run syncActiveTimerUI with active timer
   ctx.syncActiveTimerUI();
   assert.equal(topbarTimerEl.hidden, false, "topbarTimer should be visible when timer is active");
+  assert.equal(tooltipMock.textContent, "Task: Refactor backend", "tooltip should contain task title");
+  assert.equal(stopBtnMock.title, "Stop timer: Refactor backend", "stop button title should contain task title");
+  assert.notEqual(timeMock.textContent, "", "time element should have formatted duration");
 
   // 2. Run syncActiveTimerUI with no active timer
   state.activeTimer = null;

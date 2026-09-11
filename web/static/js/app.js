@@ -2028,21 +2028,16 @@ function syncActiveTimerUI() {
       const duration = activeDurationLabel(active.start_time);
       const title = active.task?.title || "";
       const timeEl = topbarTimer.querySelector("[data-topbar-timer-time]");
-      const taskEl = topbarTimer.querySelector("[data-topbar-timer-task]");
       if (timeEl && timeEl.textContent !== duration) {
         timeEl.textContent = duration;
       }
-      if (taskEl) {
-        if (title) {
-          taskEl.textContent = title;
-          taskEl.title = title;
-          taskEl.hidden = false;
-        } else {
-          taskEl.hidden = true;
-        }
+      const tooltipEl = topbarTimer.querySelector("#topbarTimerTooltip");
+      if (tooltipEl) {
+        tooltipEl.textContent = title ? `Task: ${title}` : "Stop timer";
       }
       const stopBtn = topbarTimer.querySelector("#topbarStopTimerBtn");
       if (stopBtn) {
+        stopBtn.title = title ? `Stop timer: ${title}` : "Stop timer";
         stopBtn.onclick = (e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -3681,11 +3676,13 @@ function shell(title, html) {
               <span class="pulse-dot" aria-hidden="true"></span>
               ${icon("clock")}
               <span class="topbar-timer-time" data-topbar-timer-time>0:00:00</span>
-              <span class="topbar-timer-task" data-topbar-timer-task hidden></span>
             </div>
-            <button type="button" class="btn compact danger topbar-timer-stop" id="topbarStopTimerBtn" title="Stop timer" aria-label="Stop timer">
-              ${icon("square")}Stop
-            </button>
+            <div class="topbar-timer-stop-wrap">
+              <button type="button" class="btn compact danger topbar-timer-stop" id="topbarStopTimerBtn" title="Stop timer" aria-label="Stop timer">
+                ${icon("square")}Stop
+              </button>
+              <div class="topbar-timer-tooltip" id="topbarTimerTooltip" role="tooltip"></div>
+            </div>
           </div>
           <div class="command-search-wrap">
             <label class="command-bar" for="commandSearch">
