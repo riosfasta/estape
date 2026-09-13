@@ -5302,20 +5302,15 @@ async function renderTeam() {
     </dialog>
     <dialog id="teamTopupDialog" class="modal">
       <div class="modal-head"><h2>Top Up Hiring Balance</h2><button class="btn icon quiet" type="button" data-close-dialog="teamTopupDialog" title="Close">${icon("x")}</button></div>
-      <p class="muted">Add funds to your hiring balance to pay team members and approve task payments.</p>
-      <form id="teamDirectTopupForm" class="form-grid" style="margin-bottom:16px;">
+      <p class="muted">Add funds to your hiring balance to pay team members and approve task payments. Payments are processed securely via PayPal.</p>
+      <form id="teamPayPalTopupForm" class="form-grid">
         <div class="field"><label>Amount (USD)</label><input type="number" name="amount" min="1" max="100000" step="0.01" value="50" required></div>
-        <button class="btn primary" type="submit">${icon("plus")}In-Platform Top Up (Instant Credit)</button>
+        <div class="toolbar" style="margin-top:16px;">
+          <button class="btn primary" type="submit">${icon("credit-card")}Continue to PayPal</button>
+          <button class="btn" type="button" data-close-dialog="teamTopupDialog">Cancel</button>
+        </div>
         <p class="status-line"></p>
       </form>
-      <details><summary class="muted" style="cursor:pointer;font-size:13px;">Or pay with PayPal</summary>
-        <form id="teamPayPalTopupForm" class="form-grid" style="margin-top:8px;">
-          <div class="field"><label>Amount (USD)</label><input type="number" name="amount" min="1" max="100000" step="0.01" value="50" required></div>
-          <button class="btn" type="submit">Continue to PayPal</button>
-          <p class="status-line"></p>
-        </form>
-      </details>
-      <div class="toolbar" style="margin-top:16px;"><button class="btn" type="button" data-close-dialog="teamTopupDialog">Close</button></div>
     </dialog>
     <dialog id="teamRefundDialog" class="modal">
       <form id="teamRefundForm" class="form-grid" method="dialog">
@@ -5347,27 +5342,33 @@ async function renderTeam() {
 
   // Top up handling
   $("#openTeamTopupBtn")?.addEventListener("click", () => $("#teamTopupDialog")?.showModal());
-  $("#teamDirectTopupForm")?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const amt = Math.round(parseFloat(form.elements.amount.value || 0) * 100);
-    try {
-      await api("/api/marketplace/topup/direct", { method: "POST", body: JSON.stringify({ amount: amt }) });
-      $("#teamTopupDialog")?.close();
-      await renderTeam();
-    } catch (err) {
-      setFormStatus(form, err.message, true);
-    }
-  });
   $("#teamPayPalTopupForm")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const form = e.currentTarget;
     const amt = Math.round(parseFloat(form.elements.amount.value || 0) * 100);
+    const submitBtn = form.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.disabled = true;
+    setFormStatus(form, "Creating PayPal checkout...");
     try {
       const res = await api("/api/marketplace/topup", { method: "POST", body: JSON.stringify({ amount: amt }) });
-      if (res.url) window.location.href = res.url;
+      setFormStatus(form, "");
+      $("#teamTopupDialog")?.close();
+      await openEmbeddedCheckout({
+        api,
+        title: "Team Hiring Balance",
+        description: "Add funds to pay team members and approve task payments.",
+        amount: res.amount,
+        orderID: res.order_id,
+        captureURL: `/api/marketplace/topup/${encodeURIComponent(res.transfer_id)}/capture`,
+        fallbackURL: res.url,
+        onSuccess: async () => {
+          await renderTeam();
+        },
+      });
     } catch (err) {
       setFormStatus(form, err.message, true);
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
   });
 

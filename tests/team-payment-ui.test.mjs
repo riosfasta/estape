@@ -375,5 +375,31 @@ test("syncActiveTimerUI updates #topbarTimer when active timer is running and hi
   assert.equal(topbarTimerEl.hidden, true, "topbarTimer should be hidden when timer is null");
 });
 
+test("team topup dialog enforces PayPal payment and removes direct in-platform credit", () => {
+  assert.match(appSource, /id="teamTopupDialog"/);
+  assert.match(appSource, /id="teamPayPalTopupForm"/);
+  assert.match(appSource, /Continue to PayPal/);
+  assert.equal(appSource.includes('id="teamDirectTopupForm"'), false, "teamDirectTopupForm should be removed");
+  assert.equal(appSource.includes("In-Platform Top Up (Instant Credit)"), false, "In-Platform Top Up should be removed from team dialog");
+  assert.match(appSource, /openEmbeddedCheckout/);
+});
+
+test("marketplace wallet and talents dialog enforce PayPal and remove direct topup", () => {
+  assert.match(marketSource, /id="marketTopup"/);
+  assert.equal(marketSource.includes('id="marketDirectTopup"'), false, "marketDirectTopup should be removed");
+  assert.equal(marketSource.includes("/api/marketplace/topup/direct"), false, "marketplace.js must not call /api/marketplace/topup/direct");
+  assert.match(marketSource, /data-fh-topup-btn/);
+  assert.match(marketSource, /\+ Top Up with PayPal/);
+  assert.match(marketSource, /Top Up Hiring Balance via PayPal/);
+});
+
+test("platform owner manual top-up dialog remains dedicated to /admin/users", () => {
+  assert.match(appSource, /id="userTopupDialog"/);
+  assert.match(appSource, /id="userTopupForm"/);
+  assert.match(appSource, /Manual Fund Top Up/);
+  assert.match(appSource, /\/api\/admin\/users\/\$\{encodeURIComponent\(userID\)\}\/topup/);
+});
+
+
 
 

@@ -353,14 +353,8 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     page("Wallet", `${heading("YOUR MONEY", "Wallet & payments", "All balances are in USD. Track hiring funds, earnings and settlement requests.")}${captureMessage ? `<p class="market-notice">${esc(captureMessage)}</p>` : ""}${params.has("cancelled") ? '<p class="market-notice">Checkout cancelled. No wallet credit was added.</p>' : ""}
       ${data.is_workspace_wallet ? `<div class="market-notice" style="background:var(--bg-card,#f8fafc);border-left:4px solid var(--primary,#3b82f6);margin-bottom:16px;"><strong>Workspace Hiring Balance:</strong> You are managing hiring funds for <strong>${esc(data.workspace_name || "Team Workspace")}</strong>. Hiring deposits and reserved amounts belong to the workspace owner (<strong>${esc(data.workspace_owner_name || "Admin Owner")}</strong>). Your earnings and withdrawals remain personal to your account.</div>` : ""}
       <section class="panel market-stats"><div><strong>${money(w.deposits)}</strong><span>Available hiring balance</span></div><div><strong>${money(w.reserved)}</strong><span>Reserved for active jobs</span></div><div><strong>${money(w.pending)}</strong><span>Earnings on 7-day hold</span></div><div><strong>${money(w.earnings)}</strong><span>Available to withdraw</span></div></section>
-      <div class="market-columns"><section class="panel"><h2>Top up hiring balance</h2><p class="market-notice">Top up directly inside the platform or with PayPal. Unused, unreserved balance is refundable. Funds reserved for active work cannot be refunded.</p>
-        <form id="marketDirectTopup" class="market-form" style="margin-bottom:16px;">
-          <label class="field">Amount (USD)<input name="amount" type="number" min="1" max="100000" step="0.01" value="50" required></label>
-          <button type="submit" class="btn primary">In-Platform Top Up (Instant Credit)</button>
-        </form>
-        <details style="margin-top:12px;"><summary class="muted" style="cursor:pointer;font-size:13px;">Or pay with external PayPal checkout</summary>
-          <form id="marketTopup" class="market-form" style="margin-top:8px;"><label class="field">Amount (USD)<input name="amount" type="number" min="1" max="100000" step="0.01" required></label><button type="submit" class="btn">Continue to PayPal</button></form>
-        </details>
+      <div class="market-columns"><section class="panel"><h2>Top up hiring balance</h2><p class="market-notice">Top up using PayPal. Unused, unreserved balance is refundable. Funds reserved for active work cannot be refunded.</p>
+        <form id="marketTopup" class="market-form"><label class="field">Amount (USD)<input name="amount" type="number" min="1" max="100000" step="0.01" value="50" required></label><button type="submit" class="btn primary">Continue to PayPal</button></form>
       </section>
       <section class="panel"><h2>Request a refund or withdrawal</h2>
         <div class="market-notice" style="background:var(--bg-subtle,#f1f5f9);border-left:4px solid var(--primary,#3b82f6);margin-bottom:12px;padding:10px 14px;">
@@ -370,7 +364,6 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
         <form id="marketTransfer" class="market-form"><label class="field">Request type<select name="kind"><option value="withdrawal">Withdraw available earnings</option><option value="refund">Refund unused hiring balance</option></select></label><label class="field">Amount (USD)<input name="amount" type="number" min="1" max="100000" step="0.01" required></label><label class="field">PayPal email / original payment reference<input name="destination" minlength="5" maxlength="250" required></label><div class="field" style="margin-top:6px;"><label style="display:flex;justify-content:space-between;align-items:center;"><span>Email verification code</span><button type="button" class="btn small" id="marketTransferSendOTP" style="padding:2px 8px;font-size:12px;">Send code to email</button></label><input name="otp_code" id="marketTransferOTPInput" placeholder="Enter 6-digit code sent to your email" minlength="4" maxlength="12" required style="letter-spacing:2px;font-weight:600;"><small id="marketTransferOTPHint" class="muted" style="display:block;margin-top:4px;">A verification code will be sent to your registered email address for security.</small></div><label class="market-check"><input name="accept_fees" type="checkbox" required><span>I acknowledge that actual provider transaction costs will be deducted from this amount. Refunds return to the original payment method after verification. The 5% platform commission was already deducted from earnings.</span></label><button class="btn primary" type="submit">Submit request</button></form></section></div>
       <section class="panel"><h2>Earnings & release dates</h2>${data.earnings.length ? `<div class="market-table-wrap"><table><thead><tr><th>Job</th><th>Net earnings</th><th>Platform fee</th><th>Available from</th><th>Status</th></tr></thead><tbody>${data.earnings.map(e => `<tr><td><a href="/marketplace/jobs/${esc(e._id)}">View job</a></td><td>${money(e.amount)}</td><td>${money(e.fee)}</td><td>${esc(date(e.available_at))}</td><td>${badge(e.status)}</td></tr>`).join("")}</tbody></table></div>` : empty("No earnings yet.")}</section>
       <section class="panel"><h2>Payment history</h2>${data.transfers.length ? `<div class="market-table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Transaction fee</th><th>Status / reference</th></tr></thead><tbody>${data.transfers.map(t => `<tr><td>${esc(date(t.created_at))}</td><td>${esc(t.kind)}</td><td>${money(t.amount)}${t.status === "paid" ? `<small>Net sent ${money(t.amount - t.fee)}</small>` : ""}</td><td>${money(t.fee)}</td><td>${t.status === "requested" ? `<span class="market-badge" style="background:#fef3c7;color:#92400e;font-weight:600;">Pending Owner Settlement</span>` : badge(t.status)}${t.payment_reference ? `<small style="overflow-wrap:anywhere">Reference: ${esc(t.payment_reference)}</small>` : ""}<small>${esc(t.external_id || "")}</small>${t.kind === "topup" && t.status === "pending" ? `<button class="btn" data-capture="${t.id}">Verify PayPal payment</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : empty("No payments yet.")}</section><p><a href="/marketplace/privacy">Marketplace privacy & payment terms</a></p>`);
-    bindForm("#marketDirectTopup", async form => { const amount = cents(new FormData(form).get("amount")); await post("/api/marketplace/topup/direct", { amount }); await wallet(); message("In-platform payment successful. Hiring balance credited!"); });
     bindForm("#marketTopup", async form => { const result = await post("/api/marketplace/topup", { amount: cents(new FormData(form).get("amount")) }); await openEmbeddedCheckout({ api, title: "Hiring balance", description: "Add funds to hire freelancers. Unused, unreserved balance is refundable; payment and refund transaction costs may be deducted.", amount: result.amount, orderID: result.order_id, captureURL: `/api/marketplace/topup/${encodeURIComponent(result.transfer_id)}/capture`, fallbackURL: result.url, onSuccess: async () => { await wallet(); message("Payment verified and wallet credited."); } }); });
     bindButtons("#marketTransferSendOTP", async btn => {
       const kind = document.querySelector('#marketTransfer select[name="kind"]')?.value || "refund";
@@ -618,14 +611,14 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
             <span data-fh-workspace-tag class="market-badge" style="display:none;"></span>
           </div>
         </div>
-        <button type="button" class="btn primary compact" data-fh-topup-btn>+ In-Platform Top Up</button>
+        <button type="button" class="btn primary compact" data-fh-topup-btn>+ Top Up with PayPal</button>
       </div>
       <section class="panel fh-topup-section" data-fh-topup-section hidden style="margin-bottom:14px;background:var(--bg-subtle,#f1f5f9);border:1px solid var(--primary,#3b82f6);border-radius:8px;padding:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <strong>In-Platform Hiring Top Up</strong>
+          <strong>Top Up Hiring Balance via PayPal</strong>
           <button type="button" class="btn compact" data-fh-topup-close aria-label="Close top up section">&times;</button>
         </div>
-        <p class="muted" style="font-size:13px;margin:0 0 10px;">Direct payment inside the platform. Instantly credits your hiring balance.</p>
+        <p class="muted" style="font-size:13px;margin:0 0 10px;">Add funds using PayPal to increase your hiring balance.</p>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
           <button type="button" class="btn compact" data-fh-preset="25">+$25</button>
           <button type="button" class="btn compact" data-fh-preset="50">+$50</button>
@@ -637,7 +630,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
           <label class="field" style="margin:0;flex:1;">Amount (USD)
             <input type="number" name="amount" min="1" max="100000" step="0.01" value="50" required placeholder="50.00">
           </label>
-          <button type="submit" class="btn primary" style="margin:0;white-space:nowrap;">Confirm & Add Balance</button>
+          <button type="submit" class="btn primary" style="margin:0;white-space:nowrap;">Continue to PayPal</button>
         </form>
         <p data-fh-topup-status role="status" style="margin:8px 0 0;font-size:13px;"></p>
       </section>
@@ -692,25 +685,33 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
       event.preventDefault();
       const amtVal = Number(topupForm.elements.amount.value || 0);
       if (amtVal < 1) return;
-      topupStatus.textContent = "Processing in-platform payment...";
+      topupStatus.textContent = "Creating PayPal checkout...";
       topupStatus.className = "muted";
       const submitBtn = topupForm.querySelector('[type="submit"]');
       submitBtn.disabled = true;
       try {
-        const res = await post("/api/marketplace/topup/direct", { amount: cents(amtVal) });
-        const newDeposits = res.new_deposits ?? (currentDeposits + cents(amtVal));
-        let tag = "";
-        if (walletInfo?.is_workspace_wallet) {
-          tag = `${walletInfo.workspace_name || "Workspace"} (${walletInfo.workspace_owner_name || "Owner"})`;
-        }
-        updateBalanceDisplay(newDeposits, tag);
-        topupStatus.textContent = `Added ${money(cents(amtVal))}! Available balance: ${money(newDeposits)}.`;
-        topupStatus.className = "success";
-        setTimeout(() => {
-          topupSection.hidden = true;
-          topupStatus.textContent = "";
-        }, 1200);
-        if (typeof checkOfferDeficit === "function") checkOfferDeficit();
+        const res = await post("/api/marketplace/topup", { amount: cents(amtVal) });
+        topupStatus.textContent = "";
+        await openEmbeddedCheckout({
+          api,
+          title: "Hiring balance",
+          description: "Add funds to hire freelancers. Unused, unreserved balance is refundable; payment and refund transaction costs may be deducted.",
+          amount: res.amount,
+          orderID: res.order_id,
+          captureURL: `/api/marketplace/topup/${encodeURIComponent(res.transfer_id)}/capture`,
+          fallbackURL: res.url,
+          onSuccess: async () => {
+            const data = await api("/api/marketplace/wallet");
+            const newDeposits = data.wallet?.deposits ?? (currentDeposits + cents(amtVal));
+            let tag = "";
+            if (walletInfo?.is_workspace_wallet) {
+              tag = `${walletInfo.workspace_name || "Workspace"} (${walletInfo.workspace_owner_name || "Owner"})`;
+            }
+            updateBalanceDisplay(newDeposits, tag);
+            topupSection.hidden = true;
+            if (typeof checkOfferDeficit === "function") checkOfferDeficit();
+          },
+        });
       } catch (err) {
         topupStatus.textContent = err.message;
         topupStatus.className = "market-error";
