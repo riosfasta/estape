@@ -190,6 +190,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.DELETE("/client-tasks/:id", s.deleteClientTask)
 	authed.PATCH("/client-tasks/:id/annotations/:annotation_id/status", s.updateClientTaskAnnotationStatus)
 	authed.POST("/client-tasks/:id/comments", s.createClientTaskComment)
+	authed.POST("/client-tasks/:id/ratings", s.createClientTaskRating)
 	authed.POST("/client-task-comments/:id/reactions", s.toggleClientTaskCommentReaction)
 	authed.POST("/client-task-comments/:id/read", s.markClientTaskCommentRead)
 	authed.PATCH("/client-task-comments/:id", s.updateClientTaskComment)

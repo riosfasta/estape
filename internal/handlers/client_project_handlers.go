@@ -1486,6 +1486,20 @@ func (s *Server) listAssignedClientTasks(c *gin.Context) {
 				{"assignee_ids": userCtx.ID},
 				{"annotations.assignee_ids": userCtx.ID},
 			}})
+		} else if userParam := strings.TrimSpace(c.Query("user_id")); userParam != "" {
+			if targetUID, err := objectIDFromString(userParam); err == nil {
+				andList = append(andList, bson.M{"$or": []bson.M{
+					{"assignee_ids": targetUID},
+					{"annotations.assignee_ids": targetUID},
+				}})
+			}
+		}
+		if statusParam := strings.TrimSpace(c.Query("status")); statusParam != "" {
+			if strings.EqualFold(statusParam, "completed") || strings.EqualFold(statusParam, "done") {
+				andList = append(andList, bson.M{"status": bson.M{"$in": []string{"done", "Done", "completed", "Completed"}}})
+			} else {
+				andList = append(andList, bson.M{"status": statusParam})
+			}
 		}
 		taskFilter := bson.M{"$and": andList}
 		cursor, err := s.store.C("client_tasks").Find(c.Request.Context(), taskFilter, options.Find().SetSort(bson.D{{Key: "due_date", Value: 1}, {Key: "created_at", Value: -1}}))
@@ -3762,3 +3776,118 @@ func (s *Server) notifyClientTaskCommentMentions(ctx context.Context, task model
 	}
 	return uniqueObjectIDs(mentionedIDs)
 }
+
+func (s *Server) createClientTaskRating(c *gin.Context) {
+	task, ok := s.loadClientTaskForAccess(c, false)
+	if !ok {
+		return
+	}
+	userCtx, _ := currentUser(c)
+
+	var req struct {
+		ToUserID string `json:"to_user_id"`
+		Rating   int    `json:"rating"`
+		Review   string `json:"review"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid rating payload"})
+		return
+	}
+	if req.Rating < 1 || req.Rating > 5 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "rating must be between 1 and 5 stars"})
+		return
+	}
+
+	var toUserID primitive.ObjectID
+	if strings.TrimSpace(req.ToUserID) != "" {
+		toUserID, _ = objectIDFromString(strings.TrimSpace(req.ToUserID))
+	}
+
+	var client models.ClientProject
+	_ = s.store.C("client_projects").FindOne(c.Request.Context(), bson.M{"_id": task.ClientID}).Decode(&client)
+	isAdmin := s.canManageClientProject(c.Request.Context(), userCtx, client) || task.CreatedBy == userCtx.ID
+	isAssignee := containsObjectID(task.AssigneeIDs, userCtx.ID)
+
+	role := "member"
+	if isAdmin {
+		role = "admin"
+		if toUserID.IsZero() {
+			if len(task.AssigneeIDs) > 0 {
+				toUserID = task.AssigneeIDs[0]
+			} else {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "no assigned freelancer to rate on this task"})
+				return
+			}
+		}
+	} else if isAssignee {
+		role = "member"
+		if toUserID.IsZero() {
+			toUserID = task.CreatedBy
+		}
+	} else {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only task assignees or project admins can submit ratings"})
+		return
+	}
+
+	if toUserID.IsZero() || toUserID == userCtx.ID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid rating target user"})
+		return
+	}
+
+	now := time.Now().UTC()
+	newRating := models.TaskRating{
+		FromUserID: userCtx.ID,
+		ToUserID:   toUserID,
+		Role:       role,
+		Rating:     req.Rating,
+		Review:     strings.TrimSpace(req.Review),
+		CreatedAt:  now,
+	}
+
+	found := false
+	for i, r := range task.Ratings {
+		if r.FromUserID == userCtx.ID && r.ToUserID == toUserID {
+			task.Ratings[i] = newRating
+			found = true
+			break
+		}
+	}
+	if !found {
+		task.Ratings = append(task.Ratings, newRating)
+	}
+
+	_, err := s.store.C("client_tasks").UpdateByID(c.Request.Context(), task.ID, bson.M{
+		"$set": bson.M{
+			"ratings":    task.Ratings,
+			"updated_at": now,
+		},
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save rating"})
+		return
+	}
+
+	// If admin rated a freelancer who has a freelancer_profiles entry, update their profile rating
+	if role == "admin" && !toUserID.IsZero() {
+		var p models.FreelancerProfile
+		if err := s.store.C("freelancer_profiles").FindOne(c.Request.Context(), bson.M{"_id": toUserID}).Decode(&p); err == nil {
+			newTotal := p.RatingTotal + req.Rating
+			newCount := p.RatingCount + 1
+			avg := float64(newTotal) / float64(newCount)
+			_, _ = s.store.C("freelancer_profiles").UpdateOne(c.Request.Context(), bson.M{"_id": toUserID}, bson.M{
+				"$set": bson.M{
+					"rating_total": newTotal,
+					"rating_count": newCount,
+					"rating":       math.Round(avg*10) / 10.0,
+				},
+			})
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"ok":      true,
+		"rating":  newRating,
+		"ratings": task.Ratings,
+	})
+}
+

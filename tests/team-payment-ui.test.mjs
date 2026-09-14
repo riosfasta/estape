@@ -400,6 +400,44 @@ test("platform owner manual top-up dialog remains dedicated to /admin/users", ()
   assert.match(appSource, /\/api\/admin\/users\/\$\{encodeURIComponent\(userID\)\}\/topup/);
 });
 
+test("menu Time Reports is changed to Reports and includes My Tasks & Payments", () => {
+  assert.match(appSource, /workspaceChild\("\/reports\/time",\s*"Reports",\s*"timer"\)/, "Time reports link must be renamed to Reports");
+  assert.match(appSource, /workspaceChild\("\/tasks\?view=my_tasks",\s*"My Tasks & Payments",\s*"circle-check"\)/, "Navigation should have My Tasks & Payments");
+});
+
+test("Team Payouts & Rates table has Details column and details modal trigger", () => {
+  assert.match(appSource, /<th style="text-align:center;">Details<\/th>/, "Table header should have Details column");
+  assert.match(appSource, /data-view-member-details="\$\{esc\(u\.user_id\)\}"/, "Row should have data-view-member-details button");
+  assert.match(appSource, /Details\s*<\/button>/, "Button label should be Details");
+});
+
+test("member tasks and reports modal provides filters and project grouping", () => {
+  assert.match(appSource, /async function openMemberTasksReportsModal/, "openMemberTasksReportsModal function must exist");
+  assert.match(appSource, /dialog\.id = "memberTasksReportsModal"/, "modal element must have ID memberTasksReportsModal");
+  assert.match(appSource, /id="modalFilterProject"/, "modal must have project filter");
+  assert.match(appSource, /id="modalFilterDomain"/, "modal must have domain filter");
+  assert.match(appSource, /id="modalFilterDate"/, "modal must have date filter");
+  assert.match(appSource, /id="modalFilterStatus"/, "modal must have status filter");
+  assert.match(appSource, /project-grouped-section/, "tasks must be grouped by project section");
+});
+
+test("taskboard cards provide rating badge and modal for freelancers and clients", () => {
+  assert.match(appSource, /function clientTaskRatingBadgeHTML/, "clientTaskRatingBadgeHTML must be defined");
+  assert.match(appSource, /data-rate-client-task/, "rating triggers must use data-rate-client-task attribute");
+  assert.match(appSource, /async function openTaskRatingModal/, "openTaskRatingModal must be defined");
+  assert.match(appSource, /id="starRatingPicker"/, "star rating picker must be provided in rating modal");
+  assert.match(appSource, /\/api\/client-tasks\/\$\{taskID\}\/ratings/, "ratings must be POSTed to client task rating API");
+});
+
+test("member end provides dedicated My Tasks & Payments view with tabs and ratings", () => {
+  assert.match(appSource, /async function renderMyTasksAndPayments/, "renderMyTasksAndPayments function must be defined");
+  assert.match(appSource, /view === "my_tasks"/, "renderTasks must route view=my_tasks to renderMyTasksAndPayments");
+  assert.match(appSource, /Completed Tasks/, "view must include Completed Tasks section/tab");
+  assert.match(appSource, /Reviewed &amp; Settled Payments/, "view must include Reviewed & Settled Payments tab");
+  assert.match(appSource, /Client Feedback Rating/, "view must include Client Feedback Rating metric");
+});
+
+
 
 
 

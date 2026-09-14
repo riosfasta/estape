@@ -248,9 +248,19 @@ type ClientTask struct {
 	PendingPaymentID primitive.ObjectID    `bson:"pending_payment_id,omitempty" json:"pending_payment_id,omitempty"`
 	CompletionCount int                    `bson:"completion_count,omitempty" json:"completion_count,omitempty"`
 	LastCompletedAt *time.Time             `bson:"last_completed_at,omitempty" json:"last_completed_at,omitempty"`
+	Ratings         []TaskRating           `bson:"ratings,omitempty" json:"ratings,omitempty"`
 	CreatedBy       primitive.ObjectID     `bson:"created_by" json:"created_by"`
 	CreatedAt       time.Time              `bson:"created_at" json:"created_at"`
 	UpdatedAt       time.Time              `bson:"updated_at" json:"updated_at"`
+}
+
+type TaskRating struct {
+	FromUserID primitive.ObjectID `bson:"from_user_id" json:"from_user_id"`
+	ToUserID   primitive.ObjectID `bson:"to_user_id" json:"to_user_id"`
+	Role       string             `bson:"role" json:"role"` // "admin" or "member"
+	Rating     int                `bson:"rating" json:"rating"` // 1 to 5
+	Review     string             `bson:"review,omitempty" json:"review,omitempty"`
+	CreatedAt  time.Time          `bson:"created_at" json:"created_at"`
 }
 
 type ClientTaskAnnotation struct {

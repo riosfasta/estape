@@ -3646,13 +3646,14 @@ function shell(title, html) {
             ${workspaceLink("/tasks", "Tasks", "circle-check-big")}
             ${workspaceChild("/tasks?view=assigned", "Assigned to me", "user-check")}
             ${workspaceChild("/tasks?view=calendar", "Today & Upcoming", "calendar-days", "4")}
+            ${workspaceChild("/tasks?view=my_tasks", "My Tasks & Payments", "circle-check")}
           </div>
           <p class="nav-kicker">Projects</p>
           ${sidebarProjectsHTML()}
           <p class="nav-kicker">Tools</p>
           ${workspaceChild("/projects", "All projects", "folder-open")}
           ${workspaceChild("/team/performance", "Team Performance", "bar-chart-3")}
-          ${workspaceChild("/reports/time", "Time reports", "timer")}
+          ${workspaceChild("/reports/time", "Reports", "timer")}
           ${personalWorkspace && state.me?.role === "users_admin" ? workspaceChild("/team/integrations", "Integrations", "plug") : ""}
           ${state.me?.role === "owner_adm" ? `
             <p class="nav-kicker">Owner</p>
@@ -7616,6 +7617,177 @@ function canManageClientTaskUI(task, canManageFolder = false) {
   return Boolean(canManageFolder || task?.created_by === state.me?.id);
 }
 
+function clientTaskRatingBadgeHTML(task, canManageTask = false) {
+  const ratings = task.ratings || [];
+  const currentUserID = String(state.me?.id || "");
+  const myRating = ratings.find((r) => String(r.from_user_id) === currentUserID);
+  const isAssignee = (task.assignee_ids || []).map(String).includes(currentUserID);
+  const isAdmin = canManageTask || state.me?.role === "users_admin" || state.me?.role === "owner_adm" || String(task.created_by) === currentUserID;
+
+  if (myRating) {
+    return `<button class="pill rating-pill rated" type="button" data-rate-client-task="${esc(task.id)}" title="You rated ${myRating.rating}★: &quot;${esc(myRating.review || "")}&quot;. Click to update.">${icon("star")} ${myRating.rating}/5 Rated</button>`;
+  }
+  if (ratings.length > 0) {
+    const avg = (ratings.reduce((sum, r) => sum + (r.rating || 0), 0) / ratings.length).toFixed(1);
+    return `<button class="pill rating-pill" type="button" data-rate-client-task="${esc(task.id)}" title="${ratings.length} rating(s), average ${avg}★. Click to rate.">${icon("star")} ${avg} (${ratings.length})</button>`;
+  }
+  if (isAdmin && (task.assignee_ids || []).length > 0) {
+    return `<button class="pill rating-pill" type="button" data-rate-client-task="${esc(task.id)}" title="Rate assigned freelancer">${icon("star")} Rate Freelancer</button>`;
+  }
+  if (isAssignee) {
+    return `<button class="pill rating-pill" type="button" data-rate-client-task="${esc(task.id)}" title="Rate client / admin">${icon("star")} Rate Client</button>`;
+  }
+  return "";
+}
+
+async function openTaskRatingModal(taskID, options = {}) {
+  if (!taskID) return;
+  let task = options.task;
+  if (!task) {
+    const taskData = await api(`/api/client-tasks/${taskID}`).catch(() => null);
+    if (taskData) task = taskData.task;
+  }
+  if (!task) return;
+
+  const currentUserID = String(state.me?.id || "");
+  const isAdmin = state.me?.role === "users_admin" || state.me?.role === "owner_adm" || String(task.created_by) === currentUserID;
+  const isAssignee = (task.assignee_ids || []).map(String).includes(currentUserID);
+
+  let targetUserID = options.to_user_id || "";
+  let targetRole = "freelancer";
+
+  if (isAdmin) {
+    targetRole = "Freelancer";
+    if (!targetUserID && (task.assignee_ids || []).length > 0) {
+      targetUserID = String(task.assignee_ids[0]);
+    }
+  } else {
+    targetRole = "Client / Project Admin";
+    if (!targetUserID) {
+      targetUserID = String(task.created_by || "");
+    }
+  }
+
+  const existingRatings = task.ratings || [];
+  const myRating = existingRatings.find((r) => String(r.from_user_id) === currentUserID);
+  let currentScore = myRating ? myRating.rating : 5;
+  let currentReview = myRating ? myRating.review || "" : "";
+
+  let dialog = $("#taskRatingModal");
+  if (!dialog) {
+    dialog = document.createElement("dialog");
+    dialog.id = "taskRatingModal";
+    dialog.className = "modal";
+    document.body.appendChild(dialog);
+  }
+
+  dialog.innerHTML = `
+    <form id="taskRatingForm" class="dialog-shell" style="max-width:520px;width:95vw;">
+      <div class="dialog-head">
+        <div>
+          <h2>${myRating ? "Update Rating & Review" : "Rate Work & Collaboration"}</h2>
+          <p class="muted">${isAdmin ? "Rate the freelancer assigned to this task." : "Rate the project client / admin for this completed task."}</p>
+        </div>
+        <button class="btn icon quiet" type="button" data-close-rating-dialog title="Close">${icon("x")}</button>
+      </div>
+      <div class="form-grid" style="padding:16px;">
+        <input type="hidden" name="to_user_id" value="${esc(targetUserID)}">
+        <input type="hidden" name="rating" id="ratingScoreInput" value="${currentScore}">
+        <div class="field">
+          <label>Task</label>
+          <input value="${esc(task.title || "Task")}" readonly>
+        </div>
+        <div class="field">
+          <label>Rating Role</label>
+          <input value="${esc(targetRole)}" readonly>
+        </div>
+        <div class="field">
+          <label>Rating (1 to 5 Stars)</label>
+          <div class="star-rating-picker" id="starRatingPicker">
+            ${[1, 2, 3, 4, 5].map((s) => `
+              <button type="button" class="star-btn ${s <= currentScore ? "active" : ""}" data-star="${s}" title="${s} Star${s > 1 ? "s" : ""}">★</button>
+            `).join("")}
+          </div>
+        </div>
+        <div class="field">
+          <label>Review & Feedback</label>
+          <textarea name="review" rows="4" placeholder="Share your experience (communication, work quality, timely payment, etc.)..." required>${esc(currentReview)}</textarea>
+        </div>
+        <p class="status-line" id="taskRatingStatus"></p>
+        <div class="toolbar" style="justify-content:flex-end;">
+          <button class="btn" type="button" data-close-rating-dialog>Cancel</button>
+          <button class="btn primary" type="submit">${icon("star")} ${myRating ? "Update Rating" : "Submit Rating"}</button>
+        </div>
+      </div>
+    </form>
+  `;
+
+  const picker = dialog.querySelector("#starRatingPicker");
+  const scoreInput = dialog.querySelector("#ratingScoreInput");
+  picker?.querySelectorAll(".star-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const star = parseInt(btn.dataset.star, 10);
+      scoreInput.value = star;
+      picker.querySelectorAll(".star-btn").forEach((b) => {
+        const s = parseInt(b.dataset.star, 10);
+        b.classList.toggle("active", s <= star);
+      });
+    });
+  });
+
+  dialog.querySelectorAll("[data-close-rating-dialog]").forEach((b) => b.addEventListener("click", () => dialog.close()));
+
+  const form = dialog.querySelector("#taskRatingForm");
+  form?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const statusEl = dialog.querySelector("#taskRatingStatus");
+    const submitBtn = form.querySelector("button[type='submit']");
+    submitBtn.disabled = true;
+    if (statusEl) statusEl.textContent = "Submitting rating...";
+    try {
+      const ratingVal = parseInt(scoreInput.value, 10) || 5;
+      const reviewVal = form.review.value.trim();
+      await api(`/api/client-tasks/${taskID}/ratings`, {
+        method: "POST",
+        body: JSON.stringify({
+          to_user_id: targetUserID,
+          rating: ratingVal,
+          review: reviewVal,
+        }),
+      });
+      if (statusEl) {
+        statusEl.style.color = "var(--success, #10b981)";
+        statusEl.textContent = "Rating submitted successfully!";
+      }
+      setTimeout(() => {
+        dialog.close();
+        if (typeof route === "function") route();
+      }, 600);
+    } catch (err) {
+      if (statusEl) {
+        statusEl.style.color = "var(--danger, #ef4444)";
+        statusEl.textContent = err.message || "Failed to submit rating";
+      }
+      submitBtn.disabled = false;
+    }
+  });
+
+  dialog.showModal();
+  icons();
+}
+
+function bindTaskRatings(root = document) {
+  root.querySelectorAll("[data-rate-client-task]").forEach((btn) => {
+    if (btn.dataset.ratingBound === "1") return;
+    btn.dataset.ratingBound = "1";
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const taskID = btn.dataset.rateClientTask;
+      openTaskRatingModal(taskID);
+    });
+  });
+}
+
 function clientTaskBoardHTML(tasks, tab, members, canManage, canManageStatuses = false, canUpdateProgress = false) {
   const statuses = clientTaskStatuses(tab, tasks);
   const usersByID = clientTaskUsersByID(members);
@@ -7636,6 +7808,7 @@ function clientTaskBoardHTML(tasks, tab, members, canManage, canManageStatuses =
         const canUpdateTaskProgress = Boolean(canUpdateProgress || canManageTask);
         const dueInfo = taskDueInfo(task);
         const isActiveTimer = state.activeTimer && String(state.activeTimer.task_id) === String(task.id);
+        const isAssignee = (task.assignee_ids || []).map(String).includes(String(state.me?.id || ""));
         return `<article class="task-card client-task-card" data-client-task-id="${esc(task.id)}" data-can-drag="${canUpdateTaskProgress ? "true" : "false"}">
           <div class="client-task-card-head">
             <button class="client-task-open" type="button" data-open-client-task="${esc(task.id)}">${esc(compactClientTaskTitle(task.title))}</button>
@@ -7646,14 +7819,15 @@ function clientTaskBoardHTML(tasks, tab, members, canManage, canManageStatuses =
             ${statusBadgeHTML(status, "status-badge status-pill")}
             ${taskCompletionBadgeHTML(task)}
             ${taskPricingBadgeHTML(task)}
+            ${clientTaskRatingBadgeHTML(task, canManageTask)}
             <span class="pill">${esc(fmtDateTime(task.created_at))}</span>
             ${dueInfo.text ? `<button class="pill warn due-count" type="button" data-due-calendar="${esc(dueInfo.date || task.due_date)}">${icon("calendar-days")}${esc(dueInfo.text)}</button>` : ""}
             ${assigneeAvatarsHTML(task.assignee_ids || [], usersByID)}
             <button class="pill ${isActiveTimer ? "danger timer-pill active-pulse" : "timer-pill"}" type="button" data-quick-task-timer="${esc(task.id)}" title="${isActiveTimer ? "Stop timer" : "Start timer"}">${isActiveTimer ? icon("square") + "Stop" : icon("play") + "Timer"}</button>
           </div>
-          ${(canUpdateTaskProgress || canManageTask) ? `<div class="toolbar compact-toolbar">
+          ${(canUpdateTaskProgress || canManageTask || isAssignee) ? `<div class="toolbar compact-toolbar">
             ${canUpdateTaskProgress ? statusPickerHTML(statuses, task.status || "todo", "status", task.id, { canManageStatuses, tabID: tab.id }) : ""}
-            ${canManageTask ? `<button class="btn compact" type="button" data-hire-single-task="${esc(task.id)}">${icon("users")}Hire freelancer</button><button class="btn compact danger" type="button" data-delete-client-task="${esc(task.id)}">${icon("trash-2")}Delete</button>` : ""}
+            ${canManageTask ? `<button class="btn compact" type="button" data-rate-client-task="${esc(task.id)}" title="Rate assigned freelancer">${icon("star")}Rate</button><button class="btn compact" type="button" data-hire-single-task="${esc(task.id)}">${icon("users")}Hire freelancer</button><button class="btn compact danger" type="button" data-delete-client-task="${esc(task.id)}">${icon("trash-2")}Delete</button>` : (isAssignee ? `<button class="btn compact" type="button" data-rate-client-task="${esc(task.id)}" title="Rate client / admin">${icon("star")}Rate Client</button>` : "")}
           </div>` : ""}
         </article>`;
       }).join("") || `<p class="muted">No tasks.</p>`}
@@ -8342,6 +8516,38 @@ function scopedFreelancerTeamHTML(data) {
   return '<section class="panel scoped-task-team"><h3>Freelancers on this task</h3><p class="muted">Task access only. Mention these teammates in the comments below.</p><div class="toolbar">' + members.map(row => '<a class="btn" href="/marketplace/jobs/' + esc(row.job_id) + '">' + esc(row.user.name || row.user.username || "Freelancer") + ' &middot; Chat &amp; shared tasks</a>').join("") + '</div></section>';
 }
 
+function taskRatingsBlockHTML(task = {}) {
+  const ratings = task.ratings || [];
+  const currentUserID = String(state.me?.id || "");
+  const myRating = ratings.find((r) => String(r.from_user_id) === currentUserID);
+  const isAssignee = (task.assignee_ids || []).map(String).includes(currentUserID);
+  const isAdmin = state.me?.role === "users_admin" || state.me?.role === "owner_adm" || String(task.created_by) === currentUserID;
+
+  return `
+    <div class="task-ratings-box">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <h4 style="margin:0;display:flex;align-items:center;gap:6px;">${icon("star")} Ratings &amp; Reviews (${ratings.length})</h4>
+        ${(isAdmin || isAssignee) ? `
+          <button class="btn compact" type="button" data-rate-client-task="${esc(task.id)}">
+            ${icon("star")} ${myRating ? "Update Rating" : "Give Rating"}
+          </button>
+        ` : ""}
+      </div>
+      ${ratings.length > 0 ? ratings.map((r) => `
+        <div class="task-rating-item">
+          <div class="task-rating-stars">
+            <span>${"★".repeat(r.rating)}${"☆".repeat(5 - r.rating)}</span>
+            <span style="font-size:12px;color:var(--text-secondary);">(${r.rating}/5)</span>
+            <span class="pill" style="min-height:18px;padding:0 6px;font-size:10px;">${esc(r.role || "review")}</span>
+          </div>
+          <p class="task-rating-review">${esc(r.review || "No review comments.")}</p>
+          <small class="muted" style="font-size:11px;">${fmtDateTime(r.created_at)}</small>
+        </div>
+      `).join("") : `<p class="muted" style="margin:4px 0;font-size:13px;">No ratings recorded for this task yet.</p>`}
+    </div>
+  `;
+}
+
 async function openClientTaskPanel(taskID, focusCommentID = "", options = {}) {
   const asModal = isClientTaskModalMode(options);
   const data = await api(`/api/client-tasks/${taskID}`);
@@ -8425,6 +8631,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "", options = {}) {
         ${task.url ? `<h3>Annotation URL</h3><p><a class="text-link" href="${esc(task.url)}" target="_blank" rel="noopener noreferrer">${esc(task.url)}</a></p>` : ""}
         ${task.pin_x !== undefined && task.pin_y !== undefined && task.pin_x !== null && task.pin_y !== null ? `<h3>Annotation Pin</h3><p class="muted">${Number(task.pin_x).toFixed(1)}%, ${Number(task.pin_y).toFixed(1)}%</p>` : ""}
         ${taskAttachmentGalleryHTML(task, data.comments || [])}
+        ${taskRatingsBlockHTML(task)}
         <div class="task-log-actions"><button class="btn compact" type="button" id="taskUpdateLogBtn">${icon("history")}Activity Log</button></div>
       </section>
       <aside class="client-task-comments">
@@ -9983,6 +10190,7 @@ function assignedTaskRowHTML(task, context) {
       <span class="assigned-task-category">${icon(task.type === "annotation" ? "map-pin" : "file-text")}${esc(categoryLabel)}</span>
     </button>
     <span class="assigned-transfer-icons">
+      ${clientTaskRatingBadgeHTML(task, false)}
       <button class="pill ${state.activeTimer && String(state.activeTimer.task_id) === String(task.id) ? "danger timer-pill active-pulse" : "timer-pill"}" type="button" data-quick-task-timer="${esc(task.id)}" title="${state.activeTimer && String(state.activeTimer.task_id) === String(task.id) ? "Stop timer" : "Start timer"}">${state.activeTimer && String(state.activeTimer.task_id) === String(task.id) ? icon("square") + "Stop" : icon("play") + "Timer"}</button>
       <a class="assigned-export-icon" href="${esc(clientTaskTransferURL({ scope: "task", task_id: task.id }))}" target="_blank" rel="noopener" title="Export this task JSON" aria-label="Export this task JSON">${icon("download")}</a>
       <button class="assigned-export-icon" type="button" data-import-client-tasks data-import-website-id="${esc(task.website_id || "")}" title="Import task JSON into this domain" aria-label="Import task JSON into this domain">${icon("upload")}</button>
@@ -10233,9 +10441,224 @@ function openClientTaskImportPicker(params = {}) {
   input.click();
 }
 
+async function renderMyTasksAndPayments() {
+  const [taskData, reportData] = await Promise.all([
+    api("/api/client-tasks/assigned?scope=assigned").catch(() => ({ tasks: [], clients: [], websites: [], tabs: [] })),
+    api("/api/reports/time").catch(() => ({ entries: [], summary: {}, task_summary: [] })),
+  ]);
+
+  const tasks = taskData.tasks || [];
+  const clients = taskData.clients || [];
+  const websites = taskData.websites || [];
+  const entries = reportData.entries || [];
+  const summary = reportData.summary || {};
+  const taskSummary = reportData.task_summary || [];
+
+  const clientsByID = Object.fromEntries(clients.map((c) => [c.id, c]));
+  const websitesByID = Object.fromEntries(websites.map((w) => [w.id, w]));
+  const taskSummaryByID = Object.fromEntries(taskSummary.map((ts) => [ts.task_id, ts]));
+
+  const routeParams = new URLSearchParams(location.search);
+  const currentSubTab = routeParams.get("tab") || "all";
+
+  const completedTasks = tasks.filter((t) => ["done", "completed"].includes(String(t.status || "").toLowerCase()));
+  const pendingTasks = tasks.filter((t) => !["done", "completed"].includes(String(t.status || "").toLowerCase()));
+  const settledEntries = entries.filter((e) => e.paid);
+  const unpaidEntries = entries.filter((e) => !e.paid);
+
+  const currentUserID = String(state.me?.id || "");
+  const ratingsReceived = [];
+  tasks.forEach((t) => {
+    (t.ratings || []).forEach((r) => {
+      if (String(r.to_user_id) === currentUserID) {
+        ratingsReceived.push({ ...r, task_title: t.title, task_id: t.id });
+      }
+    });
+  });
+  const avgRating = ratingsReceived.length > 0 ? (ratingsReceived.reduce((acc, r) => acc + (r.rating || 0), 0) / ratingsReceived.length).toFixed(1) : null;
+
+  const totalEarned = summary.total_amount || 0;
+  const unpaidAmount = summary.unpaid_amount || 0;
+  const paidAmount = summary.paid_amount || 0;
+
+  shell("My Tasks & Payments", `
+    <div class="page-title">
+      <div>
+        <h1>My Tasks &amp; Payments</h1>
+        <p class="muted">Overview of your assigned tasks, completed deliverables, payment settlements, and collaboration ratings.</p>
+      </div>
+      <div class="toolbar">
+        <a class="btn" href="/reports/time">${icon("bar-chart-3")} View Full Reports</a>
+      </div>
+    </div>
+
+    <!-- KPI Grid -->
+    <div class="report-kpi-grid">
+      <div class="report-kpi-card highlight">
+        <span class="report-kpi-label">Completed Tasks</span>
+        <span class="report-kpi-value">${completedTasks.length}</span>
+        <span class="report-kpi-sub">${tasks.length} total assigned tasks</span>
+      </div>
+      <div class="report-kpi-card highlight">
+        <span class="report-kpi-label">Total Earned</span>
+        <span class="report-kpi-value">$${Number(totalEarned).toFixed(2)}</span>
+        <span class="report-kpi-sub">${summary.total_hours || 0} hrs tracked</span>
+      </div>
+      <div class="report-kpi-card ${unpaidAmount > 0 ? "warning-card" : ""}">
+        <span class="report-kpi-label">Pending / In Review</span>
+        <span class="report-kpi-value" style="color:var(--warning, #f59e0b);">$${Number(unpaidAmount).toFixed(2)}</span>
+        <span class="report-kpi-sub">${unpaidEntries.length} unpaid logs</span>
+      </div>
+      <div class="report-kpi-card">
+        <span class="report-kpi-label">Reviewed &amp; Settled</span>
+        <span class="report-kpi-value" style="color:var(--success, #10b981);">$${Number(paidAmount).toFixed(2)}</span>
+        <span class="report-kpi-sub">${settledEntries.length} paid entries</span>
+      </div>
+      <div class="report-kpi-card">
+        <span class="report-kpi-label">Client Feedback Rating</span>
+        <span class="report-kpi-value" style="color:#f59e0b;">${avgRating ? `★ ${avgRating}` : "No ratings yet"}</span>
+        <span class="report-kpi-sub">${ratingsReceived.length} review(s) received</span>
+      </div>
+    </div>
+
+    <!-- Sub Navigation Tabs -->
+    <div class="report-tabs-bar" style="margin-top:20px;">
+      <a class="report-tab-btn ${currentSubTab === "all" ? "active" : ""}" href="/tasks?view=my_tasks&tab=all">
+        ${icon("circle-check")} All Assigned Tasks (${tasks.length})
+      </a>
+      <a class="report-tab-btn ${currentSubTab === "completed" ? "active" : ""}" href="/tasks?view=my_tasks&tab=completed">
+        ${icon("check-circle-2")} Completed Tasks (${completedTasks.length})
+      </a>
+      <a class="report-tab-btn ${currentSubTab === "payments" ? "active" : ""}" href="/tasks?view=my_tasks&tab=payments">
+        ${icon("wallet")} Reviewed &amp; Settled Payments (${settledEntries.length})
+      </a>
+      <a class="report-tab-btn ${currentSubTab === "pending" ? "active" : ""}" href="/tasks?view=my_tasks&tab=pending">
+        ${icon("clock")} Pending / In Review (${pendingTasks.length})
+      </a>
+    </div>
+
+    <!-- Main Content Panel based on SubTab -->
+    <section class="panel" style="margin-top:16px;">
+      ${currentSubTab === "payments" ? `
+        <div class="panel-head">
+          <div>
+            <h2>Reviewed &amp; Settled Payment Logs</h2>
+            <p class="muted">Payments and hours reviewed and marked as settled by project administrators.</p>
+          </div>
+        </div>
+        <div class="report-table-wrapper">
+          <table class="report-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Task / Activity</th>
+                <th>Project Folder</th>
+                <th class="num">Duration</th>
+                <th class="num">Rate</th>
+                <th class="num">Amount</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${settledEntries.map((e) => `
+                <tr>
+                  <td>${fmtDate(e.start_time)}</td>
+                  <td><strong>${esc(e.task_title || "Task log")}</strong>${e.note ? `<div class="muted" style="font-size:11px;">${esc(e.note)}</div>` : ""}</td>
+                  <td><span class="muted">${esc(e.project_name || "-")}</span></td>
+                  <td class="num">${e.duration_minutes}m</td>
+                  <td class="num">$${(e.hourly_rate || 0).toFixed(2)}/h</td>
+                  <td class="num"><strong>$${(e.amount || 0).toFixed(2)}</strong></td>
+                  <td><span class="pill paid">${icon("check")} Settled</span></td>
+                </tr>
+              `).join("") || `<tr><td colspan="7" class="muted" style="text-align:center;padding:24px;">No settled payments found yet.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      ` : `
+        <div class="panel-head">
+          <div>
+            <h2>${currentSubTab === "completed" ? "Completed Tasks & Deliverables" : (currentSubTab === "pending" ? "Pending Tasks & Work In Review" : "All Assigned Tasks")}</h2>
+            <p class="muted">${currentSubTab === "completed" ? "Review completed tasks, rate clients, and view client ratings." : "Manage your project deliverables, check payment status, and give or receive ratings."}</p>
+          </div>
+        </div>
+        <div class="report-table-wrapper">
+          <table class="report-table">
+            <thead>
+              <tr>
+                <th>Task</th>
+                <th>Project Folder</th>
+                <th>Domain / Website</th>
+                <th>Status</th>
+                <th>Rate / Price</th>
+                <th class="num">Tracked Time</th>
+                <th class="num">Earned</th>
+                <th>Payment</th>
+                <th style="text-align:center;">Ratings &amp; Reviews</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(currentSubTab === "completed" ? completedTasks : (currentSubTab === "pending" ? pendingTasks : tasks)).map((t) => {
+                const client = clientsByID[t.client_id] || {};
+                const website = websitesByID[t.website_id] || {};
+                const ts = taskSummaryByID[t.id] || {};
+                const rateStr = t.pricing_type === "fixed" ? `$${(t.fixed_price || 0).toFixed(2)} fixed` : (t.hourly_rate ? `$${t.hourly_rate.toFixed(2)}/hr` : (summary.my_hourly_rate ? `$${summary.my_hourly_rate.toFixed(2)}/hr` : "-"));
+                const hoursStr = ts.total_hours ? `${ts.total_hours.toFixed(2)}h` : (t.time_spent_seconds ? `${(t.time_spent_seconds / 3600).toFixed(2)}h` : "0.00h");
+                const earned = ts.total_amount || (t.pricing_type === "fixed" ? (t.fixed_price || 0) : ((t.time_spent_seconds || 0) / 3600 * (t.hourly_rate || summary.my_hourly_rate || 0)));
+                const isPaid = (ts.unpaid_amount === 0 && ts.paid_amount > 0) || t.is_paid;
+                const myRating = (t.ratings || []).find((r) => String(r.from_user_id) === currentUserID);
+                const ratingReceived = (t.ratings || []).find((r) => String(r.to_user_id) === currentUserID);
+
+                return `
+                  <tr>
+                    <td>
+                      <button class="client-task-open" type="button" data-open-client-task="${esc(t.id)}" style="background:none;border:none;padding:0;color:var(--primary);cursor:pointer;font-weight:600;text-align:left;">
+                        ${esc(t.title || "Untitled task")}
+                      </button>
+                    </td>
+                    <td><span class="muted">${esc(client.name || "-")}</span></td>
+                    <td><span class="muted">${esc(website.name || "-")}</span></td>
+                    <td><span class="pill">${esc(t.status || "todo")}</span></td>
+                    <td><span style="font-weight:600;">${esc(rateStr)}</span></td>
+                    <td class="num">${hoursStr}</td>
+                    <td class="num"><strong>$${earned.toFixed(2)}</strong></td>
+                    <td>
+                      ${isPaid ? `<span class="pill paid">${icon("check")} Settled</span>` : (earned > 0 ? `<span class="pill unpaid">Pending</span>` : `<span class="muted">-</span>`)}
+                    </td>
+                    <td style="text-align:center;white-space:nowrap;">
+                      <div style="display:flex;flex-direction:column;gap:4px;align-items:center;">
+                        ${ratingReceived ? `
+                          <div style="font-size:11px;color:#f59e0b;font-weight:600;" title="${esc(ratingReceived.review || "")}">
+                            Client gave: ${"★".repeat(ratingReceived.rating)} (${ratingReceived.rating}/5)
+                          </div>
+                        ` : ""}
+                        <button class="pill rating-pill ${myRating ? "rated" : ""}" type="button" data-rate-client-task="${esc(t.id)}">
+                          ${icon("star")} ${myRating ? `You rated ${myRating.rating}★` : "Rate Client"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join("") || `<tr><td colspan="9" class="muted" style="text-align:center;padding:24px;">No tasks found in this section.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </section>
+  `);
+
+  document.querySelectorAll("[data-open-client-task]").forEach((btn) => {
+    btn.addEventListener("click", () => openClientTaskWithProgress(btn.dataset.openClientTask, "", btn));
+  });
+  bindTaskRatings(document);
+  icons();
+}
+
 async function renderTasks(projectID = "") {
   const routeParams = new URLSearchParams(location.search);
   const view = routeParams.get("view") || "all";
+  if (view === "my_tasks") {
+    return await renderMyTasksAndPayments();
+  }
   const assignedOnly = view === "assigned";
   const data = await api(`/api/client-tasks/assigned${assignedOnly ? "?scope=assigned" : ""}`);
   state.liveTaskSignature = taskListLiveSignature(data);
@@ -14483,6 +14906,282 @@ function buildTimeReportParams() {
   return params;
 }
 
+async function openMemberTasksReportsModal(userID, userName = "Member", userRate = "0.00") {
+  let dialog = $("#memberTasksReportsModal");
+  if (!dialog) {
+    dialog = document.createElement("dialog");
+    dialog.id = "memberTasksReportsModal";
+    dialog.className = "modal member-reports-modal";
+    document.body.appendChild(dialog);
+  }
+
+  dialog.innerHTML = `
+    <div class="member-reports-dialog-shell">
+      <div class="member-reports-head">
+        <div>
+          <h2>Tasks &amp; Reports: ${esc(userName)}</h2>
+          <p class="muted">Member rate: <strong>$${esc(userRate)}/hr</strong> · Detailed breakdown by projects and tasks</p>
+        </div>
+        <button class="btn icon quiet" type="button" data-close-member-reports-modal title="Close">${icon("x")}</button>
+      </div>
+      <div class="member-reports-body">
+        <p class="muted" style="text-align:center;padding:32px;">Loading tasks and reports for ${esc(userName)}...</p>
+      </div>
+    </div>
+  `;
+  dialog.querySelector("[data-close-member-reports-modal]")?.addEventListener("click", () => dialog.close());
+  dialog.showModal();
+  icons();
+
+  try {
+    const [timeData, assignedData] = await Promise.all([
+      api(`/api/reports/time?user_id=${encodeURIComponent(userID)}`).catch(() => ({ entries: [], summary: {}, task_summary: [] })),
+      api(`/api/client-tasks/assigned?user_id=${encodeURIComponent(userID)}`).catch(() => ({ tasks: [], clients: [], websites: [] }))
+    ]);
+
+    const tasks = assignedData.tasks || [];
+    const clients = assignedData.clients || [];
+    const websites = assignedData.websites || [];
+    const summary = timeData.summary || {};
+    const taskSummary = timeData.task_summary || [];
+
+    const clientsByID = Object.fromEntries(clients.map(c => [c.id, c]));
+    const websitesByID = Object.fromEntries(websites.map(w => [w.id, w]));
+    const taskSummaryByID = Object.fromEntries(taskSummary.map(ts => [ts.task_id, ts]));
+
+    let filterProject = "";
+    let filterDomain = "";
+    let filterDate = "all";
+    let filterStatus = "";
+
+    function renderModalContent() {
+      const filteredTasks = tasks.filter((t) => {
+        if (filterProject && String(t.client_id) !== filterProject) return false;
+        if (filterDomain && String(t.website_id) !== filterDomain) return false;
+        if (filterStatus) {
+          const statusLower = String(t.status || "todo").toLowerCase();
+          const ts = taskSummaryByID[t.id];
+          if (filterStatus === "done" && !["done", "completed"].includes(statusLower)) return false;
+          if (filterStatus === "in_progress" && !["in_progress", "progress", "doing"].includes(statusLower)) return false;
+          if (filterStatus === "todo" && !["todo", "to do"].includes(statusLower)) return false;
+          if (filterStatus === "unpaid" && (!ts || (ts.unpaid_amount || 0) <= 0)) return false;
+          if (filterStatus === "paid" && (!ts || (ts.paid_amount || 0) <= 0)) return false;
+        }
+        if (filterDate && filterDate !== "all") {
+          const dt = t.created_at ? new Date(t.created_at) : null;
+          if (dt) {
+            const now = new Date();
+            if (filterDate === "today") {
+              if (dt.toDateString() !== now.toDateString()) return false;
+            } else if (filterDate === "this_week") {
+              const weekAgo = new Date(now.getTime() - 7 * 86400000);
+              if (dt < weekAgo) return false;
+            } else if (filterDate === "this_month") {
+              if (dt.getMonth() !== now.getMonth() || dt.getFullYear() !== now.getFullYear()) return false;
+            }
+          }
+        }
+        return true;
+      });
+
+      const tasksByProject = new Map();
+      filteredTasks.forEach((t) => {
+        const pID = t.client_id || "unassigned";
+        if (!tasksByProject.has(pID)) {
+          tasksByProject.set(pID, []);
+        }
+        tasksByProject.get(pID).push(t);
+      });
+
+      const totalHours = summary.total_hours || (filteredTasks.reduce((acc, t) => acc + ((taskSummaryByID[t.id]?.total_hours) || 0), 0));
+      const billableHours = summary.billable_hours || (filteredTasks.reduce((acc, t) => acc + ((taskSummaryByID[t.id]?.billable_hours) || 0), 0));
+      const totalAmount = summary.total_amount || (filteredTasks.reduce((acc, t) => acc + ((taskSummaryByID[t.id]?.total_amount) || 0), 0));
+      const unpaidAmount = summary.unpaid_amount || (filteredTasks.reduce((acc, t) => acc + ((taskSummaryByID[t.id]?.unpaid_amount) || 0), 0));
+      const paidAmount = summary.paid_amount || (filteredTasks.reduce((acc, t) => acc + ((taskSummaryByID[t.id]?.paid_amount) || 0), 0));
+
+      const bodyEl = dialog.querySelector(".member-reports-body");
+      if (!bodyEl) return;
+
+      bodyEl.innerHTML = `
+        <div class="member-reports-kpi">
+          <div class="member-reports-kpi-card">
+            <span class="label">Total Hours</span>
+            <span class="value">${Number(totalHours).toFixed(2)}h</span>
+          </div>
+          <div class="member-reports-kpi-card">
+            <span class="label">Billable Hours</span>
+            <span class="value">${Number(billableHours).toFixed(2)}h</span>
+          </div>
+          <div class="member-reports-kpi-card">
+            <span class="label">Total Amount</span>
+            <span class="value">$${Number(totalAmount).toFixed(2)}</span>
+          </div>
+          <div class="member-reports-kpi-card">
+            <span class="label">Unpaid / Due</span>
+            <span class="value" style="color:var(--warning, #f59e0b);">$${Number(unpaidAmount).toFixed(2)}</span>
+          </div>
+          <div class="member-reports-kpi-card">
+            <span class="label">Paid / Settled</span>
+            <span class="value" style="color:var(--success, #10b981);">$${Number(paidAmount).toFixed(2)}</span>
+          </div>
+          <div class="member-reports-kpi-card">
+            <span class="label">Tasks</span>
+            <span class="value">${filteredTasks.length}</span>
+          </div>
+        </div>
+
+        <div class="member-filter-toolbar">
+          <div>
+            <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Filter by Project</label>
+            <select id="modalFilterProject" style="width:100%;">
+              <option value="">All Projects (${clients.length})</option>
+              ${clients.map(c => `<option value="${esc(c.id)}" ${filterProject === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Filter by Domain</label>
+            <select id="modalFilterDomain" style="width:100%;">
+              <option value="">All Domains (${websites.length})</option>
+              ${websites.map(w => `<option value="${esc(w.id)}" ${filterDomain === w.id ? "selected" : ""}>${esc(w.name)}</option>`).join("")}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Filter by Date</label>
+            <select id="modalFilterDate" style="width:100%;">
+              <option value="all" ${filterDate === "all" ? "selected" : ""}>All Time</option>
+              <option value="today" ${filterDate === "today" ? "selected" : ""}>Today</option>
+              <option value="this_week" ${filterDate === "this_week" ? "selected" : ""}>This Week</option>
+              <option value="this_month" ${filterDate === "this_month" ? "selected" : ""}>This Month</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Filter by Status</label>
+            <select id="modalFilterStatus" style="width:100%;">
+              <option value="" ${!filterStatus ? "selected" : ""}>All Statuses</option>
+              <option value="done" ${filterStatus === "done" ? "selected" : ""}>Completed / Done</option>
+              <option value="in_progress" ${filterStatus === "in_progress" ? "selected" : ""}>In Progress</option>
+              <option value="todo" ${filterStatus === "todo" ? "selected" : ""}>To Do</option>
+              <option value="unpaid" ${filterStatus === "unpaid" ? "selected" : ""}>Unpaid Work</option>
+              <option value="paid" ${filterStatus === "paid" ? "selected" : ""}>Settled / Paid</option>
+            </select>
+          </div>
+        </div>
+
+        ${unpaidAmount > 0 ? `
+          <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+            <button class="btn primary" type="button" data-modal-pay-all="${esc(userID)}" data-unpaid="${unpaidAmount.toFixed(2)}">
+              ${icon("check")} Settle All Unpaid ($${unpaidAmount.toFixed(2)})
+            </button>
+          </div>
+        ` : ""}
+
+        <div class="member-projects-container">
+          ${Array.from(tasksByProject.entries()).map(([projectID, projectTasks]) => {
+            const project = clientsByID[projectID] || { name: "General Workspace" };
+            return `
+              <div class="project-grouped-section">
+                <div class="project-group-head">
+                  <h4>${icon("folder")} ${esc(project.name)} <span class="muted" style="font-size:12px;font-weight:normal;">(${projectTasks.length} task${projectTasks.length > 1 ? "s" : ""})</span></h4>
+                </div>
+                <div class="report-table-wrapper">
+                  <table class="report-table">
+                    <thead>
+                      <tr>
+                        <th>Task</th>
+                        <th>Domain</th>
+                        <th>Status</th>
+                        <th>Rate / Price</th>
+                        <th class="num">Time</th>
+                        <th class="num">Amount</th>
+                        <th>Payment</th>
+                        <th style="text-align:center;">Rating</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${projectTasks.map((t) => {
+                        const ws = websitesByID[t.website_id] || {};
+                        const ts = taskSummaryByID[t.id] || {};
+                        const rateStr = t.pricing_type === "fixed" ? `$${(t.fixed_price || 0).toFixed(2)} fixed` : (t.hourly_rate ? `$${t.hourly_rate.toFixed(2)}/hr` : (userRate > 0 ? `$${userRate}/hr` : "-"));
+                        const hoursStr = ts.total_hours ? `${ts.total_hours.toFixed(2)}h` : (t.time_spent_seconds ? `${(t.time_spent_seconds / 3600).toFixed(2)}h` : "0.00h");
+                        const amt = ts.total_amount || (t.pricing_type === "fixed" ? (t.fixed_price || 0) : ((t.time_spent_seconds || 0) / 3600 * (t.hourly_rate || parseFloat(userRate) || 0)));
+                        const isPaid = (ts.unpaid_amount === 0 && ts.paid_amount > 0) || t.is_paid;
+                        return `
+                          <tr>
+                            <td>
+                              <button class="client-task-open" type="button" data-open-client-task="${esc(t.id)}" style="background:none;border:none;padding:0;color:var(--primary);cursor:pointer;font-weight:600;text-align:left;">
+                                ${esc(t.title || "Untitled task")}
+                              </button>
+                            </td>
+                            <td><span class="muted" style="font-size:12px;">${esc(ws.name || "-")}</span></td>
+                            <td><span class="pill">${esc(t.status || "todo")}</span></td>
+                            <td><span style="font-size:12px;font-weight:600;">${esc(rateStr)}</span></td>
+                            <td class="num">${hoursStr}</td>
+                            <td class="num"><strong>$${amt.toFixed(2)}</strong></td>
+                            <td>
+                              ${isPaid ? `<span class="pill paid" style="font-size:11px;">${icon("check")} Settled</span>` : (amt > 0 ? `<span class="pill unpaid" style="font-size:11px;">Unpaid</span>` : `<span class="muted">-</span>`)}
+                            </td>
+                            <td style="text-align:center;white-space:nowrap;">
+                              ${clientTaskRatingBadgeHTML(t, true)}
+                            </td>
+                          </tr>
+                        `;
+                      }).join("")}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            `;
+          }).join("") || `<p class="muted" style="text-align:center;padding:36px;">No tasks match the selected filters for ${esc(userName)}.</p>`}
+        </div>
+      `;
+
+      bodyEl.querySelector("#modalFilterProject")?.addEventListener("change", (e) => {
+        filterProject = e.target.value;
+        renderModalContent();
+      });
+      bodyEl.querySelector("#modalFilterDomain")?.addEventListener("change", (e) => {
+        filterDomain = e.target.value;
+        renderModalContent();
+      });
+      bodyEl.querySelector("#modalFilterDate")?.addEventListener("change", (e) => {
+        filterDate = e.target.value;
+        renderModalContent();
+      });
+      bodyEl.querySelector("#modalFilterStatus")?.addEventListener("change", (e) => {
+        filterStatus = e.target.value;
+        renderModalContent();
+      });
+
+      bodyEl.querySelector("[data-modal-pay-all]")?.addEventListener("click", async () => {
+        if (!confirm(`Mark all unpaid hours ($${unpaidAmount.toFixed(2)}) for ${userName} as paid?`)) return;
+        try {
+          await api("/api/reports/time/payments/mark-paid", {
+            method: "POST",
+            body: JSON.stringify({ paid: true, user_id: userID }),
+          });
+          dialog.close();
+          renderReports();
+        } catch (err) {
+          alert("Error settling payment: " + err.message);
+        }
+      });
+
+      bodyEl.querySelectorAll("[data-open-client-task]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          openClientTaskWithProgress(btn.dataset.openClientTask, "", btn);
+        });
+      });
+      bindTaskRatings(bodyEl);
+      icons();
+    }
+
+    renderModalContent();
+  } catch (err) {
+    const bodyEl = dialog.querySelector(".member-reports-body");
+    if (bodyEl) bodyEl.innerHTML = `<p class="status-line" style="color:var(--danger);">${esc(err.message || "Failed to load member reports")}</p>`;
+  }
+}
+
 async function renderReports() {
   const list = await getFirstList().catch(() => null);
   const queryParams = buildTimeReportParams();
@@ -14506,11 +15205,11 @@ async function renderReports() {
 
   const activeTab = timeReportFilters.tab || "payouts";
 
-  shell(isAdmin ? "Time & Payment Reports" : "My Time & Earnings", `
+  shell("Reports", `
     <div class="page-title">
       <div>
-        <h1>${isAdmin ? "Time & Payment Reports" : "My Time & Earnings"}</h1>
-        <p class="muted">${isAdmin ? "Track team hours, manage member hourly rates, and manage teammate and freelancer payouts." : "Review your tracked hours, hourly rate, and monitor your earnings and payouts."}</p>
+        <h1>Reports</h1>
+        <p class="muted">${isAdmin ? "Track team hours, manage member hourly rates, project reports, and teammate and freelancer payouts." : "Review your tracked hours, hourly rate, tasks, and monitor your earnings and payouts."}</p>
       </div>
       <div class="toolbar">
         <a class="btn" href="${exportCSVURL}" download="time-report.csv">${icon("download")} Export CSV</a>
@@ -14658,7 +15357,7 @@ async function renderReports() {
                   <th class="num">Total Amount</th>
                   <th class="num">Unpaid / Due</th>
                   <th class="num">Paid</th>
-                  <th style="text-align:center;">Payment Action</th>
+                  <th style="text-align:center;">Details</th>
                 </tr>
               </thead>
               <tbody>
@@ -14686,13 +15385,16 @@ async function renderReports() {
                       ${u.unpaid_amount > 0 ? `<span class="pill unpaid">$${u.unpaid_amount.toFixed(2)}</span>` : `<span class="muted">$0.00</span>`}
                     </td>
                     <td class="num">$${u.paid_amount.toFixed(2)}</td>
-                    <td style="text-align:center;">
+                    <td style="text-align:center;white-space:nowrap;">
+                      <button class="btn compact" type="button" data-view-member-details="${esc(u.user_id)}" data-user-name="${esc(u.name || "Member")}" data-hourly-rate="${(u.hourly_rate || 0).toFixed(2)}" title="View member tasks and reports details">
+                        ${icon("eye")} Details
+                      </button>
                       ${u.unpaid_amount > 0 ? `
-                        <button class="btn compact primary" type="button" data-mark-paid-user="${esc(u.user_id)}" data-user-name="${esc(u.name || "Member")}" data-unpaid-amount="${u.unpaid_amount.toFixed(2)}">
+                        <button class="btn compact primary" type="button" data-mark-paid-user="${esc(u.user_id)}" data-user-name="${esc(u.name || "Member")}" data-unpaid-amount="${u.unpaid_amount.toFixed(2)}" style="margin-left:4px;">
                           ${icon("check")} Mark Paid
                         </button>
                       ` : `
-                        <span class="pill paid" style="font-size:11px;">${icon("check")} Settled</span>
+                        <span class="pill paid" style="font-size:11px;margin-left:4px;">${icon("check")} Settled</span>
                       `}
                     </td>
                   </tr>
@@ -15068,6 +15770,16 @@ async function renderReports() {
       }
     });
   }
+
+  // Bind Member Details Modal
+  document.querySelectorAll("[data-view-member-details]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const uid = btn.getAttribute("data-view-member-details");
+      const name = btn.getAttribute("data-user-name") || "Member";
+      const rate = btn.getAttribute("data-hourly-rate") || "0.00";
+      openMemberTasksReportsModal(uid, name, rate);
+    });
+  });
 
   // Bind Mark as Paid Actions
   document.querySelectorAll("[data-mark-paid-user]").forEach((btn) => {
@@ -15996,6 +16708,24 @@ document.addEventListener("click", async (event) => {
         setStatus(error.message, true);
       }
     }
+  }
+  const rateTaskBtn = event.target.closest("[data-rate-client-task]");
+  if (rateTaskBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const taskID = rateTaskBtn.dataset.rateClientTask;
+    openTaskRatingModal(taskID);
+    return;
+  }
+  const memberDetailsBtn = event.target.closest("[data-view-member-details]");
+  if (memberDetailsBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const uid = memberDetailsBtn.dataset.viewMemberDetails;
+    const name = memberDetailsBtn.dataset.userName || "Member";
+    const rate = memberDetailsBtn.dataset.hourlyRate || "0.00";
+    openMemberTasksReportsModal(uid, name, rate);
+    return;
   }
 });
 bindAppNavigation();
