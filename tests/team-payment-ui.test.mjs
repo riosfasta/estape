@@ -437,7 +437,20 @@ test("member end provides dedicated My Tasks & Payments view with tabs and ratin
   assert.match(appSource, /Client Feedback Rating/, "view must include Client Feedback Rating metric");
 });
 
+test("user_admin role sees Team Payouts & Rates tab and Details button in Reports", () => {
+  assert.match(appSource, /const isAdmin = Boolean\(data\.is_admin \|\| state\.me\?\.role === "users_admin" \|\| state\.me\?\.role === "owner_adm"\);/);
+  assert.match(appSource, /\$\{icon\("users"\)\} \$\{isAdmin \? "Team Payouts & Rates" : "My Earnings Summary"\}/);
+  assert.match(appSource, /data-view-member-details/);
+});
 
-
-
-
+test("Platform Owner navigation includes Conflict & Audit Hub and routes to renderAdminConflictHub", () => {
+  assert.match(appSource, /workspaceLink\("\/admin\/conflicts",\s*"Conflict & Audit Hub",\s*"scale"\)/);
+  assert.match(appSource, /if \(path\(\) === "\/admin\/conflicts"\) return await renderAdminConflictHub\(\);/);
+  assert.match(appSource, /async function renderAdminConflictHub\(\)/);
+  assert.match(appSource, /Dual-End Cross Inspector/);
+  assert.match(appSource, /id="conflictSelectAdmin"/);
+  assert.match(appSource, /id="conflictSelectFreelancer"/);
+  assert.match(appSource, /\/api\/admin\/conflicts\/overview/);
+  assert.match(appSource, /\/api\/admin\/conflicts\/audit/);
+  assert.match(appSource, /\/api\/admin\/conflicts\/resolve/);
+});

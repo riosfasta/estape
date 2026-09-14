@@ -842,7 +842,7 @@ func (s *Server) markTimeEntriesPaid(c *gin.Context) {
 	}
 
 	filter := bson.M{}
-	if !userCtx.TeamID.IsZero() {
+	if userCtx.Role != models.RoleOwnerAdmin && !userCtx.TeamID.IsZero() {
 		filter["team_id"] = userCtx.TeamID
 	}
 
@@ -939,31 +939,100 @@ func (s *Server) timeReport(c *gin.Context) {
 	usersMap := s.populateTimeEntryUsers(c.Request.Context(), entries)
 	s.populateTimeEntryMetadata(c.Request.Context(), entries)
 
-	// If isAdmin, ensure all workspace team members are in usersMap so their rates & zero-hour stats are visible
-	if isAdmin && len(team.MemberIDs) > 0 {
-		mCursor, err := s.store.C("users").Find(c.Request.Context(), bson.M{"_id": bson.M{"$in": team.MemberIDs}})
-		if err == nil {
-			defer mCursor.Close(c.Request.Context())
-			for mCursor.Next(c.Request.Context()) {
-				var u models.User
-				if mCursor.Decode(&u) == nil {
-					uHex := u.ID.Hex()
-					if _, exists := usersMap[uHex]; !exists {
-						displayName := strings.TrimSpace(u.Name)
-						if displayName == "" {
-							displayName = strings.TrimSpace(u.Username)
+	// If isAdmin, ensure all workspace team members and assigned freelancers are in usersMap so their rates & zero-hour stats are visible
+	if isAdmin {
+		var memberIDs []primitive.ObjectID
+		memberIDs = append(memberIDs, team.MemberIDs...)
+
+		// Find members from team's client projects and tasks
+		if !userCtx.TeamID.IsZero() || userCtx.Role == models.RoleTeamAdmin {
+			projFilter := bson.M{}
+			if !userCtx.TeamID.IsZero() {
+				projFilter["team_id"] = userCtx.TeamID
+			} else {
+				projFilter["created_by"] = userCtx.ID
+			}
+			if pCursor, err := s.store.C("client_projects").Find(c.Request.Context(), projFilter, options.Find().SetProjection(bson.M{"member_ids": 1, "client_admin_ids": 1})); err == nil {
+				for pCursor.Next(c.Request.Context()) {
+					var p struct {
+						MemberIDs      []primitive.ObjectID `bson:"member_ids"`
+						ClientAdminIDs []primitive.ObjectID `bson:"client_admin_ids"`
+					}
+					if pCursor.Decode(&p) == nil {
+						memberIDs = append(memberIDs, p.MemberIDs...)
+						memberIDs = append(memberIDs, p.ClientAdminIDs...)
+					}
+				}
+				pCursor.Close(c.Request.Context())
+			}
+
+			taskFilter := bson.M{}
+			if !userCtx.TeamID.IsZero() {
+				taskFilter["team_id"] = userCtx.TeamID
+			} else {
+				taskFilter["created_by"] = userCtx.ID
+			}
+			if tCursor, err := s.store.C("client_tasks").Find(c.Request.Context(), taskFilter, options.Find().SetProjection(bson.M{"assignee_ids": 1, "annotations.assignee_ids": 1})); err == nil {
+				for tCursor.Next(c.Request.Context()) {
+					var t struct {
+						AssigneeIDs []primitive.ObjectID `bson:"assignee_ids"`
+						Annotations []struct {
+							AssigneeIDs []primitive.ObjectID `bson:"assignee_ids"`
+						} `bson:"annotations"`
+					}
+					if tCursor.Decode(&t) == nil {
+						memberIDs = append(memberIDs, t.AssigneeIDs...)
+						for _, ann := range t.Annotations {
+							memberIDs = append(memberIDs, ann.AssigneeIDs...)
 						}
-						if displayName == "" {
-							displayName = strings.TrimSpace(u.Email)
-						}
-						usersMap[uHex] = gin.H{
-							"id":          uHex,
-							"name":        displayName,
-							"email":       u.Email,
-							"username":    u.Username,
-							"avatar_url":  u.AvatarURL,
-							"role":        u.Role,
-							"hourly_rate": u.HourlyRate,
+					}
+				}
+				tCursor.Close(c.Request.Context())
+			}
+		}
+
+		uniqueIDs := uniqueObjectIDs(memberIDs)
+		var userQuery bson.M
+		if !userCtx.TeamID.IsZero() {
+			if len(uniqueIDs) > 0 {
+				userQuery = bson.M{"$or": []bson.M{
+					{"team_id": userCtx.TeamID},
+					{"_id": bson.M{"$in": uniqueIDs}},
+				}}
+			} else {
+				userQuery = bson.M{"team_id": userCtx.TeamID}
+			}
+		} else if len(uniqueIDs) > 0 {
+			userQuery = bson.M{"_id": bson.M{"$in": uniqueIDs}}
+		} else if userCtx.Role == models.RoleOwnerAdmin {
+			userQuery = bson.M{"status": models.StatusActive}
+		}
+
+		if userQuery != nil {
+			mCursor, err := s.store.C("users").Find(c.Request.Context(), userQuery, options.Find().SetLimit(300))
+			if err == nil {
+				defer mCursor.Close(c.Request.Context())
+				for mCursor.Next(c.Request.Context()) {
+					var u models.User
+					if mCursor.Decode(&u) == nil {
+						uHex := u.ID.Hex()
+						if _, exists := usersMap[uHex]; !exists {
+							displayName := strings.TrimSpace(u.Name)
+							if displayName == "" {
+								displayName = strings.TrimSpace(u.Username)
+							}
+							if displayName == "" {
+								displayName = strings.TrimSpace(u.Email)
+							}
+							usersMap[uHex] = gin.H{
+								"id":          uHex,
+								"name":        displayName,
+								"email":       u.Email,
+								"username":    u.Username,
+								"avatar_url":  u.AvatarURL,
+								"role":        u.Role,
+								"hourly_rate": u.HourlyRate,
+							}
 						}
 					}
 				}

@@ -124,11 +124,13 @@ func (s *Server) clientAccessSets(ctx context.Context, userCtx middleware.UserCo
 	if userCtx.Role == models.RoleOwnerAdmin || s.store == nil {
 		return out
 	}
-	isTeamOwner := false
+	isTeamOwner := userCtx.Role == models.RoleTeamAdmin
 	if !userCtx.TeamID.IsZero() {
 		var team models.Team
 		if err := s.store.C("teams").FindOne(ctx, bson.M{"_id": userCtx.TeamID}).Decode(&team); err == nil {
-			isTeamOwner = team.OwnerAdminID == userCtx.ID
+			if team.OwnerAdminID == userCtx.ID {
+				isTeamOwner = true
+			}
 		}
 	}
 	var clientFilter bson.M

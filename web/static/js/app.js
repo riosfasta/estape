@@ -3658,6 +3658,7 @@ function shell(title, html) {
           ${state.me?.role === "owner_adm" ? `
             <p class="nav-kicker">Owner</p>
             ${workspaceLink("/admin/users", "Manage users", "users")}
+            ${workspaceLink("/admin/conflicts", "Conflict & Audit Hub", "scale")}
             ${workspaceLink("/admin/settlements", "Settlements & Refunds", "wallet")}
             ${workspaceLink("/admin/marketplace", "Marketplace", "briefcase")}
             ${workspaceLink("/admin/identity", "ID verification", "shield-check")}
@@ -15192,7 +15193,7 @@ async function renderReports() {
   const clients = state.clientProjects || [];
   const websites = state.clientWebsites || [];
 
-  const isAdmin = Boolean(data.is_admin);
+  const isAdmin = Boolean(data.is_admin || state.me?.role === "users_admin" || state.me?.role === "owner_adm");
   const summary = data.summary || {};
   const totalHours = summary.total_hours != null ? summary.total_hours : Math.round((data.total_minutes || 0) / 60 * 10) / 10;
   const billableHours = summary.billable_hours != null ? summary.billable_hours : 0;
@@ -15864,6 +15865,660 @@ async function renderReports() {
       setStatus(error.message, true);
     }
   });
+}
+
+let conflictHubState = {
+  tab: "inspector",
+  adminId: "",
+  freelancerId: ""
+};
+
+async function renderAdminConflictHub() {
+  if (state.me?.role !== "owner_adm") {
+    shell("Conflict & Audit Hub", `
+      <section class="panel">
+        <h1>Platform Owner Access Required</h1>
+        <p class="muted">The Conflict & Audit Hub is reserved for the platform owner to cross-audit User Admin records, Freelancer deliverables, and resolve payment or rating disputes.</p>
+        <p><a class="btn primary" href="/dashboard">${icon("layout-dashboard")} Dashboard</a></p>
+      </section>
+    `);
+    return;
+  }
+
+  const data = await api("/api/admin/conflicts/overview").catch(() => ({
+    kpis: {},
+    admins: [],
+    freelancers: [],
+    disputed_tasks: []
+  }));
+
+  const kpis = data.kpis || {};
+  const admins = data.admins || [];
+  const freelancers = data.freelancers || [];
+  const disputedTasks = data.disputed_tasks || [];
+
+  if (!conflictHubState.adminId && admins.length > 0) {
+    conflictHubState.adminId = admins[0].id;
+  }
+  if (!conflictHubState.freelancerId && freelancers.length > 0) {
+    conflictHubState.freelancerId = freelancers[0].id;
+  }
+
+  const activeTab = conflictHubState.tab || "inspector";
+
+  shell("Conflict & Audit Hub", `
+    <div class="page-title">
+      <div>
+        <h1>Admin & Freelancer Conflict & Audit Hub</h1>
+        <p class="muted">Dual-ended cross inspection tool for the Platform Owner to audit User Admin payments, Freelancer deliverables, ratings, and arbitrate disputes.</p>
+      </div>
+      <div class="toolbar">
+        <button class="btn" type="button" id="refreshConflictHubBtn">${icon("refresh-cw")} Refresh</button>
+      </div>
+    </div>
+
+    <!-- Platform KPI Overview Cards -->
+    <div class="report-kpi-grid">
+      <div class="report-kpi-card">
+        <span class="report-kpi-label">Active User Admins</span>
+        <span class="report-kpi-value">${kpis.total_admins || 0}</span>
+        <span class="report-kpi-sub">Employer accounts</span>
+      </div>
+      <div class="report-kpi-card">
+        <span class="report-kpi-label">Active Freelancers</span>
+        <span class="report-kpi-value">${kpis.total_freelancers || 0}</span>
+        <span class="report-kpi-sub">Contractor / Member accounts</span>
+      </div>
+      <div class="report-kpi-card highlight">
+        <span class="report-kpi-label">Total Logged Work</span>
+        <span class="report-kpi-value">$${Number(kpis.total_payroll || 0).toFixed(2)}</span>
+        <span class="report-kpi-sub">${kpis.total_tasks || 0} client tasks</span>
+      </div>
+      <div class="report-kpi-card ${Number(kpis.unpaid_payroll || 0) > 0 ? "warning-card" : ""}">
+        <span class="report-kpi-label">Unpaid / In Dispute</span>
+        <span class="report-kpi-value" style="color:var(--warning, #f59e0b);">$${Number(kpis.unpaid_payroll || 0).toFixed(2)}</span>
+        <span class="report-kpi-sub">Pending settlement</span>
+      </div>
+      <div class="report-kpi-card ${kpis.disputed_tasks_count > 0 ? "warning-card" : ""}">
+        <span class="report-kpi-label">Flagged Conflicts</span>
+        <span class="report-kpi-value" style="color:${kpis.disputed_tasks_count > 0 ? "var(--danger, #ef4444)" : "var(--success, #10b981)"};">
+          ${kpis.disputed_tasks_count || 0}
+        </span>
+        <span class="report-kpi-sub">Requiring owner attention</span>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="report-tabs-bar">
+      <button class="report-tab-btn ${activeTab === "inspector" ? "active" : ""}" type="button" data-conflict-tab="inspector">
+        ${icon("scale")} Dual-End Cross Inspector
+      </button>
+      <button class="report-tab-btn ${activeTab === "disputes" ? "active" : ""}" type="button" data-conflict-tab="disputes">
+        ${icon("alert-triangle")} Flagged Conflicts (${disputedTasks.length})
+      </button>
+      <button class="report-tab-btn ${activeTab === "admins" ? "active" : ""}" type="button" data-conflict-tab="admins">
+        ${icon("briefcase")} User Admins (${admins.length})
+      </button>
+      <button class="report-tab-btn ${activeTab === "freelancers" ? "active" : ""}" type="button" data-conflict-tab="freelancers">
+        ${icon("users")} Freelancers (${freelancers.length})
+      </button>
+    </div>
+
+    <!-- Tab 1: Dual-End Cross Inspector -->
+    <div id="conflictTabPanel_inspector" class="report-tab-panel" ${activeTab === "inspector" ? "" : "hidden"}>
+      <section class="panel" style="margin-bottom:20px;">
+        <div class="panel-head">
+          <div>
+            <h2>Select Admin & Freelancer Pair to Audit</h2>
+            <p class="muted">Compare deliverables, hours logged, payments disbursed, and bidirectional reviews side-by-side.</p>
+          </div>
+        </div>
+        <div class="grid-2" style="margin-top:10px;">
+          <div class="field">
+            <label><strong>User Admin End (Employer)</strong></label>
+            <select id="conflictSelectAdmin" style="width:100%;">
+              <option value="">-- Select a User Admin --</option>
+              ${admins.map(a => `<option value="${esc(a.id)}" ${conflictHubState.adminId === a.id ? "selected" : ""}>${esc(a.name)} (${esc(a.company_name || a.email)})</option>`).join("")}
+            </select>
+          </div>
+          <div class="field">
+            <label><strong>Freelancer End (Member)</strong></label>
+            <select id="conflictSelectFreelancer" style="width:100%;">
+              <option value="">-- Select a Freelancer --</option>
+              ${freelancers.map(f => `<option value="${esc(f.id)}" ${conflictHubState.freelancerId === f.id ? "selected" : ""}>${esc(f.name)} (${esc(f.email)}) - $${(f.hourly_rate || 0).toFixed(2)}/hr</option>`).join("")}
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <div id="conflictAuditDetailsContainer">
+        <p class="muted" style="text-align:center;padding:32px;">Loading cross-audit records...</p>
+      </div>
+    </div>
+
+    <!-- Tab 2: Flagged Conflicts -->
+    <div id="conflictTabPanel_disputes" class="report-tab-panel" ${activeTab === "disputes" ? "" : "hidden"}>
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Disputed Tasks & Deliverables</h2>
+            <p class="muted">Tasks flagged due to completed work with unpaid balance, negative reviews (<= 2 stars), or conflicting feedback.</p>
+          </div>
+        </div>
+        <div class="report-table-wrapper">
+          <table class="report-table">
+            <thead>
+              <tr>
+                <th>Task / Project</th>
+                <th>User Admin</th>
+                <th>Freelancers</th>
+                <th>Conflict Reason</th>
+                <th class="num">Amount</th>
+                <th class="num">Unpaid</th>
+                <th style="text-align:center;">Ratings</th>
+                <th style="text-align:center;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${disputedTasks.map(t => {
+                const adminScore = t.admin_rating ? `${t.admin_rating.rating}★` : "-";
+                const freeScore = t.freelancer_rating ? `${t.freelancer_rating.rating}★` : "-";
+                return `
+                  <tr>
+                    <td>
+                      <button class="client-task-open" type="button" data-open-client-task="${esc(t.task_id)}" style="background:none;border:none;padding:0;color:var(--primary);cursor:pointer;font-weight:600;text-align:left;">
+                        ${esc(t.title)}
+                      </button>
+                      <div class="muted" style="font-size:11px;">${esc(t.project_name || "General Workspace")}</div>
+                    </td>
+                    <td><strong>${esc(t.admin_name)}</strong></td>
+                    <td>${(t.freelancer_names || []).join(", ") || "-"}</td>
+                    <td>
+                      <span class="conflict-reason-badge ${t.unpaid_amount > 0 ? "" : "warning"}">
+                        ${icon("alert-circle")} ${esc(t.conflict_reason)}
+                      </span>
+                    </td>
+                    <td class="num">$${Number(t.price || 0).toFixed(2)}</td>
+                    <td class="num"><strong style="color:var(--warning, #f59e0b);">$${Number(t.unpaid_amount || 0).toFixed(2)}</strong></td>
+                    <td style="text-align:center;white-space:nowrap;font-size:12px;">
+                      <span title="Admin rating">Admin: <strong>${adminScore}</strong></span> ·
+                      <span title="Freelancer rating">Freelancer: <strong>${freeScore}</strong></span>
+                    </td>
+                    <td style="text-align:center;white-space:nowrap;">
+                      <button class="btn compact" type="button" data-inspect-conflict-admin="${esc(t.admin_id)}" data-inspect-conflict-freelancer="${esc(t.freelancer_ids?.[0] || "")}">
+                        ${icon("search")} Audit
+                      </button>
+                      ${t.unpaid_amount > 0 ? `
+                        <button class="btn compact primary" type="button" data-owner-settle-task="${esc(t.task_id)}" data-task-title="${esc(t.title)}" data-amount="${Number(t.unpaid_amount).toFixed(2)}" style="margin-left:4px;">
+                          ${icon("check")} Settle
+                        </button>
+                      ` : ""}
+                    </td>
+                  </tr>
+                `;
+              }).join("") || `<tr><td colspan="8" class="muted" style="text-align:center;padding:32px;">No disputed tasks or conflicts detected across the platform.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- Tab 3: User Admins Directory -->
+    <div id="conflictTabPanel_admins" class="report-tab-panel" ${activeTab === "admins" ? "" : "hidden"}>
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>User Admins Platform Overview</h2>
+            <p class="muted">All employer accounts managing projects, task assignments, and freelancer payments.</p>
+          </div>
+        </div>
+        <div class="report-table-wrapper">
+          <table class="report-table">
+            <thead>
+              <tr>
+                <th>User Admin</th>
+                <th>Company / Workspace</th>
+                <th class="num">Projects</th>
+                <th class="num">Tasks Issued</th>
+                <th class="num">Total Logged</th>
+                <th class="num">Unpaid Balance</th>
+                <th class="num">Settled</th>
+                <th style="text-align:center;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${admins.map(a => `
+                <tr>
+                  <td>
+                    <div class="report-user-cell">
+                      ${timeReportAvatarHTML({ avatar_url: a.avatar_url }, a.name)}
+                      <div>
+                        <strong>${esc(a.name)}</strong>
+                        <div class="muted" style="font-size:11px;">${esc(a.email)}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td><strong>${esc(a.company_name)}</strong></td>
+                  <td class="num">${a.project_count}</td>
+                  <td class="num">${a.task_count}</td>
+                  <td class="num"><strong>$${Number(a.total_amount).toFixed(2)}</strong></td>
+                  <td class="num">
+                    ${a.unpaid_amount > 0 ? `<span class="pill unpaid">$${Number(a.unpaid_amount).toFixed(2)}</span>` : `<span class="muted">$0.00</span>`}
+                  </td>
+                  <td class="num">$${Number(a.paid_amount).toFixed(2)}</td>
+                  <td style="text-align:center;">
+                    <button class="btn compact" type="button" data-pick-admin="${esc(a.id)}">
+                      ${icon("eye")} Inspect Records
+                    </button>
+                  </td>
+                </tr>
+              `).join("") || `<tr><td colspan="8" class="muted" style="text-align:center;padding:32px;">No user admins found.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- Tab 4: Freelancers Directory -->
+    <div id="conflictTabPanel_freelancers" class="report-tab-panel" ${activeTab === "freelancers" ? "" : "hidden"}>
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Freelancers & Contractors Overview</h2>
+            <p class="muted">All members and freelancers assigned to platform tasks and deliverables.</p>
+          </div>
+        </div>
+        <div class="report-table-wrapper">
+          <table class="report-table">
+            <thead>
+              <tr>
+                <th>Freelancer</th>
+                <th>Hourly Rate</th>
+                <th class="num">Tasks</th>
+                <th class="num">Completed</th>
+                <th class="num">Tracked Hours</th>
+                <th class="num">Total Earnings</th>
+                <th class="num">Pending Payment</th>
+                <th style="text-align:center;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${freelancers.map(f => `
+                <tr>
+                  <td>
+                    <div class="report-user-cell">
+                      ${timeReportAvatarHTML({ avatar_url: f.avatar_url }, f.name)}
+                      <div>
+                        <strong>${esc(f.name)}</strong>
+                        <div class="muted" style="font-size:11px;">${esc(f.email)}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td><strong>$${(f.hourly_rate || 0).toFixed(2)}/hr</strong></td>
+                  <td class="num">${f.task_count}</td>
+                  <td class="num">${f.completed_count}</td>
+                  <td class="num">${Number(f.total_hours).toFixed(2)}h</td>
+                  <td class="num"><strong>$${Number(f.total_amount).toFixed(2)}</strong></td>
+                  <td class="num">
+                    ${f.unpaid_amount > 0 ? `<span class="pill unpaid">$${Number(f.unpaid_amount).toFixed(2)}</span>` : `<span class="muted">$0.00</span>`}
+                  </td>
+                  <td style="text-align:center;">
+                    <button class="btn compact" type="button" data-pick-freelancer="${esc(f.id)}">
+                      ${icon("eye")} Inspect Records
+                    </button>
+                  </td>
+                </tr>
+              `).join("") || `<tr><td colspan="8" class="muted" style="text-align:center;padding:32px;">No freelancers found.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- Settle Resolution Dialog -->
+    <dialog id="ownerSettleTaskDialog" class="modal">
+      <form id="ownerSettleTaskForm" class="form-grid">
+        <input type="hidden" name="task_id" value="">
+        <div class="modal-head">
+          <div>
+            <h2>Platform Owner Conflict Resolution</h2>
+            <p class="muted" id="ownerSettlePrompt">Settle payment for task</p>
+          </div>
+          <button class="btn icon quiet" type="button" data-close-dialog="ownerSettleTaskDialog" title="Close">${icon("x")}</button>
+        </div>
+        <p class="muted">As Platform Owner, settling this item will mark the deliverable and any associated tracked hours as paid, closing the conflict.</p>
+        <div class="field">
+          <label>Resolution Verdict / Note</label>
+          <textarea name="resolution_note" placeholder="Explain the resolution or settlement details..." rows="3">Platform owner reviewed deliverable and authorized payment settlement.</textarea>
+        </div>
+        <p class="status-line"></p>
+        <div class="toolbar">
+          <button class="btn primary" type="submit">${icon("check")} Confirm & Settle Payment</button>
+          <button class="btn" type="button" data-close-dialog="ownerSettleTaskDialog">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+  `);
+
+  // Tab switching
+  document.querySelectorAll("[data-conflict-tab]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const tab = btn.dataset.conflictTab;
+      conflictHubState.tab = tab;
+      document.querySelectorAll("[data-conflict-tab]").forEach(b => b.classList.toggle("active", b === btn));
+      document.querySelectorAll(".report-tab-panel").forEach(panel => {
+        panel.hidden = panel.id !== `conflictTabPanel_${tab}`;
+      });
+    });
+  });
+
+  // Refresh button
+  $("#refreshConflictHubBtn")?.addEventListener("click", () => renderAdminConflictHub());
+
+  // Quick picks from directories
+  document.querySelectorAll("[data-pick-admin]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      conflictHubState.adminId = btn.dataset.pickAdmin;
+      conflictHubState.tab = "inspector";
+      renderAdminConflictHub();
+    });
+  });
+  document.querySelectorAll("[data-pick-freelancer]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      conflictHubState.freelancerId = btn.dataset.pickFreelancer;
+      conflictHubState.tab = "inspector";
+      renderAdminConflictHub();
+    });
+  });
+  document.querySelectorAll("[data-inspect-conflict-admin]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      conflictHubState.adminId = btn.dataset.inspectConflictAdmin;
+      conflictHubState.freelancerId = btn.dataset.inspectConflictFreelancer;
+      conflictHubState.tab = "inspector";
+      renderAdminConflictHub();
+    });
+  });
+
+  // Settle task modal triggers
+  document.querySelectorAll("[data-owner-settle-task]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const tid = btn.dataset.ownerSettleTask;
+      const title = btn.dataset.taskTitle || "Task";
+      const amt = btn.dataset.amount || "0.00";
+      const dialog = $("#ownerSettleTaskDialog");
+      if (dialog) {
+        dialog.querySelector("[name='task_id']").value = tid;
+        dialog.querySelector("#ownerSettlePrompt").textContent = `Settle $${amt} for task "${title}"?`;
+        dialog.querySelector(".status-line").textContent = "";
+        dialog.showModal();
+      }
+    });
+  });
+
+  // Settle task form submit
+  const settleForm = $("#ownerSettleTaskForm");
+  if (settleForm) {
+    settleForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const statusLine = settleForm.querySelector(".status-line");
+      try {
+        const tid = settleForm.elements.task_id.value;
+        const note = settleForm.elements.resolution_note.value;
+        await api("/api/admin/conflicts/resolve", {
+          method: "POST",
+          body: JSON.stringify({ task_id: tid, action: "mark_paid", resolution_note: note })
+        });
+        const dialog = $("#ownerSettleTaskDialog");
+        if (dialog) dialog.close();
+        renderAdminConflictHub();
+      } catch (err) {
+        if (statusLine) statusLine.textContent = err.message || "Could not resolve conflict";
+      }
+    });
+  }
+
+  // Bind close buttons on dialogs
+  document.querySelectorAll("[data-close-dialog]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const dialogId = btn.getAttribute("data-close-dialog");
+      const dialog = $(`#${dialogId}`);
+      if (dialog) dialog.close();
+    });
+  });
+
+  // Load Inspector Details
+  async function loadInspectorAudit() {
+    const container = $("#conflictAuditDetailsContainer");
+    if (!container) return;
+    const adminId = conflictHubState.adminId;
+    const freelancerId = conflictHubState.freelancerId;
+
+    if (!adminId && !freelancerId) {
+      container.innerHTML = `<p class="muted" style="text-align:center;padding:32px;">Select a User Admin or Freelancer above to view records.</p>`;
+      return;
+    }
+
+    container.innerHTML = `<p class="muted" style="text-align:center;padding:32px;">Loading cross-audit inspection records...</p>`;
+    try {
+      const audit = await api(`/api/admin/conflicts/audit?admin_id=${encodeURIComponent(adminId || "")}&freelancer_id=${encodeURIComponent(freelancerId || "")}`);
+      const admin = audit.admin || {};
+      const freelancer = audit.freelancer || {};
+      const summary = audit.summary || {};
+      const tasks = audit.tasks || [];
+
+      container.innerHTML = `
+        <!-- Dual End Side-by-Side Cards -->
+        <div class="conflict-dual-grid">
+          <!-- Left: User Admin End -->
+          <div class="conflict-card">
+            <div class="conflict-card-head admin-head">
+              <div style="display:flex;align-items:center;gap:10px;">
+                ${timeReportAvatarHTML({ avatar_url: admin.avatar_url }, admin.name)}
+                <div>
+                  <strong>${esc(admin.name || "No Admin Selected")}</strong>
+                  <div class="muted" style="font-size:11px;">User Admin End · ${esc(admin.email || "")}</div>
+                </div>
+              </div>
+              <span class="pill primary">Employer</span>
+            </div>
+            <div class="conflict-card-body">
+              <div class="conflict-metric-row">
+                <span class="muted">Shared Tasks Assigned</span>
+                <strong>${tasks.length} tasks</strong>
+              </div>
+              <div class="conflict-metric-row">
+                <span class="muted">Total Tracked Work</span>
+                <strong>$${Number(summary.total_amount || 0).toFixed(2)}</strong>
+              </div>
+              <div class="conflict-metric-row">
+                <span class="muted">Disbursed / Paid</span>
+                <strong style="color:var(--success, #10b981);">$${Number(summary.paid_amount || 0).toFixed(2)}</strong>
+              </div>
+              <div class="conflict-metric-row">
+                <span class="muted">Pending Payout / Claimed</span>
+                <strong style="color:var(--warning, #f59e0b);">$${Number(summary.unpaid_amount || 0).toFixed(2)}</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Freelancer End -->
+          <div class="conflict-card">
+            <div class="conflict-card-head freelancer-head">
+              <div style="display:flex;align-items:center;gap:10px;">
+                ${timeReportAvatarHTML({ avatar_url: freelancer.avatar_url }, freelancer.name)}
+                <div>
+                  <strong>${esc(freelancer.name || "No Freelancer Selected")}</strong>
+                  <div class="muted" style="font-size:11px;">Freelancer End · ${esc(freelancer.email || "")}</div>
+                </div>
+              </div>
+              <span class="pill success">Freelancer</span>
+            </div>
+            <div class="conflict-card-body">
+              <div class="conflict-metric-row">
+                <span class="muted">Contracted Hourly Rate</span>
+                <strong>$${(freelancer.hourly_rate || 0).toFixed(2)}/hr</strong>
+              </div>
+              <div class="conflict-metric-row">
+                <span class="muted">Hours Logged on Admin Tasks</span>
+                <strong>${Number(summary.total_hours || 0).toFixed(2)} hrs</strong>
+              </div>
+              <div class="conflict-metric-row">
+                <span class="muted">Earnings Settled</span>
+                <strong style="color:var(--success, #10b981);">$${Number(summary.paid_amount || 0).toFixed(2)}</strong>
+              </div>
+              <div class="conflict-metric-row">
+                <span class="muted">Unpaid Balance Claimed</span>
+                <strong style="color:var(--warning, #f59e0b);">$${Number(summary.unpaid_amount || 0).toFixed(2)}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Shared Deliverables & Resolution Ledger -->
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Shared Tasks, Deliverables & Payment Ledger (${tasks.length})</h3>
+              <p class="muted">Audit work completed, logged time, settlement status, and ratings from both sides.</p>
+            </div>
+            ${summary.unpaid_amount > 0 ? `
+              <button class="btn primary" type="button" id="ownerSettleAllBetweenBtn">
+                ${icon("check")} Settle All Unpaid Work ($${Number(summary.unpaid_amount).toFixed(2)})
+              </button>
+            ` : ""}
+          </div>
+          <div class="report-table-wrapper">
+            <table class="report-table">
+              <thead>
+                <tr>
+                  <th>Task Deliverable</th>
+                  <th>Project</th>
+                  <th>Status</th>
+                  <th>Rate / Price</th>
+                  <th class="num">Time Logged</th>
+                  <th class="num">Amount</th>
+                  <th>Payment</th>
+                  <th style="text-align:center;">Admin Review</th>
+                  <th style="text-align:center;">Freelancer Review</th>
+                  <th style="text-align:center;">Owner Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${tasks.map(t => {
+                  const adminRatingHTML = t.admin_rating ? `
+                    <div style="font-size:12px;" title="${esc(t.admin_rating.review || "")}">
+                      <strong style="color:${t.admin_rating.rating <= 2 ? "var(--danger)" : "var(--primary)"};">${t.admin_rating.rating}★</strong>
+                      ${t.admin_rating.review ? `<div class="muted" style="font-size:10px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">"${esc(t.admin_rating.review)}"</div>` : ""}
+                    </div>
+                  ` : `<span class="muted">-</span>`;
+
+                  const freeRatingHTML = t.freelancer_rating ? `
+                    <div style="font-size:12px;" title="${esc(t.freelancer_rating.review || "")}">
+                      <strong style="color:${t.freelancer_rating.rating <= 2 ? "var(--danger)" : "var(--primary)"};">${t.freelancer_rating.rating}★</strong>
+                      ${t.freelancer_rating.review ? `<div class="muted" style="font-size:10px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">"${esc(t.freelancer_rating.review)}"</div>` : ""}
+                    </div>
+                  ` : `<span class="muted">-</span>`;
+
+                  const rateStr = t.pricing_type === "fixed" ? `$${(t.fixed_price || 0).toFixed(2)} fixed` : (t.hourly_rate ? `$${t.hourly_rate.toFixed(2)}/hr` : "-");
+
+                  return `
+                    <tr>
+                      <td>
+                        <button class="client-task-open" type="button" data-open-client-task="${esc(t.task_id)}" style="background:none;border:none;padding:0;color:var(--primary);cursor:pointer;font-weight:600;text-align:left;">
+                          ${esc(t.title)}
+                        </button>
+                      </td>
+                      <td><span class="muted" style="font-size:12px;">${esc(t.project_name || "General Workspace")}</span></td>
+                      <td><span class="pill">${esc(t.status || "todo")}</span></td>
+                      <td><span style="font-size:12px;font-weight:600;">${esc(rateStr)}</span></td>
+                      <td class="num">${Number(t.tracked_hours || 0).toFixed(2)}h</td>
+                      <td class="num"><strong>$${Number(t.total_amount || 0).toFixed(2)}</strong></td>
+                      <td>
+                        ${t.is_paid ? `<span class="pill paid" style="font-size:11px;">${icon("check")} Settled</span>` : (t.total_amount > 0 ? `<span class="pill unpaid" style="font-size:11px;">Unpaid</span>` : `<span class="muted">-</span>`)}
+                      </td>
+                      <td style="text-align:center;white-space:nowrap;">${adminRatingHTML}</td>
+                      <td style="text-align:center;white-space:nowrap;">${freeRatingHTML}</td>
+                      <td style="text-align:center;white-space:nowrap;">
+                        ${!t.is_paid && t.total_amount > 0 ? `
+                          <button class="btn compact primary" type="button" data-owner-settle-task="${esc(t.task_id)}" data-task-title="${esc(t.title)}" data-amount="${Number(t.unpaid_amount || t.total_amount).toFixed(2)}">
+                            ${icon("check")} Settle
+                          </button>
+                        ` : `
+                          <span class="muted" title="Settled">${icon("check")}</span>
+                        `}
+                      </td>
+                    </tr>
+                  `;
+                }).join("") || `<tr><td colspan="10" class="muted" style="text-align:center;padding:24px;">No shared tasks found between this admin and freelancer.</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      `;
+
+      // Settle all button event
+      container.querySelector("#ownerSettleAllBetweenBtn")?.addEventListener("click", async () => {
+        if (!confirm(`As Platform Owner, settle all unpaid work ($${Number(summary.unpaid_amount).toFixed(2)}) for freelancer ${freelancer.name}?`)) return;
+        try {
+          await api("/api/admin/conflicts/resolve", {
+            method: "POST",
+            body: JSON.stringify({
+              user_id: freelancer.id,
+              action: "settle_all",
+              resolution_note: `Platform owner settled all unpaid deliverables between admin ${admin.name} and freelancer ${freelancer.name}`
+            })
+          });
+          loadInspectorAudit();
+        } catch (err) {
+          alert("Could not settle payment: " + err.message);
+        }
+      });
+
+      // Bind open task dialogs
+      container.querySelectorAll("[data-open-client-task]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          openClientTaskWithProgress(btn.dataset.openClientTask, "", btn);
+        });
+      });
+
+      // Bind settle task buttons in table
+      container.querySelectorAll("[data-owner-settle-task]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const tid = btn.dataset.ownerSettleTask;
+          const title = btn.dataset.taskTitle || "Task";
+          const amt = btn.dataset.amount || "0.00";
+          const dialog = $("#ownerSettleTaskDialog");
+          if (dialog) {
+            dialog.querySelector("[name='task_id']").value = tid;
+            dialog.querySelector("#ownerSettlePrompt").textContent = `Settle $${amt} for task "${title}"?`;
+            dialog.querySelector(".status-line").textContent = "";
+            dialog.showModal();
+          }
+        });
+      });
+
+      icons();
+    } catch (err) {
+      container.innerHTML = `<p class="status-line" style="color:var(--danger);">${esc(err.message || "Failed to load audit records")}</p>`;
+    }
+  }
+
+  // Bind dropdown changes
+  $("#conflictSelectAdmin")?.addEventListener("change", (e) => {
+    conflictHubState.adminId = e.target.value;
+    loadInspectorAudit();
+  });
+  $("#conflictSelectFreelancer")?.addEventListener("change", (e) => {
+    conflictHubState.freelancerId = e.target.value;
+    loadInspectorAudit();
+  });
+
+  // Initial load if inspector active
+  if (activeTab === "inspector") {
+    loadInspectorAudit();
+  }
+
+  icons();
 }
 
 async function loadChatPeople() {
@@ -16589,6 +17244,7 @@ async function route(options = {}) {
       return;
     }
     if (path() === "/admin" || path() === "/admin/users") return await renderAdmin();
+    if (path() === "/admin/conflicts") return await renderAdminConflictHub();
     if (path() === "/admin/settings") return await renderSettings();
     if (path() === "/admin/plans") return await renderPlansAdmin();
     if (path() === "/admin/pages") return await renderPages();
