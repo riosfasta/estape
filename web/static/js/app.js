@@ -108,6 +108,7 @@ const state = {
   clientProjects: [],
   clientWebsites: [],
   projectSidebarOpen: readStoredObject("bugmega_project_sidebar_open"),
+  projectSidebarOrder: readStoredObject("bugmega_project_sidebar_order"),
   sidebarCollapsed: localStorage.getItem("bugmega_sidebar_collapsed") === "1",
   dropdownDismissBound: false,
   commandSearchDismissBound: false,
@@ -3352,6 +3353,30 @@ function isProjectSidebarOpen(client) {
   return isActiveRoute(`/projects/${client.id}`);
 }
 
+function projectSidebarOrderKey() {
+  return `${state.workspaceContext || "personal"}:${activeWorkspaceTeamID() || state.me?.id || "default"}`;
+}
+
+function orderedProjectClients(clients = []) {
+  const saved = state.projectSidebarOrder?.[projectSidebarOrderKey()];
+  if (!Array.isArray(saved) || !saved.length) return clients;
+  const positions = new Map(saved.map((id, index) => [String(id), index]));
+  return clients
+    .map((client, index) => ({ client, index }))
+    .sort((a, b) => {
+      const aPosition = positions.has(String(a.client.id)) ? positions.get(String(a.client.id)) : saved.length + a.index;
+      const bPosition = positions.has(String(b.client.id)) ? positions.get(String(b.client.id)) : saved.length + b.index;
+      return aPosition - bPosition;
+    })
+    .map((entry) => entry.client);
+}
+
+function saveProjectSidebarOrder(clientIDs = []) {
+  state.projectSidebarOrder = state.projectSidebarOrder || {};
+  state.projectSidebarOrder[projectSidebarOrderKey()] = clientIDs;
+  localStorage.setItem("bugmega_project_sidebar_order", JSON.stringify(state.projectSidebarOrder));
+}
+
 function canManageSidebarClient(client) {
   const userID = state.me?.id || "";
   if (!userID) return false;
@@ -3389,15 +3414,15 @@ function sidebarProjectsHTML() {
   }, {});
   const myID = state.me?.id || "";
   const isTeamOwner = state.me?.role === "owner_adm" || state.team?.owner_admin_id === myID || (isPersonalWorkspaceContext() && [state.me?.team_id, state.personalTeam?.id].filter(Boolean).includes(workspaceTeamID));
-  const visibleClients = (state.clientProjects || []).filter((client) => {
+  const visibleClients = orderedProjectClients((state.clientProjects || []).filter((client) => {
     if (workspaceTeamID && client.team_id && client.team_id !== workspaceTeamID) return false;
     const sites = sitesByClient[client.id] || [];
     if (isTeamOwner && (!workspaceTeamID || client.team_id === workspaceTeamID)) return true;
     if ((client.member_ids || []).includes(myID) || (client.client_admin_ids || []).includes(myID) || client.created_by === myID) return true;
     if (sites.length > 0) return true;
     return false;
-  });
-  const rows = visibleClients.map((client) => {
+  }));
+  const rows = visibleClients.map((client, index) => {
     const sites = sitesByClient[client.id] || [];
     const isOpen = isProjectSidebarOpen(client);
     const canManage = canManageSidebarClient(client);
@@ -3406,6 +3431,10 @@ function sidebarProjectsHTML() {
         <div class="nav-item project-folder-row ${isActiveRoute(`/projects/${client.id}`) ? "active" : ""}">
           <button class="project-folder-toggle" type="button" data-project-toggle="${esc(client.id)}" aria-expanded="${isOpen ? "true" : "false"}" title="${isOpen ? "Collapse folder" : "Expand folder"}">${icon(isOpen ? "chevron-down" : "chevron-right")}</button>
           <a class="project-folder-link" href="/projects/${esc(client.id)}">${icon("folder")}<span>${esc(client.name)}</span></a>
+          <span class="project-folder-order" aria-label="Arrange ${esc(client.name)}">
+            <button type="button" data-project-folder-move="${esc(client.id)}" data-direction="-1" title="Move ${esc(client.name)} up" aria-label="Move ${esc(client.name)} up" ${index === 0 ? "disabled" : ""}>${icon("chevron-up")}</button>
+            <button type="button" data-project-folder-move="${esc(client.id)}" data-direction="1" title="Move ${esc(client.name)} down" aria-label="Move ${esc(client.name)} down" ${index === visibleClients.length - 1 ? "disabled" : ""}>${icon("chevron-down")}</button>
+          </span>
           ${sites.length ? `<strong class="mini-count">${esc(sites.length)}</strong>` : ""}
           ${canManage ? `<button class="project-add-website" type="button" data-sidebar-add-website="${esc(client.id)}" title="Add website">${icon("plus")}</button>` : ""}
         </div>
@@ -3514,7 +3543,37 @@ function bindProjectWebsiteDragDrop(root = document) {
   });
 }
 
+function syncProjectFolderOrderButtons(root = document) {
+  const groups = Array.from(root.querySelectorAll("[data-sidebar-project]"));
+  groups.forEach((group, index) => {
+    const up = group.querySelector('[data-project-folder-move][data-direction="-1"]');
+    const down = group.querySelector('[data-project-folder-move][data-direction="1"]');
+    if (up) up.disabled = index === 0;
+    if (down) down.disabled = index === groups.length - 1;
+  });
+}
+
 function bindSidebarProjectControls() {
+  document.querySelectorAll("[data-project-folder-move]").forEach((btn) => btn.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const groups = Array.from(document.querySelectorAll("[data-sidebar-project]"));
+    const group = btn.closest("[data-sidebar-project]");
+    const currentIndex = groups.indexOf(group);
+    const nextIndex = currentIndex + Number(btn.dataset.direction || 0);
+    if (!group || currentIndex < 0 || nextIndex < 0 || nextIndex >= groups.length) return;
+    if (nextIndex < currentIndex) groups[nextIndex].before(group);
+    else groups[nextIndex].after(group);
+    const orderedIDs = Array.from(document.querySelectorAll("[data-sidebar-project]")).map((item) => item.dataset.sidebarProject);
+    saveProjectSidebarOrder(orderedIDs);
+    const grid = document.querySelector(".client-grid");
+    orderedIDs.forEach((clientID) => {
+      const card = grid?.querySelector(`.project-folder-drop-card[data-project-folder-drop="${selectorEscape(clientID)}"]`);
+      if (card) grid.appendChild(card);
+    });
+    syncProjectFolderOrderButtons(document);
+  }));
+
   document.querySelectorAll("[data-project-toggle]").forEach((btn) => btn.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -5778,9 +5837,10 @@ function clientWebsiteRows(websites, canManage = false, canManageMembers = false
       ${canManageMembers ? `<button class="btn compact" type="button" data-share-client-website="${esc(site.id)}">${icon("users")}Add team</button>` : ""}
       ${canManage ? `<div class="context-actions" data-action-menu-wrap>
         <button class="context-menu-trigger" type="button" data-action-menu-trigger aria-label="Website options"></button>
-        <div class="context-menu" data-action-menu hidden>
-          <button type="button" data-hire-domain="${esc(site.id)}">${icon("users")}Hire freelancer for domain tasks</button><button type="button" data-edit-client-website="${esc(site.id)}">${icon("pencil")}Edit website</button>
-          <button class="danger-text" type="button" data-delete-client-website="${esc(site.id)}" data-website-name="${esc(site.name)}">${icon("trash-2")}Delete website</button>
+        <div class="context-menu website-context-menu" data-action-menu hidden>
+          <button type="button" data-hire-domain="${esc(site.id)}" aria-label="Hire freelancer for domain tasks" title="Hire freelancer for domain tasks">${icon("users")}Hire</button>
+          <button type="button" data-edit-client-website="${esc(site.id)}" aria-label="Edit website">${icon("pencil")}Edit</button>
+          <button class="danger-text" type="button" data-delete-client-website="${esc(site.id)}" data-website-name="${esc(site.name)}" aria-label="Delete website">${icon("trash-2")}Delete</button>
         </div>
       </div>` : ""}
     </div>
@@ -9131,14 +9191,14 @@ async function renderClientProjects() {
   }, {});
   const myID = state.me?.id || "";
   const isTeamOwner = state.me?.role === "owner_adm" || state.team?.owner_admin_id === myID || (isPersonalWorkspaceContext() && [state.me?.team_id, state.personalTeam?.id].filter(Boolean).includes(workspaceTeamID));
-  const visibleClients = (state.clientProjects || []).filter((client) => {
+  const visibleClients = orderedProjectClients((state.clientProjects || []).filter((client) => {
     if (workspaceTeamID && client.team_id && client.team_id !== workspaceTeamID) return false;
     const sites = sitesByClient[client.id] || [];
     if (isTeamOwner && (!workspaceTeamID || client.team_id === workspaceTeamID)) return true;
     if ((client.member_ids || []).includes(myID) || (client.client_admin_ids || []).includes(myID) || client.created_by === myID) return true;
     if (sites.length > 0) return true;
     return false;
-  });
+  }));
   shell("Projects", `
     <div class="page-title">
       <div><h1>Projects</h1><p class="muted">Client folders and websites.</p></div>
