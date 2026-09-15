@@ -420,6 +420,8 @@ type Chat struct {
 	ID             primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
 	Type           string               `bson:"type" json:"type"`
 	Title          string               `bson:"title,omitempty" json:"title,omitempty"`
+	ConversationKey string              `bson:"conversation_key,omitempty" json:"-"`
+	MergedInto     primitive.ObjectID   `bson:"merged_into,omitempty" json:"merged_into,omitempty"`
 	ParticipantIDs []primitive.ObjectID `bson:"participant_ids" json:"participant_ids"`
 	TeamID         primitive.ObjectID   `bson:"team_id,omitempty" json:"team_id,omitempty"`
 	Status         string               `bson:"status,omitempty" json:"status,omitempty"`

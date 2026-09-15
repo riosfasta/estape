@@ -20,6 +20,7 @@ import (
 	"github.com/gorilla/websocket"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -110,8 +111,25 @@ func (s *Server) createChat(c *gin.Context) {
 	if req.Type == "support" && title == "" {
 		title = "Chat for help"
 	}
-	chat := models.Chat{ID: primitive.NewObjectID(), Type: req.Type, Title: title, ParticipantIDs: uniqueObjectIDs(ids), TeamID: userCtx.TeamID, Status: "open", CreatedBy: userCtx.ID, CreatedAt: time.Now()}
+	ids = uniqueObjectIDs(ids)
+	conversationKey := continuousChatKey(req.Type, userCtx.ID, userCtx.TeamID, ids)
+	if conversationKey != "" {
+		if chat, found, err := s.reuseContinuousChat(c.Request.Context(), req.Type, userCtx.ID, userCtx.TeamID, ids, conversationKey, userCtx.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not open chat"})
+			return
+		} else if found {
+			c.JSON(http.StatusOK, gin.H{"chat": chat, "reused": true})
+			return
+		}
+	}
+	chat := models.Chat{ID: primitive.NewObjectID(), Type: req.Type, Title: title, ConversationKey: conversationKey, ParticipantIDs: ids, TeamID: userCtx.TeamID, Status: "open", CreatedBy: userCtx.ID, CreatedAt: time.Now()}
 	if _, err := s.store.C("chats").InsertOne(c.Request.Context(), chat); err != nil {
+		if conversationKey != "" && mongo.IsDuplicateKeyError(err) {
+			if existing, found, reuseErr := s.reuseContinuousChat(c.Request.Context(), req.Type, userCtx.ID, userCtx.TeamID, ids, conversationKey, userCtx.ID); reuseErr == nil && found {
+				c.JSON(http.StatusOK, gin.H{"chat": existing, "reused": true})
+				return
+			}
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create chat"})
 		return
 	}
@@ -126,6 +144,7 @@ func (s *Server) listChats(c *gin.Context) {
 	} else if userCtx.Role == models.RoleTeamAdmin {
 		filter = bson.M{"$or": []bson.M{{"team_id": userCtx.TeamID}, {"participant_ids": userCtx.ID}}}
 	}
+	filter["merged_into"] = bson.M{"$exists": false}
 	filter["hidden_for"] = bson.M{"$ne": userCtx.ID}
 	cursor, err := s.store.C("chats").Find(c.Request.Context(), filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
 	if err != nil {
@@ -140,6 +159,11 @@ func (s *Server) listChats(c *gin.Context) {
 	}
 	if chats == nil {
 		chats = []models.Chat{}
+	}
+	chats, err = s.consolidateContinuousChats(c.Request.Context(), chats)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not consolidate conversations"})
+		return
 	}
 	if err := s.populateChatListProfiles(c.Request.Context(), chats, userCtx.ID, userCtx.Role); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load conversation profiles"})
@@ -199,6 +223,17 @@ func (s *Server) endChat(c *gin.Context) {
 	var chat models.Chat
 	if err := s.store.C("chats").FindOne(c.Request.Context(), bson.M{"_id": chatID}).Decode(&chat); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "chat not found"})
+		return
+	}
+	if !chat.MergedInto.IsZero() {
+		c.JSON(http.StatusOK, gin.H{"ended": false, "continuous": true, "merged_into": chat.MergedInto})
+		return
+	}
+	if isContinuousChat(chat) {
+		if chat.Status != "open" || chat.EndedAt != nil || !chat.EndedBy.IsZero() {
+			_, _ = s.store.C("chats").UpdateByID(c.Request.Context(), chatID, bson.M{"$set": bson.M{"status": "open"}, "$unset": bson.M{"ended_at": "", "ended_by": ""}})
+		}
+		c.JSON(http.StatusOK, gin.H{"ended": false, "continuous": true})
 		return
 	}
 	if chat.Status == "ended" {
@@ -279,6 +314,10 @@ func (s *Server) chatWebSocket(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "chat not found"})
 		return
 	}
+	if !chat.MergedInto.IsZero() {
+		c.JSON(http.StatusConflict, gin.H{"error": "conversation was merged", "merged_into": chat.MergedInto})
+		return
+	}
 	if chat.DeletedAt != nil {
 		c.JSON(http.StatusGone, gin.H{"error": "chat was deleted"})
 		return
@@ -331,7 +370,14 @@ func (s *Server) chatWebSocket(c *gin.Context) {
 		if err != nil || currentUser.Status == models.StatusSuspended {
 			return
 		}
-		_ = s.store.C("chats").FindOne(c.Request.Context(), bson.M{"_id": chatID}).Decode(&chat)
+		if err := s.store.C("chats").FindOne(c.Request.Context(), bson.M{"_id": chatID}).Decode(&chat); err != nil {
+			return
+		}
+		if !chat.MergedInto.IsZero() {
+			out, _ := json.Marshal(gin.H{"type": "chat_merged", "chat_id": chatID, "merged_into": chat.MergedInto})
+			_ = conn.WriteMessage(websocket.TextMessage, out)
+			return
+		}
 		if chat.Status == "ended" {
 			out, _ := json.Marshal(gin.H{"type": "error", "error": "chat has ended"})
 			_ = conn.WriteMessage(websocket.TextMessage, out)

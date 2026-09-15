@@ -16841,6 +16841,10 @@ function chatActionsHTML(chat) {
   if (!chat) return "";
   return `<div class="chat-management-actions"><button class="btn compact danger" type="button" data-delete-chat="${esc(chat.id)}" title="Delete from your account only">${icon("trash-2")}Delete for me</button></div>`;
 }
+
+function isContinuousChat(chat) {
+  return chat?.type === "support" || (chat?.type === "direct" && chat?.participant_ids?.length === 2);
+}
 function chatLatestTime(value, now = new Date()) {
   if (!value) return "";
   const date = new Date(value);
@@ -17108,7 +17112,7 @@ async function renderChat() {
           <div><h2>${esc(chatTitle(selectedChat, usersByID))}</h2><span class="muted">${esc(selectedStatus)}</span></div>
           <div class="chat-window-actions">
             ${chatActionsHTML(selectedChat)}
-            ${chatCanWrite ? `<button class="btn danger compact" id="endChatBtn" type="button">${icon("phone-off")}End chat</button>` : ""}
+            ${chatCanWrite && !isContinuousChat(selectedChat) ? `<button class="btn danger compact" id="endChatBtn" type="button">${icon("phone-off")}End chat</button>` : ""}
             <button class="btn icon quiet" type="button" data-close-dialog="chatRoomDialog" title="Close">${icon("x")}</button>
           </div>
         </div>
@@ -17192,6 +17196,10 @@ function openChatSocket(chatID, usersByID = {}, context = "page") {
       if (context === "notification") openNotificationChatDialog(chatID);
       else renderChat();
     }
+    if (data.type === "chat_merged" && data.merged_into) {
+      if (context === "notification") openNotificationChatDialog(data.merged_into);
+      else location.href = "/chat?id=" + encodeURIComponent(data.merged_into);
+    }
     if (data.type === "error") {
       setStatus(data.error, true);
     }
@@ -17265,8 +17273,7 @@ async function openFloatingChatList() {
       try {
         const recipient = form.querySelector('input[name="recipient"]:checked')?.value;
         if (!recipient) throw new Error("Choose a teammate to start a chat.");
-        const existing = chats.find(chat => chat.type === "direct" && chat.status !== "ended" && chat.participant_ids?.length === 2 && chat.participant_ids.includes(state.me.id) && chat.participant_ids.includes(recipient));
-        const chat = existing || (await api("/api/chats", { method: "POST", body: JSON.stringify({ type: "direct", participant_ids: [recipient] }) })).chat;
+        const chat = (await api("/api/chats", { method: "POST", body: JSON.stringify({ type: "direct", participant_ids: [recipient] }) })).chat;
         if (widget.isConnected) await openHelpChatWidget(chat);
       } catch (error) { widget.querySelector("[data-floating-status]").textContent = error.message; } finally { button.disabled = false; }
     };
@@ -17279,12 +17286,13 @@ async function openHelpChatWidget(selectedChat = null) {
   const widget = createFloatingChatPanel("Chat");
   try {
     let chat = selectedChat?.participant_ids ? selectedChat : null;
-    if (!chat) {
-      const chatData = await api("/api/chats");
-      if (!widget.isConnected) return;
-      chat = (chatData.chats || []).find(item => item.type === "support" && item.created_by === state.me.id && item.status !== "ended" && !item.deleted_at);
-      if (!chat) chat = (await api("/api/chats", { method: "POST", body: JSON.stringify({ type: "support" }) })).chat;
+    if (chat?.type === "direct" && chat.participant_ids?.length === 2) {
+      const recipient = chat.participant_ids.find(id => id !== state.me.id);
+      if (recipient) chat = (await api("/api/chats", { method: "POST", body: JSON.stringify({ type: "direct", participant_ids: [recipient] }) })).chat;
+    } else if (chat?.type === "support" && chat.created_by === state.me.id) {
+      chat = (await api("/api/chats", { method: "POST", body: JSON.stringify({ type: "support" }) })).chat;
     }
+    if (!chat) chat = (await api("/api/chats", { method: "POST", body: JSON.stringify({ type: "support" }) })).chat;
     if (!widget.isConnected) return;
     const [messageData, users] = await Promise.all([api('/api/chats/' + chat.id + '/messages'), loadMentionUsers().catch(() => [])]);
     if (!widget.isConnected) return;
@@ -17295,14 +17303,8 @@ async function openHelpChatWidget(selectedChat = null) {
     widget.innerHTML = '<div class="help-chat-head"><button class="btn icon quiet" type="button" data-chat-list-back aria-label="Back to chats">' + icon("arrow-left") + '</button><div><strong>' + esc(chat.type === "support" ? "Bug Mega" : chatTitle(chat, usersByID)) + '</strong>' + (chat.type === "support" ? '<small class="chat-support-label">Admin Support</small>' : '') + '<span class="muted" data-chat-connection>' + (enabled ? 'Connecting...' : 'This conversation has ended') + '</span></div><button class="btn icon quiet" type="button" data-close-help-chat aria-label="Close chat">' + icon("x") + '</button></div>' +
       '<div id="helpMessages" class="messages help-messages" role="log" aria-live="polite">' + (customer ? '<div class="support-welcome"><strong>Bugmega support</strong><p>Welcome to Bugmega support! Let me know how I can help you.</p></div>' : '') + messages.map(message => chatMessageHTML(message, usersByID, "support")).join('') + '</div>' +
       '<p class="support-wait" data-support-wait role="status" hidden>Your message has been sent. Please wait for a response from Bugmega support.</p>' +
-      chatComposerHTML("helpChatForm", "support", enabled, "Type a message") + (enabled ? '<div class="help-chat-actions"><button class="btn compact" type="button" data-end-floating-chat>End conversation</button></div>' : "") + '<p class="status-line" data-floating-status role="status"></p>';
+      chatComposerHTML("helpChatForm", "support", enabled, "Type a message") + '<p class="status-line" data-floating-status role="status"></p>';
     widget.querySelector("[data-support-wait]").hidden = !customer || messages.at(-1)?.sender_id !== state.me.id || !enabled;
-    widget.querySelector("[data-end-floating-chat]")?.addEventListener("click", async event => {
-      if (!confirm("End this conversation?")) return;
-      const button = event.currentTarget; button.disabled = true;
-      try { await api('/api/chats/' + chat.id + '/end', { method: "POST", body: JSON.stringify({}) }); if (widget.isConnected) await openFloatingChatList(); }
-      catch (error) { widget.querySelector("[data-floating-status]").textContent = error.message; button.disabled = false; }
-    });
     if (enabled) openSupportChatSocket(chat.id, usersByID);
     startChatReadTracking();
     markVisibleChatRead(chat.id, widget.querySelector('#helpMessages'));
@@ -17332,6 +17334,7 @@ function openSupportChatSocket(chatID, usersByID = {}) {
       markVisibleChatRead(chatID, box);
     }
     if (["chat_ended", "chat_deleted", "chat_restored", "chat_removed"].includes(data.type)) openFloatingChatList();
+    if (data.type === "chat_merged" && data.merged_into) openFloatingChatList();
     if (data.type === "error") widget.querySelector("[data-floating-status]").textContent = data.error;
   };
 }

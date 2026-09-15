@@ -93,6 +93,9 @@ func (s *Store) CreateIndexes(ctx context.Context) error {
 		"messages": {
 			{Keys: bson.D{{Key: "chat_id", Value: 1}, {Key: "sent_at", Value: 1}}},
 		},
+		"chats": {
+			{Keys: bson.D{{Key: "conversation_key", Value: 1}}, Options: mongomodels.Index().SetUnique(true).SetSparse(true)},
+		},
 		"subscriptions": {
 			{Keys: bson.D{{Key: "team_id", Value: 1}}},
 		},
