@@ -3361,6 +3361,24 @@ function canManageSidebarClient(client) {
   return isPersonalWorkspaceContext() && state.me?.role === "users_admin" && [state.me?.team_id, state.personalTeam?.id].filter(Boolean).includes(client.team_id);
 }
 
+function canCreateSidebarClient() {
+  return Boolean(state.me && state.me.role !== "client_admin");
+}
+
+function canManageSidebarWebsite(site, client) {
+  const userID = state.me?.id || "";
+  return canManageSidebarClient(client) || (site.client_admin_ids || []).includes(userID);
+}
+
+function projectWebsiteLinkHTML(client, site, className = "nav-child", showURL = false) {
+  const href = `/projects/${client.id}/sites/${site.id}`;
+  const canMove = canManageSidebarWebsite(site, client);
+  const content = showURL
+    ? `${icon("globe-2")}<span class="access-summary"><strong>${esc(site.name)}</strong><span>${esc(site.url || "")}</span></span>`
+    : `${icon("globe-2")}<span>${esc(site.name)}</span>`;
+  return `<a class="${className} project-website-link ${isActiveRoute(href) ? "active" : ""}" href="${esc(href)}" draggable="${canMove ? "true" : "false"}" ${canMove ? `data-project-website-drag="${esc(site.id)}" data-project-source-client="${esc(client.id)}"` : ""}>${content}</a>`;
+}
+
 function sidebarProjectsHTML() {
   const workspaceTeamID = activeWorkspaceTeamID();
   const sitesByClient = (state.clientWebsites || []).reduce((acc, site) => {
@@ -3384,7 +3402,7 @@ function sidebarProjectsHTML() {
     const isOpen = isProjectSidebarOpen(client);
     const canManage = canManageSidebarClient(client);
     return `
-      <div class="nav-group project-nav-group ${isOpen ? "expanded" : ""}" data-sidebar-project="${esc(client.id)}">
+      <div class="nav-group project-nav-group ${isOpen ? "expanded" : ""}" data-sidebar-project="${esc(client.id)}" data-project-folder-drop="${esc(client.id)}" data-project-folder-manage="${canManage ? "true" : "false"}">
         <div class="nav-item project-folder-row ${isActiveRoute(`/projects/${client.id}`) ? "active" : ""}">
           <button class="project-folder-toggle" type="button" data-project-toggle="${esc(client.id)}" aria-expanded="${isOpen ? "true" : "false"}" title="${isOpen ? "Collapse folder" : "Expand folder"}">${icon(isOpen ? "chevron-down" : "chevron-right")}</button>
           <a class="project-folder-link" href="/projects/${esc(client.id)}">${icon("folder")}<span>${esc(client.name)}</span></a>
@@ -3392,7 +3410,7 @@ function sidebarProjectsHTML() {
           ${canManage ? `<button class="project-add-website" type="button" data-sidebar-add-website="${esc(client.id)}" title="Add website">${icon("plus")}</button>` : ""}
         </div>
         <div class="project-site-list" ${isOpen ? "" : "hidden"}>
-          ${sites.map((site) => workspaceChild(`/projects/${client.id}/sites/${site.id}`, site.name, "globe-2")).join("") || `<span class="project-site-empty">No websites yet</span>`}
+          ${sites.map((site) => projectWebsiteLinkHTML(client, site)).join("") || `<span class="project-site-empty">No websites yet</span>`}
         </div>
       </div>`;
   }).join("");
@@ -3431,6 +3449,71 @@ function bindDialogCloseButtons(root = document) {
   });
 }
 
+function clearProjectWebsiteDragState() {
+  state.projectWebsiteDrag = null;
+  document.querySelectorAll(".project-website-link.is-dragging").forEach((item) => item.classList.remove("is-dragging"));
+  document.querySelectorAll("[data-project-folder-drop].is-drop-target").forEach((item) => item.classList.remove("is-drop-target"));
+}
+
+function bindProjectWebsiteDragDrop(root = document) {
+  root.querySelectorAll("[data-project-website-drag]").forEach((item) => {
+    item.addEventListener("dragstart", (event) => {
+      const websiteID = item.dataset.projectWebsiteDrag;
+      const sourceClientID = item.dataset.projectSourceClient;
+      if (!websiteID || !sourceClientID) {
+        event.preventDefault();
+        return;
+      }
+      state.projectWebsiteDrag = { websiteID, sourceClientID };
+      item.classList.add("is-dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", websiteID);
+    });
+    item.addEventListener("dragend", clearProjectWebsiteDragState);
+  });
+
+  root.querySelectorAll('[data-project-folder-drop][data-project-folder-manage="true"]').forEach((folder) => {
+    const targetClientID = folder.dataset.projectFolderDrop;
+    folder.addEventListener("dragover", (event) => {
+      const drag = state.projectWebsiteDrag;
+      if (!drag || drag.sourceClientID === targetClientID) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      folder.classList.add("is-drop-target");
+    });
+    folder.addEventListener("dragleave", (event) => {
+      if (!folder.contains(event.relatedTarget)) folder.classList.remove("is-drop-target");
+    });
+    folder.addEventListener("drop", async (event) => {
+      const drag = state.projectWebsiteDrag;
+      if (!drag || drag.sourceClientID === targetClientID) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const { websiteID } = drag;
+      const targetClient = (state.clientProjects || []).find((client) => client.id === targetClientID);
+      clearProjectWebsiteDragState();
+      folder.classList.add("is-moving-website");
+      try {
+        await api(`/api/client-websites/${websiteID}`, {
+          method: "PATCH",
+          body: JSON.stringify({ client_id: targetClientID }),
+        });
+        setProjectSidebarOpen(targetClientID, true);
+        await refreshClientSidebarCache();
+        const websitePathPattern = new RegExp(`/projects/[^/]+/sites/${websiteID}(?:/|$)`);
+        if (websitePathPattern.test(path())) {
+          navigateApp(`/projects/${targetClientID}/sites/${websiteID}`, { replace: true });
+        } else {
+          await route();
+        }
+      } catch (error) {
+        folder.classList.remove("is-moving-website");
+        window.alert(error.message || `Could not move website to ${targetClient?.name || "that folder"}.`);
+      }
+    });
+  });
+}
+
 function bindSidebarProjectControls() {
   document.querySelectorAll("[data-project-toggle]").forEach((btn) => btn.addEventListener("click", (event) => {
     event.preventDefault();
@@ -3451,6 +3534,34 @@ function bindSidebarProjectControls() {
 
   const dialog = $("#sidebarWebsiteDialog");
   const form = $("#sidebarWebsiteForm");
+  const clientDialog = $("#sidebarClientDialog");
+  const clientForm = $("#sidebarClientForm");
+  $("#sidebarAddClientBtn")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    clientForm?.reset();
+    clientDialog?.showModal();
+  });
+
+  clientForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submit = clientForm.querySelector("button[type='submit']");
+    const stopLoading = setButtonLoading(submit, true, "Creating...");
+    try {
+      const created = await api("/api/client-projects", {
+        method: "POST",
+        body: JSON.stringify(Object.fromEntries(new FormData(clientForm).entries())),
+      });
+      setProjectSidebarOpen(created.client.id, true);
+      await refreshClientSidebarCache();
+      navigateApp(`/projects/${created.client.id}`);
+    } catch (error) {
+      setFormStatus(clientForm, error.message, true);
+    } finally {
+      stopLoading();
+    }
+  });
+
   document.querySelectorAll("[data-sidebar-add-website]").forEach((btn) => btn.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -3478,6 +3589,7 @@ function bindSidebarProjectControls() {
     }
   });
 
+  bindProjectWebsiteDragDrop(document);
   bindDialogCloseButtons(dialog || document);
 }
 
@@ -3648,7 +3760,7 @@ function shell(title, html) {
             ${workspaceChild("/tasks?view=calendar", "Today & Upcoming", "calendar-days", "4")}
             ${workspaceChild("/tasks?view=my_tasks", "My Tasks & Payments", "circle-check")}
           </div>
-          <p class="nav-kicker">Projects</p>
+          <p class="nav-kicker project-nav-kicker"><span>Projects</span>${canCreateSidebarClient() ? `<button id="sidebarAddClientBtn" class="project-add-folder" type="button" title="Add project folder" aria-label="Add project folder">${icon("plus")}</button>` : ""}</p>
           ${sidebarProjectsHTML()}
           <p class="nav-kicker">Tools</p>
           ${workspaceChild("/projects", "All projects", "folder-open")}
@@ -3729,7 +3841,8 @@ function shell(title, html) {
       </main>
     </div>
     <div id="timerWidget" class="timer-widget"></div>
-    ${sidebarWebsiteDialogHTML()}`;
+    ${sidebarWebsiteDialogHTML()}
+    ${sidebarClientDialogHTML()}`;
   syncTaskPanelOffset();
   $("#logoutBtn").addEventListener("click", logout);
   $("#helpChatBtn")?.addEventListener("click", () => {
@@ -7643,10 +7756,16 @@ function clientTaskRatingBadgeHTML(task, canManageTask = false) {
 
 async function openTaskRatingModal(taskID, options = {}) {
   if (!taskID) return;
-  let task = options.task;
-  if (!task) {
-    const taskData = await api(`/api/client-tasks/${taskID}`).catch(() => null);
-    if (taskData) task = taskData.task;
+  let taskData = options.taskData || null;
+  let task = options.task || taskData?.task;
+  let members = Array.isArray(options.members) ? options.members : taskData?.members;
+  if (!task || !Array.isArray(members)) {
+    const fetchedTaskData = await api(`/api/client-tasks/${taskID}`).catch(() => null);
+    if (fetchedTaskData) {
+      taskData = fetchedTaskData;
+      task = task || fetchedTaskData.task;
+      members = Array.isArray(members) ? members : fetchedTaskData.members;
+    }
   }
   if (!task) return;
 
@@ -7669,6 +7788,13 @@ async function openTaskRatingModal(taskID, options = {}) {
     }
   }
 
+  const recipientEntry = (members || []).find((entry) => String((entry.user || entry)?.id || "") === targetUserID);
+  const recipient = recipientEntry?.user || recipientEntry || (targetUserID === currentUserID ? state.me : {}) || {};
+  const recipientName = recipient.name || recipient.username || recipient.email || targetRole;
+  const recipientAvatar = recipient.avatar_url
+    ? `<img src="${esc(recipient.avatar_url)}" alt="${esc(recipientName)} profile photo">`
+    : `<span aria-hidden="true">${userInitial(recipientName === targetRole ? { name: targetRole } : recipient)}</span>`;
+
   const existingRatings = task.ratings || [];
   const myRating = existingRatings.find((r) => String(r.from_user_id) === currentUserID);
   let currentScore = myRating ? myRating.rating : 5;
@@ -7678,60 +7804,74 @@ async function openTaskRatingModal(taskID, options = {}) {
   if (!dialog) {
     dialog = document.createElement("dialog");
     dialog.id = "taskRatingModal";
-    dialog.className = "modal";
     document.body.appendChild(dialog);
   }
+  dialog.className = "modal task-rating-modal";
+
+  const scoreLabels = ["", "Poor", "Fair", "Good", "Very good", "Excellent"];
 
   dialog.innerHTML = `
-    <form id="taskRatingForm" class="dialog-shell" style="max-width:520px;width:95vw;">
-      <div class="dialog-head">
-        <div>
+    <form id="taskRatingForm" class="task-rating-form">
+      <header class="task-rating-head">
+        <div class="task-rating-heading">
+          <span class="task-rating-kicker">${icon("star")} Task feedback</span>
           <h2>${myRating ? "Update Rating & Review" : "Rate Work & Collaboration"}</h2>
-          <p class="muted">${isAdmin ? "Rate the freelancer assigned to this task." : "Rate the project client / admin for this completed task."}</p>
+          <p>Share thoughtful feedback about this completed task.</p>
         </div>
-        <button class="btn icon quiet" type="button" data-close-rating-dialog title="Close">${icon("x")}</button>
-      </div>
-      <div class="form-grid" style="padding:16px;">
+        <button class="btn icon quiet task-rating-close" type="button" data-close-rating-dialog title="Close" aria-label="Close rating dialog">${icon("x")}</button>
+      </header>
+      <div class="task-rating-body">
         <input type="hidden" name="to_user_id" value="${esc(targetUserID)}">
         <input type="hidden" name="rating" id="ratingScoreInput" value="${currentScore}">
-        <div class="field">
-          <label>Task</label>
-          <input value="${esc(task.title || "Task")}" readonly>
+        <section class="task-rating-recipient" aria-label="Rating recipient">
+          <span class="task-rating-avatar">${recipientAvatar}</span>
+          <span class="task-rating-recipient-copy">
+            <small>You are rating</small>
+            <strong>${esc(recipientName)}</strong>
+            <span>${esc(targetRole)}</span>
+          </span>
+          <span class="task-rating-recipient-badge">Recipient</span>
+        </section>
+        <div class="task-rating-context">
+          <span>For task</span>
+          <strong title="${esc(task.title || "Task")}">${esc(task.title || "Task")}</strong>
         </div>
-        <div class="field">
-          <label>Rating Role</label>
-          <input value="${esc(targetRole)}" readonly>
-        </div>
-        <div class="field">
-          <label>Rating (1 to 5 Stars)</label>
-          <div class="star-rating-picker" id="starRatingPicker">
+        <div class="field task-rating-score-field">
+          <div class="task-rating-label-row">
+            <label id="taskRatingPickerLabel">Your rating</label>
+            <output id="ratingScoreLabel" for="ratingScoreInput">${currentScore} of 5 &middot; ${scoreLabels[currentScore]}</output>
+          </div>
+          <div class="star-rating-picker" id="starRatingPicker" role="group" aria-labelledby="taskRatingPickerLabel">
             ${[1, 2, 3, 4, 5].map((s) => `
-              <button type="button" class="star-btn ${s <= currentScore ? "active" : ""}" data-star="${s}" title="${s} Star${s > 1 ? "s" : ""}">★</button>
+              <button type="button" class="star-btn ${s <= currentScore ? "active" : ""}" data-star="${s}" title="${s} Star${s > 1 ? "s" : ""}" aria-label="${s} star${s > 1 ? "s" : ""}" aria-pressed="${s <= currentScore ? "true" : "false"}">★</button>
             `).join("")}
           </div>
         </div>
         <div class="field">
-          <label>Review & Feedback</label>
-          <textarea name="review" rows="4" placeholder="Share your experience (communication, work quality, timely payment, etc.)..." required>${esc(currentReview)}</textarea>
+          <label for="taskRatingReview">Review &amp; feedback</label>
+          <textarea id="taskRatingReview" name="review" rows="3" placeholder="What stood out about the communication, quality, or collaboration?" required>${esc(currentReview)}</textarea>
         </div>
         <p class="status-line" id="taskRatingStatus"></p>
-        <div class="toolbar" style="justify-content:flex-end;">
-          <button class="btn" type="button" data-close-rating-dialog>Cancel</button>
-          <button class="btn primary" type="submit">${icon("star")} ${myRating ? "Update Rating" : "Submit Rating"}</button>
-        </div>
       </div>
+      <footer class="task-rating-actions">
+        <button class="btn" type="button" data-close-rating-dialog>Cancel</button>
+        <button class="btn primary" type="submit">${icon("star")} ${myRating ? "Update Rating" : "Submit Rating"}</button>
+      </footer>
     </form>
   `;
 
   const picker = dialog.querySelector("#starRatingPicker");
   const scoreInput = dialog.querySelector("#ratingScoreInput");
+  const scoreLabel = dialog.querySelector("#ratingScoreLabel");
   picker?.querySelectorAll(".star-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       const star = parseInt(btn.dataset.star, 10);
       scoreInput.value = star;
+      if (scoreLabel) scoreLabel.textContent = `${star} of 5 \u00b7 ${scoreLabels[star]}`;
       picker.querySelectorAll(".star-btn").forEach((b) => {
         const s = parseInt(b.dataset.star, 10);
         b.classList.toggle("active", s <= star);
+        b.setAttribute("aria-pressed", s <= star ? "true" : "false");
       });
     });
   });
@@ -7781,12 +7921,33 @@ function bindTaskRatings(root = document) {
   root.querySelectorAll("[data-rate-client-task]").forEach((btn) => {
     if (btn.dataset.ratingBound === "1") return;
     btn.dataset.ratingBound = "1";
-    btn.addEventListener("click", (e) => {
+    btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       const taskID = btn.dataset.rateClientTask;
-      openTaskRatingModal(taskID);
+      const stopLoading = setButtonLoading(btn, true, "Opening...");
+      try {
+        await openTaskRatingModal(taskID);
+      } finally {
+        stopLoading();
+      }
     });
   });
+}
+
+function sidebarClientDialogHTML() {
+  return `<dialog id="sidebarClientDialog" class="modal client-dialog">
+    <form id="sidebarClientForm" class="form-grid" method="dialog">
+      <div class="modal-head">
+        <div><h2>Add project folder</h2><p class="muted">Create a new folder for websites and client work.</p></div>
+        <button class="btn icon quiet" type="button" data-close-dialog="sidebarClientDialog" title="Close">${icon("x")}</button>
+      </div>
+      <div class="field"><label>Folder name</label><input name="name" placeholder="Client or project name" required></div>
+      <div class="grid-2"><div class="field"><label>Company email</label><input type="email" name="company_email"></div><div class="field"><label>Contact name</label><input name="contact_name"></div></div>
+      <div class="field"><label>Notes</label><textarea name="details" rows="3" data-mentionable></textarea></div>
+      <div class="toolbar"><button class="btn primary" type="submit">${icon("folder-plus")}Create folder</button><button class="btn" type="button" data-close-dialog="sidebarClientDialog">Cancel</button></div>
+      <p class="status-line"></p>
+    </form>
+  </dialog>`;
 }
 
 function clientTaskBoardHTML(tasks, tab, members, canManage, canManageStatuses = false, canUpdateProgress = false) {
@@ -8984,14 +9145,17 @@ async function renderClientProjects() {
       ${canCreate ? `<button class="btn primary" id="newClientBtn">${icon("folder-plus")}Add client</button>` : ""}
     </div>
     <section class="client-grid">
-      ${visibleClients.map((client) => `<article class="panel client-card">
+      ${visibleClients.map((client) => {
+        const canManage = canManageSidebarClient(client);
+        return `<article class="panel client-card project-folder-drop-card" data-project-folder-drop="${esc(client.id)}" data-project-folder-manage="${canManage ? "true" : "false"}">
         <div class="panel-head"><div><h2>${esc(client.name)}</h2><p class="muted">${esc(client.company_email || client.contact_name || "Client folder")}</p></div><span class="pill">${icon("folder")}client</span></div>
         <p>${chatText(client.details || "No client notes yet.")}</p>
         <div class="access-list">
-          ${(sitesByClient[client.id] || []).map((site) => `<a class="access-row" href="/projects/${esc(client.id)}/sites/${esc(site.id)}"><span class="access-summary">${icon("globe-2")}<strong>${esc(site.name)}</strong><span>${esc(site.url || "")}</span></span></a>`).join("") || `<p class="muted">No websites yet.</p>`}
+          ${(sitesByClient[client.id] || []).map((site) => projectWebsiteLinkHTML(client, site, "access-row", true)).join("") || `<p class="muted">No websites yet.</p>`}
         </div>
         <div class="toolbar"><a class="btn primary" href="/projects/${esc(client.id)}">${icon("folder-open")}Open folder</a></div>
-      </article>`).join("") || `<section class="panel"><p class="muted">No client projects yet.</p></section>`}
+      </article>`;
+      }).join("") || `<section class="panel"><p class="muted">No client projects yet.</p></section>`}
     </section>
     <dialog id="clientDialog" class="modal client-dialog">
       <form id="clientForm" class="form-grid" method="dialog">
@@ -17370,7 +17534,12 @@ document.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
     const taskID = rateTaskBtn.dataset.rateClientTask;
-    openTaskRatingModal(taskID);
+    const stopLoading = setButtonLoading(rateTaskBtn, true, "Opening...");
+    try {
+      await openTaskRatingModal(taskID);
+    } finally {
+      stopLoading();
+    }
     return;
   }
   const memberDetailsBtn = event.target.closest("[data-view-member-details]");

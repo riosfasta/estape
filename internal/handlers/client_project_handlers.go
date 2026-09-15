@@ -896,9 +896,10 @@ func (s *Server) updateClientWebsite(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name    *string `json:"name"`
-		URL     *string `json:"url"`
-		Details *string `json:"details"`
+		Name     *string `json:"name"`
+		URL      *string `json:"url"`
+		Details  *string `json:"details"`
+		ClientID *string `json:"client_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid website update"})
@@ -919,11 +920,51 @@ func (s *Server) updateClientWebsite(c *gin.Context) {
 	if req.Details != nil {
 		set["details"] = strings.TrimSpace(*req.Details)
 	}
+	moving := false
+	targetClientID := site.ClientID
+	if req.ClientID != nil {
+		id, err := objectIDFromString(strings.TrimSpace(*req.ClientID))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid client_id"})
+			return
+		}
+		if id != site.ClientID {
+			targetClient, ok := s.loadClientProjectForAccess(c, id, true)
+			if !ok {
+				return
+			}
+			if targetClient.TeamID != site.TeamID {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "websites can only be moved between folders in the same workspace"})
+				return
+			}
+			moving = true
+			targetClientID = targetClient.ID
+			set["client_id"] = targetClient.ID
+		}
+	}
+
+	movedCollections := []string{}
+	rollbackMove := func() {
+		for _, collection := range movedCollections {
+			_, _ = s.store.C(collection).UpdateMany(c.Request.Context(), bson.M{"website_id": site.ID}, bson.M{"$set": bson.M{"client_id": site.ClientID}})
+		}
+	}
+	if moving {
+		for _, collection := range []string{"client_tabs", "client_tasks", "client_task_comments", "client_task_logs", "client_documents"} {
+			movedCollections = append(movedCollections, collection)
+			if _, err := s.store.C(collection).UpdateMany(c.Request.Context(), bson.M{"website_id": site.ID}, bson.M{"$set": bson.M{"client_id": targetClientID}}); err != nil {
+				rollbackMove()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not move website data"})
+				return
+			}
+		}
+	}
 	if _, err := s.store.C("client_websites").UpdateByID(c.Request.Context(), site.ID, bson.M{"$set": set}); err != nil {
+		rollbackMove()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update website"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"updated": true})
+	c.JSON(http.StatusOK, gin.H{"updated": true, "client_id": targetClientID})
 }
 
 func (s *Server) deleteClientWebsite(c *gin.Context) {
@@ -3892,4 +3933,3 @@ func (s *Server) createClientTaskRating(c *gin.Context) {
 		"ratings": task.Ratings,
 	})
 }
-
