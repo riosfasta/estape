@@ -3430,7 +3430,7 @@ function sidebarProjectsHTML() {
       <div class="nav-group project-nav-group ${isOpen ? "expanded" : ""}" data-sidebar-project="${esc(client.id)}" data-project-folder-drop="${esc(client.id)}" data-project-folder-manage="${canManage ? "true" : "false"}">
         <div class="nav-item project-folder-row ${isActiveRoute(`/projects/${client.id}`) ? "active" : ""}">
           <button class="project-folder-toggle" type="button" data-project-toggle="${esc(client.id)}" aria-expanded="${isOpen ? "true" : "false"}" title="${isOpen ? "Collapse folder" : "Expand folder"}">${icon(isOpen ? "chevron-down" : "chevron-right")}</button>
-          <a class="project-folder-link" href="/projects/${esc(client.id)}">${icon("folder")}<span>${esc(client.name)}</span></a>
+          <a class="project-folder-link" href="/projects/${esc(client.id)}" title="${esc(client.name)}">${icon("folder")}<span>${esc(client.name)}</span></a>
           <span class="project-folder-order" aria-label="Arrange ${esc(client.name)}">
             <button type="button" data-project-folder-move="${esc(client.id)}" data-direction="-1" title="Move ${esc(client.name)} up" aria-label="Move ${esc(client.name)} up" ${index === 0 ? "disabled" : ""}>${icon("chevron-up")}</button>
             <button type="button" data-project-folder-move="${esc(client.id)}" data-direction="1" title="Move ${esc(client.name)} down" aria-label="Move ${esc(client.name)} down" ${index === visibleClients.length - 1 ? "disabled" : ""}>${icon("chevron-down")}</button>
@@ -9204,14 +9204,14 @@ async function renderClientProjects() {
       <div><h1>Projects</h1><p class="muted">Client folders and websites.</p></div>
       ${canCreate ? `<button class="btn primary" id="newClientBtn">${icon("folder-plus")}Add client</button>` : ""}
     </div>
-    <section class="client-grid">
+    <section class="client-grid project-client-grid">
       ${visibleClients.map((client) => {
         const canManage = canManageSidebarClient(client);
-        return `<article class="panel client-card project-folder-drop-card" data-project-folder-drop="${esc(client.id)}" data-project-folder-manage="${canManage ? "true" : "false"}">
+        return `<article class="panel client-card project-client-card project-folder-drop-card" data-project-folder-drop="${esc(client.id)}" data-project-folder-manage="${canManage ? "true" : "false"}">
         <div class="panel-head"><div><h2>${esc(client.name)}</h2><p class="muted">${esc(client.company_email || client.contact_name || "Client folder")}</p></div><span class="pill">${icon("folder")}client</span></div>
         <p>${chatText(client.details || "No client notes yet.")}</p>
-        <div class="access-list">
-          ${(sitesByClient[client.id] || []).map((site) => projectWebsiteLinkHTML(client, site, "access-row", true)).join("") || `<p class="muted">No websites yet.</p>`}
+        <div class="access-list project-domain-list">
+          ${(sitesByClient[client.id] || []).map((site) => projectWebsiteLinkHTML(client, site, "access-row project-domain-row", true)).join("") || `<p class="muted">No websites yet.</p>`}
         </div>
         <div class="toolbar"><a class="btn primary" href="/projects/${esc(client.id)}">${icon("folder-open")}Open folder</a></div>
       </article>`;

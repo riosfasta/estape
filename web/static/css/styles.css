@@ -829,13 +829,14 @@ body.annotation-viewer-open .sidebar-toggle {
   border-left: 1px solid var(--border-color);
 }
 .project-folder-row {
-  gap: 6px;
-  padding-right: 6px;
+  gap: 2px;
+  padding-left: 4px;
+  padding-right: 3px;
 }
 .project-folder-link {
   display: flex !important;
   align-items: center;
-  gap: 10px;
+  gap: 5px;
   flex: 1;
   min-width: 0;
   min-height: 0 !important;
@@ -844,6 +845,12 @@ body.annotation-viewer-open .sidebar-toggle {
   background: transparent !important;
   color: inherit !important;
   font-weight: inherit;
+  font-size: 13px;
+}
+.project-folder-link svg {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
 }
 .project-folder-link:hover {
   background: transparent !important;
@@ -860,9 +867,9 @@ body.annotation-viewer-open .sidebar-toggle {
 .project-add-website {
   display: inline-grid;
   place-items: center;
-  flex: 0 0 24px;
-  width: 24px;
-  height: 24px;
+  flex: 0 0 17px;
+  width: 17px;
+  height: 17px;
   padding: 0;
   border: 0;
   border-radius: 6px;
@@ -876,28 +883,33 @@ body.annotation-viewer-open .sidebar-toggle {
   color: var(--accent-strong);
 }
 .project-folder-order {
-  display: grid;
-  grid-template-rows: repeat(2, 14px);
-  flex: 0 0 20px;
-  width: 20px;
-  opacity: .62;
+  display: none;
+  grid-template-rows: repeat(2, 10px);
+  flex: 0 0 12px;
+  width: 12px;
+  opacity: .52;
   transition: opacity .15s ease;
 }
-.project-folder-row:hover .project-folder-order,
-.project-folder-order:focus-within {
+.project-folder-row:hover .project-folder-order {
+  display: grid;
   opacity: 1;
 }
 .project-folder-order button {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 14px;
+  width: 12px;
+  height: 10px;
   padding: 0;
   border: 0;
   border-radius: 4px;
   background: transparent;
   color: inherit;
   cursor: pointer;
+}
+.project-folder-toggle svg,
+.project-add-website svg {
+  width: 12px;
+  height: 12px;
 }
 .project-folder-order button:hover:not(:disabled),
 .project-folder-order button:focus-visible {
@@ -910,8 +922,14 @@ body.annotation-viewer-open .sidebar-toggle {
   cursor: default;
 }
 .project-folder-order svg {
-  width: 12px;
-  height: 12px;
+  width: 9px;
+  height: 9px;
+}
+.project-folder-row .mini-count {
+  min-width: 17px;
+  min-height: 17px;
+  padding: 0 3px;
+  font-size: 9px;
 }
 .project-site-list {
   display: grid;
@@ -3504,6 +3522,51 @@ button.inbox-row {
 .client-card {
   display: grid;
   gap: 12px;
+}
+.project-client-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  align-items: start;
+}
+.project-client-card {
+  align-content: start;
+}
+.project-domain-list {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+}
+.access-row.project-domain-row {
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  padding: 11px 12px;
+  text-decoration: none;
+  transition: border-color .15s ease, background .15s ease, transform .15s ease;
+}
+.project-domain-row:hover,
+.project-domain-row:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  outline: 0;
+  transform: translateY(-1px);
+}
+.project-domain-row > svg {
+  width: 19px;
+  height: 19px;
+  margin-top: 1px;
+}
+.project-domain-row .access-summary {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.project-domain-row .access-summary strong {
+  font-size: 14px;
+  line-height: 1.25;
+}
+.project-domain-row .access-summary > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.3;
 }
 .client-doc-row {
   align-items: start;
