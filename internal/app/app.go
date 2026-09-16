@@ -44,5 +44,6 @@ func (a *App) Router() *gin.Engine {
 	}
 
 	api := handlers.New(a.cfg, a.logger, a.store, tokens, mailer, hub, payments, taskIntegrations)
+	go api.StartMarketplaceSettlementWorker(context.Background())
 	return api.Router()
 }

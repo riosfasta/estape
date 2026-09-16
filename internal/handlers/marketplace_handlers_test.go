@@ -387,6 +387,15 @@ func TestMarketplaceIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err = s.marketplaceReleaseDueEarnings(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.marketplaceReleaseDueEarnings(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := wallet(freelancer); got.Pending != 0 || got.Earnings != 9500 {
+		t.Fatalf("automatic release did not mature earnings exactly once: %+v", got)
+	}
 	w = request(freelancer, "POST", "/transfers", withdraw)
 	check(w, 201)
 	transferID := idFrom(w, "transfer")
@@ -587,6 +596,16 @@ func TestMarketplaceIntegration(t *testing.T) {
 		check(request(freelancer, "POST", path+"/timer/start", gin.H{"task_id": taskID}), 400)
 		check(request(boss, "POST", path+"/approve", gin.H{"rating": 5}), 200)
 		check(request(boss, "POST", path+"/approve", gin.H{"rating": 5}), 400)
+		var linkedTask struct {
+			PaymentStatus    string             `bson:"payment_status"`
+			MarketplaceJobID primitive.ObjectID `bson:"marketplace_job_id"`
+		}
+		if err = st.C("client_tasks").FindOne(ctx, bson.M{"_id": taskID}).Decode(&linkedTask); err != nil {
+			t.Fatal(err)
+		}
+		if linkedTask.PaymentStatus != "pending" || linkedTask.MarketplaceJobID != j.ID {
+			t.Fatalf("linked Find FH task did not reflect its pending marketplace payment: %+v", linkedTask)
+		}
 		if wallet(boss).Deposits != 2500 || wallet(boss).Reserved != 0 {
 			t.Fatal("unused reserve was not returned exactly once")
 		}

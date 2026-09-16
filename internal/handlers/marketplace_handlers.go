@@ -997,6 +997,19 @@ func (s *Server) marketplaceJobAction(c *gin.Context) {
 			if err != nil {
 				return err
 			}
+			taskIDs := make([]primitive.ObjectID, 0, len(j.ScopeTasks))
+			for _, task := range j.ScopeTasks {
+				taskIDs = append(taskIDs, task.TaskID)
+			}
+			if len(taskIDs) > 0 {
+				_, err = s.store.C("client_tasks").UpdateMany(sc, bson.M{"_id": bson.M{"$in": taskIDs}}, bson.M{
+					"$set":   bson.M{"payment_status": "pending", "marketplace_job_id": j.ID},
+					"$unset": bson.M{"pending_payment_id": ""},
+				})
+				if err != nil {
+					return err
+				}
+			}
 			_, err = s.store.C("marketplace_jobs").UpdateOne(sc, bson.M{"_id": id}, bson.M{"$set": bson.M{"status": "completed", "price": amount, "fee": fee, "rating": req.Rating, "review": strings.TrimSpace(req.Review), "approved_at": now, "available_at": available}})
 			if err != nil {
 				return err

@@ -1974,7 +1974,19 @@ func (s *Server) updateClientTask(c *gin.Context) {
 		task.MaxSeconds = ms
 	}
 
-	if statusChanged && clientTaskIsDoneStatus(updatedStatus) && task.PaymentStatus != "paid" && task.PaymentStatus != "pending" {
+	hasMarketplaceContract := false
+	if statusChanged && clientTaskIsDoneStatus(updatedStatus) {
+		err := s.store.C("marketplace_jobs").FindOne(c.Request.Context(), bson.M{
+			"scope_tasks.task_id": task.ID,
+			"status":              bson.M{"$in": []string{"hired", "submitted"}},
+		}, options.FindOne().SetProjection(bson.M{"_id": 1})).Err()
+		if err != nil && err != mongo.ErrNoDocuments {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not verify task payment contract"})
+			return
+		}
+		hasMarketplaceContract = err == nil
+	}
+	if statusChanged && clientTaskIsDoneStatus(updatedStatus) && !hasMarketplaceContract && task.PaymentStatus != "paid" && task.PaymentStatus != "pending" {
 		amount := 0.0
 		if task.BillingType == "hourly" || (task.HourlyRate > 0 && task.Price <= 0) {
 			cursor, err := s.store.C("time_entries").Find(c.Request.Context(), bson.M{"task_id": task.ID})

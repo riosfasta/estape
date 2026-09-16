@@ -25,7 +25,7 @@ Old dashboard links containing task/inbox filters redirect to `/inbox`. Notifica
 - Employers need available deposits covering the budget to publish. Publication does not reserve money; hiring atomically rechecks and reserves the accepted proposal price. An accepted invitation still requires the employer's final hire action.
 - One active marketplace job per freelancer. Concurrent hires serialize on the job, profile and employer wallet. Availability returns after approval.
 - Approval requires submitted work and a 1–5 employer rating. It releases reserved funds, records a 5% commission rounded to the nearest cent, and creates net earnings held for exactly 168 hours. Employer ratings come only from approved jobs.
-- Earnings release on wallet access/withdrawal once due. Refunds use only unused deposits; withdrawals use only matured earnings. Queued requests are deducted immediately so overlapping requests cannot overspend. Rejection restores funds exactly once.
+- Earnings release automatically after the seven-day hold; wallet access and withdrawal also reconcile any due release immediately. Linked Find FH board tasks show the same pending/paid state and do not create a second team payment. Refunds use only unused deposits; withdrawals use only matured earnings. Queued requests are deducted immediately so overlapping requests cannot overspend. Rejection restores funds exactly once.
 - Amounts are integer USD cents; per-operation limits are $1–$100,000. The 5% commission is recorded separately from actual outbound transaction fees.
 - Premium subscriptions/trials gate bug reporting/annotations only. Marketplace, regular tasks, projects, team and reporting access do not require a paid subscription. Existing team authorization still applies.
 

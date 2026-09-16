@@ -16,31 +16,119 @@ import (
 )
 
 func (s *Server) marketplaceReleaseEarnings(ctx context.Context, id primitive.ObjectID) error {
-	return s.marketplaceTransaction(ctx, func(sc mongo.SessionContext) error {
-		cur, err := s.store.C("marketplace_earnings").Find(sc, bson.M{"user_id": id, "status": "pending", "available_at": bson.M{"$lte": time.Now().UTC()}})
+	now := time.Now().UTC()
+	cur, err := s.store.C("marketplace_earnings").Find(ctx, bson.M{"user_id": id, "status": "pending", "available_at": bson.M{"$lte": now}})
+	if err != nil {
+		return err
+	}
+	defer cur.Close(ctx)
+	var records []struct {
+		ID     primitive.ObjectID `bson:"_id"`
+		Amount int64              `bson:"amount"`
+	}
+	if err = cur.All(ctx, &records); err != nil {
+		return err
+	}
+	for _, record := range records {
+		err = s.marketplaceTransaction(ctx, func(sc mongo.SessionContext) error {
+			// Claim this exact pending record so concurrent wallet requests and the
+			// background worker cannot credit it more than once.
+			result, err := s.store.C("marketplace_earnings").UpdateOne(sc, bson.M{
+				"_id":          record.ID,
+				"user_id":      id,
+				"status":       "pending",
+				"available_at": bson.M{"$lte": now},
+			}, bson.M{"$set": bson.M{"status": "available"}})
+			if err != nil || result.ModifiedCount == 0 {
+				return err
+			}
+			result, err = s.store.C("marketplace_wallets").UpdateOne(sc, bson.M{
+				"_id":     id,
+				"pending": bson.M{"$gte": record.Amount},
+			}, bson.M{"$inc": bson.M{"pending": -record.Amount, "earnings": record.Amount}})
+			if err != nil {
+				return err
+			}
+			if result.ModifiedCount != 1 {
+				// This also repairs the non-transactional local MongoDB fallback so
+				// the record can be retried after its wallet is reconciled.
+				_, _ = s.store.C("marketplace_earnings").UpdateOne(sc, bson.M{
+					"_id": record.ID, "user_id": id, "status": "available",
+				}, bson.M{"$set": bson.M{"status": "pending"}})
+				return marketInvalid("Pending earnings balance is inconsistent; contact support")
+			}
+
+			var job models.MarketplaceJob
+			if err := s.store.C("marketplace_jobs").FindOne(sc, bson.M{"_id": record.ID}).Decode(&job); err == nil {
+				taskIDs := make([]primitive.ObjectID, 0, len(job.ScopeTasks))
+				for _, task := range job.ScopeTasks {
+					taskIDs = append(taskIDs, task.TaskID)
+				}
+				if len(taskIDs) > 0 {
+					_, err = s.store.C("client_tasks").UpdateMany(sc, bson.M{
+						"_id":                bson.M{"$in": taskIDs},
+						"marketplace_job_id": job.ID,
+						"payment_status":     "pending",
+					}, bson.M{"$set": bson.M{"payment_status": "paid"}})
+					if err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		})
 		if err != nil {
 			return err
 		}
-		defer cur.Close(sc)
-		var records []struct {
-			ID     primitive.ObjectID `bson:"_id"`
-			Amount int64              `bson:"amount"`
-		}
-		if err = cur.All(sc, &records); err != nil {
-			return err
-		}
-		for _, record := range records {
-			_, err = s.store.C("marketplace_earnings").UpdateOne(sc, bson.M{"_id": record.ID}, bson.M{"$set": bson.M{"status": "available"}})
-			if err != nil {
-				return err
-			}
-			_, err = s.store.C("marketplace_wallets").UpdateOne(sc, bson.M{"_id": id}, bson.M{"$inc": bson.M{"pending": -record.Amount, "earnings": record.Amount}})
-			if err != nil {
-				return err
-			}
-		}
-		return nil
+	}
+	return nil
+}
+
+// marketplaceReleaseDueEarnings releases every freelancer balance whose
+// seven-day marketplace hold has expired. Per-user wallet and withdrawal
+// requests still run the same reconciliation as an immediate fallback.
+func (s *Server) marketplaceReleaseDueEarnings(ctx context.Context) error {
+	values, err := s.store.C("marketplace_earnings").Distinct(ctx, "user_id", bson.M{
+		"status":       "pending",
+		"available_at": bson.M{"$lte": time.Now().UTC()},
 	})
+	if err != nil {
+		return err
+	}
+	var firstErr error
+	for _, value := range values {
+		id, ok := value.(primitive.ObjectID)
+		if !ok || id.IsZero() {
+			continue
+		}
+		if err := s.marketplaceReleaseEarnings(ctx, id); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
+}
+
+// StartMarketplaceSettlementWorker continuously matures Find FH earnings even
+// when neither party opens the wallet page after the hold expires.
+func (s *Server) StartMarketplaceSettlementWorker(ctx context.Context) {
+	settle := func() {
+		if err := s.marketplaceReleaseDueEarnings(ctx); err != nil && s.logger != nil && ctx.Err() == nil {
+			s.logger.Printf("release due marketplace earnings: %v", err)
+		}
+	}
+	settle()
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			settle()
+		}
+	}
 }
 
 func (s *Server) resolveWorkspaceHiringWallet(ctx context.Context, userCtx middleware.UserContext) (primitive.ObjectID, primitive.ObjectID, bool) {
