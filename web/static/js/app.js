@@ -3835,6 +3835,7 @@ function shell(title, html) {
             ${workspaceLink("/admin/identity", "ID verification", "shield-check")}
             ${workspaceChild("/admin/plans", "Pricing plans", "badge-dollar-sign")}
             ${workspaceChild("/admin/pages", "Pages", "file-pen")}
+            ${workspaceChild("/admin/blogs", "Blogs", "newspaper")}
             ${workspaceChild("/admin/backup", "Database & Backup", "database")}
             ${workspaceChild("/admin/settings", "Settings", "settings")}
           ` : ""}
@@ -13659,6 +13660,7 @@ function pageListRowHTML(page) {
 
 function publicPageURL(slug) {
   if (slug === "home") return "/";
+  if (slug === "blog") return "/blog";
   return `/p/${slug}`;
 }
 
@@ -13818,6 +13820,7 @@ function pageBuilderShortcodesHTML(plans = []) {
     ["badge-dollar-sign", "[[pricing]]", "All pricing plans"],
     ["share-2", "[[social_links]]", "Social media list"],
     ["id-card", "[[company_contact_card]]", "Contact card"],
+    ["newspaper", "[[blog_grid]]", "Paginated article grid"],
   ];
   const planShortcodes = (plans || []).map((plan) => [
     "badge-dollar-sign",
@@ -14732,6 +14735,124 @@ function pageBuilderColumnStyleCSS(props = {}) {
   }
   if (textColor) rules.push(`color:${textColor}`);
   return rules.length ? `${rules.join(";")};` : "";
+}
+
+async function renderBlogs() {
+  const [postData, categoryData, tagData] = await Promise.all([
+    api("/api/admin/blog/posts"), api("/api/admin/blog/categories"), api("/api/admin/blog/tags"),
+  ]);
+  const posts = postData.posts || [];
+  const categories = categoryData.categories || [];
+  const tags = tagData.tags || [];
+  shell("Blogs", `
+    <div class="page-title"><div><h1>Blogs</h1><p class="muted">Publish articles and organize them with categories and tags.</p></div><div class="toolbar"><a class="btn" href="/admin/pages/blog/edit">${icon("layout-template")}Edit blog page</a><a class="btn" href="/blog" target="_blank" rel="noopener">${icon("external-link")}View blog</a></div></div>
+    <div class="grid-2 blog-admin-top">
+      <section class="panel"><h2>Articles</h2><div class="task-list">${posts.map(blogPostRowHTML).join("") || `<p class="muted">No articles yet.</p>`}</div></section>
+      <section class="panel"><h2>New article</h2><form id="blogPostCreateForm" class="form-grid"><div class="field"><label>Title</label><input name="title" required placeholder="Article title"></div><div class="field"><label>Slug (optional)</label><input name="slug" placeholder="article-title"></div><button class="btn primary" type="submit">${icon("plus")}Create article</button><p class="status-line"></p></form><hr><p class="muted">Use <strong>[[blog_grid]]</strong> in a rich text or HTML block to place the paginated article grid on a page.</p></section>
+    </div>
+    <div class="grid-2 blog-taxonomy-grid">${blogTaxonomyPanelHTML("category", categories)}${blogTaxonomyPanelHTML("tag", tags)}</div>`);
+  $("#blogPostCreateForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    try {
+      const data = await api("/api/admin/blog/posts", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
+      window.location.href = `/admin/blogs/${data.post.id}/edit`;
+    } catch (error) { setFormStatus(form, error.message, true); }
+  });
+  bindBlogTaxonomies();
+  icons();
+}
+
+function blogPostRowHTML(post) {
+  const published = post.status === "published";
+  const date = post.updated_at ? new Date(post.updated_at).toLocaleDateString() : "";
+  return `<article class="task-row blog-admin-post-row"><div><h3>${esc(post.title)}</h3><span class="muted">/${esc(post.slug)}${date ? ` · Updated ${esc(date)}` : ""}</span></div><span class="pill ${published ? "" : "warn"}">${esc(post.status || "draft")}</span>${published ? `<a class="btn compact" href="/blog/${encodeURIComponent(post.slug)}" target="_blank" rel="noopener">${icon("external-link")}View</a>` : ""}<a class="btn" href="/admin/blogs/${post.id}/edit">${icon("file-pen")}Edit</a></article>`;
+}
+
+function blogTaxonomyPanelHTML(kind, items = []) {
+  const plural = kind === "category" ? "Categories" : "Tags";
+  const endpoint = kind === "category" ? "categories" : "tags";
+  return `<section class="panel" data-blog-taxonomy="${kind}">
+    <div class="panel-head"><div><h2>${plural}</h2><p class="muted">${kind === "category" ? "Group articles into broad topics." : "Add specific labels for discovery."}</p></div></div>
+    <form class="form-grid blog-taxonomy-create" data-blog-taxonomy-create data-endpoint="${endpoint}">
+      <div class="grid-2"><div class="field"><label>Name</label><input name="name" required placeholder="${kind === "category" ? "News" : "Product"}"></div><div class="field"><label>Slug (optional)</label><input name="slug" placeholder="${kind}"></div></div>
+      ${kind === "category" ? `<div class="field"><label>Description</label><input name="description" placeholder="Optional category description"></div>` : ""}
+      <button class="btn" type="submit">${icon("plus")}Add ${kind}</button><p class="status-line"></p>
+    </form>
+    <div class="blog-taxonomy-list">${items.map((item) => `<form class="blog-taxonomy-row" data-blog-taxonomy-save data-endpoint="${endpoint}" data-id="${item.id}"><input name="name" value="${esc(item.name)}" required aria-label="Name"><input name="slug" value="${esc(item.slug)}" required aria-label="Slug">${kind === "category" ? `<input name="description" value="${esc(item.description || "")}" placeholder="Description" aria-label="Description">` : ""}<button class="btn compact" type="submit">${icon("save")}Save</button><button class="btn compact danger" type="button" data-blog-taxonomy-delete>${icon("trash-2")}Delete</button></form>`).join("") || `<p class="muted">No ${plural.toLowerCase()} yet.</p>`}</div>
+  </section>`;
+}
+
+function bindBlogTaxonomies() {
+  document.querySelectorAll("[data-blog-taxonomy-create]").forEach((form) => form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await api(`/api/admin/blog/${form.dataset.endpoint}`, { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
+      await renderBlogs();
+    } catch (error) { setFormStatus(form, error.message, true); }
+  }));
+  document.querySelectorAll("[data-blog-taxonomy-save]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        await api(`/api/admin/blog/${form.dataset.endpoint}/${form.dataset.id}`, { method: "PUT", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
+        setFormStatus(form, "Saved");
+      } catch (error) { setFormStatus(form, error.message, true); }
+    });
+    form.querySelector("[data-blog-taxonomy-delete]")?.addEventListener("click", async () => {
+      if (!window.confirm("Delete this item? It will also be removed from assigned articles.")) return;
+      try {
+        await api(`/api/admin/blog/${form.dataset.endpoint}/${form.dataset.id}`, { method: "DELETE" });
+        await renderBlogs();
+      } catch (error) { window.alert(error.message); }
+    });
+  });
+}
+
+async function renderBlogEditor(id) {
+  const [postData, categoryData, tagData] = await Promise.all([
+    api(`/api/admin/blog/posts/${id}`), api("/api/admin/blog/categories"), api("/api/admin/blog/tags"),
+  ]);
+  const post = postData.post;
+  const categories = categoryData.categories || [];
+  const tags = tagData.tags || [];
+  const selectedCategories = new Set(post.category_ids || []);
+  const selectedTags = new Set(post.tag_ids || []);
+  shell("Edit article", `
+    <div class="page-title"><div><h1>Edit article</h1><p class="muted">Draft, organize, and publish this article.</p></div><div class="toolbar"><a class="btn" href="/admin/blogs">${icon("arrow-left")}Blogs</a>${post.status === "published" ? `<a class="btn" href="/blog/${encodeURIComponent(post.slug)}" target="_blank" rel="noopener">${icon("external-link")}View</a>` : ""}</div></div>
+    <form id="blogPostEditorForm" class="blog-editor-layout">
+      <section class="panel form-grid blog-editor-main"><div class="field"><label>Title</label><input name="title" value="${esc(post.title || "")}" required></div><div class="field"><label>Slug</label><input name="slug" value="${esc(post.slug || "")}" required></div><div class="field"><label>Excerpt</label><textarea name="excerpt" placeholder="Short summary shown in the article grid">${esc(post.excerpt || "")}</textarea></div><div class="field"><label>Article content</label>${pageRichEditorHTML("content", post.content || "", "Write your article...")}</div></section>
+      <aside class="form-grid blog-editor-sidebar">
+        <section class="panel form-grid" data-blog-publish-panel><h2>Publish</h2><div class="field"><label>Status</label><select name="status"><option value="draft" ${post.status !== "published" ? "selected" : ""}>Draft</option><option value="published" ${post.status === "published" ? "selected" : ""}>Published</option></select></div><button class="btn primary" type="submit">${icon("save")}Save article</button><button class="btn danger" id="deleteBlogPost" type="button">${icon("trash-2")}Delete article</button><p class="status-line"></p></section>
+        <section class="panel form-grid"><h2>Featured image</h2><div class="blog-featured-preview" id="blogFeaturedPreview">${post.featured_image_url ? `<img src="${esc(post.featured_image_url)}" alt="">` : `<span class="muted">No image selected</span>`}</div><input type="hidden" name="featured_image_url" value="${esc(post.featured_image_url || "")}"><button class="btn" id="chooseBlogImage" type="button">${icon("image")}Choose from media</button><button class="btn quiet" id="removeBlogImage" type="button">Remove image</button></section>
+        <section class="panel"><h2>Categories</h2><div class="blog-taxonomy-checks">${categories.map((item) => `<label class="check-row"><input type="checkbox" name="category_ids" value="${item.id}" ${selectedCategories.has(item.id) ? "checked" : ""}>${esc(item.name)}</label>`).join("") || `<p class="muted">Create categories from the Blogs page.</p>`}</div></section>
+        <section class="panel"><h2>Tags</h2><div class="blog-taxonomy-checks">${tags.map((item) => `<label class="check-row"><input type="checkbox" name="tag_ids" value="${item.id}" ${selectedTags.has(item.id) ? "checked" : ""}>${esc(item.name)}</label>`).join("") || `<p class="muted">Create tags from the Blogs page.</p>`}</div></section>
+      </aside>
+    </form>`);
+  const form = $("#blogPostEditorForm");
+  const publishPanel = form.querySelector("[data-blog-publish-panel]");
+  bindPageRichEditors(form);
+  $("#chooseBlogImage")?.addEventListener("click", () => openMediaManagerModal({ currentUrl: form.elements.featured_image_url.value, onSelect: (selectedUrl) => { form.elements.featured_image_url.value = selectedUrl; $("#blogFeaturedPreview").innerHTML = selectedUrl ? `<img src="${esc(selectedUrl)}" alt="">` : `<span class="muted">No image selected</span>`; } }));
+  $("#removeBlogImage")?.addEventListener("click", () => { form.elements.featured_image_url.value = ""; $("#blogFeaturedPreview").innerHTML = `<span class="muted">No image selected</span>`; });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    syncPageRichEditors(form);
+    const formData = new FormData(form);
+    const payload = Object.fromEntries(formData.entries());
+    payload.category_ids = formData.getAll("category_ids");
+    payload.tag_ids = formData.getAll("tag_ids");
+    try {
+      const data = await api(`/api/admin/blog/posts/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+      if (data.slug !== post.slug || data.status !== post.status) { await renderBlogEditor(id); return; }
+      setFormStatus(publishPanel, data.status === "published" ? "Article published" : "Draft saved");
+    } catch (error) { setFormStatus(publishPanel, error.message, true); }
+  });
+  $("#deleteBlogPost")?.addEventListener("click", async () => {
+    if (!window.confirm("Delete this article permanently?")) return;
+    try { await api(`/api/admin/blog/posts/${id}`, { method: "DELETE" }); window.location.href = "/admin/blogs"; }
+    catch (error) { setFormStatus(publishPanel, error.message, true); }
+  });
+  icons();
 }
 
 function safeBuilderBackgroundImageURL(value = "") {
@@ -17605,6 +17726,7 @@ async function route(options = {}) {
     const matchClientProject = path().match(/^\/projects\/([^/]+)$/);
     const matchAnnotate = path().match(/^\/websites\/([^/]+)\/annotate/);
     const matchPageEdit = path().match(/^\/admin\/pages\/([^/]+)\/edit/);
+    const matchBlogEdit = path().match(/^\/admin\/blogs\/([^/]+)\/edit/);
     if (path() === "/dashboard" && location.search) {
       const legacy = new URLSearchParams(location.search);
       if (["task_id", "comment_id", "mention", "project_id"].some(key => legacy.has(key))) { location.replace("/inbox" + location.search); return; }
@@ -17660,8 +17782,10 @@ async function route(options = {}) {
     if (path() === "/admin/settings") return await renderSettings();
     if (path() === "/admin/plans") return await renderPlansAdmin();
     if (path() === "/admin/pages") return await renderPages();
+    if (path() === "/admin/blogs") return await renderBlogs();
     if (path() === "/admin/backup") return await renderDatabaseAdmin();
     if (matchPageEdit) return await renderPageEditor(matchPageEdit[1]);
+    if (matchBlogEdit) return await renderBlogEditor(matchBlogEdit[1]);
     return await marketplace.render("/dashboard");
   } catch (error) {
     renderRouteError(error);

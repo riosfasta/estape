@@ -216,48 +216,48 @@ type ClientTab struct {
 }
 
 type ClientTask struct {
-	ID              primitive.ObjectID     `bson:"_id,omitempty" json:"id"`
-	ClientID        primitive.ObjectID     `bson:"client_id" json:"client_id"`
-	WebsiteID       primitive.ObjectID     `bson:"website_id" json:"website_id"`
-	TabID           primitive.ObjectID     `bson:"tab_id" json:"tab_id"`
-	TeamID          primitive.ObjectID     `bson:"team_id" json:"team_id"`
-	Type            string                 `bson:"type" json:"type"`
-	Title           string                 `bson:"title" json:"title"`
-	Content         string                 `bson:"content,omitempty" json:"content,omitempty"`
-	URL             string                 `bson:"url,omitempty" json:"url,omitempty"`
-	Comment         string                 `bson:"comment,omitempty" json:"comment,omitempty"`
-	ScreenshotURL   string                 `bson:"screenshot_url,omitempty" json:"screenshot_url,omitempty"`
-	PinX            *float64               `bson:"pin_x,omitempty" json:"pin_x,omitempty"`
-	PinY            *float64               `bson:"pin_y,omitempty" json:"pin_y,omitempty"`
-	PageWidth       int                    `bson:"page_width,omitempty" json:"page_width,omitempty"`
-	PageHeight      int                    `bson:"page_height,omitempty" json:"page_height,omitempty"`
-	Annotations     []ClientTaskAnnotation `bson:"annotations,omitempty" json:"annotations,omitempty"`
-	Attachments     []string               `bson:"attachments" json:"attachments"`
-	Checklist       []ChecklistItem        `bson:"checklist,omitempty" json:"checklist,omitempty"`
-	Blocks          []ClientTaskBlock      `bson:"blocks,omitempty" json:"blocks,omitempty"`
-	AssigneeIDs     []primitive.ObjectID   `bson:"assignee_ids" json:"assignee_ids"`
-	DueDate         *time.Time             `bson:"due_date,omitempty" json:"due_date,omitempty"`
-	Recurrence      ClientTaskRecurrence   `bson:"recurrence,omitempty" json:"recurrence,omitempty"`
-	Status          string                 `bson:"status" json:"status"`
-	BillingType     string                 `bson:"billing_type,omitempty" json:"billing_type,omitempty"`
-	Price           float64                `bson:"price,omitempty" json:"price,omitempty"`
-	HourlyRate      float64                `bson:"hourly_rate,omitempty" json:"hourly_rate,omitempty"`
-	MaxHours        float64                `bson:"max_hours,omitempty" json:"max_hours,omitempty"`
-	MaxSeconds      int64                  `bson:"max_seconds,omitempty" json:"max_seconds,omitempty"`
-	PaymentStatus   string                 `bson:"payment_status,omitempty" json:"payment_status,omitempty"`
-	PendingPaymentID primitive.ObjectID    `bson:"pending_payment_id,omitempty" json:"pending_payment_id,omitempty"`
-	CompletionCount int                    `bson:"completion_count,omitempty" json:"completion_count,omitempty"`
-	LastCompletedAt *time.Time             `bson:"last_completed_at,omitempty" json:"last_completed_at,omitempty"`
-	Ratings         []TaskRating           `bson:"ratings,omitempty" json:"ratings,omitempty"`
-	CreatedBy       primitive.ObjectID     `bson:"created_by" json:"created_by"`
-	CreatedAt       time.Time              `bson:"created_at" json:"created_at"`
-	UpdatedAt       time.Time              `bson:"updated_at" json:"updated_at"`
+	ID               primitive.ObjectID     `bson:"_id,omitempty" json:"id"`
+	ClientID         primitive.ObjectID     `bson:"client_id" json:"client_id"`
+	WebsiteID        primitive.ObjectID     `bson:"website_id" json:"website_id"`
+	TabID            primitive.ObjectID     `bson:"tab_id" json:"tab_id"`
+	TeamID           primitive.ObjectID     `bson:"team_id" json:"team_id"`
+	Type             string                 `bson:"type" json:"type"`
+	Title            string                 `bson:"title" json:"title"`
+	Content          string                 `bson:"content,omitempty" json:"content,omitempty"`
+	URL              string                 `bson:"url,omitempty" json:"url,omitempty"`
+	Comment          string                 `bson:"comment,omitempty" json:"comment,omitempty"`
+	ScreenshotURL    string                 `bson:"screenshot_url,omitempty" json:"screenshot_url,omitempty"`
+	PinX             *float64               `bson:"pin_x,omitempty" json:"pin_x,omitempty"`
+	PinY             *float64               `bson:"pin_y,omitempty" json:"pin_y,omitempty"`
+	PageWidth        int                    `bson:"page_width,omitempty" json:"page_width,omitempty"`
+	PageHeight       int                    `bson:"page_height,omitempty" json:"page_height,omitempty"`
+	Annotations      []ClientTaskAnnotation `bson:"annotations,omitempty" json:"annotations,omitempty"`
+	Attachments      []string               `bson:"attachments" json:"attachments"`
+	Checklist        []ChecklistItem        `bson:"checklist,omitempty" json:"checklist,omitempty"`
+	Blocks           []ClientTaskBlock      `bson:"blocks,omitempty" json:"blocks,omitempty"`
+	AssigneeIDs      []primitive.ObjectID   `bson:"assignee_ids" json:"assignee_ids"`
+	DueDate          *time.Time             `bson:"due_date,omitempty" json:"due_date,omitempty"`
+	Recurrence       ClientTaskRecurrence   `bson:"recurrence,omitempty" json:"recurrence,omitempty"`
+	Status           string                 `bson:"status" json:"status"`
+	BillingType      string                 `bson:"billing_type,omitempty" json:"billing_type,omitempty"`
+	Price            float64                `bson:"price,omitempty" json:"price,omitempty"`
+	HourlyRate       float64                `bson:"hourly_rate,omitempty" json:"hourly_rate,omitempty"`
+	MaxHours         float64                `bson:"max_hours,omitempty" json:"max_hours,omitempty"`
+	MaxSeconds       int64                  `bson:"max_seconds,omitempty" json:"max_seconds,omitempty"`
+	PaymentStatus    string                 `bson:"payment_status,omitempty" json:"payment_status,omitempty"`
+	PendingPaymentID primitive.ObjectID     `bson:"pending_payment_id,omitempty" json:"pending_payment_id,omitempty"`
+	CompletionCount  int                    `bson:"completion_count,omitempty" json:"completion_count,omitempty"`
+	LastCompletedAt  *time.Time             `bson:"last_completed_at,omitempty" json:"last_completed_at,omitempty"`
+	Ratings          []TaskRating           `bson:"ratings,omitempty" json:"ratings,omitempty"`
+	CreatedBy        primitive.ObjectID     `bson:"created_by" json:"created_by"`
+	CreatedAt        time.Time              `bson:"created_at" json:"created_at"`
+	UpdatedAt        time.Time              `bson:"updated_at" json:"updated_at"`
 }
 
 type TaskRating struct {
 	FromUserID primitive.ObjectID `bson:"from_user_id" json:"from_user_id"`
 	ToUserID   primitive.ObjectID `bson:"to_user_id" json:"to_user_id"`
-	Role       string             `bson:"role" json:"role"` // "admin" or "member"
+	Role       string             `bson:"role" json:"role"`     // "admin" or "member"
 	Rating     int                `bson:"rating" json:"rating"` // 1 to 5
 	Review     string             `bson:"review,omitempty" json:"review,omitempty"`
 	CreatedAt  time.Time          `bson:"created_at" json:"created_at"`
@@ -414,23 +414,23 @@ type Bug struct {
 }
 
 type Chat struct {
-	LastMessageAt  *time.Time           `bson:"-" json:"last_message_at,omitempty"`
-	UnreadCount    int64                `bson:"-" json:"unread_count"`
-	ListProfile    *ChatListProfile     `bson:"-" json:"list_profile,omitempty"`
-	ID             primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
-	Type           string               `bson:"type" json:"type"`
-	Title          string               `bson:"title,omitempty" json:"title,omitempty"`
-	ConversationKey string              `bson:"conversation_key,omitempty" json:"-"`
-	MergedInto     primitive.ObjectID   `bson:"merged_into,omitempty" json:"merged_into,omitempty"`
-	ParticipantIDs []primitive.ObjectID `bson:"participant_ids" json:"participant_ids"`
-	TeamID         primitive.ObjectID   `bson:"team_id,omitempty" json:"team_id,omitempty"`
-	Status         string               `bson:"status,omitempty" json:"status,omitempty"`
-	EndedAt        *time.Time           `bson:"ended_at,omitempty" json:"ended_at,omitempty"`
-	EndedBy        primitive.ObjectID   `bson:"ended_by,omitempty" json:"ended_by,omitempty"`
-	CreatedBy      primitive.ObjectID   `bson:"created_by,omitempty" json:"created_by,omitempty"`
-	DeletedAt      *time.Time           `bson:"deleted_at,omitempty" json:"deleted_at,omitempty"`
-	DeletedBy      primitive.ObjectID   `bson:"deleted_by,omitempty" json:"deleted_by,omitempty"`
-	CreatedAt      time.Time            `bson:"created_at" json:"created_at"`
+	LastMessageAt   *time.Time           `bson:"-" json:"last_message_at,omitempty"`
+	UnreadCount     int64                `bson:"-" json:"unread_count"`
+	ListProfile     *ChatListProfile     `bson:"-" json:"list_profile,omitempty"`
+	ID              primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	Type            string               `bson:"type" json:"type"`
+	Title           string               `bson:"title,omitempty" json:"title,omitempty"`
+	ConversationKey string               `bson:"conversation_key,omitempty" json:"-"`
+	MergedInto      primitive.ObjectID   `bson:"merged_into,omitempty" json:"merged_into,omitempty"`
+	ParticipantIDs  []primitive.ObjectID `bson:"participant_ids" json:"participant_ids"`
+	TeamID          primitive.ObjectID   `bson:"team_id,omitempty" json:"team_id,omitempty"`
+	Status          string               `bson:"status,omitempty" json:"status,omitempty"`
+	EndedAt         *time.Time           `bson:"ended_at,omitempty" json:"ended_at,omitempty"`
+	EndedBy         primitive.ObjectID   `bson:"ended_by,omitempty" json:"ended_by,omitempty"`
+	CreatedBy       primitive.ObjectID   `bson:"created_by,omitempty" json:"created_by,omitempty"`
+	DeletedAt       *time.Time           `bson:"deleted_at,omitempty" json:"deleted_at,omitempty"`
+	DeletedBy       primitive.ObjectID   `bson:"deleted_by,omitempty" json:"deleted_by,omitempty"`
+	CreatedAt       time.Time            `bson:"created_at" json:"created_at"`
 }
 
 type ChatListProfile struct {
@@ -662,6 +662,39 @@ type StaticPage struct {
 	Versions          []PageVersion      `bson:"versions" json:"versions"`
 	UpdatedBy         primitive.ObjectID `bson:"updated_by,omitempty" json:"updated_by,omitempty"`
 	UpdatedAt         time.Time          `bson:"updated_at" json:"updated_at"`
+}
+
+type BlogPost struct {
+	ID               primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	Title            string               `bson:"title" json:"title"`
+	Slug             string               `bson:"slug" json:"slug"`
+	Excerpt          string               `bson:"excerpt" json:"excerpt"`
+	Content          string               `bson:"content" json:"content"`
+	FeaturedImageURL string               `bson:"featured_image_url,omitempty" json:"featured_image_url,omitempty"`
+	CategoryIDs      []primitive.ObjectID `bson:"category_ids" json:"category_ids"`
+	TagIDs           []primitive.ObjectID `bson:"tag_ids" json:"tag_ids"`
+	Status           string               `bson:"status" json:"status"`
+	AuthorID         primitive.ObjectID   `bson:"author_id,omitempty" json:"author_id,omitempty"`
+	PublishedAt      *time.Time           `bson:"published_at,omitempty" json:"published_at,omitempty"`
+	CreatedAt        time.Time            `bson:"created_at" json:"created_at"`
+	UpdatedAt        time.Time            `bson:"updated_at" json:"updated_at"`
+}
+
+type BlogCategory struct {
+	ID          primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	Name        string             `bson:"name" json:"name"`
+	Slug        string             `bson:"slug" json:"slug"`
+	Description string             `bson:"description,omitempty" json:"description,omitempty"`
+	CreatedAt   time.Time          `bson:"created_at" json:"created_at"`
+	UpdatedAt   time.Time          `bson:"updated_at" json:"updated_at"`
+}
+
+type BlogTag struct {
+	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	Name      string             `bson:"name" json:"name"`
+	Slug      string             `bson:"slug" json:"slug"`
+	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
+	UpdatedAt time.Time          `bson:"updated_at" json:"updated_at"`
 }
 
 type Integration struct {

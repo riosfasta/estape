@@ -56,3 +56,11 @@ func TestColumnBackgroundRejectsUnsafeMediaURLs(t *testing.T) {
 		t.Fatalf("unsafe column background media was rendered: %s", rendered)
 	}
 }
+
+func TestBlogGridShortcode(t *testing.T) {
+	blocks := []models.PageBlock{{Type: "rich_text", Props: map[string]interface{}{"text": "<p>Latest</p>[[blog_grid]]"}}}
+	rendered := Render(blocks, RenderContext{BlogGridHTML: `<div class="blog-grid">articles</div>`})
+	if !strings.Contains(rendered, `<div class="blog-grid">articles</div>`) || strings.Contains(rendered, "[[blog_grid]]") {
+		t.Fatalf("blog shortcode was not expanded: %s", rendered)
+	}
+}

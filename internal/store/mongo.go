@@ -116,6 +116,18 @@ func (s *Store) CreateIndexes(ctx context.Context) error {
 		"static_pages": {
 			{Keys: bson.D{{Key: "slug", Value: 1}}, Options: mongomodels.Index().SetUnique(true)},
 		},
+		"blog_posts": {
+			{Keys: bson.D{{Key: "slug", Value: 1}}, Options: mongomodels.Index().SetUnique(true)},
+			{Keys: bson.D{{Key: "status", Value: 1}, {Key: "published_at", Value: -1}}},
+			{Keys: bson.D{{Key: "category_ids", Value: 1}, {Key: "status", Value: 1}}},
+			{Keys: bson.D{{Key: "tag_ids", Value: 1}, {Key: "status", Value: 1}}},
+		},
+		"blog_categories": {
+			{Keys: bson.D{{Key: "slug", Value: 1}}, Options: mongomodels.Index().SetUnique(true)},
+		},
+		"blog_tags": {
+			{Keys: bson.D{{Key: "slug", Value: 1}}, Options: mongomodels.Index().SetUnique(true)},
+		},
 		"integrations": {
 			{Keys: bson.D{{Key: "team_id", Value: 1}, {Key: "provider", Value: 1}}, Options: mongomodels.Index().SetUnique(true)},
 		},

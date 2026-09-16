@@ -14,10 +14,11 @@ import (
 )
 
 type RenderContext struct {
-	Settings  models.SiteSettings
-	TeamHTML  string
-	Plans     []models.Plan
-	PageWidth string
+	Settings     models.SiteSettings
+	TeamHTML     string
+	Plans        []models.Plan
+	PageWidth    string
+	BlogGridHTML string
 }
 
 func Render(blocks []models.PageBlock, ctx RenderContext) string {
@@ -219,6 +220,7 @@ var allPricingShortcodePattern = regexp.MustCompile(`\[\[(?:pricing|pricing_list
 var singlePricingShortcodePattern = regexp.MustCompile(`\[\[(?:pricing|pricing_plan|price_list):([^\]]+)\]\]`)
 var socialLinksShortcodePattern = regexp.MustCompile(`\[\[(?:social_links|company_socials|socialmedia_list)\]\]`)
 var contactCardShortcodePattern = regexp.MustCompile(`\[\[(?:company_contact_card|contact_card)\]\]`)
+var blogGridShortcodePattern = regexp.MustCompile(`\[\[(?:blog_grid|articles_grid)\]\]`)
 
 func applyHTMLShortcodes(value string, ctx RenderContext) string {
 	value = allPricingShortcodePattern.ReplaceAllString(value, renderPricingPlansHTML(ctx.Plans, ""))
@@ -231,7 +233,13 @@ func applyHTMLShortcodes(value string, ctx RenderContext) string {
 	})
 	value = socialLinksShortcodePattern.ReplaceAllString(value, renderSocialLinksHTML(ctx.Settings.SocialLinks))
 	value = contactCardShortcodePattern.ReplaceAllString(value, renderContactCardHTML(ctx.Settings))
+	value = blogGridShortcodePattern.ReplaceAllStringFunc(value, func(string) string { return ctx.BlogGridHTML })
 	return value
+}
+
+// RenderRichText sanitizes stored rich text and expands supported shortcodes.
+func RenderRichText(value string, ctx RenderContext) string {
+	return renderRichText(value, ctx)
 }
 
 func propString(props map[string]interface{}, key string, fallback string) string {

@@ -968,37 +968,37 @@ func (s *Server) adminUserRows(ctx context.Context, users []models.User) []gin.H
 		}
 		wallet := walletsByID[user.ID]
 		rows = append(rows, gin.H{
-			"id":                         user.ID,
-			"name":                       user.Name,
-			"email":                      user.Email,
-			"username":                   user.Username,
-			"role":                       user.Role,
-			"staff_role":                 user.StaffRole,
-			"status":                     user.Status,
-			"avatar_url":                 user.AvatarURL,
-			"team_id":                    user.TeamID,
-			"created_at":                 user.CreatedAt,
-			"last_active_at":             user.LastActiveAt,
-			"two_factor_enabled":         user.TwoFactorEnabled,
-			"auth_provider":              user.AuthProvider,
-			"registration_ip":            user.RegistrationIP,
-			"registration_country":       user.RegistrationCountry,
-			"registration_country_code":  user.RegistrationCountryCode,
-			"registration_city":          user.RegistrationCity,
-			"registration_network_name":  user.RegistrationNetworkName,
-			"registration_timezone":      user.RegistrationTimezone,
-			"team":                       team,
-			"plan":                       plan,
-			"subscription":               sub,
-			"membership_status":          adminMembershipStatus(sub, time.Now()),
-			"membership_expires_at":      sub.ExpiresAt,
-			"trial_ends_at":              sub.TrialEndsAt,
-			"payment_provider":           sub.PaymentProvider,
-			"payment_transaction":        sub.ExternalTransactionID,
-			"payment_methods":            paymentMethods,
-			"invoice_count":              len(invoices),
-			"latest_invoice":             adminLatestInvoice(invoices),
-			"wallet":                     wallet,
+			"id":                        user.ID,
+			"name":                      user.Name,
+			"email":                     user.Email,
+			"username":                  user.Username,
+			"role":                      user.Role,
+			"staff_role":                user.StaffRole,
+			"status":                    user.Status,
+			"avatar_url":                user.AvatarURL,
+			"team_id":                   user.TeamID,
+			"created_at":                user.CreatedAt,
+			"last_active_at":            user.LastActiveAt,
+			"two_factor_enabled":        user.TwoFactorEnabled,
+			"auth_provider":             user.AuthProvider,
+			"registration_ip":           user.RegistrationIP,
+			"registration_country":      user.RegistrationCountry,
+			"registration_country_code": user.RegistrationCountryCode,
+			"registration_city":         user.RegistrationCity,
+			"registration_network_name": user.RegistrationNetworkName,
+			"registration_timezone":     user.RegistrationTimezone,
+			"team":                      team,
+			"plan":                      plan,
+			"subscription":              sub,
+			"membership_status":         adminMembershipStatus(sub, time.Now()),
+			"membership_expires_at":     sub.ExpiresAt,
+			"trial_ends_at":             sub.TrialEndsAt,
+			"payment_provider":          sub.PaymentProvider,
+			"payment_transaction":       sub.ExternalTransactionID,
+			"payment_methods":           paymentMethods,
+			"invoice_count":             len(invoices),
+			"latest_invoice":            adminLatestInvoice(invoices),
+			"wallet":                    wallet,
 		})
 	}
 	return rows
@@ -1679,11 +1679,15 @@ func (s *Server) pageBuilderContext(ctx context.Context, page models.StaticPage)
 	if strings.TrimSpace(pageWidth) == "" && page.Slug == "home" {
 		pageWidth = "100%"
 	}
-	return pagebuilder.RenderContext{
+	renderCtx := pagebuilder.RenderContext{
 		Settings:  settings,
 		Plans:     s.pageBuilderPlans(ctx),
 		PageWidth: safePublicPageWidth(pageWidth),
 	}
+	if pageContainsBlogGrid(page.Blocks) {
+		renderCtx.BlogGridHTML = s.renderBlogGridHTML(ctx, 1, "", "")
+	}
+	return renderCtx
 }
 
 func (s *Server) renderStaticPageHTML(ctx context.Context, page models.StaticPage) (string, pagebuilder.RenderContext) {
