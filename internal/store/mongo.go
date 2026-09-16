@@ -184,7 +184,19 @@ func (s *Store) ensureSingleWebsitePlan(ctx context.Context, now time.Time) erro
 		).Decode(&plan)
 	}
 	if err == mongo.ErrNoDocuments {
-		plan = models.Plan{ID: primitive.NewObjectID(), CreatedAt: now}
+		plan = models.Plan{
+			ID:           primitive.NewObjectID(),
+			Name:         "Website Package",
+			Description:  "One flat package for website feedback, tasks, team access, reports, and project management.",
+			PricingModel: "flat",
+			Price:        500,
+			PriceYearly:  3500,
+			TrialDays:    14,
+			SeatLimit:    25,
+			ProjectLimit: 100,
+			Featured:     true,
+			CreatedAt:    now,
+		}
 		if _, err := s.C("plans").InsertOne(ctx, plan); err != nil {
 			return err
 		}
@@ -192,24 +204,30 @@ func (s *Store) ensureSingleWebsitePlan(ctx context.Context, now time.Time) erro
 		return err
 	}
 
-	set := bson.M{
-		"name":                  "Website Package",
-		"description":           "One flat package for website feedback, tasks, team access, reports, and project management.",
-		"pricing_model":         "flat",
-		"price":                 int64(500),
-		"price_yearly":          int64(3500),
-		"price_per_seat":        int64(0),
-		"price_per_seat_yearly": int64(0),
-		"trial_days":            14,
-		"seat_limit":            25,
-		"project_limit":         100,
-		"storage_limit_mb":      10240,
-		"featured":              true,
+	set := bson.M{"pricing_model": "flat", "price_per_seat": int64(0), "price_per_seat_yearly": int64(0)}
+	if strings.TrimSpace(plan.Name) == "" {
+		set["name"] = "Website Package"
+	}
+	if plan.Price <= 0 {
+		set["price"] = int64(500)
+	}
+	if plan.PriceYearly <= 0 {
+		if plan.Price > 0 {
+			set["price_yearly"] = plan.Price * 12
+		} else {
+			set["price_yearly"] = int64(3500)
+		}
+	}
+	if plan.SeatLimit <= 0 {
+		set["seat_limit"] = 25
+	}
+	if plan.ProjectLimit <= 0 {
+		set["project_limit"] = 100
 	}
 	if plan.CreatedAt.IsZero() {
 		set["created_at"] = now
 	}
-	if _, err := s.C("plans").UpdateByID(ctx, plan.ID, bson.M{"$set": set}); err != nil {
+	if _, err := s.C("plans").UpdateByID(ctx, plan.ID, bson.M{"$set": set, "$unset": bson.M{"storage_limit_mb": ""}}); err != nil {
 		return err
 	}
 	if _, err := s.C("subscriptions").UpdateMany(ctx, bson.M{"plan_id": bson.M{"$ne": plan.ID}}, bson.M{"$set": bson.M{"plan_id": plan.ID}}); err != nil {

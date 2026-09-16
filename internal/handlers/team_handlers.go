@@ -350,8 +350,7 @@ func (s *Server) addTeamMember(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "team not found"})
 		return
 	}
-	if team.SeatLimitCached > 0 && len(team.MemberIDs) >= team.SeatLimitCached {
-		c.JSON(http.StatusPaymentRequired, gin.H{"error": "seat limit reached; upgrade your subscription"})
+	if !s.requireAvailableTeamSeat(c, team, true) {
 		return
 	}
 

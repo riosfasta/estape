@@ -12319,12 +12319,9 @@ async function renderPlansAdmin() {
             </div>
             <div class="grid-2">
               <div class="field"><label>Trial days</label><input type="number" min="0" step="1" name="trial_days" value="${plan.trial_days || 0}"></div>
-              <div class="field"><label>Seat limit</label><input type="number" min="1" step="1" name="seat_limit" value="${plan.seat_limit || 1}"></div>
+              <div class="field"><label>Seat limit</label><input type="number" min="1" step="1" name="seat_limit" value="${plan.seat_limit || 1}"><small class="muted">Maximum people in a team, including its administrator. Pending invitations reserve seats.</small></div>
             </div>
-            <div class="grid-2">
-              <div class="field"><label>Project limit</label><input type="number" min="1" step="1" name="project_limit" value="${plan.project_limit || 1}"></div>
-              <div class="field"><label>Storage MB</label><input type="number" min="1" step="1" name="storage_limit_mb" value="${plan.storage_limit_mb || 1}"></div>
-            </div>
+            <div class="field"><label>Project limit</label><input type="number" min="1" step="1" name="project_limit" value="${plan.project_limit || 1}"></div>
             <label class="check-row"><input type="checkbox" name="featured" ${plan.featured ? "checked" : ""}> Featured trial plan</label>
             <button class="btn primary" type="submit">${icon("save")}Save plan</button>
             <p class="status-line"></p>
@@ -12346,12 +12343,11 @@ async function renderPlansAdmin() {
       trial_days: Number(data.trial_days),
       seat_limit: Number(data.seat_limit),
       project_limit: Number(data.project_limit),
-      storage_limit_mb: Number(data.storage_limit_mb),
       featured: form.featured.checked,
     };
     try {
       await api(`/api/admin/plans/${form.dataset.planId}`, { method: "PATCH", body: JSON.stringify(body) });
-      await renderPlansAdmin();
+      setFormStatus(form, "Plan saved. Current subscribers now use this seat limit.");
     } catch (error) {
       const line = form.querySelector(".status-line");
       if (line) {

@@ -111,7 +111,6 @@ type Plan struct {
 	TrialDays          int                `bson:"trial_days" json:"trial_days"`
 	SeatLimit          int                `bson:"seat_limit" json:"seat_limit"`
 	ProjectLimit       int                `bson:"project_limit" json:"project_limit"`
-	StorageLimitMB     int                `bson:"storage_limit_mb" json:"storage_limit_mb"`
 	Featured           bool               `bson:"featured,omitempty" json:"featured,omitempty"`
 	CreatedAt          time.Time          `bson:"created_at" json:"created_at"`
 }

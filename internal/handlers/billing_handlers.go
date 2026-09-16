@@ -55,7 +55,6 @@ func (s *Server) adminUpdatePlan(c *gin.Context) {
 		TrialDays          *int    `json:"trial_days"`
 		SeatLimit          *int    `json:"seat_limit"`
 		ProjectLimit       *int    `json:"project_limit"`
-		StorageLimitMB     *int    `json:"storage_limit_mb"`
 		Featured           *bool   `json:"featured"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -148,14 +147,6 @@ func (s *Server) adminUpdatePlan(c *gin.Context) {
 		set["project_limit"] = *req.ProjectLimit
 		current.ProjectLimit = *req.ProjectLimit
 	}
-	if req.StorageLimitMB != nil {
-		if *req.StorageLimitMB < 1 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "storage_limit_mb must be at least 1"})
-			return
-		}
-		set["storage_limit_mb"] = *req.StorageLimitMB
-		current.StorageLimitMB = *req.StorageLimitMB
-	}
 	if req.Featured != nil {
 		set["featured"] = *req.Featured
 		current.Featured = *req.Featured
@@ -184,19 +175,26 @@ func (s *Server) adminUpdatePlan(c *gin.Context) {
 	if current.Featured {
 		_, _ = s.store.C("plans").UpdateMany(c.Request.Context(), bson.M{"_id": bson.M{"$ne": id}}, bson.M{"$set": bson.M{"featured": false}})
 	}
-	if _, err := s.store.C("plans").UpdateByID(c.Request.Context(), id, bson.M{"$set": set}); err != nil {
+	if _, err := s.store.C("plans").UpdateByID(c.Request.Context(), id, bson.M{"$set": set, "$unset": bson.M{"storage_limit_mb": ""}}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update plan"})
 		return
 	}
-	subscriptionIDs, err := s.subscriptionIDsForPlan(c, id)
+	subscriptionIDs, teamIDs, err := s.subscriptionRefsForPlan(c, id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "plan updated, but subscription lookup failed"})
 		return
 	}
-	if len(subscriptionIDs) > 0 {
+	if len(subscriptionIDs) > 0 || len(teamIDs) > 0 {
+		filters := []bson.M{}
+		if len(subscriptionIDs) > 0 {
+			filters = append(filters, bson.M{"subscription_id": bson.M{"$in": subscriptionIDs}})
+		}
+		if len(teamIDs) > 0 {
+			filters = append(filters, bson.M{"_id": bson.M{"$in": teamIDs}})
+		}
 		if _, err := s.store.C("teams").UpdateMany(
 			c.Request.Context(),
-			bson.M{"subscription_id": bson.M{"$in": subscriptionIDs}},
+			bson.M{"$or": filters},
 			bson.M{"$set": bson.M{"seat_limit_cached": current.SeatLimit}},
 		); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "plan updated, but seat cache refresh failed"})
@@ -207,22 +205,26 @@ func (s *Server) adminUpdatePlan(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"updated": true, "plan": current})
 }
 
-func (s *Server) subscriptionIDsForPlan(c *gin.Context, planID primitive.ObjectID) ([]primitive.ObjectID, error) {
+func (s *Server) subscriptionRefsForPlan(c *gin.Context, planID primitive.ObjectID) ([]primitive.ObjectID, []primitive.ObjectID, error) {
 	cursor, err := s.store.C("subscriptions").Find(c.Request.Context(), bson.M{"plan_id": planID})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer cursor.Close(c.Request.Context())
 
 	ids := []primitive.ObjectID{}
+	teamIDs := []primitive.ObjectID{}
 	for cursor.Next(c.Request.Context()) {
 		var sub models.Subscription
 		if err := cursor.Decode(&sub); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		ids = append(ids, sub.ID)
+		if !sub.TeamID.IsZero() {
+			teamIDs = append(teamIDs, sub.TeamID)
+		}
 	}
-	return ids, cursor.Err()
+	return ids, uniqueObjectIDs(teamIDs), cursor.Err()
 }
 
 func normalizedBillingPeriod(value string) string {
@@ -279,11 +281,19 @@ func planBillingAmount(plan models.Plan, seatCount int64, period string, quantit
 }
 
 func teamSeatCount(team models.Team) int64 {
-	count := int64(len(team.MemberIDs))
-	if count < 1 {
+	seen := map[primitive.ObjectID]bool{}
+	for _, id := range team.MemberIDs {
+		if !id.IsZero() {
+			seen[id] = true
+		}
+	}
+	if !team.OwnerAdminID.IsZero() {
+		seen[team.OwnerAdminID] = true
+	}
+	if len(seen) == 0 {
 		return 1
 	}
-	return count
+	return int64(len(seen))
 }
 
 func formatBillingAmountCents(amount int64) string {

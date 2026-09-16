@@ -730,6 +730,9 @@ func (s *Server) switchWorkspace(c *gin.Context) {
 				}
 			}
 			if hasAccess && !containsObjectID(targetTeam.MemberIDs, user.ID) {
+				if !s.requireAvailableTeamSeat(c, targetTeam, false) {
+					return
+				}
 				_, _ = s.store.C("teams").UpdateByID(c.Request.Context(), targetTeam.ID, bson.M{"$addToSet": bson.M{"member_ids": user.ID}})
 			}
 			if !hasAccess && user.Role != models.RoleOwnerAdmin {

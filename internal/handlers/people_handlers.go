@@ -259,6 +259,9 @@ func (s *Server) createTeamInvitation(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "team not found"})
 		return
 	}
+	if !s.requireAvailableTeamSeat(c, team, true) {
+		return
+	}
 
 	recipient := strings.TrimSpace(firstNonEmpty(req.Recipient, req.Email, req.Username))
 	if recipient == "" {
@@ -660,6 +663,14 @@ func (s *Server) respondInvitation(c *gin.Context) {
 		}
 		if err := s.validateInvitationAccess(c.Request.Context(), invitation.TeamID, invitation.ClientIDs, invitation.WebsiteIDs); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invited folder or domain is no longer available; ask the company to send a new invitation"})
+			return
+		}
+		var invitedTeam models.Team
+		if err := s.store.C("teams").FindOne(c.Request.Context(), bson.M{"_id": invitation.TeamID}).Decode(&invitedTeam); err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "invited team not found"})
+			return
+		}
+		if !containsObjectID(invitedTeam.MemberIDs, userCtx.ID) && !s.requireAvailableTeamSeat(c, invitedTeam, false) {
 			return
 		}
 		status = "accepted"

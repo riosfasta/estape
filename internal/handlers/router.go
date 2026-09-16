@@ -461,9 +461,6 @@ func publicPlanLimitsLine(plan models.Plan) string {
 	if plan.ProjectLimit > 0 {
 		parts = append(parts, fmt.Sprintf("%d projects", plan.ProjectLimit))
 	}
-	if plan.StorageLimitMB > 0 {
-		parts = append(parts, formatStorageLimit(plan.StorageLimitMB)+" storage")
-	}
 	if len(parts) == 0 {
 		return "Custom limits"
 	}
@@ -502,16 +499,6 @@ func formatWholeNumber(value int64) string {
 		out += string(r)
 	}
 	return out
-}
-
-func formatStorageLimit(megabytes int) string {
-	if megabytes >= 1024 && megabytes%1024 == 0 {
-		return fmt.Sprintf("%d GB", megabytes/1024)
-	}
-	if megabytes >= 1024 {
-		return fmt.Sprintf("%.1f GB", float64(megabytes)/1024)
-	}
-	return fmt.Sprintf("%d MB", megabytes)
 }
 
 func (s *Server) appPage(c *gin.Context) {

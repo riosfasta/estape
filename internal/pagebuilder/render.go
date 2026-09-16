@@ -744,9 +744,6 @@ func planLimitsLine(plan models.Plan) string {
 	if plan.ProjectLimit > 0 {
 		parts = append(parts, fmt.Sprintf("%d projects", plan.ProjectLimit))
 	}
-	if plan.StorageLimitMB > 0 {
-		parts = append(parts, formatStorageLimit(plan.StorageLimitMB)+" storage")
-	}
 	if len(parts) == 0 {
 		return "Custom limits"
 	}
@@ -770,17 +767,6 @@ func formatCentsUSD(cents int64) string {
 		return fmt.Sprintf("$%d", dollars)
 	}
 	return fmt.Sprintf("$%d.%02d", dollars, remainder)
-}
-
-func formatStorageLimit(mb int) string {
-	if mb >= 1024 {
-		gb := float64(mb) / 1024
-		if gb == float64(int(gb)) {
-			return fmt.Sprintf("%d GB", int(gb))
-		}
-		return fmt.Sprintf("%.1f GB", gb)
-	}
-	return fmt.Sprintf("%d MB", mb)
 }
 
 func renderSocialLinksHTML(items []models.SocialLink) string {
