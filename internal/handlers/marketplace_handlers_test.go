@@ -67,6 +67,40 @@ func TestMarketplaceRules(t *testing.T) {
 	}
 }
 
+func TestMarketplaceJobOwnerDetails(t *testing.T) {
+	job := models.MarketplaceJob{
+		ID:               primitive.NewObjectID(),
+		OwnerID:          primitive.NewObjectID(),
+		OwnerName:        "Alice Developer",
+		OwnerTitle:       "Senior Software Architect",
+		OwnerPhoto:       "https://example.test/photo.jpg",
+		OwnerLocation:    "Berlin",
+		OwnerCountry:     "DE",
+		OwnerVerified:    true,
+		OwnerRating:      5.0,
+		OwnerRatingCount: 12,
+		Title:            "Build Microservice",
+		Budget:           50000,
+		Status:           "open",
+	}
+
+	if job.OwnerName != "Alice Developer" || job.OwnerTitle != "Senior Software Architect" || job.OwnerLocation != "Berlin" || job.OwnerCountry != "DE" || !job.OwnerVerified || job.OwnerRating != 5.0 || job.OwnerRatingCount != 12 {
+		t.Errorf("job owner details not correctly set: %+v", job)
+	}
+
+	data, err := json.Marshal(job)
+	if err != nil {
+		t.Fatalf("failed to marshal job: %v", err)
+	}
+	var unmarshaled models.MarketplaceJob
+	if err := json.Unmarshal(data, &unmarshaled); err != nil {
+		t.Fatalf("failed to unmarshal job: %v", err)
+	}
+	if unmarshaled.OwnerTitle != "Senior Software Architect" || !unmarshaled.OwnerVerified || unmarshaled.OwnerRating != 5.0 {
+		t.Errorf("unmarshaled owner details mismatch: %+v", unmarshaled)
+	}
+}
+
 func TestMarketplaceRoutesAndPrivateAccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	s := &Server{}

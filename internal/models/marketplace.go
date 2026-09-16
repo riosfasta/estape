@@ -58,6 +58,13 @@ type MarketplaceJob struct {
 	EmployerWalletID primitive.ObjectID     `bson:"employer_wallet_id,omitempty" json:"employer_wallet_id,omitempty"`
 	TeamID           primitive.ObjectID     `bson:"team_id,omitempty" json:"team_id,omitempty"`
 	OwnerName        string                 `bson:"owner_name" json:"owner_name"`
+	OwnerTitle       string                 `bson:"owner_title,omitempty" json:"owner_title,omitempty"`
+	OwnerPhoto       string                 `bson:"owner_photo,omitempty" json:"owner_photo,omitempty"`
+	OwnerLocation    string                 `bson:"owner_location,omitempty" json:"owner_location,omitempty"`
+	OwnerCountry     string                 `bson:"owner_country,omitempty" json:"owner_country,omitempty"`
+	OwnerVerified    bool                   `bson:"owner_verified,omitempty" json:"owner_verified,omitempty"`
+	OwnerRating      float64                `bson:"owner_rating,omitempty" json:"owner_rating,omitempty"`
+	OwnerRatingCount int                    `bson:"owner_rating_count,omitempty" json:"owner_rating_count,omitempty"`
 	FreelancerID     primitive.ObjectID     `bson:"freelancer_id,omitempty" json:"freelancer_id"`
 	Title          string                 `bson:"title" json:"title"`
 	Description    string                 `bson:"description" json:"description"`

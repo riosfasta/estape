@@ -232,6 +232,7 @@ func (s *Server) marketplaceMe(c *gin.Context) {
 	if marketplaceError(c, err) {
 		return
 	}
+	s.enrichJobsWithOwnerDetails(ctx, jobs)
 	_, nextReset := connectsPeriod(time.Now(), policy.Period)
 	c.JSON(200, gin.H{"connects_policy": policy, "profile": profile, "jobs": jobs, "proposals": proposals, "connect_cost": proposalConnectCost, "connects_reset_at": nextReset})
 }
@@ -607,7 +608,62 @@ func (s *Server) marketplaceJobs(c *gin.Context) {
 	if more {
 		jobs = jobs[:24]
 	}
+	s.enrichJobsWithOwnerDetails(ctx, jobs)
 	c.JSON(200, gin.H{"jobs": jobs, "has_more": more, "page": page})
+}
+
+func (s *Server) enrichJobsWithOwnerDetails(ctx context.Context, jobs []models.MarketplaceJob) {
+	if len(jobs) == 0 || s.store == nil {
+		return
+	}
+	var missingOwnerIDs []primitive.ObjectID
+	seen := make(map[primitive.ObjectID]bool)
+	for _, j := range jobs {
+		if (j.OwnerTitle == "" || j.OwnerPhoto == "") && !j.OwnerID.IsZero() && !seen[j.OwnerID] {
+			missingOwnerIDs = append(missingOwnerIDs, j.OwnerID)
+			seen[j.OwnerID] = true
+		}
+	}
+	if len(missingOwnerIDs) == 0 {
+		return
+	}
+	cur, err := s.store.C("freelancer_profiles").Find(ctx, bson.M{"_id": bson.M{"$in": missingOwnerIDs}})
+	if err != nil {
+		return
+	}
+	defer cur.Close(ctx)
+	var profiles []models.FreelancerProfile
+	if err := cur.All(ctx, &profiles); err != nil {
+		return
+	}
+	profileMap := make(map[primitive.ObjectID]models.FreelancerProfile)
+	for _, p := range profiles {
+		profileMap[p.ID] = p
+	}
+	for i := range jobs {
+		if (jobs[i].OwnerTitle == "" || jobs[i].OwnerPhoto == "") && !jobs[i].OwnerID.IsZero() {
+			if p, ok := profileMap[jobs[i].OwnerID]; ok {
+				if jobs[i].OwnerName == "" {
+					jobs[i].OwnerName = p.Name
+				}
+				if jobs[i].OwnerTitle == "" {
+					jobs[i].OwnerTitle = p.Title
+				}
+				if jobs[i].OwnerPhoto == "" {
+					jobs[i].OwnerPhoto = p.Photo
+				}
+				if jobs[i].OwnerLocation == "" {
+					jobs[i].OwnerLocation = p.Location
+				}
+				if jobs[i].OwnerCountry == "" {
+					jobs[i].OwnerCountry = p.Country
+				}
+				jobs[i].OwnerVerified = p.IdentityStatus == "verified"
+				jobs[i].OwnerRating = p.Rating
+				jobs[i].OwnerRatingCount = p.RatingCount
+			}
+		}
+	}
 }
 
 func (s *Server) marketplaceCreateJob(c *gin.Context) {
@@ -680,6 +736,13 @@ func (s *Server) marketplaceCreateJob(c *gin.Context) {
 			return err
 		}
 		job.OwnerName = p.Name
+		job.OwnerTitle = p.Title
+		job.OwnerPhoto = p.Photo
+		job.OwnerLocation = p.Location
+		job.OwnerCountry = p.Country
+		job.OwnerVerified = p.IdentityStatus == "verified"
+		job.OwnerRating = p.Rating
+		job.OwnerRatingCount = p.RatingCount
 		var wallet models.MarketplaceWallet
 		if err = s.store.C("marketplace_wallets").FindOne(sc, bson.M{"_id": hiringWalletID, "deposits": bson.M{"$gte": req.Budget}}).Decode(&wallet); err != nil {
 			return marketInvalid("Top up your balance to cover the job budget before publishing")
@@ -706,6 +769,11 @@ func (s *Server) marketplaceJob(c *gin.Context) {
 	var job models.MarketplaceJob
 	if marketplaceError(c, s.store.C("marketplace_jobs").FindOne(ctx, bson.M{"_id": id}).Decode(&job)) {
 		return
+	}
+	if (job.OwnerTitle == "" || job.OwnerPhoto == "") && !job.OwnerID.IsZero() {
+		jobList := []models.MarketplaceJob{job}
+		s.enrichJobsWithOwnerDetails(ctx, jobList)
+		job = jobList[0]
 	}
 	canManage := job.OwnerID == user.ID || (!job.TeamID.IsZero() && job.TeamID == user.TeamID && (user.Role == models.RoleOwnerAdmin || user.Role == models.RoleTeamAdmin)) || (!job.EmployerWalletID.IsZero() && job.EmployerWalletID == user.ID)
 	filter := bson.M{"job_id": id}

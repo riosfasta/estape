@@ -45,7 +45,26 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
   const availabilityLabel = p => p.active_jobs > 0 || p.availability === "running_project" ? "In a running project" : p.availability === "on_break" ? "Off for break" : p.availability === "busy" ? "Busy" : p.available === false ? "Busy" : "Available now";
   const portfolio = p => (p.portfolio_photos?.length || p.youtube_urls?.length) ? `<section class="panel"><h2>Project portfolio</h2><div class="market-portfolio">${(p.portfolio_photos || []).map(url => { const detail = (p.portfolio_details || []).find(item => item.photo === url) || {}; return `<figure><a href="${esc(url)}" target="_blank" rel="noopener"><img src="${esc(url)}" alt="${esc(detail.title || "Project work sample")}" loading="lazy"></a>${detail.title ? `<h3>${esc(detail.title)}</h3>` : ""}${detail.description ? `<p class="market-bio">${esc(detail.description)}</p>` : ""}${detail.url ? `<a href="${esc(detail.url)}" target="_blank" rel="noopener noreferrer">Visit project</a>` : ""}</figure>`; }).join("")}</div><div class="toolbar">${(p.youtube_urls || []).map((url, i) => `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Watch project video ${i + 1} on YouTube</a>`).join("")}</div></section>` : "";
   const stats = (p) => `<div class="market-stats"><div><strong>${p.rating_count ? Number(p.rating).toFixed(1) + " / 5" : "New"}</strong><span>${Number(p.rating_count || 0)} reviews</span></div><div><strong>${Number(p.finished_jobs || 0)}</strong><span>Finished jobs</span></div><div><strong>${Number(p.published_jobs || 0)}</strong><span>Published jobs</span></div><div><strong>${availabilityLabel(p)}</strong><span>Current availability</span></div></div>`;
-  const jobCards = (jobs) => jobs.length ? `<div class="market-job-list">${jobs.map(j => `<article class="panel market-job"><div><a href="/marketplace/jobs/${esc(j.id)}"><h3>${esc(j.title)}</h3></a><p>${esc(j.description?.slice(0, 220) || "")}</p>${chips(j.skills)}<small class="muted">${esc(j.owner_name || "Employer")} · ${esc(date(j.created_at))}</small></div><aside><strong>${money(jobAmount(j))}</strong><span>${j.billing_type === "hourly" ? money(j.hourly_rate) + " / hour" + (j.status === "completed" ? "" : " - maximum cost above") : "Fixed price - USD"}</span>${badge(j.status)}<a class="btn" href="/marketplace/jobs/${esc(j.id)}">View job</a></aside></article>`).join("")}</div>` : empty("No jobs here yet.");
+  const countryName = code => { if (!code) return ""; try { return regionNames.of(code) || code; } catch { return code; } };
+  const ownerSnippet = j => `
+    <div class="market-job-owner">
+      ${photo({ photo: j.owner_photo, name: j.owner_name })}
+      <div class="market-owner-info">
+        <div class="market-owner-header">
+          <strong>${esc(j.owner_name || "Employer")}</strong>
+          ${j.owner_verified ? `<span class="market-badge market-verified-badge" title="ID verified employer">ID verified</span>` : ""}
+          <span class="market-badge market-funded-badge" title="Job budget is verified and covered by employer balance">Funded</span>
+          ${j.owner_rating_count ? `<span class="market-owner-rating">★ ${Number(j.owner_rating).toFixed(1)} (${j.owner_rating_count})</span>` : ""}
+        </div>
+        <div class="market-owner-meta">
+          ${j.owner_title ? `<span class="market-owner-title">${esc(j.owner_title)}</span>` : ""}
+          ${j.owner_location ? `<span>${esc(j.owner_location)}${j.owner_country ? ", " + esc(countryName(j.owner_country)) : ""}</span>` : ""}
+          <small class="muted">Published ${esc(date(j.created_at))}</small>
+        </div>
+      </div>
+    </div>
+  `;
+  const jobCards = (jobs) => jobs.length ? `<div class="market-job-list">${jobs.map(j => `<article class="panel market-job"><div><a href="/marketplace/jobs/${esc(j.id)}"><h3>${esc(j.title)}</h3></a><p>${esc(j.description?.slice(0, 220) || "")}</p>${chips(j.skills)}${ownerSnippet(j)}</div><aside><strong>${money(jobAmount(j))}</strong><span>${j.billing_type === "hourly" ? money(j.hourly_rate) + " / hour" + (j.status === "completed" ? "" : " - maximum cost above") : "Fixed price - USD"}</span>${badge(j.status)}<a class="btn" href="/marketplace/jobs/${esc(j.id)}">View job</a></aside></article>`).join("")}</div>` : empty("No jobs here yet.");
   function skillPicker(selected = []) {
     return `<fieldset class="market-skill-picker"><legend>Skills (choose up to 30, including custom skills)</legend><div>${skillCatalog.map(skill => `<label><input type="checkbox" name="skill" value="${esc(skill)}" ${selected.includes(skill) ? "checked" : ""}>${esc(skill)}</label>`).join("")}</div></fieldset><label class="field">Custom skills, separated by commas<input name="custom_skills" maxlength="1000" value="${esc(selected.filter(s => !skillCatalog.includes(s)).join(", "))}" placeholder="Add a specialty not listed above"></label>`;
   }
@@ -235,18 +254,201 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     bindForm("#marketJobSearch", async form => { location.href = "/find-jobs?" + new URLSearchParams(new FormData(form)); });
   }
   async function myJobs() {
-    const data = await api("/api/marketplace/me");
+    const [data, walletData] = await Promise.all([api("/api/marketplace/me"), api("/api/marketplace/wallet")]);
+    let currentDeposits = walletData?.wallet?.deposits ?? 0;
+    const isWorkspace = walletData?.is_workspace_wallet;
+    const workspaceTag = isWorkspace ? `${walletData.workspace_name || "Workspace"} (${walletData.workspace_owner_name || "Owner"})` : "";
+
     page("My jobs & offers", `${heading("MAKE WORK HAPPEN", "My jobs & offers", "Manage published jobs, active contracts, proposals and invitations.", '<a class="btn" href="/freelancers">Find freelancers</a><a class="btn" href="/wallet">Top up balance</a>')}
-      <details class="panel"><summary><strong>Publish a new job</strong></summary><p class="market-notice">Top up before publishing. Your unreserved balance is refundable, less actual payment/refund transaction costs. The agreed payment is reserved when you hire.</p><form id="marketNewJob" class="market-form"><label class="field">Job title<input name="title" minlength="5" maxlength="160" required></label><label class="field">Scope, deliverables and expectations<textarea name="description" rows="5" minlength="30" maxlength="10000" required></textarea></label><label class="field">Fixed-price budget (USD)<input name="budget" type="number" min="1" max="100000" step="0.01" required></label>${skillPicker()}<button class="btn primary" type="submit">Publish job</button></form></details>
+      <details class="panel" id="marketNewJobPanel"><summary><strong>Publish a new job</strong></summary>
+        <div class="market-job-balance-card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin:12px 0;padding:12px 16px;background:var(--bg-card,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:8px;">
+          <div>
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted,#64748b);font-weight:600;">Available Hiring Balance</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:2px;">
+              <strong id="marketAvailableBalance" style="font-size:20px;font-weight:700;">${money(currentDeposits)}</strong>
+              ${isWorkspace ? `<span class="market-badge" style="font-size:11px;">Workspace: ${esc(workspaceTag)}</span>` : ""}
+            </div>
+          </div>
+          <button type="button" class="btn primary compact" id="marketToggleTopupBtn">+ Top Up with PayPal</button>
+        </div>
+        <section class="panel" id="marketInlineTopupSection" hidden style="margin-bottom:14px;background:var(--bg-subtle,#f1f5f9);border:1px solid var(--primary,#3b82f6);border-radius:8px;padding:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <strong>Top Up Hiring Balance via PayPal</strong>
+            <button type="button" class="btn compact" id="marketCloseInlineTopup" aria-label="Close top up section">&times;</button>
+          </div>
+          <p class="muted" style="font-size:13px;margin:0 0 10px;">Add funds using PayPal so your available balance covers the job price.</p>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+            <button type="button" class="btn compact" data-market-preset="25">+$25</button>
+            <button type="button" class="btn compact" data-market-preset="50">+$50</button>
+            <button type="button" class="btn compact" data-market-preset="100">+$100</button>
+            <button type="button" class="btn compact" data-market-preset="250">+$250</button>
+            <button type="button" class="btn compact" data-market-preset="500">+$500</button>
+          </div>
+          <form class="market-form" id="marketInlineTopupForm" style="display:flex;gap:8px;align-items:flex-end;margin-top:0;">
+            <label class="field" style="margin:0;flex:1;">Amount (USD)
+              <input type="number" name="amount" id="marketTopupAmountInput" min="1" max="100000" step="0.01" value="50" required placeholder="50.00">
+            </label>
+            <button type="submit" class="btn primary" style="margin:0;white-space:nowrap;">Continue to PayPal</button>
+          </form>
+          <p id="marketInlineTopupStatus" role="status" style="margin:8px 0 0;font-size:13px;"></p>
+        </section>
+        <p class="market-notice">Top up before publishing. Your unreserved balance is refundable, less actual payment/refund transaction costs. The agreed payment is reserved when you hire.</p>
+        <form id="marketNewJob" class="market-form">
+          <label class="field">Job title<input name="title" minlength="5" maxlength="160" required></label>
+          <label class="field">Scope, deliverables and expectations<textarea name="description" rows="5" minlength="30" maxlength="10000" required></textarea></label>
+          <label class="field">Fixed-price budget / job price (USD)
+            <input name="budget" id="marketJobBudgetInput" type="number" min="1" max="100000" step="0.01" required placeholder="e.g. 100.00">
+          </label>
+          <div id="marketBudgetStatus" style="margin-top:-8px;margin-bottom:8px;font-size:13px;"></div>
+          ${skillPicker()}
+          <button class="btn primary" type="submit" id="marketPublishJobBtn">Publish job</button>
+        </form>
+      </details>
       <h2>Your jobs</h2>${jobCards(data.jobs)}<h2>Your bids & invitations</h2>${data.proposals.map(p => `<article class="panel"><div class="toolbar">${badge(p.kind)}${badge(p.status)}<strong>${money(p.price)}</strong><a class="btn" href="/marketplace/jobs/${esc(p.job_id)}">View job & respond</a></div><p>${esc(p.message)}</p></article>`).join("") || empty("You have no bids or invitations yet.")}`);
-    bindForm("#marketNewJob", async form => { const v = Object.fromEntries(new FormData(form)); const result = await post("/api/marketplace/jobs", { title: v.title, description: v.description, budget: cents(v.budget), skills: skillsValue(form) }); location.href = `/marketplace/jobs/${result.job.id}`; });
+
+    const budgetInput = $("#marketJobBudgetInput");
+    const budgetStatus = $("#marketBudgetStatus");
+    const balanceDisplay = $("#marketAvailableBalance");
+    const inlineTopupSection = $("#marketInlineTopupSection");
+    const topupAmountInput = $("#marketTopupAmountInput");
+
+    function updateBudgetCheck() {
+      if (!budgetInput || !budgetStatus) return;
+      const rawVal = String(budgetInput.value || "").trim();
+      if (!rawVal) {
+        budgetStatus.innerHTML = "";
+        return;
+      }
+      let budgetInCents = 0;
+      try {
+        budgetInCents = cents(rawVal);
+      } catch {
+        budgetStatus.innerHTML = "";
+        return;
+      }
+      if (budgetInCents <= currentDeposits) {
+        budgetStatus.innerHTML = `<span style="color:var(--accent,#21856f);font-weight:600;">✓ Covered:</span> <span class="muted">Job price of ${money(budgetInCents)} is fully covered by your available balance (${money(currentDeposits)}). Freelancers will see this job is funded.</span>`;
+      } else {
+        const deficitInCents = budgetInCents - currentDeposits;
+        budgetStatus.innerHTML = `<div style="padding:10px 14px;background:#fef2f2;border:1px solid #f87171;border-radius:6px;color:#991b1b;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+          <div>
+            <strong>Insufficient hiring balance:</strong> Job price is ${money(budgetInCents)}, but your available balance is ${money(currentDeposits)} (short by <strong>${money(deficitInCents)}</strong>). Freelancers require a funded job.
+          </div>
+          <button type="button" class="btn primary compact" id="marketPayDeficitBtn">Top Up ${money(deficitInCents)} via PayPal</button>
+        </div>`;
+        $("#marketPayDeficitBtn")?.addEventListener("click", () => {
+          if (inlineTopupSection) {
+            inlineTopupSection.hidden = false;
+            if (topupAmountInput) {
+              topupAmountInput.value = (deficitInCents / 100).toFixed(2);
+              topupAmountInput.focus();
+            }
+            inlineTopupSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          }
+        });
+      }
+    }
+
+    $("#marketToggleTopupBtn")?.addEventListener("click", () => {
+      if (inlineTopupSection) inlineTopupSection.hidden = !inlineTopupSection.hidden;
+    });
+    $("#marketCloseInlineTopup")?.addEventListener("click", () => {
+      if (inlineTopupSection) inlineTopupSection.hidden = true;
+    });
+    document.querySelectorAll("[data-market-preset]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (topupAmountInput) topupAmountInput.value = btn.dataset.marketPreset;
+      });
+    });
+    budgetInput?.addEventListener("input", updateBudgetCheck);
+    budgetInput?.addEventListener("change", updateBudgetCheck);
+
+    const inlineTopupForm = $("#marketInlineTopupForm");
+    const inlineTopupStatus = $("#marketInlineTopupStatus");
+    if (inlineTopupForm) {
+      inlineTopupForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const amt = Number(topupAmountInput?.value || 0);
+        if (amt < 1) return;
+        if (inlineTopupStatus) {
+          inlineTopupStatus.textContent = "Creating PayPal checkout...";
+          inlineTopupStatus.className = "muted";
+        }
+        const subBtn = inlineTopupForm.querySelector('[type="submit"]');
+        if (subBtn) subBtn.disabled = true;
+        try {
+          const res = await post("/api/marketplace/topup", { amount: cents(amt) });
+          if (inlineTopupStatus) inlineTopupStatus.textContent = "";
+          await openEmbeddedCheckout({
+            api,
+            title: "Hiring balance",
+            description: "Add funds to hire freelancers. Unused, unreserved balance is refundable; payment and refund transaction costs may be deducted.",
+            amount: res.amount,
+            orderID: res.order_id,
+            captureURL: `/api/marketplace/topup/${encodeURIComponent(res.transfer_id)}/capture`,
+            fallbackURL: res.url,
+            onSuccess: async () => {
+              const freshWallet = await api("/api/marketplace/wallet");
+              currentDeposits = freshWallet?.wallet?.deposits ?? (currentDeposits + cents(amt));
+              if (balanceDisplay) balanceDisplay.textContent = money(currentDeposits);
+              if (inlineTopupSection) inlineTopupSection.hidden = true;
+              updateBudgetCheck();
+              message("Payment verified and hiring balance credited! You can now publish your job.");
+            }
+          });
+        } catch (err) {
+          if (inlineTopupStatus) {
+            inlineTopupStatus.textContent = err.message;
+            inlineTopupStatus.className = "market-error";
+          }
+        } finally {
+          if (subBtn) subBtn.disabled = false;
+        }
+      };
+    }
+
+    bindForm("#marketNewJob", async form => {
+      const v = Object.fromEntries(new FormData(form));
+      const budgetCents = cents(v.budget);
+      if (budgetCents > currentDeposits) {
+        updateBudgetCheck();
+        if (inlineTopupSection) {
+          inlineTopupSection.hidden = false;
+          if (topupAmountInput) {
+            topupAmountInput.value = ((budgetCents - currentDeposits) / 100).toFixed(2);
+          }
+          inlineTopupSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+        throw new Error(`Insufficient balance: please top up ${money(budgetCents - currentDeposits)} via PayPal to publish this job.`);
+      }
+      const result = await post("/api/marketplace/jobs", { title: v.title, description: v.description, budget: budgetCents, skills: skillsValue(form) });
+      location.href = `/marketplace/jobs/${result.job.id}`;
+    });
   }
+
   async function jobDetail(id) {
     const data = await api(`/api/marketplace/jobs/${id}`); const j = data.job; const owner = state.me.id === j.owner_id || (j.team_id && j.team_id === state.me.team_id && (state.me.role === 'owner_admin' || state.me.role === 'user_admin')) || (j.employer_wallet_id && j.employer_wallet_id === state.me.id); const hired = state.me.id === j.freelancer_id;
     const me = await api("/api/marketplace/me");
     const ownProposal = data.proposals.find(p => p.freelancer_id === state.me.id);
     const hourly = j.billing_type === "hourly", payable = hourly ? (data.hourly?.cost || 0) : j.price;
     page(j.title, `${heading(hourly ? "HOURLY PROJECT" : "FIXED-PRICE PROJECT", j.title, `Published by ${j.owner_name}`, '<a class="btn" href="/marketplace/jobs">My jobs</a>')}<section class="panel"><div class="toolbar"><strong class="market-large">${money(jobAmount(j))}</strong>${badge(j.status)}</div><p class="market-bio">${esc(j.description)}</p>${chips(j.skills)}${hourly ? `<p class="market-notice">${money(j.hourly_rate)} / hour. Maximum ${hours(j.max_seconds)} hours and ${money(j.budget)} total. ${data.hourly ? `Recorded: ${hours(data.hourly.seconds)} hours = ${money(data.hourly.cost)}.` : ""} Limits apply to the whole contract. The protected timer stops billing at the first limit.</p>` : ""}<p class="muted">${hourly ? "Approval pays recorded time, less the 5% platform commission, and returns unused reserved funds to the employer." : owner ? "Your reserved payment is released on approval." : "Platform commission: 5%. You receive " + money((jobAmount(j)) - Math.round((jobAmount(j)) * .05)) + "."} Earnings unlock seven days after employer approval.</p>${j.available_at ? `<p>Withdrawal eligibility: ${esc(date(j.available_at))}</p>` : ""}${data.can_view_scope ? '<button class="btn primary" data-work-open>View shared tasks & team</button>' : ""}${owner && j.status === "open" ? '<a class="btn primary" href="/freelancers">Find freelancers to invite</a> <button class="btn" data-job-action="cancel">Cancel open job</button>' : ""}</section>
+      <section class="panel market-job-employer-card">
+        <h2>About the Employer</h2>
+        <div class="market-person">
+          ${photo({ photo: j.owner_photo, name: j.owner_name })}
+          <div>
+            <h3>${esc(j.owner_name || "Employer")}</h3>
+            ${j.owner_title ? `<p>${esc(j.owner_title)}</p>` : ""}
+            <p class="muted">${j.owner_location ? esc(j.owner_location) + (j.owner_country ? ", " + esc(countryName(j.owner_country)) : "") : "Location on file"}</p>
+          </div>
+        </div>
+        <div class="toolbar" style="margin-top:12px;">
+          ${j.owner_verified ? `<span class="market-badge market-verified-badge">ID verified</span>` : ""}
+          <span class="market-badge market-funded-badge">Funded · Balance backed</span>
+          ${j.owner_rating_count ? `<span>★ ${Number(j.owner_rating).toFixed(1)} / 5 (${j.owner_rating_count} reviews)</span>` : `<span>New employer</span>`}
+        </div>
+        <p class="muted" style="margin-top:8px;font-size:13px;">Employer hiring balance is verified by the platform before jobs are published. Reserved funds are held securely until work is completed and approved.</p>
+      </section>
       ${!owner && j.status === "open" && !ownProposal ? `<section class="panel"><h2>Send a proposal</h2><p>You have ${me.profile.connects} Connects. This bid costs 10 Connects. One proposal per job.</p><form id="marketBid" class="market-form"><label class="field">${hourly ? "Agreed maximum cost (USD); hourly rate and limits are fixed" : "Your fixed price (USD)"}<input name="price" type="number" min="1" max="100000" step="0.01" value="${j.budget / 100}" ${j.scope_price_mode === "per_task" || hourly ? "readonly" : ""} required></label><label class="field">Explain your approach<textarea name="message" minlength="20" maxlength="5000" rows="4" required></textarea></label><button class="btn primary" type="submit" ${me.profile.connects < 10 ? "disabled" : ""}>Submit bid · 10 Connects</button></form></section>` : ""}
       ${data.proposals.length ? `<h2>${owner ? "Applicants & invited freelancers" : "Your proposal / invitation"}</h2>${data.proposals.map(p => `<article class="panel"><div class="toolbar"><a href="/freelancers/${esc(p.freelancer_id)}"><strong>${esc(p.name)}</strong></a>${badge(p.kind)}${badge(p.status)}<strong>${money(p.price)}${hourly ? " maximum" : ""}</strong></div><p class="market-bio">${esc(p.message)}</p><div class="toolbar"><button class="btn" data-chat-freelancer="${esc(p.freelancer_id)}">Chat</button>${!owner && p.status === "offered" && j.status === "open" ? `<button class="btn primary" data-proposal="${p.id}" data-action="accept">Accept offer</button><button class="btn" data-proposal="${p.id}" data-action="decline">Decline offer</button>` : ""}${owner && j.status === "open" && ["submitted", "accepted"].includes(p.status) ? `<button class="btn primary" data-proposal="${p.id}" data-action="hire">Hire & reserve ${money(p.price)}</button>` : ""}</div></article>`).join("")}` : ""}
       ${hired && j.status === "hired" ? `<section class="panel"><h2>Submit completed work</h2><form id="marketDeliver" class="market-form"><label class="field">Deliverables and access instructions<textarea name="delivery" rows="5" minlength="20" maxlength="10000" required>${esc(j.delivery || "")}</textarea></label><button class="btn primary" type="submit">Submit for approval</button></form></section>` : ""}

@@ -172,3 +172,54 @@ test("owner can choose monthly resets and select users for manual grants", async
   assert.ok(html.includes("person@example.test"));
   assert.ok(html.includes("Select this page"));
 });
+
+test("job listings and job details display short details of the owner and funded trust badge", async () => {
+  const seriousJob = {
+    ...job,
+    owner_name: "Acme Founder",
+    owner_title: "Product Director",
+    owner_location: "San Francisco",
+    owner_country: "US",
+    owner_verified: true,
+    owner_rating: 4.9,
+    owner_rating_count: 8,
+  };
+  const listResult = await render("/find-jobs", false, {
+    "/api/marketplace/jobs": { jobs: [seriousJob], page: 1, has_more: false },
+  });
+  assert.ok(listResult.html.includes("Acme Founder"));
+  assert.ok(listResult.html.includes("Product Director"));
+  assert.ok(listResult.html.includes("San Francisco"));
+  assert.ok(listResult.html.includes("ID verified"));
+  assert.ok(listResult.html.includes("Funded"));
+  assert.ok(listResult.html.includes("4.9"));
+
+  const detailResult = await render(`/marketplace/jobs/${jobID}`, true, {
+    [`/api/marketplace/jobs/${jobID}`]: { job: seriousJob, proposals: [] },
+  });
+  assert.ok(detailResult.html.includes("About the Employer"));
+  assert.ok(detailResult.html.includes("Acme Founder"));
+  assert.ok(detailResult.html.includes("Product Director"));
+  assert.ok(detailResult.html.includes("Funded · Balance backed"));
+});
+
+test("job publishing in /marketplace/jobs displays available hiring balance and PayPal top-up", async () => {
+  const { html } = await render("/marketplace/jobs", true, {
+    "/api/marketplace/wallet": {
+      wallet: { deposits: 5000 },
+      is_workspace_wallet: true,
+      workspace_name: "Engineering Team",
+      workspace_owner_name: "Admin Alice",
+      transfers: [],
+      earnings: [],
+    },
+  });
+  assert.ok(html.includes("Available Hiring Balance"));
+  assert.ok(html.includes("$50.00"));
+  assert.ok(html.includes("Workspace: Engineering Team (Admin Alice)"));
+  assert.ok(html.includes("+ Top Up with PayPal"));
+  assert.ok(html.includes("Top Up Hiring Balance via PayPal"));
+  assert.ok(html.includes('id="marketJobBudgetInput"'));
+  assert.ok(html.includes('id="marketBudgetStatus"'));
+  assert.ok(html.includes('id="marketInlineTopupForm"'));
+});
