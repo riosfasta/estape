@@ -1362,6 +1362,10 @@ func (s *Server) updateSettings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid settings body"})
 		return
 	}
+	if len(req.CustomHeadHTML) > 250000 || len(req.CustomBodyStartHTML) > 250000 || len(req.CustomBodyEndHTML) > 250000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "each custom code field must be 250 KB or less"})
+		return
+	}
 	payPalMode := strings.ToLower(strings.TrimSpace(req.PayPalMode))
 	if payPalMode == "" {
 		payPalMode = "sandbox"
@@ -1423,6 +1427,10 @@ func (s *Server) updateSettings(c *gin.Context) {
 		"paypal_mode":               payPalMode,
 		"paypal_client_id":          strings.TrimSpace(req.PayPalClientID),
 		"paypal_webhook_id":         strings.TrimSpace(req.PayPalWebhookID),
+		"custom_head_html":          strings.TrimSpace(req.CustomHeadHTML),
+		"custom_body_start_html":    strings.TrimSpace(req.CustomBodyStartHTML),
+		"custom_body_end_html":      strings.TrimSpace(req.CustomBodyEndHTML),
+		"custom_code_initialized":   true,
 		"updated_at":                time.Now(),
 	}
 	for field, raw := range colorFields {

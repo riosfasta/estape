@@ -613,6 +613,10 @@ type SiteSettings struct {
 	PublicNavButtonStyle    string             `bson:"public_nav_button_style,omitempty" json:"public_nav_button_style,omitempty"`
 	PublicNavItems          []PublicNavItem    `bson:"public_nav_items,omitempty" json:"public_nav_items,omitempty"`
 	SocialLinks             []SocialLink       `bson:"social_links,omitempty" json:"social_links,omitempty"`
+	CustomHeadHTML          string             `bson:"custom_head_html,omitempty" json:"custom_head_html,omitempty"`
+	CustomBodyStartHTML     string             `bson:"custom_body_start_html,omitempty" json:"custom_body_start_html,omitempty"`
+	CustomBodyEndHTML       string             `bson:"custom_body_end_html,omitempty" json:"custom_body_end_html,omitempty"`
+	CustomCodeInitialized   bool               `bson:"custom_code_initialized,omitempty" json:"-"`
 	UpdatedAt               time.Time          `bson:"updated_at" json:"updated_at"`
 }
 

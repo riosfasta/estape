@@ -504,7 +504,11 @@ func formatWholeNumber(value int64) string {
 func (s *Server) appPage(c *gin.Context) {
 	settings, _ := s.loadSiteSettings(c.Request.Context())
 	settings = s.settingsWithConfigFallback(settings)
-	c.HTML(http.StatusOK, "app.gohtml", gin.H{"AppName": firstNonEmpty(settings.SiteName, s.cfg.AppName), "FaviconURL": settings.FaviconURL, "Year": time.Now().Year()})
+	payload := gin.H{"AppName": firstNonEmpty(settings.SiteName, s.cfg.AppName), "FaviconURL": settings.FaviconURL, "Year": time.Now().Year()}
+	for key, value := range customCodeTemplatePayload(settings) {
+		payload[key] = value
+	}
+	c.HTML(http.StatusOK, "app.gohtml", payload)
 }
 
 func currentUser(c *gin.Context) (middleware.UserContext, bool) {

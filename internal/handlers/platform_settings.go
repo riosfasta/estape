@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	template "html/template"
 	"net/http"
 	"regexp"
 	"strings"
@@ -62,6 +63,9 @@ type siteSettingsUpdateRequest struct {
 	ThemeHeadingColor        string              `json:"theme_heading_color"`
 	ThemeBackgroundColor     string              `json:"theme_background_color"`
 	SocialLinks              []models.SocialLink `json:"social_links"`
+	CustomHeadHTML           string              `json:"custom_head_html"`
+	CustomBodyStartHTML      string              `json:"custom_body_start_html"`
+	CustomBodyEndHTML        string              `json:"custom_body_end_html"`
 }
 
 func (s *Server) loadSiteSettings(ctx context.Context) (models.SiteSettings, error) {
@@ -265,6 +269,9 @@ func (s *Server) sanitizedSiteSettings(settings models.SiteSettings) gin.H {
 		"public_nav":                s.publicNavSettingsPayload(settings),
 		"public_nav_items":          settings.PublicNavItems,
 		"social_links":              normalizeSocialLinks(settings.SocialLinks),
+		"custom_head_html":          settings.CustomHeadHTML,
+		"custom_body_start_html":    settings.CustomBodyStartHTML,
+		"custom_body_end_html":      settings.CustomBodyEndHTML,
 		"updated_at":                settings.UpdatedAt,
 	}
 	for key, value := range publicThemeSettings(settings) {
@@ -324,7 +331,7 @@ func (s *Server) publicNavSettingsPayload(settings models.SiteSettings) gin.H {
 func (s *Server) publicPageChrome(settings models.SiteSettings) gin.H {
 	settings = s.settingsWithConfigFallback(settings)
 	nav := s.publicNavSettingsPayload(settings)
-	return gin.H{
+	payload := gin.H{
 		"AppName":         firstNonEmpty(settings.SiteName, s.cfg.AppName),
 		"FaviconURL":      settings.FaviconURL,
 		"NavItems":        publicVisibleNavItems(settings.PublicNavItems),
@@ -334,6 +341,20 @@ func (s *Server) publicPageChrome(settings models.SiteSettings) gin.H {
 		"NavButtonText":   nav["button_text"],
 		"NavButtonURL":    nav["button_url"],
 		"NavButtonClass":  nav["button_class"],
+	}
+	for key, value := range customCodeTemplatePayload(settings) {
+		payload[key] = value
+	}
+	return payload
+}
+
+func customCodeTemplatePayload(settings models.SiteSettings) gin.H {
+	// These values are intentionally trusted: only the platform owner can save
+	// them, and their purpose is to execute third-party scripts in page chrome.
+	return gin.H{
+		"CustomHeadHTML":      template.HTML(settings.CustomHeadHTML),
+		"CustomBodyStartHTML": template.HTML(settings.CustomBodyStartHTML),
+		"CustomBodyEndHTML":   template.HTML(settings.CustomBodyEndHTML),
 	}
 }
 

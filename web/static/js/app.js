@@ -12529,7 +12529,7 @@ async function renderSettings() {
       </div>
     </div>`;
   shell("Settings", `
-    <div class="page-title"><div><h1>Platform Settings</h1><p class="muted">Owner-only controls for identity, sign in, email, payments, and app colors.</p></div></div>
+    <div class="page-title"><div><h1>Platform Settings</h1><p class="muted">Owner-only controls for identity, integrations, custom code, payments, and app colors.</p></div></div>
     <section class="panel platform-settings-panel">
       <div class="settings-tabs" role="tablist">
         <button class="active" type="button" data-settings-tab="identity">${icon("building-2")}Identity</button>
@@ -12539,6 +12539,7 @@ async function renderSettings() {
         <button type="button" data-settings-tab="notifications">${icon("bell")}Notifications</button>
         <button type="button" data-settings-tab="payments">${icon("credit-card")}Payments</button>
         <button type="button" data-settings-tab="colors">${icon("palette")}Colors</button>
+        <button type="button" data-settings-tab="custom-code">${icon("code-2")}Custom code</button>
       </div>
       <form id="settingsForm" class="settings-tab-form">
         <section data-settings-panel="identity" class="settings-tab-section">
@@ -12645,6 +12646,28 @@ async function renderSettings() {
             ${colorField("Font text", "theme_font_color")}
             ${colorField("Heading text", "theme_heading_color")}
             ${colorField("Page background", "theme_background_color")}
+          </div>
+        </section>
+        <section data-settings-panel="custom-code" class="settings-tab-section" hidden>
+          <div class="settings-provider">
+            <h2>Custom HTML and scripts</h2>
+            <p class="status-line danger-text"><strong>Security warning:</strong> code saved here runs for every visitor and signed-in user. Only paste code from providers you trust.</p>
+            <p class="muted">Use these fields for Google Analytics, Google Tag Manager, verification meta tags, chat widgets, pixels, or similar integrations. Changes apply after saving and reloading a page.</p>
+          </div>
+          <div class="field">
+            <label>Before &lt;/head&gt;</label>
+            <textarea class="code-textarea custom-code-editor" name="custom_head_html" rows="12" spellcheck="false" placeholder="&lt;script&gt;...&lt;/script&gt; or &lt;meta ...&gt;">${esc(settings.custom_head_html || "")}</textarea>
+            <small class="muted">Inserted at the end of the document head. Recommended for analytics, verification tags, styles, and scripts required early.</small>
+          </div>
+          <div class="field">
+            <label>After opening &lt;body&gt;</label>
+            <textarea class="code-textarea custom-code-editor" name="custom_body_start_html" rows="10" spellcheck="false" placeholder="&lt;noscript&gt;...&lt;/noscript&gt;">${esc(settings.custom_body_start_html || "")}</textarea>
+            <small class="muted">Inserted immediately after the opening body tag. Commonly used by tag-manager noscript snippets.</small>
+          </div>
+          <div class="field">
+            <label>Before &lt;/body&gt;</label>
+            <textarea class="code-textarea custom-code-editor" name="custom_body_end_html" rows="12" spellcheck="false" placeholder="&lt;script&gt;...&lt;/script&gt;">${esc(settings.custom_body_end_html || "")}</textarea>
+            <small class="muted">Inserted at the end of the page body. Recommended for widgets and scripts that can load after page content.</small>
           </div>
         </section>
         <div class="settings-save-row">

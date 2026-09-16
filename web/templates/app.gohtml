@@ -13,20 +13,12 @@
     })();
   </script>
   <link rel="stylesheet" href="/static/css/checkout.css?v=20260905-1">
-  <link rel="stylesheet" href="/static/css/styles.css?v=20260916-1">
+  <link rel="stylesheet" href="/static/css/styles.css?v=20260916-3">
   <link rel="stylesheet" href="/static/css/marketplace.css?v=20260906-7">
-  <!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-W8Y0879PES"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', 'G-W8Y0879PES');
-</script>
-<meta name="google-site-verification" content="DJyhtitM6w31YPmsP38ZtJTdI3KEIXT4xRh4OmKJU34" />
+  {{ .CustomHeadHTML }}
 </head>
 <body class="workspace-page">
+  {{ .CustomBodyStartHTML }}
   <div id="app">
     <div class="route-loading-overlay route-loading-initial" data-route-loading role="status" aria-live="polite">
       <div class="route-loading-card">
@@ -35,8 +27,9 @@
       </div>
     </div>
   </div>
-  <script type="module" src="/static/js/app.js?v=20260916-2"></script>
+  <script type="module" src="/static/js/app.js?v=20260916-3"></script>
   <script async src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <script async src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
+  {{ .CustomBodyEndHTML }}
 </body>
 </html>

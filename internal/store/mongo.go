@@ -163,10 +163,41 @@ func (s *Store) Seed(ctx context.Context, cfg config.Config) error {
 	if err := s.seedSettings(ctx, cfg, now); err != nil {
 		return err
 	}
+	if err := s.migrateLegacyCustomCode(ctx); err != nil {
+		return err
+	}
 	if err := s.disableStripeSettings(ctx); err != nil {
 		return err
 	}
 	return s.seedPages(ctx, now)
+}
+
+const legacyPlatformHeadHTML = `<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-W8Y0879PES"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-W8Y0879PES');
+</script>
+<meta name="google-site-verification" content="DJyhtitM6w31YPmsP38ZtJTdI3KEIXT4xRh4OmKJU34">`
+
+func (s *Store) migrateLegacyCustomCode(ctx context.Context) error {
+	filter := bson.M{
+		"custom_code_initialized": bson.M{"$ne": true},
+		"$or": []bson.M{
+			{"custom_head_html": bson.M{"$exists": false}},
+			{"custom_head_html": ""},
+		},
+	}
+	if _, err := s.C("site_settings").UpdateMany(ctx, filter, bson.M{"$set": bson.M{
+		"custom_head_html":        legacyPlatformHeadHTML,
+		"custom_code_initialized": true,
+	}}); err != nil {
+		return err
+	}
+	_, err := s.C("site_settings").UpdateMany(ctx, bson.M{"custom_code_initialized": bson.M{"$ne": true}}, bson.M{"$set": bson.M{"custom_code_initialized": true}})
+	return err
 }
 
 func (s *Store) seedPlans(ctx context.Context, now time.Time) error {
@@ -340,7 +371,9 @@ func (s *Store) seedSettings(ctx context.Context, cfg config.Config, now time.Ti
 			{ID: "pricing", Label: "Pricing", URL: "/pricing", Visible: true, Order: 2},
 			{ID: "login", Label: "Login", URL: "/login", Visible: true, Order: 3},
 		},
-		UpdatedAt: now,
+		CustomHeadHTML:        legacyPlatformHeadHTML,
+		CustomCodeInitialized: true,
+		UpdatedAt:             now,
 	}
 	_, err = s.C("site_settings").InsertOne(ctx, settings)
 	return err
