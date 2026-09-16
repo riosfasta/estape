@@ -14350,6 +14350,18 @@ async function renderPageEditor(slug) {
         }
       );
     }
+    if (block.type === "column") {
+      bindBuilderColumnBackgroundSettings(
+        $("#blockSettings"),
+        block,
+        () => {
+          applyCurrentSettings();
+          draw();
+          drawSettings();
+        },
+        () => draw()
+      );
+    }
     icons();
   }
   function bindPageSettingsOnly() {
@@ -14410,7 +14422,7 @@ function createPageBlock(type) {
 }
 
 function createPageColumnBlock() {
-  return { id: crypto.randomUUID(), type: "column", props: { flex_direction: "column", gap: 12, custom_css: "" }, children: [] };
+  return { id: crypto.randomUUID(), type: "column", props: { flex_direction: "column", gap: 12, background_image_repeat: "no-repeat", background_image_size: "cover", background_image_position: "center center", background_video_position: "center center", background_video_scale: 135, background_overlay_opacity: 0, custom_css: "" }, children: [] };
 }
 
 function clonePageBlock(block) {
@@ -14453,6 +14465,15 @@ function normalizePageBlockProps(type, props = {}) {
     next.border_color = safeBuilderHexColor(next.border_color);
     next.background_color = safeBuilderHexColor(next.background_color);
     next.text_color = safeBuilderHexColor(next.text_color || next.color);
+    next.background_image_url = safeBuilderBackgroundImageURL(next.background_image_url);
+    next.background_image_repeat = ["no-repeat", "repeat", "repeat-x", "repeat-y"].includes(next.background_image_repeat) ? next.background_image_repeat : "no-repeat";
+    next.background_image_size = ["cover", "contain", "auto"].includes(next.background_image_size) ? next.background_image_size : "cover";
+    next.background_image_position = safeBuilderBackgroundPosition(next.background_image_position);
+    next.background_video_url = String(next.background_video_url || "").trim();
+    next.background_video_position = safeBuilderBackgroundPosition(next.background_video_position);
+    next.background_video_scale = Math.max(100, Math.min(250, Number(next.background_video_scale || 135)));
+    next.background_overlay_color = safeBuilderHexColor(next.background_overlay_color) || "#000000";
+    next.background_overlay_opacity = Math.max(0, Math.min(90, Number(next.background_overlay_opacity || 0)));
     delete next.color;
   }
   if (type === "spacer") next.height = Math.max(8, Math.min(96, Number(next.height || 24)));
@@ -14520,7 +14541,10 @@ function pageBuilderColumnHTML(column, selectedID = "", addMenuID = "") {
   const selected = column.id === selectedID;
   const children = column.children || [];
   const columnStyle = pageBuilderColumnStyleCSS(props);
-  return `<div class="builder-preview-column builder-block ${selected ? "selected" : ""}" data-select-builder-block="${esc(column.id)}" style="${esc(columnStyle)}">
+  const backgroundLayers = pageBuilderColumnBackgroundLayersHTML(props);
+  const hasBackgroundLayer = backgroundLayers ? "builder-column-has-background" : "";
+  return `<div class="builder-preview-column builder-block ${hasBackgroundLayer} ${selected ? "selected" : ""}" data-select-builder-block="${esc(column.id)}" style="${esc(columnStyle)}">
+    ${backgroundLayers}
     <div class="builder-block-toolbar"><strong>Column</strong><span>${esc(props.flex_direction || "column")}</span></div>
     <div class="builder-column-children" style="gap:${esc(props.gap || 12)}px;flex-direction:${esc(props.flex_direction || "column")};">
       ${children.length ? children.map((child) => pageBuilderBlockHTML(child, selectedID, addMenuID)).join("") : `<div class="builder-column-empty">Empty column</div>`}
@@ -14691,6 +14715,7 @@ function pageBuilderColumnStyleCSS(props = {}) {
   const borderColor = safeBuilderHexColor(props.border_color);
   const radius = Math.max(0, Math.min(80, Number(props.border_radius || 0)));
   const background = safeBuilderHexColor(props.background_color);
+  const backgroundImage = safeBuilderBackgroundImageURL(props.background_image_url);
   const textColor = safeBuilderHexColor(props.text_color || props.color);
   if (borderStyle !== "none" && borderWidth > 0) {
     rules.push(`border-style:${borderStyle}`);
@@ -14699,8 +14724,71 @@ function pageBuilderColumnStyleCSS(props = {}) {
   }
   if (radius > 0) rules.push(`border-radius:${radius}px`);
   if (background) rules.push(`background-color:${background}`);
+  if (backgroundImage) {
+    rules.push(`background-image:url("${backgroundImage}")`);
+    rules.push(`background-repeat:${["no-repeat", "repeat", "repeat-x", "repeat-y"].includes(props.background_image_repeat) ? props.background_image_repeat : "no-repeat"}`);
+    rules.push(`background-size:${["cover", "contain", "auto"].includes(props.background_image_size) ? props.background_image_size : "cover"}`);
+    rules.push(`background-position:${safeBuilderBackgroundPosition(props.background_image_position)}`);
+  }
   if (textColor) rules.push(`color:${textColor}`);
   return rules.length ? `${rules.join(";")};` : "";
+}
+
+function safeBuilderBackgroundImageURL(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw || raw.startsWith("//") || /["'()\\\r\n\t]/.test(raw)) return "";
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    if (parsed.protocol !== "https:" && !raw.startsWith("/")) return "";
+    if (!/^https:\/\//i.test(raw) && !raw.startsWith("/")) return "";
+    return raw;
+  } catch {
+    return "";
+  }
+}
+
+function safeBuilderBackgroundPosition(value = "") {
+  const position = String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const allowed = ["top left", "top center", "top right", "center left", "center center", "center right", "bottom left", "bottom center", "bottom right"];
+  return allowed.includes(position) ? position : "center center";
+}
+
+function pageBuilderYouTubeVideoID(value = "") {
+  try {
+    const parsed = new URL(String(value || "").trim());
+    if (parsed.protocol !== "https:") return "";
+    const host = parsed.hostname.toLowerCase();
+    let id = "";
+    if (host === "youtu.be") {
+      id = parsed.pathname.split("/").filter(Boolean)[0] || "";
+    } else if (["youtube.com", "www.youtube.com", "m.youtube.com", "youtube-nocookie.com", "www.youtube-nocookie.com"].includes(host)) {
+      id = parsed.searchParams.get("v") || "";
+      if (!id) {
+        const parts = parsed.pathname.split("/").filter(Boolean);
+        if (parts.length === 2 && ["embed", "shorts"].includes(parts[0])) id = parts[1];
+      }
+    }
+    return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : "";
+  } catch {
+    return "";
+  }
+}
+
+function pageBuilderColumnBackgroundLayersHTML(props = {}) {
+  const parts = [];
+  const videoID = pageBuilderYouTubeVideoID(props.background_video_url);
+  if (videoID) {
+    const position = safeBuilderBackgroundPosition(props.background_video_position).replace(/ /g, "-");
+    const scale = Math.max(100, Math.min(250, Number(props.background_video_scale || 135))) / 100;
+    const src = `https://www.youtube-nocookie.com/embed/${videoID}?autoplay=1&mute=1&controls=0&loop=1&playlist=${videoID}&playsinline=1&rel=0&disablekb=1`;
+    parts.push(`<div class="builder-column-video-bg builder-column-video-${position}" aria-hidden="true" style="--builder-video-scale:${scale}"><iframe src="${esc(src)}" title="" tabindex="-1" loading="lazy" allow="autoplay; encrypted-media" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`);
+  }
+  const opacity = Math.max(0, Math.min(90, Number(props.background_overlay_opacity || 0)));
+  if (opacity > 0) {
+    const color = safeBuilderHexColor(props.background_overlay_color) || "#000000";
+    parts.push(`<div class="builder-column-background-overlay" aria-hidden="true" style="background-color:${esc(color)};opacity:${opacity / 100}"></div>`);
+  }
+  return parts.join("");
 }
 
 function safeBuilderFontFamily(value = "") {
@@ -14756,7 +14844,52 @@ function columnStyleFields(props = {}) {
     ${colorInput("border_color", "Border color", props.border_color || "", "#0b8f7a")}
     ${colorInput("background_color", "Background color", props.background_color || "", "#f7f8f4")}
     ${colorInput("text_color", "Text color", props.text_color || props.color || "", "#101613")}
+  </div>
+  <div class="builder-field-group">
+    <strong>Background image</strong>
+    <div class="field">
+      <label>Image URL</label>
+      <input name="background_image_url" value="${esc(props.background_image_url || "")}" placeholder="/uploads/users/.../image.jpg" data-column-background-image-url>
+      <small class="muted">Choose an image from the Platform Owner Image Manager or enter an HTTPS URL.</small>
+    </div>
+    <button type="button" class="btn primary compact" data-open-column-background-image>${icon("image")}Choose or upload image</button>
+    <div class="grid-2">
+      ${selectInput("background_image_repeat", "Repeat", props.background_image_repeat || "no-repeat", [["no-repeat", "No repeat"], ["repeat", "Repeat"], ["repeat-x", "Repeat horizontally"], ["repeat-y", "Repeat vertically"]])}
+      ${selectInput("background_image_size", "Size", props.background_image_size || "cover", [["cover", "Cover"], ["contain", "Contain"], ["auto", "Original size"]])}
+    </div>
+    ${selectInput("background_image_position", "Position", safeBuilderBackgroundPosition(props.background_image_position), [["top left", "Top left"], ["top center", "Top center"], ["top right", "Top right"], ["center left", "Center left"], ["center center", "Center"], ["center right", "Center right"], ["bottom left", "Bottom left"], ["bottom center", "Bottom center"], ["bottom right", "Bottom right"]])}
+  </div>
+  <div class="builder-field-group">
+    <strong>YouTube background video</strong>
+    ${textInput("background_video_url", "YouTube URL", props.background_video_url || "")}
+    <small class="muted">The background plays muted, loops automatically, hides controls, and cannot intercept clicks.</small>
+    ${selectInput("background_video_position", "Video position", safeBuilderBackgroundPosition(props.background_video_position), [["top left", "Top left"], ["top center", "Top center"], ["top right", "Top right"], ["center left", "Center left"], ["center center", "Center"], ["center right", "Center right"], ["bottom left", "Bottom left"], ["bottom center", "Bottom center"], ["bottom right", "Bottom right"]])}
+    <div class="grid-2">
+      ${textInput("background_video_scale", "Video scale (%)", props.background_video_scale || 135, "number")}
+      ${textInput("background_overlay_opacity", "Overlay opacity (%)", props.background_overlay_opacity || 0, "number")}
+    </div>
+    ${colorInput("background_overlay_color", "Overlay color", props.background_overlay_color || "#000000", "#000000")}
   </div>`;
+}
+
+function bindBuilderColumnBackgroundSettings(root = document, block = {}, onSelectImage = () => {}, onUrlInput = () => {}) {
+  const managerBtn = root.querySelector("[data-open-column-background-image]");
+  const urlInput = root.querySelector("[data-column-background-image-url]");
+  managerBtn?.addEventListener("click", () => {
+    openMediaManagerModal({
+      currentUrl: urlInput?.value || block.props?.background_image_url || "",
+      onSelect: (chosenUrl) => {
+        if (urlInput) urlInput.value = chosenUrl;
+        if (block.props) block.props.background_image_url = chosenUrl;
+        onSelectImage(chosenUrl);
+      },
+    });
+  });
+  urlInput?.addEventListener("input", () => {
+    const value = urlInput.value.trim();
+    if (block.props) block.props.background_image_url = value;
+    onUrlInput(value);
+  });
 }
 
 function typographyStyleFields(props = {}) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"html"
+	neturl "net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -116,7 +117,26 @@ func renderBlock(buf *bytes.Buffer, block models.PageBlock, ctx RenderContext) {
 	case "column":
 		direction := safeFlexDirection(propString(block.Props, "flex_direction", "column"))
 		gap := clampInt(propFloat(block.Props, "gap", 12), 0, 80)
-		fmt.Fprintf(buf, `<div class="builder-column" style="flex-direction:%s;gap:%dpx;%s%s">`, direction, gap, columnStyleCSS(block.Props), safeInlineCSS(propString(block.Props, "custom_css", "")))
+		videoID := safeYouTubeVideoID(propString(block.Props, "background_video_url", ""))
+		overlayOpacity := clampInt(propFloat(block.Props, "background_overlay_opacity", 0), 0, 90)
+		className := "builder-column"
+		if videoID != "" || overlayOpacity > 0 {
+			className += " builder-column-has-background"
+		}
+		fmt.Fprintf(buf, `<div class="%s" style="flex-direction:%s;gap:%dpx;%s%s">`, className, direction, gap, columnStyleCSS(block.Props), safeInlineCSS(propString(block.Props, "custom_css", "")))
+		if videoID != "" {
+			position := safeBackgroundPosition(propString(block.Props, "background_video_position", "center center"))
+			scale := clampInt(propFloat(block.Props, "background_video_scale", 135), 100, 250)
+			embedURL := youtubeBackgroundEmbedURL(videoID)
+			fmt.Fprintf(buf, `<div class="builder-column-video-bg builder-column-video-%s" aria-hidden="true" style="--builder-video-scale:%s"><iframe src="%s" title="" tabindex="-1" loading="lazy" allow="autoplay; encrypted-media" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`, backgroundPositionClass(position), formatCSSNumber(float64(scale)/100), html.EscapeString(embedURL))
+		}
+		if overlayOpacity > 0 {
+			overlayColor := safeHexColor(propString(block.Props, "background_overlay_color", "#000000"))
+			if overlayColor == "" {
+				overlayColor = "#000000"
+			}
+			fmt.Fprintf(buf, `<div class="builder-column-background-overlay" aria-hidden="true" style="background-color:%s;opacity:%s"></div>`, overlayColor, formatCSSNumber(float64(overlayOpacity)/100))
+		}
 		for _, child := range block.Children {
 			renderBlock(buf, child, ctx)
 		}
@@ -353,6 +373,12 @@ func columnStyleCSS(props map[string]interface{}) string {
 	if background := safeHexColor(propString(props, "background_color", "")); background != "" {
 		parts = append(parts, "background-color:"+background)
 	}
+	if backgroundImage := safeBackgroundImageURL(propString(props, "background_image_url", "")); backgroundImage != "" {
+		parts = append(parts, "background-image:url(&quot;"+html.EscapeString(backgroundImage)+"&quot;)")
+		parts = append(parts, "background-repeat:"+safeBackgroundRepeat(propString(props, "background_image_repeat", "no-repeat")))
+		parts = append(parts, "background-size:"+safeBackgroundSize(propString(props, "background_image_size", "cover")))
+		parts = append(parts, "background-position:"+safeBackgroundPosition(propString(props, "background_image_position", "center center")))
+	}
 	if textColor := safeHexColor(propString(props, "text_color", "")); textColor != "" {
 		parts = append(parts, "color:"+textColor)
 	}
@@ -464,6 +490,91 @@ func safeBorderStyle(value string) string {
 	default:
 		return "none"
 	}
+}
+
+func safeBackgroundRepeat(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "repeat", "repeat-x", "repeat-y", "no-repeat":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "no-repeat"
+	}
+}
+
+func safeBackgroundSize(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "cover", "contain", "auto":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "cover"
+	}
+}
+
+func safeBackgroundPosition(value string) string {
+	switch strings.ToLower(strings.Join(strings.Fields(value), " ")) {
+	case "top left", "top center", "top right", "center left", "center center", "center right", "bottom left", "bottom center", "bottom right":
+		return strings.ToLower(strings.Join(strings.Fields(value), " "))
+	default:
+		return "center center"
+	}
+}
+
+func backgroundPositionClass(value string) string {
+	return strings.ReplaceAll(safeBackgroundPosition(value), " ", "-")
+}
+
+func safeBackgroundImageURL(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.ContainsAny(value, `"'()\`+"\r\n\t") {
+		return ""
+	}
+	parsed, err := neturl.ParseRequestURI(value)
+	if err != nil {
+		return ""
+	}
+	if parsed.IsAbs() {
+		if parsed.Scheme != "https" {
+			return ""
+		}
+		return value
+	}
+	if !strings.HasPrefix(parsed.Path, "/") || strings.HasPrefix(parsed.Path, "//") {
+		return ""
+	}
+	return value
+}
+
+var youtubeBackgroundVideoIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
+
+func safeYouTubeVideoID(value string) string {
+	parsed, err := neturl.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.Scheme != "https" {
+		return ""
+	}
+	host := strings.ToLower(parsed.Hostname())
+	id := ""
+	switch host {
+	case "youtu.be":
+		id = strings.Trim(strings.Split(strings.Trim(parsed.Path, "/"), "/")[0], " ")
+	case "youtube.com", "www.youtube.com", "m.youtube.com", "youtube-nocookie.com", "www.youtube-nocookie.com":
+		id = parsed.Query().Get("v")
+		if id == "" {
+			parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+			if len(parts) == 2 && (parts[0] == "embed" || parts[0] == "shorts") {
+				id = parts[1]
+			}
+		}
+	default:
+		return ""
+	}
+	if !youtubeBackgroundVideoIDPattern.MatchString(id) {
+		return ""
+	}
+	return id
+}
+
+func youtubeBackgroundEmbedURL(id string) string {
+	return "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&mute=1&controls=0&loop=1&playlist=" + id + "&playsinline=1&rel=0&disablekb=1"
 }
 
 var safeHexColorPattern = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)

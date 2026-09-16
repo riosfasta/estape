@@ -500,6 +500,50 @@ h2 { font-size: 19px !important; }
   display: flex;
   min-width: 0;
 }
+.builder-column-has-background {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.builder-column-has-background > :not(.builder-column-video-bg):not(.builder-column-background-overlay) {
+  position: relative;
+  z-index: 2;
+}
+.builder-column-video-bg,
+.builder-column-background-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.builder-column-video-bg {
+  z-index: 0;
+  overflow: hidden;
+  background: transparent;
+}
+.builder-column-background-overlay {
+  z-index: 1;
+}
+.builder-column-video-bg iframe {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  min-width: 100%;
+  min-height: 100%;
+  border: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(var(--builder-video-scale, 1.35));
+  transform-origin: center;
+}
+.builder-column-video-top-left iframe { top: 0; left: 0; transform: scale(var(--builder-video-scale, 1.35)); transform-origin: top left; }
+.builder-column-video-top-center iframe { top: 0; transform: translateX(-50%) scale(var(--builder-video-scale, 1.35)); transform-origin: top center; }
+.builder-column-video-top-right iframe { top: 0; left: 100%; transform: translateX(-100%) scale(var(--builder-video-scale, 1.35)); transform-origin: top right; }
+.builder-column-video-center-left iframe { left: 0; transform: translateY(-50%) scale(var(--builder-video-scale, 1.35)); transform-origin: center left; }
+.builder-column-video-center-right iframe { left: 100%; transform: translate(-100%, -50%) scale(var(--builder-video-scale, 1.35)); transform-origin: center right; }
+.builder-column-video-bottom-left iframe { top: 100%; left: 0; transform: translateY(-100%) scale(var(--builder-video-scale, 1.35)); transform-origin: bottom left; }
+.builder-column-video-bottom-center iframe { top: 100%; transform: translate(-50%, -100%) scale(var(--builder-video-scale, 1.35)); transform-origin: bottom center; }
+.builder-column-video-bottom-right iframe { top: 100%; left: 100%; transform: translate(-100%, -100%) scale(var(--builder-video-scale, 1.35)); transform-origin: bottom right; }
 .builder-cta-block {
   display: grid;
   justify-items: start;
