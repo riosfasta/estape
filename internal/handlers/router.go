@@ -288,6 +288,7 @@ func (s *Server) Router() *gin.Engine {
 	owner.GET("/pages/:slug/versions", s.pageVersions)
 	owner.POST("/pages/:slug/restore/:versionId", s.restorePageVersion)
 	owner.GET("/media", s.adminListMedia)
+	owner.DELETE("/media", s.adminDeleteMedia)
 	owner.GET("/database/overview", s.adminDatabaseOverview)
 	owner.GET("/database/backup", s.adminDownloadBackup)
 	owner.POST("/database/restore", s.adminRestoreBackup)

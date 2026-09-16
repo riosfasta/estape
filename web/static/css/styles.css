@@ -7079,6 +7079,11 @@ dialog.modal.media-manager-dialog {
   box-shadow: 0 0 0 2px var(--accent);
 }
 
+.media-card.marked-delete {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 65%, transparent);
+}
+
 .media-card-img {
   width: 100%;
   height: 100%;
@@ -7104,6 +7109,28 @@ dialog.modal.media-manager-dialog {
   width: 14px;
   height: 14px;
   stroke-width: 3;
+}
+
+.media-delete-choice {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--bg-primary) 88%, transparent);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+}
+
+.media-delete-choice input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--danger);
 }
 
 .media-empty-state {

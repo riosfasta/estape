@@ -13885,6 +13885,7 @@ async function openMediaManagerModal({ currentUrl = "", onSelect = () => {} } = 
   let currentTab = "library";
   let searchQuery = "";
   let isUploading = false;
+  const deleteSelection = new Set();
 
   dialog.innerHTML = `
     <header class="media-manager-head">
@@ -13916,6 +13917,7 @@ async function openMediaManagerModal({ currentUrl = "", onSelect = () => {} } = 
           <input type="search" class="media-search-input" placeholder="Search by name..." data-search>
           <div class="toolbar">
             <span class="muted" data-count>Loading images...</span>
+            <button type="button" class="btn danger compact" data-delete-selected disabled>${icon("trash-2")}Delete selected <span data-delete-count></span></button>
             <button type="button" class="btn icon compact" data-refresh title="Refresh library">${icon("rotate-cw")}</button>
           </div>
         </div>
@@ -13969,6 +13971,10 @@ async function openMediaManagerModal({ currentUrl = "", onSelect = () => {} } = 
       if (countEl) countEl.textContent = "Loading...";
       const res = await api("/api/admin/media");
       mediaItems = res.media || [];
+      const availableURLs = new Set(mediaItems.map((item) => item.url));
+      Array.from(deleteSelection).forEach((url) => {
+        if (!availableURLs.has(url)) deleteSelection.delete(url);
+      });
       if (mediaItems.length === 0 && !selectedUrl) {
         setTab("upload");
       }
@@ -13985,6 +13991,10 @@ async function openMediaManagerModal({ currentUrl = "", onSelect = () => {} } = 
 
     const countEl = dialog.querySelector("[data-count]");
     if (countEl) countEl.textContent = `${filtered.length} image${filtered.length === 1 ? "" : "s"}`;
+    const deleteSelectedBtn = dialog.querySelector("[data-delete-selected]");
+    const deleteCount = dialog.querySelector("[data-delete-count]");
+    if (deleteSelectedBtn) deleteSelectedBtn.disabled = deleteSelection.size === 0;
+    if (deleteCount) deleteCount.textContent = deleteSelection.size ? `(${deleteSelection.size})` : "";
     const grid = dialog.querySelector("[data-grid]");
     if (!grid) return;
 
@@ -13999,21 +14009,41 @@ async function openMediaManagerModal({ currentUrl = "", onSelect = () => {} } = 
     } else {
       grid.innerHTML = filtered.map((item) => {
         const isSelected = item.url === selectedUrl;
+        const markedForDelete = deleteSelection.has(item.url);
         return `
-          <button type="button" class="media-card ${isSelected ? "selected" : ""}" data-item-url="${esc(item.url)}" title="${esc(item.name)}">
+          <article class="media-card ${isSelected ? "selected" : ""} ${markedForDelete ? "marked-delete" : ""}" data-item-url="${esc(item.url)}" title="${esc(item.name)}" role="button" tabindex="0">
             <img src="${esc(item.url)}" alt="${esc(item.name)}" class="media-card-img" loading="lazy">
             ${isSelected ? `<span class="media-card-check">${icon("check")}</span>` : ""}
-          </button>`;
+            <label class="media-delete-choice" title="Select ${esc(item.name)} for deletion">
+              <input type="checkbox" data-delete-url="${esc(item.url)}" ${markedForDelete ? "checked" : ""} aria-label="Select ${esc(item.name)} for deletion">
+            </label>
+          </article>`;
       }).join("");
 
       grid.querySelectorAll("[data-item-url]").forEach((card) => {
-        card.addEventListener("click", () => {
+        card.addEventListener("click", (event) => {
+          if (event.target.closest("[data-delete-url]")) return;
           selectedUrl = card.dataset.itemUrl;
           renderLibrary();
         });
-        card.addEventListener("dblclick", () => {
+        card.addEventListener("keydown", (event) => {
+          if (event.target.closest("[data-delete-url]")) return;
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          selectedUrl = card.dataset.itemUrl;
+          renderLibrary();
+        });
+        card.addEventListener("dblclick", (event) => {
+          if (event.target.closest("[data-delete-url]")) return;
           selectedUrl = card.dataset.itemUrl;
           confirmSelection();
+        });
+      });
+      grid.querySelectorAll("[data-delete-url]").forEach((checkbox) => {
+        checkbox.addEventListener("change", () => {
+          if (checkbox.checked) deleteSelection.add(checkbox.dataset.deleteUrl);
+          else deleteSelection.delete(checkbox.dataset.deleteUrl);
+          renderLibrary();
         });
       });
     }
@@ -14039,6 +14069,7 @@ async function openMediaManagerModal({ currentUrl = "", onSelect = () => {} } = 
               <input type="text" readonly value="${esc(selectedItem.url)}" data-sidebar-url style="font-size: 11px;">
             </div>
             <button type="button" class="btn compact" data-copy-url>${icon("copy")}Copy URL</button>
+            <button type="button" class="btn danger compact" data-delete-current>${icon("trash-2")}Delete image</button>
           </div>`;
 
         sidebar.querySelector("[data-copy-url]")?.addEventListener("click", async (e) => {
@@ -14051,6 +14082,7 @@ async function openMediaManagerModal({ currentUrl = "", onSelect = () => {} } = 
             input?.select();
           }
         });
+        sidebar.querySelector("[data-delete-current]")?.addEventListener("click", () => deleteMedia([selectedItem.url]));
       }
     } else {
       if (confirmBtn) confirmBtn.disabled = !selectedUrl;
@@ -14070,6 +14102,26 @@ async function openMediaManagerModal({ currentUrl = "", onSelect = () => {} } = 
   };
 
   dialog.querySelector("[data-confirm]").onclick = confirmSelection;
+
+  const deleteMedia = async (urls) => {
+    const uniqueURLs = Array.from(new Set((urls || []).filter(Boolean)));
+    if (!uniqueURLs.length) return;
+    const label = uniqueURLs.length === 1 ? "this image" : `these ${uniqueURLs.length} images`;
+    if (!confirm(`Permanently delete ${label} from the platform owner's media folder? Published pages using them may show a missing image.`)) return;
+    const footerStatus = dialog.querySelector("[data-footer-status]");
+    try {
+      if (footerStatus) footerStatus.textContent = `Deleting ${uniqueURLs.length} image${uniqueURLs.length === 1 ? "" : "s"}...`;
+      await api("/api/admin/media", { method: "DELETE", body: JSON.stringify({ urls: uniqueURLs }) });
+      uniqueURLs.forEach((url) => deleteSelection.delete(url));
+      if (uniqueURLs.includes(selectedUrl)) selectedUrl = "";
+      await loadMedia();
+      if (footerStatus) footerStatus.textContent = `${uniqueURLs.length} image${uniqueURLs.length === 1 ? "" : "s"} deleted`;
+    } catch (error) {
+      if (footerStatus) footerStatus.textContent = error.message || "Could not delete selected images";
+    }
+  };
+
+  dialog.querySelector("[data-delete-selected]")?.addEventListener("click", () => deleteMedia(Array.from(deleteSelection)));
 
   dialog.querySelector("[data-search]")?.addEventListener("input", (e) => {
     searchQuery = e.target.value;
