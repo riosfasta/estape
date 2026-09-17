@@ -153,3 +153,96 @@ test("pageRichSafeHTML allows safe img tags and removes unsafe ones", () => {
   const scriptResult = ctx.pageRichSafeHTML('<script>alert(1)</script>');
   assert.equal(scriptResult.includes("<script>"), false);
 });
+
+test("pageRichSafeHTML preserves image alignment, width, and safe style properties", () => {
+  class MockNode {
+    constructor(type, name = "") {
+      this.nodeType = type;
+      this.tagName = name.toUpperCase();
+      this.childNodes = [];
+      this.attributes = new Map();
+      this.textContent = "";
+    }
+    getAttribute(attr) {
+      return this.attributes.get(attr) || "";
+    }
+    setAttribute(attr, val) {
+      this.attributes.set(attr, String(val));
+    }
+    removeAttribute(attr) {
+      this.attributes.delete(attr);
+    }
+    replaceWith(newNode) {
+      if (this.parent) {
+        const idx = this.parent.childNodes.indexOf(this);
+        if (idx !== -1) this.parent.childNodes[idx] = newNode;
+      }
+    }
+    remove() {
+      if (this.parent) {
+        const idx = this.parent.childNodes.indexOf(this);
+        if (idx !== -1) this.parent.childNodes.splice(idx, 1);
+      }
+    }
+  }
+
+  const code = source.slice(
+    source.indexOf("function safeRichTextImageURL("),
+    source.indexOf("function recurrenceControlsHTML(")
+  );
+
+  const ctx = vm.createContext({
+    Node: { TEXT_NODE: 3, ELEMENT_NODE: 1 },
+    URL: globalThis.URL,
+    window: { location: { origin: "http://localhost:8080" } },
+    document: {
+      createElement: (tag) => {
+        if (tag === "template") {
+          return {
+            content: { childNodes: [] },
+            set innerHTML(val) {
+              const nodes = [];
+              if (val.includes("<img")) {
+                const img = new MockNode(1, "IMG");
+                img.parent = this.content;
+                img.setAttribute("src", "/uploads/hero.webp");
+                img.setAttribute("data-align", "center");
+                img.setAttribute("class", "align-center");
+                img.setAttribute("width", "500");
+                img.setAttribute("style", "width: 500px;");
+                img.setAttribute("onclick", "alert(1)");
+                nodes.push(img);
+              }
+              this.content.childNodes = nodes;
+            },
+            get innerHTML() {
+              return this.content.childNodes.map((n) => {
+                if (n.tagName === "IMG") {
+                  const attrs = Array.from(n.attributes.entries()).map(([k, v]) => `${k}="${v}"`).join(" ");
+                  return `<img ${attrs}>`;
+                }
+                return n.textContent || "";
+              }).join("");
+            },
+          };
+        }
+        return new MockNode(1, tag);
+      },
+      createTextNode: (text) => {
+        const node = new MockNode(3);
+        node.textContent = text;
+        return node;
+      },
+    },
+  });
+
+  vm.runInContext(code, ctx);
+
+  const result = ctx.pageRichSafeHTML('<img src="/uploads/hero.webp" data-align="center" class="align-center" width="500" style="width: 500px;" onclick="alert(1)">');
+  assert.match(result, /src="\/uploads\/hero\.webp"/);
+  assert.match(result, /data-align="center"/);
+  assert.match(result, /class="align-center"/);
+  assert.match(result, /width="500"/);
+  assert.match(result, /style="width:500px; display:block; margin-left:auto; margin-right:auto"/);
+  assert.equal(result.includes("onclick"), false);
+});

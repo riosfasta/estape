@@ -99,3 +99,24 @@ func TestRenderRichTextLinksWithNumbers(t *testing.T) {
 		t.Fatalf("expected rendered to contain %q, but got: %q", expected, rendered)
 	}
 }
+
+func TestRenderRichTextImagesAlignmentAndResize(t *testing.T) {
+	input := `<p>Centered:</p><img src="/uploads/pic.png" alt="Pic" data-align="center" width="400" style="width: 400px;"><img src="/uploads/right.png" class="align-right" style="width: 50%;">`
+	rendered := RenderRichText(input, RenderContext{})
+
+	for _, expected := range []string{
+		`data-align="center"`,
+		`class="align-center"`,
+		`width="400"`,
+		`margin-left:auto; margin-right:auto`,
+		`data-align="right"`,
+		`class="align-right"`,
+		`width:50%`,
+		`margin-left:auto; margin-right:0`,
+	} {
+		if !strings.Contains(rendered, expected) {
+			t.Errorf("expected rendered output to contain %q, but got: %s", expected, rendered)
+		}
+	}
+}
+

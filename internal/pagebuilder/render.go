@@ -625,6 +625,13 @@ var allowedImgTag = regexp.MustCompile(`&lt;img\s+(.*?)/?&gt;`)
 var imgAttrSrcPattern = regexp.MustCompile(`(?i)\bsrc=(?:&#34;(.*?)&#34;|&#39;(.*?)&#39;|"([^"]*)"|'([^']*)')`)
 var imgAttrAltPattern = regexp.MustCompile(`(?i)\balt=(?:&#34;(.*?)&#34;|&#39;(.*?)&#39;|"([^"]*)"|'([^']*)')`)
 var imgAttrTitlePattern = regexp.MustCompile(`(?i)\btitle=(?:&#34;(.*?)&#34;|&#39;(.*?)&#39;|"([^"]*)"|'([^']*)')`)
+var imgAttrDataAlignPattern = regexp.MustCompile(`(?i)\bdata-align=(?:&#34;(.*?)&#34;|&#39;(.*?)&#39;|"([^"]*)"|'([^']*)')`)
+var imgAttrClassPattern = regexp.MustCompile(`(?i)\bclass=(?:&#34;(.*?)&#34;|&#39;(.*?)&#39;|"([^"]*)"|'([^']*)')`)
+var imgAttrWidthPattern = regexp.MustCompile(`(?i)\bwidth=(?:&#34;(.*?)&#34;|&#39;(.*?)&#39;|"([^"]*)"|'([^']*)')`)
+var imgAttrStylePattern = regexp.MustCompile(`(?i)\bstyle=(?:&#34;(.*?)&#34;|&#39;(.*?)&#39;|"([^"]*)"|'([^']*)')`)
+var safeImgWidthValPattern = regexp.MustCompile(`^(?:\d{1,4}(?:px)?|\d{1,3}%)$`)
+var safeImgStyleWidthPattern = regexp.MustCompile(`(?i)\bwidth:\s*([^;]+)`)
+var safeStyleValPattern = regexp.MustCompile(`^(?:\d{1,4}(?:px|rem|em|%)|auto)$`)
 
 func matchAttrValue(re *regexp.Regexp, tag string) (string, bool) {
 	matches := re.FindStringSubmatch(tag)
@@ -665,7 +672,64 @@ func sanitizeRichText(value string) string {
 		if titleRaw, hasTitle := matchAttrValue(imgAttrTitlePattern, match); hasTitle && strings.TrimSpace(titleRaw) != "" {
 			title = ` title="` + html.EscapeString(html.UnescapeString(titleRaw)) + `"`
 		}
-		return `<img src="` + src + `"` + alt + title + ` loading="lazy">`
+		widthAttr := ""
+		if widthRaw, hasWidth := matchAttrValue(imgAttrWidthPattern, match); hasWidth {
+			w := strings.TrimSpace(html.UnescapeString(widthRaw))
+			if safeImgWidthValPattern.MatchString(w) {
+				widthAttr = ` width="` + html.EscapeString(w) + `"`
+			}
+		}
+
+		align := ""
+		if alignRaw, hasAlign := matchAttrValue(imgAttrDataAlignPattern, match); hasAlign {
+			a := strings.ToLower(strings.TrimSpace(html.UnescapeString(alignRaw)))
+			if a == "left" || a == "center" || a == "right" {
+				align = a
+			}
+		}
+		if align == "" {
+			if classRaw, hasClass := matchAttrValue(imgAttrClassPattern, match); hasClass {
+				c := strings.ToLower(strings.TrimSpace(html.UnescapeString(classRaw)))
+				if strings.Contains(c, "align-left") {
+					align = "left"
+				} else if strings.Contains(c, "align-center") {
+					align = "center"
+				} else if strings.Contains(c, "align-right") {
+					align = "right"
+				}
+			}
+		}
+
+		alignAttr := ""
+		classAttr := ""
+		if align != "" {
+			alignAttr = ` data-align="` + align + `"`
+			classAttr = ` class="align-` + align + `"`
+		}
+
+		var styleParts []string
+		if styleRaw, hasStyle := matchAttrValue(imgAttrStylePattern, match); hasStyle {
+			s := html.UnescapeString(styleRaw)
+			if wMatches := safeImgStyleWidthPattern.FindStringSubmatch(s); len(wMatches) > 1 {
+				wVal := strings.TrimSpace(wMatches[1])
+				if safeStyleValPattern.MatchString(wVal) {
+					styleParts = append(styleParts, "width:"+wVal)
+				}
+			}
+		}
+		if align == "left" {
+			styleParts = append(styleParts, "display:block", "margin-left:0", "margin-right:auto")
+		} else if align == "center" {
+			styleParts = append(styleParts, "display:block", "margin-left:auto", "margin-right:auto")
+		} else if align == "right" {
+			styleParts = append(styleParts, "display:block", "margin-left:auto", "margin-right:0")
+		}
+		styleAttr := ""
+		if len(styleParts) > 0 {
+			styleAttr = ` style="` + strings.Join(styleParts, "; ") + `"`
+		}
+
+		return `<img src="` + src + `"` + alt + title + widthAttr + alignAttr + classAttr + styleAttr + ` loading="lazy">`
 	})
 	return allowedLinkOpenTag.ReplaceAllStringFunc(escaped, func(match string) string {
 		hrefRaw, hasHref := matchAttrValue(linkAttrHrefPattern, match)

@@ -7111,10 +7111,12 @@ function bindPageRichEditors(root = document) {
     wrap.dataset.pageRichBound = "1";
     const editor = wrap.querySelector("[data-page-rich-editor]");
     if (!editor) return;
+    const body = wrap.querySelector(".page-rich-body");
     const htmlEditor = wrap.querySelector("[data-page-rich-html]");
     const input = wrap.querySelector(`input[name="${selectorEscape(editor.dataset.pageRichEditor)}"]`);
     let currentMode = wrap.dataset.richMode || "visual";
     let savedVisualRange = null;
+    let activeImg = null;
 
     const sync = () => {
       if (!input) return;
@@ -7124,6 +7126,242 @@ function bindPageRichEditors(root = document) {
         input.value = editor.innerHTML.trim();
       }
     };
+
+    // Overlay for image selection, visual border indicator, resize handles and floating actions
+    let overlay = null;
+    let overlayToolbar = null;
+    let overlaySizeBadge = null;
+
+    const hideOverlay = () => {
+      if (overlay) overlay.hidden = true;
+      activeImg = null;
+    };
+
+    const updateOverlayButtons = () => {
+      if (!overlay || !activeImg) return;
+      let currentAlign = activeImg.dataset.align || "";
+      if (!currentAlign) {
+        if (activeImg.classList.contains("align-left")) currentAlign = "left";
+        else if (activeImg.classList.contains("align-center")) currentAlign = "center";
+        else if (activeImg.classList.contains("align-right")) currentAlign = "right";
+        else if (activeImg.style.marginLeft === "0px" && activeImg.style.marginRight === "auto") currentAlign = "left";
+        else if (activeImg.style.marginLeft === "auto" && activeImg.style.marginRight === "0px") currentAlign = "right";
+        else if (activeImg.style.marginLeft === "auto" && activeImg.style.marginRight === "auto") currentAlign = "center";
+      }
+
+      overlay.querySelectorAll("[data-img-align]").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.imgAlign === currentAlign);
+      });
+
+      const currentWidthStyle = activeImg.style.width || "";
+      overlay.querySelectorAll("[data-img-size]").forEach((btn) => {
+        btn.classList.toggle("active", currentWidthStyle === btn.dataset.imgSize);
+      });
+    };
+
+    const updateOverlayPosition = () => {
+      if (!overlay || !activeImg || !body) return;
+      if (!activeImg.isConnected || activeImg.closest("[hidden]") || currentMode !== "visual") {
+        hideOverlay();
+        return;
+      }
+      const bodyRect = body.getBoundingClientRect();
+      const imgRect = activeImg.getBoundingClientRect();
+
+      if (imgRect.width === 0 && imgRect.height === 0) {
+        hideOverlay();
+        return;
+      }
+
+      const top = (imgRect.top - bodyRect.top) + (body.scrollTop || 0);
+      const left = (imgRect.left - bodyRect.left) + (body.scrollLeft || 0);
+
+      overlay.style.top = `${top}px`;
+      overlay.style.left = `${left}px`;
+      overlay.style.width = `${imgRect.width}px`;
+      overlay.style.height = `${imgRect.height}px`;
+      overlay.hidden = false;
+
+      if (imgRect.top - bodyRect.top < 52) {
+        overlayToolbar?.classList.add("toolbar-bottom");
+      } else {
+        overlayToolbar?.classList.remove("toolbar-bottom");
+      }
+
+      if (overlaySizeBadge) {
+        const w = Math.round(imgRect.width);
+        const h = Math.round(imgRect.height);
+        overlaySizeBadge.textContent = `${w} × ${h}`;
+      }
+
+      updateOverlayButtons();
+    };
+
+    const setImageAlignment = (align) => {
+      if (!activeImg) return;
+      activeImg.dataset.align = align;
+      activeImg.classList.remove("align-left", "align-center", "align-right");
+      activeImg.classList.add(`align-${align}`);
+      activeImg.style.display = "block";
+      if (align === "left") {
+        activeImg.style.marginLeft = "0";
+        activeImg.style.marginRight = "auto";
+      } else if (align === "right") {
+        activeImg.style.marginLeft = "auto";
+        activeImg.style.marginRight = "0";
+      } else { // center
+        activeImg.style.marginLeft = "auto";
+        activeImg.style.marginRight = "auto";
+      }
+      sync();
+      updateOverlayPosition();
+    };
+
+    const setImageSizePreset = (size) => {
+      if (!activeImg) return;
+      activeImg.style.width = size;
+      activeImg.style.height = "auto";
+      activeImg.removeAttribute("width");
+      sync();
+      updateOverlayPosition();
+    };
+
+    const changeSelectedImage = () => {
+      if (!activeImg) return;
+      const targetImg = activeImg;
+      openMediaManagerModal({
+        currentUrl: targetImg.getAttribute("src") || "",
+        onSelect: (selectedUrl) => {
+          if (!selectedUrl) return;
+          const safeUrl = safeRichTextImageURL(selectedUrl);
+          if (!safeUrl) return;
+          targetImg.src = safeUrl;
+          sync();
+          targetImg.onload = () => {
+            if (activeImg === targetImg) updateOverlayPosition();
+          };
+          if (activeImg === targetImg) updateOverlayPosition();
+        }
+      });
+    };
+
+    const removeSelectedImage = () => {
+      if (!activeImg) return;
+      const toRemove = activeImg;
+      activeImg = null;
+      hideOverlay();
+      toRemove.remove();
+      sync();
+    };
+
+    if (body && typeof document.createElement === "function") {
+      overlay = document.createElement("div");
+      overlay.className = "page-rich-image-overlay";
+      overlay.hidden = true;
+      overlay.innerHTML = `
+        <div class="page-rich-image-toolbar" role="toolbar" aria-label="Image actions">
+          <button type="button" class="page-rich-img-btn" data-img-action="change" title="Change image">
+            ${icon("image")}
+            <span>Change</span>
+          </button>
+          <span class="page-rich-toolbar-sep" aria-hidden="true"></span>
+          <button type="button" class="page-rich-img-btn" data-img-align="left" title="Align left">
+            ${icon("align-left")}
+          </button>
+          <button type="button" class="page-rich-img-btn" data-img-align="center" title="Align center">
+            ${icon("align-center")}
+          </button>
+          <button type="button" class="page-rich-img-btn" data-img-align="right" title="Align right">
+            ${icon("align-right")}
+          </button>
+          <span class="page-rich-toolbar-sep" aria-hidden="true"></span>
+          <button type="button" class="page-rich-img-btn" data-img-size="25%" title="25% width">25%</button>
+          <button type="button" class="page-rich-img-btn" data-img-size="50%" title="50% width">50%</button>
+          <button type="button" class="page-rich-img-btn" data-img-size="75%" title="75% width">75%</button>
+          <button type="button" class="page-rich-img-btn" data-img-size="100%" title="100% width">100%</button>
+          <span class="page-rich-toolbar-sep" aria-hidden="true"></span>
+          <button type="button" class="page-rich-img-btn danger" data-img-action="remove" title="Remove image">
+            ${icon("trash-2")}
+          </button>
+        </div>
+        <div class="page-rich-image-handle handle-nw" data-handle="nw" title="Drag to resize"></div>
+        <div class="page-rich-image-handle handle-ne" data-handle="ne" title="Drag to resize"></div>
+        <div class="page-rich-image-handle handle-sw" data-handle="sw" title="Drag to resize"></div>
+        <div class="page-rich-image-handle handle-se" data-handle="se" title="Drag to resize"></div>
+        <div class="page-rich-image-size-badge" aria-hidden="true"></div>
+      `;
+      body.appendChild(overlay);
+      icons();
+
+      overlayToolbar = overlay.querySelector(".page-rich-image-toolbar");
+      overlaySizeBadge = overlay.querySelector(".page-rich-image-size-badge");
+
+      if (overlayToolbar) {
+        overlayToolbar.addEventListener("mousedown", (e) => e.stopPropagation());
+        overlayToolbar.addEventListener("click", (e) => {
+          const btn = e.target.closest("button");
+          if (!btn) return;
+          e.preventDefault();
+          e.stopPropagation();
+
+          if (btn.dataset.imgAlign) {
+            setImageAlignment(btn.dataset.imgAlign);
+          } else if (btn.dataset.imgSize) {
+            setImageSizePreset(btn.dataset.imgSize);
+          } else if (btn.dataset.imgAction === "change") {
+            changeSelectedImage();
+          } else if (btn.dataset.imgAction === "remove") {
+            removeSelectedImage();
+          }
+        });
+      }
+
+      overlay.querySelectorAll(".page-rich-image-handle").forEach((handle) => {
+        const onPointerDown = (e) => {
+          if (!activeImg) return;
+          e.preventDefault();
+          e.stopPropagation();
+
+          const handleType = handle.dataset.handle;
+          const isTouch = Boolean(e.touches);
+          const startX = isTouch ? e.touches[0].clientX : e.clientX;
+          const startRect = activeImg.getBoundingClientRect();
+          const startWidth = startRect.width;
+          const editorWidth = Math.max(100, (editor.clientWidth || 600) - 20);
+
+          document.body?.classList.add("page-rich-resizing");
+
+          const onPointerMove = (moveEvt) => {
+            const currentX = moveEvt.touches ? moveEvt.touches[0].clientX : moveEvt.clientX;
+            const dx = currentX - startX;
+            const diffX = (handleType === "se" || handleType === "ne") ? dx : -dx;
+            const newWidth = Math.round(Math.max(60, Math.min(editorWidth, startWidth + diffX)));
+
+            activeImg.style.width = `${newWidth}px`;
+            activeImg.style.height = "auto";
+            activeImg.setAttribute("width", String(newWidth));
+
+            updateOverlayPosition();
+          };
+
+          const onPointerUp = () => {
+            document.body?.classList.remove("page-rich-resizing");
+            document.removeEventListener(isTouch ? "touchmove" : "mousemove", onPointerMove);
+            document.removeEventListener(isTouch ? "touchend" : "mouseup", onPointerUp);
+            document.removeEventListener(isTouch ? "touchcancel" : "mouseleave", onPointerUp);
+            sync();
+            updateOverlayPosition();
+          };
+
+          document.addEventListener(isTouch ? "touchmove" : "mousemove", onPointerMove, { passive: false });
+          document.addEventListener(isTouch ? "touchend" : "mouseup", onPointerUp);
+          document.addEventListener(isTouch ? "touchcancel" : "mouseleave", onPointerUp);
+        };
+
+        handle.addEventListener("mousedown", onPointerDown);
+        handle.addEventListener("touchstart", onPointerDown, { passive: false });
+      });
+    }
 
     const saveVisualSelection = () => {
       if (currentMode !== "visual") return;
@@ -7146,6 +7384,7 @@ function bindPageRichEditors(root = document) {
 
     const setMode = (mode) => {
       if (mode === currentMode) return;
+      hideOverlay();
       if (mode === "html") {
         if (htmlEditor) {
           htmlEditor.value = editor.innerHTML.trim();
@@ -7269,16 +7508,49 @@ function bindPageRichEditors(root = document) {
       });
     }
 
+    editor.addEventListener("click", (e) => {
+      const img = e.target.closest("img");
+      if (img && editor.contains(img)) {
+        activeImg = img;
+        updateOverlayPosition();
+        return;
+      }
+      if (activeImg && !overlay?.contains(e.target)) {
+        hideOverlay();
+      }
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!activeImg) return;
+      if (editor.contains(e.target) || overlay?.contains(e.target)) return;
+      hideOverlay();
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && activeImg) {
+        hideOverlay();
+      }
+    });
+
     editor.addEventListener("keyup", saveVisualSelection);
     editor.addEventListener("mouseup", saveVisualSelection);
     editor.addEventListener("touchend", saveVisualSelection);
-    editor.addEventListener("input", sync);
+    editor.addEventListener("input", () => {
+      sync();
+      if (activeImg) {
+        if (!activeImg.isConnected) hideOverlay();
+        else updateOverlayPosition();
+      }
+    });
     editor.addEventListener("blur", sync);
 
     if (htmlEditor) {
       htmlEditor.addEventListener("input", sync);
       htmlEditor.addEventListener("blur", sync);
     }
+
+    window.addEventListener("resize", updateOverlayPosition);
+    window.addEventListener("scroll", updateOverlayPosition, true);
 
     sync();
   });
@@ -7323,7 +7595,13 @@ function pageRichSafeHTML(value = "") {
       const title = child.getAttribute("title") || "";
       const colorStyle = child.getAttribute("style") || "";
       const fontColor = child.getAttribute("color") || "";
-      Array.from(child.attributes).forEach((attr) => child.removeAttribute(attr.name));
+      const dataAlign = child.getAttribute("data-align") || "";
+      const rawClass = child.getAttribute("class") || "";
+      const rawWidth = child.getAttribute("width") || "";
+      const attrNames = typeof child.getAttributeNames === "function"
+        ? child.getAttributeNames()
+        : Array.from(child.attributes || []).map((a) => (a && a.name ? a.name : (Array.isArray(a) ? a[0] : String(a))));
+      attrNames.forEach((name) => child.removeAttribute(name));
       if (child.tagName === "A") {
         if (/^(https?:|mailto:|tel:|\/|#)/i.test(href)) {
           child.setAttribute("href", href);
@@ -7338,6 +7616,44 @@ function pageRichSafeHTML(value = "") {
           if (alt) child.setAttribute("alt", alt);
           if (title) child.setAttribute("title", title);
           child.setAttribute("loading", "lazy");
+
+          let align = "";
+          if (dataAlign === "left" || dataAlign === "center" || dataAlign === "right") {
+            align = dataAlign;
+          } else if (/\balign-left\b/.test(rawClass)) {
+            align = "left";
+          } else if (/\balign-center\b/.test(rawClass)) {
+            align = "center";
+          } else if (/\balign-right\b/.test(rawClass)) {
+            align = "right";
+          }
+          if (align) {
+            child.setAttribute("data-align", align);
+            child.setAttribute("class", `align-${align}`);
+          }
+
+          if (/^(\d{1,4}(px)?|\d{1,3}%)$/.test(rawWidth.trim())) {
+            child.setAttribute("width", rawWidth.trim());
+          }
+
+          const safeStyleParts = [];
+          const widthMatch = colorStyle.match(/\bwidth:\s*([^;]+)/i);
+          if (widthMatch) {
+            const w = widthMatch[1].trim();
+            if (/^(\d{1,4}(px|rem|em|%)|auto)$/.test(w)) {
+              safeStyleParts.push(`width:${w}`);
+            }
+          }
+          if (align === "left") {
+            safeStyleParts.push("display:block", "margin-left:0", "margin-right:auto");
+          } else if (align === "center") {
+            safeStyleParts.push("display:block", "margin-left:auto", "margin-right:auto");
+          } else if (align === "right") {
+            safeStyleParts.push("display:block", "margin-left:auto", "margin-right:0");
+          }
+          if (safeStyleParts.length > 0) {
+            child.setAttribute("style", safeStyleParts.join("; "));
+          }
         } else {
           child.remove();
           return;
@@ -7356,6 +7672,11 @@ function pageRichSafeHTML(value = "") {
   clean(template.content);
   return template.innerHTML;
 }
+
+window.pageRichEditorHTML = pageRichEditorHTML;
+window.bindPageRichEditors = bindPageRichEditors;
+window.pageRichSafeHTML = pageRichSafeHTML;
+window.safeRichTextImageURL = safeRichTextImageURL;
 
 function recurrenceControlsHTML(recurrence = {}, dueValue = "") {
   const frequency = recurrence?.frequency || "none";
