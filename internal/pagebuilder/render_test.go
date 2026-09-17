@@ -81,3 +81,21 @@ func TestRenderRichTextImages(t *testing.T) {
 		t.Errorf("unsafe image was not stripped: %s", rendered)
 	}
 }
+
+func TestRenderRichTextImagesUserSnippet(t *testing.T) {
+	input := `BugMega.com is an easy platform to manage your tasks.<div><br><div><img src="/uploads/users/6a71ec6101ae3d3d42581e6f/1789630122696585703.png" loading="lazy"><br></div></div>`
+	rendered := RenderRichText(input, RenderContext{})
+	expected := `<img src="/uploads/users/6a71ec6101ae3d3d42581e6f/1789630122696585703.png" alt="" loading="lazy">`
+	if !strings.Contains(rendered, expected) {
+		t.Fatalf("expected rendered to contain %q, but got: %q", expected, rendered)
+	}
+}
+
+func TestRenderRichTextLinksWithNumbers(t *testing.T) {
+	input := `<p>Check this <a href="/blog/post-34?ref=123#sec4">Article 34</a></p>`
+	rendered := RenderRichText(input, RenderContext{})
+	expected := `<a href="/blog/post-34?ref=123#sec4" rel="noopener">Article 34</a>`
+	if !strings.Contains(rendered, expected) {
+		t.Fatalf("expected rendered to contain %q, but got: %q", expected, rendered)
+	}
+}

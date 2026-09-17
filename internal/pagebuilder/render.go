@@ -617,13 +617,27 @@ func safeVideoURL(value string) string {
 }
 
 var allowedBasicTags = regexp.MustCompile(`&lt;(/?(?:div|strong|b|em|i|u|p|br|ul|ol|li|h1|h2|h3|h4|blockquote|code|pre|table|thead|tbody|tr|th|td|figure|figcaption)(?:\s*/?)?)&gt;`)
-var allowedLinkOpenTag = regexp.MustCompile(`&lt;a\s+href=&#34;([^&#34;]+)&#34;(?:\s+[A-Za-z-]+=&#34;[^&#34;]*&#34;)*\s*&gt;`)
+var allowedLinkOpenTag = regexp.MustCompile(`&lt;a\s+(.*?)&gt;`)
+var linkAttrHrefPattern = regexp.MustCompile(`(?i)\bhref=(?:&#34;(.*?)&#34;|&#39;(.*?)&#39;|"([^"]*)"|'([^']*)')`)
 var allowedSpanColorOpenTag = regexp.MustCompile(`&lt;span\s+style=&#34;color:\s*(#[0-9a-fA-F]{3,6}|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\))\s*;?&#34;&gt;`)
 var allowedFontColorOpenTag = regexp.MustCompile(`&lt;font\s+color=&#34;(#[0-9a-fA-F]{3,6})&#34;&gt;`)
 var allowedImgTag = regexp.MustCompile(`&lt;img\s+(.*?)/?&gt;`)
-var imgAttrSrc = regexp.MustCompile(`src=(?:&#34;|&#39;)([^&#34;&#39;]+)(?:&#34;|&#39;)`)
-var imgAttrAlt = regexp.MustCompile(`alt=(?:&#34;|&#39;)([^&#34;&#39;]*)(?:&#34;|&#39;)`)
-var imgAttrTitle = regexp.MustCompile(`title=(?:&#34;|&#39;)([^&#34;&#39;]*)(?:&#34;|&#39;)`)
+var imgAttrSrcPattern = regexp.MustCompile(`(?i)\bsrc=(?:&#34;(.*?)&#34;|&#39;(.*?)&#39;|"([^"]*)"|'([^']*)')`)
+var imgAttrAltPattern = regexp.MustCompile(`(?i)\balt=(?:&#34;(.*?)&#34;|&#39;(.*?)&#39;|"([^"]*)"|'([^']*)')`)
+var imgAttrTitlePattern = regexp.MustCompile(`(?i)\btitle=(?:&#34;(.*?)&#34;|&#39;(.*?)&#39;|"([^"]*)"|'([^']*)')`)
+
+func matchAttrValue(re *regexp.Regexp, tag string) (string, bool) {
+	matches := re.FindStringSubmatch(tag)
+	if len(matches) == 0 {
+		return "", false
+	}
+	for i := 1; i < len(matches); i++ {
+		if matches[i] != "" {
+			return matches[i], true
+		}
+	}
+	return "", true
+}
 
 func sanitizeRichText(value string) string {
 	escaped := html.EscapeString(value)
@@ -635,32 +649,30 @@ func sanitizeRichText(value string) string {
 	escaped = strings.ReplaceAll(escaped, "&lt;/font&gt;", "</span>")
 	escaped = strings.ReplaceAll(escaped, "&lt;/a&gt;", "</a>")
 	escaped = allowedImgTag.ReplaceAllStringFunc(escaped, func(match string) string {
-		srcMatch := imgAttrSrc.FindStringSubmatch(match)
-		if len(srcMatch) < 2 {
+		srcRaw, hasSrc := matchAttrValue(imgAttrSrcPattern, match)
+		if !hasSrc || strings.TrimSpace(srcRaw) == "" {
 			return ""
 		}
-		src := safeRichTextImageURL(html.UnescapeString(srcMatch[1]))
+		src := safeRichTextImageURL(html.UnescapeString(srcRaw))
 		if src == "" {
 			return ""
 		}
-		alt := ""
-		if altMatch := imgAttrAlt.FindStringSubmatch(match); len(altMatch) >= 2 {
-			alt = ` alt="` + html.EscapeString(html.UnescapeString(altMatch[1])) + `"`
-		} else {
-			alt = ` alt=""`
+		alt := ` alt=""`
+		if altRaw, hasAlt := matchAttrValue(imgAttrAltPattern, match); hasAlt {
+			alt = ` alt="` + html.EscapeString(html.UnescapeString(altRaw)) + `"`
 		}
 		title := ""
-		if titleMatch := imgAttrTitle.FindStringSubmatch(match); len(titleMatch) >= 2 {
-			title = ` title="` + html.EscapeString(html.UnescapeString(titleMatch[1])) + `"`
+		if titleRaw, hasTitle := matchAttrValue(imgAttrTitlePattern, match); hasTitle && strings.TrimSpace(titleRaw) != "" {
+			title = ` title="` + html.EscapeString(html.UnescapeString(titleRaw)) + `"`
 		}
 		return `<img src="` + src + `"` + alt + title + ` loading="lazy">`
 	})
 	return allowedLinkOpenTag.ReplaceAllStringFunc(escaped, func(match string) string {
-		parts := allowedLinkOpenTag.FindStringSubmatch(match)
-		if len(parts) < 2 {
+		hrefRaw, hasHref := matchAttrValue(linkAttrHrefPattern, match)
+		if !hasHref || strings.TrimSpace(hrefRaw) == "" {
 			return ""
 		}
-		href := safeRichTextHref(html.UnescapeString(parts[1]))
+		href := safeRichTextHref(html.UnescapeString(hrefRaw))
 		if href == "" {
 			return ""
 		}
