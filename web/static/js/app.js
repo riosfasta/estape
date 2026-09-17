@@ -18241,7 +18241,7 @@ async function route(options = {}) {
       return renderVerifyEmailPage();
     }
     if (path() === "/freelancers" || path().startsWith("/freelancers/") || path() === "/find-jobs") {
-      if (state.access) {
+      if (state.access && !state.me) {
         try { await loadMe(); } catch { state.me = null; }
       }
       return await marketplace.render(path());

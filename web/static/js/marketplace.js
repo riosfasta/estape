@@ -229,9 +229,13 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     return `<div class="toolbar">${data.page > 1 ? link(data.page - 1, "Previous") : ""}${data.has_more ? link(data.page + 1, "Next") : ""}</div>`;
   }
   async function publicProfile(id) {
-    const data = await api(`/api/marketplace/freelancers/${id}`); const p = data.profile;
-    const mine = state.me ? await api("/api/marketplace/me").catch(() => null) : null;
-    const openJobs = mine?.jobs.filter(j => j.owner_id === state.me.id && j.status === "open") || [];
+    const isSelf = state.me?.id === id;
+    const [data, mine] = await Promise.all([
+      api(`/api/marketplace/freelancers/${id}`),
+      (!isSelf && state.me) ? api("/api/marketplace/me").catch(() => null) : Promise.resolve(null)
+    ]);
+    const p = data.profile;
+    const openJobs = mine?.jobs?.filter(j => j.owner_id === state.me?.id && j.status === "open") || [];
     page(p.name, `${heading("FREELANCER PROFILE", p.name, p.title, '<a class="btn" href="/freelancers">Browse talent</a>')}<section class="panel"><div class="market-person">${photo(p)}<div><h2>${esc(p.title)}</h2><p>${esc(p.location)}, ${esc(regionNames.of(p.country))}</p>${p.verified ? badge("ID verified") : ""}</div>${profileShareActions(p, true)}</div>${stats(p)}<p class="market-bio">${esc(p.bio)}</p>${chips(p.skills)}</section>${portfolio(p)}
       ${shareProfile(p, true)}
       ${state.me?.id === id ? '<p><a class="btn" href="/dashboard">Edit my profile</a></p>' : `<section class="panel"><h2>Invite ${esc(p.name)} to a job</h2>${["busy", "on_break"].includes(p.availability) ? '<p>This freelancer is not available for new work.</p>' : !state.me ? '<a class="btn primary" href="/register">Create an account to hire</a>' : openJobs.length ? `<form id="marketInvite" class="market-form"><label class="field">Your open job<select name="job_id">${openJobs.map(j => `<option value="${esc(j.id)}">${esc(j.title)} · ${money(j.budget)}</option>`).join("")}</select></label><p data-invite-terms></p><label class="field">Offer price / hourly maximum cost (USD)<input name="price" type="number" min="1" max="100000" step="0.01" required></label><label class="field">Message<textarea name="message" minlength="20" maxlength="5000" required rows="3"></textarea></label><button class="btn primary" type="submit">Send offer</button><p class="muted">The freelancer can accept or decline. You make the final hiring decision after acceptance.</p></form>` : '<p>Publish a job with a funded balance first.</p><a class="btn primary" href="/marketplace/jobs">Create a job</a>'}</section>`}
@@ -1170,10 +1174,10 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
 
   async function render(path) {
     if (path === "/admin/identity") return identityReviews();
+    if (path.startsWith("/freelancers/")) return publicProfile(path.split("/")[2]);
     const catalog = await api("/api/marketplace/skills");
     skillCatalog = catalog.skills; connectsPolicy = catalog.connects_policy || connectsPolicy;
     if (path === "/freelancers") return directory();
-    if (path.startsWith("/freelancers/")) return publicProfile(path.split("/")[2]);
     if (path === "/find-jobs") return findJobs();
     if (path === "/wallet") return wallet();
     if (path === "/marketplace/jobs") return myJobs();

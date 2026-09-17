@@ -57,7 +57,15 @@ func (s *Store) CreateIndexes(ctx context.Context) error {
 			{Keys: bson.D{{Key: "scope_tasks.task_id", Value: 1}, {Key: "status", Value: 1}}},
 			{Keys: bson.D{{Key: "status", Value: 1}, {Key: "created_at", Value: -1}}},
 			{Keys: bson.D{{Key: "owner_id", Value: 1}}},
+			{Keys: bson.D{{Key: "freelancer_id", Value: 1}, {Key: "approved_at", Value: -1}}},
 			{Keys: bson.D{{Key: "freelancer_id", Value: 1}}},
+		},
+		"client_tasks": {
+			{Keys: bson.D{{Key: "ratings.to_user_id", Value: 1}, {Key: "updated_at", Value: -1}}},
+			{Keys: bson.D{{Key: "client_id", Value: 1}}},
+			{Keys: bson.D{{Key: "website_id", Value: 1}}},
+			{Keys: bson.D{{Key: "tab_id", Value: 1}}},
+			{Keys: bson.D{{Key: "team_id", Value: 1}}},
 		},
 		"marketplace_transfers": {
 			{Keys: bson.D{{Key: "external_id", Value: 1}}, Options: mongomodels.Index().SetUnique(true).SetSparse(true)},

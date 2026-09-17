@@ -467,7 +467,13 @@ func (s *Server) loadUserReviews(ctx context.Context, userID primitive.ObjectID)
 			{"rating": bson.M{"$gt": 0}},
 			{"review": bson.M{"$ne": ""}},
 		},
-	}, options.Find().SetLimit(50).SetSort(bson.D{{Key: "approved_at", Value: -1}}))
+	}, options.Find().SetLimit(50).SetSort(bson.D{{Key: "approved_at", Value: -1}}).SetProjection(bson.M{
+		"title":       1,
+		"rating":      1,
+		"review":      1,
+		"approved_at": 1,
+		"created_at":  1,
+	}))
 	if err == nil {
 		defer jobCur.Close(ctx)
 		var jobs []models.MarketplaceJob
@@ -497,7 +503,12 @@ func (s *Server) loadUserReviews(ctx context.Context, userID primitive.ObjectID)
 	// 2. Client tasks with ratings for this user
 	taskCur, err := s.store.C("client_tasks").Find(ctx, bson.M{
 		"ratings.to_user_id": userID,
-	}, options.Find().SetLimit(100).SetSort(bson.D{{Key: "updated_at", Value: -1}}))
+	}, options.Find().SetLimit(100).SetSort(bson.D{{Key: "updated_at", Value: -1}}).SetProjection(bson.M{
+		"title":      1,
+		"ratings":    1,
+		"updated_at": 1,
+		"created_at": 1,
+	}))
 	if err == nil {
 		defer taskCur.Close(ctx)
 		var tasks []models.ClientTask
