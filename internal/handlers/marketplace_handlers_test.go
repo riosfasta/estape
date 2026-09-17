@@ -687,11 +687,32 @@ func TestLoadUserReviews(t *testing.T) {
 		t.Fatalf("expected 0 reviews, got %d", len(reviews))
 	}
 
-	// 2. Add client task review
+	// 2. Add client project and website
+	projectID := primitive.NewObjectID()
+	if _, err := st.C("client_projects").InsertOne(ctx, models.ClientProject{
+		ID:   projectID,
+		Name: "Client Project Alpha",
+	}); err != nil {
+		t.Fatalf("insert project: %v", err)
+	}
+
+	websiteID := primitive.NewObjectID()
+	if _, err := st.C("client_websites").InsertOne(ctx, models.ClientWebsite{
+		ID:       websiteID,
+		ClientID: projectID,
+		Name:     "E-Store",
+	}); err != nil {
+		t.Fatalf("insert website: %v", err)
+	}
+
+	// 3. Add client task review
 	t1 := time.Date(2026, 9, 14, 10, 0, 0, 0, time.UTC)
 	task := models.ClientTask{
 		ID:        primitive.NewObjectID(),
+		ClientID:  projectID,
+		WebsiteID: websiteID,
 		Title:     "Monthly Maintenance",
+		Price:     125.50,
 		UpdatedAt: t1,
 		Ratings: []models.TaskRating{
 			{
@@ -715,21 +736,29 @@ func TestLoadUserReviews(t *testing.T) {
 	if reviews[0].Title != "Monthly Maintenance" || reviews[0].Rating != 5 || reviews[0].Review != "Great job on maintenance!" {
 		t.Fatalf("unexpected review content: %+v", reviews[0])
 	}
+	if reviews[0].ProjectName != "Client Project Alpha" {
+		t.Fatalf("expected project name 'Client Project Alpha', got '%s'", reviews[0].ProjectName)
+	}
+	if reviews[0].Price == nil || *reviews[0].Price != 12550 {
+		t.Fatalf("expected price 12550 cents, got %+v", reviews[0].Price)
+	}
 	if reviews[0].ApprovedAt == nil || !reviews[0].ApprovedAt.Equal(t1) {
 		t.Fatalf("expected approved_at equal to t1, got %+v", reviews[0].ApprovedAt)
 	}
 
-	// 3. Add marketplace job completed review (newer)
+	// 4. Add marketplace job completed review (newer)
 	t2 := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
 	job := models.MarketplaceJob{
-		ID:           primitive.NewObjectID(),
-		FreelancerID: freelancerID,
-		Title:        "Landing page redesign",
-		Status:       "completed",
-		Rating:       4,
-		Review:       "Very fast turnaround.",
-		ApprovedAt:   &t2,
-		CreatedAt:    t2.Add(-24 * time.Hour),
+		ID:             primitive.NewObjectID(),
+		FreelancerID:   freelancerID,
+		Title:          "Landing page redesign",
+		ScopeWebsiteID: websiteID,
+		Price:          45000,
+		Status:         "completed",
+		Rating:         4,
+		Review:         "Very fast turnaround.",
+		ApprovedAt:     &t2,
+		CreatedAt:      t2.Add(-24 * time.Hour),
 	}
 	if _, err := st.C("marketplace_jobs").InsertOne(ctx, job); err != nil {
 		t.Fatalf("insert job: %v", err)
@@ -742,6 +771,12 @@ func TestLoadUserReviews(t *testing.T) {
 	// Newer first: Landing page redesign (t2) then Monthly Maintenance (t1)
 	if reviews[0].Title != "Landing page redesign" || reviews[1].Title != "Monthly Maintenance" {
 		t.Fatalf("reviews not sorted newest first: %+v", reviews)
+	}
+	if reviews[0].ProjectName != "Client Project Alpha" {
+		t.Fatalf("expected job project name 'Client Project Alpha', got '%s'", reviews[0].ProjectName)
+	}
+	if reviews[0].Price == nil || *reviews[0].Price != 45000 {
+		t.Fatalf("expected job price 45000, got %+v", reviews[0].Price)
 	}
 
 	// 4. Test marketplacePublicProfile handler returns profile and reviews

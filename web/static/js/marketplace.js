@@ -4,6 +4,48 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
   const jobAmount = job => job.status === "completed" ? job.price : (job.price || job.budget);
   const hours = seconds => (Number(seconds || 0) / 3600).toFixed(2);
   const date = (value) => value ? new Date(value).toLocaleString() : "—";
+  const formatDate = (value) => {
+    if (!value) return "—";
+    try {
+      return new Date(value).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    } catch {
+      return date(value);
+    }
+  };
+  const starsHTML = (rating, size = 15) => {
+    const r = Math.max(0, Math.min(5, Math.round(Number(rating) || 0)));
+    let stars = "";
+    for (let i = 1; i <= 5; i++) {
+      stars += i <= r ? "★" : "☆";
+    }
+    return `<span class="market-stars" aria-label="${r} out of 5 stars" style="color:#f59e0b; letter-spacing:1px; font-size:${size}px; line-height:1; vertical-align:middle;">${stars}</span>`;
+  };
+  const reviewPriceHTML = (r) => {
+    if (r.billing_type === "hourly" && r.hourly_rate) {
+      return `<span class="market-badge market-review-price" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; font-weight:600; font-size:13px;">${money(r.hourly_rate)} / hr${r.price ? ` (${money(r.price)} total)` : ""}</span>`;
+    }
+    if (r.price && r.price > 0) {
+      return `<span class="market-badge market-review-price" style="background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; font-weight:600; font-size:13px;">${money(r.price)}</span>`;
+    }
+    return "";
+  };
+  const reviewCard = (r) => `
+    <article class="panel market-review-card" style="margin-bottom:16px; padding:20px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+        <div style="min-width:0;">
+          <h3 style="margin:0 0 4px; font-size:18px;">${esc(r.title)}</h3>
+          ${r.project_name && r.project_name !== r.title ? `<p class="muted" style="margin:2px 0 6px; font-size:13px;">Project: <strong style="color:var(--text-main);">${esc(r.project_name)}</strong></p>` : ""}
+        </div>
+        ${reviewPriceHTML(r)}
+      </div>
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:6px 0 10px; font-size:13px;">
+        ${starsHTML(r.rating, 16)}
+        <strong>${r.rating} / 5</strong>
+        <span class="muted">· Rated on ${esc(formatDate(r.approved_at || r.created_at))}</span>
+      </div>
+      <p style="margin:0; line-height:1.6; white-space:pre-wrap;">${esc(r.review || "No written review.")}</p>
+    </article>
+  `;
   const cents = (value) => { if (!/^\d+(\.\d{1,2})?$/.test(String(value))) throw new Error("Enter a positive amount with at most two decimals"); return Math.round(Number(value) * 100); };
   const chips = (skills) => `<div class="market-skills">${(skills || []).map(s => `<span>${esc(s)}</span>`).join("")}</div>`;
   const badge = (status) => `<span class="market-badge">${esc(String(status || "").replaceAll("_", " "))}</span>`;
@@ -44,7 +86,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
   const heading = (kicker, title, text, actions = "") => `<header class="market-heading"><div><p class="market-kicker">${esc(kicker)}</p><h1>${esc(title)}</h1><p class="muted">${esc(text)}</p></div><div class="toolbar">${actions}</div></header>`;
   const availabilityLabel = p => p.active_jobs > 0 || p.availability === "running_project" ? "In a running project" : p.availability === "on_break" ? "Off for break" : p.availability === "busy" ? "Busy" : p.available === false ? "Busy" : "Available now";
   const portfolio = p => (p.portfolio_photos?.length || p.youtube_urls?.length) ? `<section class="panel"><h2>Project portfolio</h2><div class="market-portfolio">${(p.portfolio_photos || []).map(url => { const detail = (p.portfolio_details || []).find(item => item.photo === url) || {}; return `<figure><a href="${esc(url)}" target="_blank" rel="noopener"><img src="${esc(url)}" alt="${esc(detail.title || "Project work sample")}" loading="lazy"></a>${detail.title ? `<h3>${esc(detail.title)}</h3>` : ""}${detail.description ? `<p class="market-bio">${esc(detail.description)}</p>` : ""}${detail.url ? `<a href="${esc(detail.url)}" target="_blank" rel="noopener noreferrer">Visit project</a>` : ""}</figure>`; }).join("")}</div><div class="toolbar">${(p.youtube_urls || []).map((url, i) => `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Watch project video ${i + 1} on YouTube</a>`).join("")}</div></section>` : "";
-  const stats = (p) => `<div class="market-stats"><div><strong>${p.rating_count ? Number(p.rating).toFixed(1) + " / 5" : "New"}</strong><span>${Number(p.rating_count || 0)} reviews</span></div><div><strong>${Number(p.finished_jobs || 0)}</strong><span>Finished jobs</span></div><div><strong>${Number(p.published_jobs || 0)}</strong><span>Published jobs</span></div><div><strong>${availabilityLabel(p)}</strong><span>Current availability</span></div></div>`;
+  const stats = (p) => `<div class="market-stats"><div><div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;"><strong>${p.rating_count ? Number(p.rating).toFixed(1) + " / 5" : "New"}</strong>${p.rating_count ? starsHTML(p.rating, 16) : ""}</div><span>${Number(p.rating_count || 0)} reviews</span></div><div><strong>${Number(p.finished_jobs || 0)}</strong><span>Finished jobs</span></div><div><strong>${Number(p.published_jobs || 0)}</strong><span>Published jobs</span></div><div><strong>${availabilityLabel(p)}</strong><span>Current availability</span></div></div>`;
   const countryName = code => { if (!code) return ""; try { return regionNames.of(code) || code; } catch { return code; } };
   const ownerSnippet = j => `
     <div class="market-job-owner">
@@ -114,7 +156,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
       ${p.identity_status !== "not_submitted" ? `<div class="toolbar"><button class="btn" id="viewMyIdentity">View my ID</button><button class="btn" id="deleteMyIdentity">Remove ID</button></div>` : ""}</section>
       <section class="panel"><h2>Payments, clearly explained</h2><p>Keep 95% of each approved payment. The platform fee is 5%. Earnings unlock seven days after employer approval.</p><a class="btn" href="/wallet">Open wallet</a></section></aside></div>
       <h2>Recent jobs</h2>${jobCards(data.jobs.slice(0, 5))}
-      <h2>Completed work & reviews</h2>${(data.reviews || []).map(r => `<article class="panel"><h3>${esc(r.title)}</h3><p>${r.rating} / 5 · ${esc(date(r.approved_at || r.created_at))}</p><p>${esc(r.review || "No written review.")}</p></article>`).join("") || empty("No completed jobs yet.")}`);
+      <h2>Completed work & reviews</h2>${(data.reviews || []).map(reviewCard).join("") || empty("No completed jobs yet.")}`);
     bindProfileShare();
     const media = bindProfileMedia(p);
     bindForm("#marketProfile", async form => {
@@ -221,7 +263,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     const params = new URLSearchParams(location.search); const data = await api(`/api/marketplace/freelancers?${params}`);
     page("Find freelancers", `${heading("TALENT, WITHOUT BORDERS", "Find the right person for your next project", "Explore independent professionals. Filter by expertise, reputation, availability and country.")}
       <form id="marketFilters" class="panel market-filters"><label class="field">Skill<input name="skill" value="${esc(params.get("skill") || "")}" list="marketSkillOptions" placeholder="Any skill, including custom"><datalist id="marketSkillOptions">${skillCatalog.map(s => `<option value="${esc(s)}">`).join("")}</datalist></label><label class="field">Country<select name="country">${countryOptions(params.get("country"))}</select></label><label class="field">Minimum rating<select name="rating">${["", "3", "4", "4.5", "5"].map(v => `<option value="${v}" ${params.get("rating") === v ? "selected" : ""}>${v ? v + "+ stars" : "Any rating"}</option>`).join("")}</select></label><label class="field">Availability<select name="availability">${[["", "Everyone"], ["available", "Available now"], ["busy", "Busy"], ["running_project", "In a running project"], ["on_break", "Off for break"]].map(([value, label]) => `<option value="${value}" ${(params.get("availability") || (params.get("available") === "true" ? "available" : "")) === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><button class="btn primary" type="submit">Search</button></form>
-      <div class="market-talent-grid">${data.freelancers.map(p => `<article class="panel market-talent"><div class="market-person">${photo(p)}<div><h2><a href="/freelancers/${esc(p.id)}">${esc(p.name)}</a></h2><p>${esc(p.title)}</p></div></div><p class="muted">${esc(p.location)}, ${esc(regionNames.of(p.country))}</p><div class="toolbar">${badge(availabilityLabel(p))}${p.verified ? badge("ID verified") : ""}<span>${p.rating_count ? Number(p.rating).toFixed(1) + " / 5 · " + p.rating_count + " reviews" : "New freelancer"}</span></div><p>${esc(p.bio.slice(0, 170))}</p>${chips(p.skills.slice(0, 6))}<p class="muted">${p.finished_jobs} completed jobs</p><a class="btn" href="/freelancers/${esc(p.id)}">View profile & invite</a></article>`).join("") || empty("No freelancers match these filters. Try another skill or country.")}</div>${pagination(data, params)}`);
+      <div class="market-talent-grid">${data.freelancers.map(p => `<article class="panel market-talent"><div class="market-person">${photo(p)}<div><h2><a href="/freelancers/${esc(p.id)}">${esc(p.name)}</a></h2><p>${esc(p.title)}</p></div></div><p class="muted">${esc(p.location)}, ${esc(regionNames.of(p.country))}</p><div class="toolbar">${badge(availabilityLabel(p))}${p.verified ? badge("ID verified") : ""}<span>${p.rating_count ? starsHTML(p.rating, 13) + " " + Number(p.rating).toFixed(1) + " / 5 · " + p.rating_count + " reviews" : "New freelancer"}</span></div><p>${esc(p.bio.slice(0, 170))}</p>${chips(p.skills.slice(0, 6))}<p class="muted">${p.finished_jobs} completed jobs</p><a class="btn" href="/freelancers/${esc(p.id)}">View profile & invite</a></article>`).join("") || empty("No freelancers match these filters. Try another skill or country.")}</div>${pagination(data, params)}`);
     bindForm("#marketFilters", async form => { const query = new URLSearchParams(new FormData(form)); location.href = "/freelancers?" + query; });
   }
   function pagination(data, params) {
@@ -239,7 +281,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     page(p.name, `${heading("FREELANCER PROFILE", p.name, p.title, '<a class="btn" href="/freelancers">Browse talent</a>')}<section class="panel"><div class="market-person">${photo(p)}<div><h2>${esc(p.title)}</h2><p>${esc(p.location)}, ${esc(regionNames.of(p.country))}</p>${p.verified ? badge("ID verified") : ""}</div>${profileShareActions(p, true)}</div>${stats(p)}<p class="market-bio">${esc(p.bio)}</p>${chips(p.skills)}</section>${portfolio(p)}
       ${shareProfile(p, true)}
       ${state.me?.id === id ? '<p><a class="btn" href="/dashboard">Edit my profile</a></p>' : `<section class="panel"><h2>Invite ${esc(p.name)} to a job</h2>${["busy", "on_break"].includes(p.availability) ? '<p>This freelancer is not available for new work.</p>' : !state.me ? '<a class="btn primary" href="/register">Create an account to hire</a>' : openJobs.length ? `<form id="marketInvite" class="market-form"><label class="field">Your open job<select name="job_id">${openJobs.map(j => `<option value="${esc(j.id)}">${esc(j.title)} · ${money(j.budget)}</option>`).join("")}</select></label><p data-invite-terms></p><label class="field">Offer price / hourly maximum cost (USD)<input name="price" type="number" min="1" max="100000" step="0.01" required></label><label class="field">Message<textarea name="message" minlength="20" maxlength="5000" required rows="3"></textarea></label><button class="btn primary" type="submit">Send offer</button><p class="muted">The freelancer can accept or decline. You make the final hiring decision after acceptance.</p></form>` : '<p>Publish a job with a funded balance first.</p><a class="btn primary" href="/marketplace/jobs">Create a job</a>'}</section>`}
-      <h2>Completed work & reviews</h2>${(data.reviews || []).map(r => `<article class="panel"><h3>${esc(r.title)}</h3><p>${r.rating} / 5 · ${esc(date(r.approved_at || r.created_at))}</p><p>${esc(r.review || "No written review.")}</p></article>`).join("") || empty("No completed jobs yet.")}`);
+      <h2>Completed work & reviews</h2>${(data.reviews || []).map(reviewCard).join("") || empty("No completed jobs yet.")}`);
     bindProfileShare();
     const inviteForm = $("#marketInvite");
     if (inviteForm) {

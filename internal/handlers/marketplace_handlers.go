@@ -447,19 +447,24 @@ func (s *Server) marketplaceFreelancers(c *gin.Context) {
 }
 
 type userReviewItem struct {
-	Title      string     `json:"title"`
-	Rating     int        `json:"rating"`
-	Review     string     `json:"review"`
-	ApprovedAt *time.Time `json:"approved_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	Source     string     `json:"source,omitempty"`
-	date       time.Time
+	Title       string     `json:"title"`
+	ProjectName string     `json:"project_name,omitempty"`
+	Price       *int64     `json:"price,omitempty"`
+	HourlyRate  *int64     `json:"hourly_rate,omitempty"`
+	BillingType string     `json:"billing_type,omitempty"`
+	Rating      int        `json:"rating"`
+	Review      string     `json:"review"`
+	ApprovedAt  *time.Time `json:"approved_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	Source      string     `json:"source,omitempty"`
+	date        time.Time
 }
 
 func (s *Server) loadUserReviews(ctx context.Context, userID primitive.ObjectID) ([]userReviewItem, error) {
 	reviews := make([]userReviewItem, 0)
 
 	// 1. Marketplace completed jobs
+	var jobs []models.MarketplaceJob
 	jobCur, err := s.store.C("marketplace_jobs").Find(ctx, bson.M{
 		"freelancer_id": userID,
 		"$or": []bson.M{
@@ -468,73 +473,217 @@ func (s *Server) loadUserReviews(ctx context.Context, userID primitive.ObjectID)
 			{"review": bson.M{"$ne": ""}},
 		},
 	}, options.Find().SetLimit(50).SetSort(bson.D{{Key: "approved_at", Value: -1}}).SetProjection(bson.M{
-		"title":       1,
-		"rating":      1,
-		"review":      1,
-		"approved_at": 1,
-		"created_at":  1,
+		"title":            1,
+		"price":            1,
+		"budget":           1,
+		"hourly_rate":      1,
+		"billing_type":     1,
+		"scope_website_id": 1,
+		"rating":           1,
+		"review":           1,
+		"approved_at":      1,
+		"created_at":       1,
 	}))
 	if err == nil {
 		defer jobCur.Close(ctx)
-		var jobs []models.MarketplaceJob
-		if err := jobCur.All(ctx, &jobs); err == nil {
-			for _, j := range jobs {
-				d := j.CreatedAt
-				if j.ApprovedAt != nil && !j.ApprovedAt.IsZero() {
-					d = *j.ApprovedAt
+		_ = jobCur.All(ctx, &jobs)
+	}
+
+	// 2. Client tasks with ratings for this user
+	var tasks []models.ClientTask
+	taskCur, err := s.store.C("client_tasks").Find(ctx, bson.M{
+		"ratings.to_user_id": userID,
+	}, options.Find().SetLimit(100).SetSort(bson.D{{Key: "updated_at", Value: -1}}).SetProjection(bson.M{
+		"title":        1,
+		"client_id":    1,
+		"website_id":   1,
+		"price":        1,
+		"hourly_rate":  1,
+		"billing_type": 1,
+		"ratings":      1,
+		"updated_at":   1,
+		"created_at":   1,
+	}))
+	if err == nil {
+		defer taskCur.Close(ctx)
+		_ = taskCur.All(ctx, &tasks)
+	}
+
+	// Batch lookup project & website names
+	clientIDs := make([]primitive.ObjectID, 0)
+	websiteIDs := make([]primitive.ObjectID, 0)
+	clientSeen := make(map[primitive.ObjectID]bool)
+	websiteSeen := make(map[primitive.ObjectID]bool)
+
+	for _, j := range jobs {
+		if !j.ScopeWebsiteID.IsZero() && !websiteSeen[j.ScopeWebsiteID] {
+			websiteSeen[j.ScopeWebsiteID] = true
+			websiteIDs = append(websiteIDs, j.ScopeWebsiteID)
+		}
+	}
+
+	for _, t := range tasks {
+		if !t.ClientID.IsZero() && !clientSeen[t.ClientID] {
+			clientSeen[t.ClientID] = true
+			clientIDs = append(clientIDs, t.ClientID)
+		}
+		if !t.WebsiteID.IsZero() && !websiteSeen[t.WebsiteID] {
+			websiteSeen[t.WebsiteID] = true
+			websiteIDs = append(websiteIDs, t.WebsiteID)
+		}
+	}
+
+	clientProjectNames := make(map[primitive.ObjectID]string)
+	if len(clientIDs) > 0 {
+		cur, err := s.store.C("client_projects").Find(ctx, bson.M{"_id": bson.M{"$in": clientIDs}}, options.Find().SetProjection(bson.M{"_id": 1, "name": 1}))
+		if err == nil {
+			defer cur.Close(ctx)
+			for cur.Next(ctx) {
+				var cp models.ClientProject
+				if cur.Decode(&cp) == nil {
+					clientProjectNames[cp.ID] = cp.Name
 				}
-				appAt := j.ApprovedAt
-				if appAt == nil || appAt.IsZero() {
-					appAt = &d
-				}
-				reviews = append(reviews, userReviewItem{
-					Title:      j.Title,
-					Rating:     j.Rating,
-					Review:     j.Review,
-					ApprovedAt: appAt,
-					CreatedAt:  j.CreatedAt,
-					Source:     "marketplace",
-					date:       d,
-				})
 			}
 		}
 	}
 
-	// 2. Client tasks with ratings for this user
-	taskCur, err := s.store.C("client_tasks").Find(ctx, bson.M{
-		"ratings.to_user_id": userID,
-	}, options.Find().SetLimit(100).SetSort(bson.D{{Key: "updated_at", Value: -1}}).SetProjection(bson.M{
-		"title":      1,
-		"ratings":    1,
-		"updated_at": 1,
-		"created_at": 1,
-	}))
-	if err == nil {
-		defer taskCur.Close(ctx)
-		var tasks []models.ClientTask
-		if err := taskCur.All(ctx, &tasks); err == nil {
-			for _, t := range tasks {
-				for _, r := range t.Ratings {
-					if r.ToUserID == userID && (r.Rating > 0 || strings.TrimSpace(r.Review) != "") {
-						d := r.CreatedAt
-						if d.IsZero() {
-							d = t.UpdatedAt
-							if d.IsZero() {
-								d = t.CreatedAt
-							}
-						}
-						appAt := d
-						reviews = append(reviews, userReviewItem{
-							Title:      t.Title,
-							Rating:     r.Rating,
-							Review:     r.Review,
-							ApprovedAt: &appAt,
-							CreatedAt:  d,
-							Source:     "task",
-							date:       d,
-						})
+	websiteNames := make(map[primitive.ObjectID]string)
+	websiteClientIDs := make(map[primitive.ObjectID]primitive.ObjectID)
+	if len(websiteIDs) > 0 {
+		cur, err := s.store.C("client_websites").Find(ctx, bson.M{"_id": bson.M{"$in": websiteIDs}}, options.Find().SetProjection(bson.M{"_id": 1, "client_id": 1, "name": 1, "url": 1}))
+		if err == nil {
+			defer cur.Close(ctx)
+			for cur.Next(ctx) {
+				var cw models.ClientWebsite
+				if cur.Decode(&cw) == nil {
+					name := cw.Name
+					if name == "" {
+						name = cw.URL
+					}
+					websiteNames[cw.ID] = name
+					if !cw.ClientID.IsZero() {
+						websiteClientIDs[cw.ID] = cw.ClientID
 					}
 				}
+			}
+		}
+	}
+
+	missingClientIDs := make([]primitive.ObjectID, 0)
+	for _, cid := range websiteClientIDs {
+		if !clientSeen[cid] {
+			clientSeen[cid] = true
+			missingClientIDs = append(missingClientIDs, cid)
+		}
+	}
+	if len(missingClientIDs) > 0 {
+		cur, err := s.store.C("client_projects").Find(ctx, bson.M{"_id": bson.M{"$in": missingClientIDs}}, options.Find().SetProjection(bson.M{"_id": 1, "name": 1}))
+		if err == nil {
+			defer cur.Close(ctx)
+			for cur.Next(ctx) {
+				var cp models.ClientProject
+				if cur.Decode(&cp) == nil {
+					clientProjectNames[cp.ID] = cp.Name
+				}
+			}
+		}
+	}
+
+	for _, j := range jobs {
+		d := j.CreatedAt
+		if j.ApprovedAt != nil && !j.ApprovedAt.IsZero() {
+			d = *j.ApprovedAt
+		}
+		appAt := j.ApprovedAt
+		if appAt == nil || appAt.IsZero() {
+			appAt = &d
+		}
+
+		var pricePtr *int64
+		if j.Price > 0 {
+			p := j.Price
+			pricePtr = &p
+		} else if j.Budget > 0 {
+			b := j.Budget
+			pricePtr = &b
+		}
+
+		var hrPtr *int64
+		if j.HourlyRate > 0 {
+			hr := j.HourlyRate
+			hrPtr = &hr
+		}
+
+		projName := ""
+		if !j.ScopeWebsiteID.IsZero() {
+			clientID := websiteClientIDs[j.ScopeWebsiteID]
+			projName = clientProjectNames[clientID]
+			if projName == "" {
+				projName = websiteNames[j.ScopeWebsiteID]
+			}
+		}
+
+		reviews = append(reviews, userReviewItem{
+			Title:       j.Title,
+			ProjectName: projName,
+			Price:       pricePtr,
+			HourlyRate:  hrPtr,
+			BillingType: j.BillingType,
+			Rating:      j.Rating,
+			Review:      j.Review,
+			ApprovedAt:  appAt,
+			CreatedAt:   j.CreatedAt,
+			Source:      "marketplace",
+			date:        d,
+		})
+	}
+
+	for _, t := range tasks {
+		for _, r := range t.Ratings {
+			if r.ToUserID == userID && (r.Rating > 0 || strings.TrimSpace(r.Review) != "") {
+				d := r.CreatedAt
+				if d.IsZero() {
+					d = t.UpdatedAt
+					if d.IsZero() {
+						d = t.CreatedAt
+					}
+				}
+				appAt := d
+
+				var pricePtr *int64
+				if t.Price > 0 {
+					p := int64(math.Round(t.Price * 100))
+					pricePtr = &p
+				}
+
+				var hrPtr *int64
+				if t.HourlyRate > 0 {
+					hr := int64(math.Round(t.HourlyRate * 100))
+					hrPtr = &hr
+				}
+
+				clientID := t.ClientID
+				if clientID.IsZero() && !t.WebsiteID.IsZero() {
+					clientID = websiteClientIDs[t.WebsiteID]
+				}
+				projName := clientProjectNames[clientID]
+				if projName == "" && !t.WebsiteID.IsZero() {
+					projName = websiteNames[t.WebsiteID]
+				}
+
+				reviews = append(reviews, userReviewItem{
+					Title:       t.Title,
+					ProjectName: projName,
+					Price:       pricePtr,
+					HourlyRate:  hrPtr,
+					BillingType: t.BillingType,
+					Rating:      r.Rating,
+					Review:      r.Review,
+					ApprovedAt:  &appAt,
+					CreatedAt:   d,
+					Source:      "task",
+					date:        d,
+				})
 			}
 		}
 	}
