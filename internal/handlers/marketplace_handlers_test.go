@@ -652,3 +652,143 @@ func TestMarketplaceIntegration(t *testing.T) {
 	})
 	t.Log("Isolated marketplace lifecycle, concurrent hiring, wallet replay, privacy, hold, fee and settlement checks passed")
 }
+
+func TestLoadUserReviews(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	client, err := tryConnectTestMongo(ctx)
+	if err != nil {
+		t.Skipf("skipping MongoDB test: %v", err)
+		return
+	}
+	defer client.Disconnect(context.Background())
+
+	dbName := "bugmark_reviewstest_" + primitive.NewObjectID().Hex()
+	st := &store.Store{Client: client, DB: client.Database(dbName)}
+	defer func() {
+		cleanupCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stop()
+		if strings.HasPrefix(st.DB.Name(), "bugmark_reviewstest_") {
+			_ = st.DB.Drop(cleanupCtx)
+		}
+	}()
+
+	s := &Server{store: st}
+	freelancerID := primitive.NewObjectID()
+	reviewerID := primitive.NewObjectID()
+
+	// 1. Initially empty
+	reviews, err := s.loadUserReviews(ctx, freelancerID)
+	if err != nil {
+		t.Fatalf("loadUserReviews failed: %v", err)
+	}
+	if len(reviews) != 0 {
+		t.Fatalf("expected 0 reviews, got %d", len(reviews))
+	}
+
+	// 2. Add client task review
+	t1 := time.Date(2026, 9, 14, 10, 0, 0, 0, time.UTC)
+	task := models.ClientTask{
+		ID:        primitive.NewObjectID(),
+		Title:     "Monthly Maintenance",
+		UpdatedAt: t1,
+		Ratings: []models.TaskRating{
+			{
+				FromUserID: reviewerID,
+				ToUserID:   freelancerID,
+				Role:       "admin",
+				Rating:     5,
+				Review:     "Great job on maintenance!",
+				CreatedAt:  t1,
+			},
+		},
+	}
+	if _, err := st.C("client_tasks").InsertOne(ctx, task); err != nil {
+		t.Fatalf("insert task: %v", err)
+	}
+
+	reviews, err = s.loadUserReviews(ctx, freelancerID)
+	if err != nil || len(reviews) != 1 {
+		t.Fatalf("expected 1 review, got %d (err=%v)", len(reviews), err)
+	}
+	if reviews[0].Title != "Monthly Maintenance" || reviews[0].Rating != 5 || reviews[0].Review != "Great job on maintenance!" {
+		t.Fatalf("unexpected review content: %+v", reviews[0])
+	}
+	if reviews[0].ApprovedAt == nil || !reviews[0].ApprovedAt.Equal(t1) {
+		t.Fatalf("expected approved_at equal to t1, got %+v", reviews[0].ApprovedAt)
+	}
+
+	// 3. Add marketplace job completed review (newer)
+	t2 := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	job := models.MarketplaceJob{
+		ID:           primitive.NewObjectID(),
+		FreelancerID: freelancerID,
+		Title:        "Landing page redesign",
+		Status:       "completed",
+		Rating:       4,
+		Review:       "Very fast turnaround.",
+		ApprovedAt:   &t2,
+		CreatedAt:    t2.Add(-24 * time.Hour),
+	}
+	if _, err := st.C("marketplace_jobs").InsertOne(ctx, job); err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+
+	reviews, err = s.loadUserReviews(ctx, freelancerID)
+	if err != nil || len(reviews) != 2 {
+		t.Fatalf("expected 2 reviews, got %d (err=%v)", len(reviews), err)
+	}
+	// Newer first: Landing page redesign (t2) then Monthly Maintenance (t1)
+	if reviews[0].Title != "Landing page redesign" || reviews[1].Title != "Monthly Maintenance" {
+		t.Fatalf("reviews not sorted newest first: %+v", reviews)
+	}
+
+	// 4. Test marketplacePublicProfile handler returns profile and reviews
+	u := models.User{
+		ID:            freelancerID,
+		Name:          "Test Freelancer",
+		Status:        models.StatusActive,
+		EmailVerified: true,
+	}
+	if _, err := st.C("users").InsertOne(ctx, u); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+
+	prof := models.FreelancerProfile{
+		ID:             freelancerID,
+		Name:           "Test Freelancer",
+		Public:         true,
+		ConsentVersion: marketplaceConsentVersion,
+		Rating:         4.5,
+		RatingCount:    2,
+	}
+	if _, err := st.C("freelancer_profiles").InsertOne(ctx, prof); err != nil {
+		t.Fatalf("insert profile: %v", err)
+	}
+
+	router := gin.New()
+	router.GET("/marketplace/freelancers/:id", s.marketplacePublicProfile)
+
+	req := httptest.NewRequest("GET", "/marketplace/freelancers/"+freelancerID.Hex(), nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Profile gin.H            `json:"profile"`
+		Reviews []userReviewItem `json:"reviews"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.Reviews) != 2 {
+		t.Fatalf("expected 2 reviews in response, got %d", len(resp.Reviews))
+	}
+	if resp.Reviews[0].Title != "Landing page redesign" || resp.Reviews[1].Title != "Monthly Maintenance" {
+		t.Fatalf("unexpected reviews in response: %+v", resp.Reviews)
+	}
+}

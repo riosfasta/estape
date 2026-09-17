@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -233,8 +234,9 @@ func (s *Server) marketplaceMe(c *gin.Context) {
 		return
 	}
 	s.enrichJobsWithOwnerDetails(ctx, jobs)
+	reviews, _ := s.loadUserReviews(ctx, user.ID)
 	_, nextReset := connectsPeriod(time.Now(), policy.Period)
-	c.JSON(200, gin.H{"connects_policy": policy, "profile": profile, "jobs": jobs, "proposals": proposals, "connect_cost": proposalConnectCost, "connects_reset_at": nextReset})
+	c.JSON(200, gin.H{"connects_policy": policy, "profile": profile, "jobs": jobs, "proposals": proposals, "connect_cost": proposalConnectCost, "connects_reset_at": nextReset, "reviews": reviews})
 }
 
 func (s *Server) marketplaceSaveProfile(c *gin.Context) {
@@ -444,6 +446,99 @@ func (s *Server) marketplaceFreelancers(c *gin.Context) {
 	c.JSON(200, gin.H{"freelancers": out, "has_more": more, "page": page})
 }
 
+type userReviewItem struct {
+	Title      string     `json:"title"`
+	Rating     int        `json:"rating"`
+	Review     string     `json:"review"`
+	ApprovedAt *time.Time `json:"approved_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	Source     string     `json:"source,omitempty"`
+	date       time.Time
+}
+
+func (s *Server) loadUserReviews(ctx context.Context, userID primitive.ObjectID) ([]userReviewItem, error) {
+	reviews := make([]userReviewItem, 0)
+
+	// 1. Marketplace completed jobs
+	jobCur, err := s.store.C("marketplace_jobs").Find(ctx, bson.M{
+		"freelancer_id": userID,
+		"$or": []bson.M{
+			{"status": "completed"},
+			{"rating": bson.M{"$gt": 0}},
+			{"review": bson.M{"$ne": ""}},
+		},
+	}, options.Find().SetLimit(50).SetSort(bson.D{{Key: "approved_at", Value: -1}}))
+	if err == nil {
+		defer jobCur.Close(ctx)
+		var jobs []models.MarketplaceJob
+		if err := jobCur.All(ctx, &jobs); err == nil {
+			for _, j := range jobs {
+				d := j.CreatedAt
+				if j.ApprovedAt != nil && !j.ApprovedAt.IsZero() {
+					d = *j.ApprovedAt
+				}
+				appAt := j.ApprovedAt
+				if appAt == nil || appAt.IsZero() {
+					appAt = &d
+				}
+				reviews = append(reviews, userReviewItem{
+					Title:      j.Title,
+					Rating:     j.Rating,
+					Review:     j.Review,
+					ApprovedAt: appAt,
+					CreatedAt:  j.CreatedAt,
+					Source:     "marketplace",
+					date:       d,
+				})
+			}
+		}
+	}
+
+	// 2. Client tasks with ratings for this user
+	taskCur, err := s.store.C("client_tasks").Find(ctx, bson.M{
+		"ratings.to_user_id": userID,
+	}, options.Find().SetLimit(100).SetSort(bson.D{{Key: "updated_at", Value: -1}}))
+	if err == nil {
+		defer taskCur.Close(ctx)
+		var tasks []models.ClientTask
+		if err := taskCur.All(ctx, &tasks); err == nil {
+			for _, t := range tasks {
+				for _, r := range t.Ratings {
+					if r.ToUserID == userID && (r.Rating > 0 || strings.TrimSpace(r.Review) != "") {
+						d := r.CreatedAt
+						if d.IsZero() {
+							d = t.UpdatedAt
+							if d.IsZero() {
+								d = t.CreatedAt
+							}
+						}
+						appAt := d
+						reviews = append(reviews, userReviewItem{
+							Title:      t.Title,
+							Rating:     r.Rating,
+							Review:     r.Review,
+							ApprovedAt: &appAt,
+							CreatedAt:  d,
+							Source:     "task",
+							date:       d,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	sort.Slice(reviews, func(i, j int) bool {
+		return reviews[i].date.After(reviews[j].date)
+	})
+
+	if len(reviews) > 50 {
+		reviews = reviews[:50]
+	}
+
+	return reviews, nil
+}
+
 func (s *Server) marketplacePublicProfile(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	id, ok := objectIDParam(c, "id")
@@ -457,22 +552,17 @@ func (s *Server) marketplacePublicProfile(c *gin.Context) {
 		return
 	}
 	var p models.FreelancerProfile
-	if err = s.store.C("freelancer_profiles").FindOne(ctx, bson.M{"_id": id, "public": true, "consent_version": marketplaceConsentVersion}).Decode(&p); err != nil {
+	query := bson.M{"_id": id, "public": true, "consent_version": marketplaceConsentVersion}
+	if currUser, ok := currentUser(c); ok && currUser.ID == id {
+		query = bson.M{"_id": id}
+	}
+	if err = s.store.C("freelancer_profiles").FindOne(ctx, query).Decode(&p); err != nil {
 		c.JSON(404, gin.H{"error": "Profile not found"})
 		return
 	}
-	cur, err := s.store.C("marketplace_jobs").Find(ctx, bson.M{"freelancer_id": id, "status": "completed"}, options.Find().SetLimit(30).SetSort(bson.D{{Key: "approved_at", Value: -1}}))
+	reviews, err := s.loadUserReviews(ctx, id)
 	if marketplaceError(c, err) {
 		return
-	}
-	defer cur.Close(ctx)
-	jobs := []models.MarketplaceJob{}
-	if marketplaceError(c, cur.All(ctx, &jobs)) {
-		return
-	}
-	reviews := []gin.H{}
-	for _, j := range jobs {
-		reviews = append(reviews, gin.H{"title": j.Title, "rating": j.Rating, "review": j.Review, "approved_at": j.ApprovedAt})
 	}
 	c.JSON(200, gin.H{"profile": publicFreelancer(p), "reviews": reviews})
 }
