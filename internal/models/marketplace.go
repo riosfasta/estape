@@ -16,22 +16,28 @@ type FreelancerProfile struct {
 	Bio              string             `bson:"bio" json:"bio"`
 	Country          string             `bson:"country" json:"country"`
 	Location         string             `bson:"location" json:"location"`
-	Skills           []string           `bson:"skills" json:"skills"`
-	Photo            string             `bson:"photo" json:"photo"`
-	Public           bool               `bson:"public" json:"public"`
-	ConsentVersion   string             `bson:"consent_version" json:"consent_version"`
-	ConsentAt        time.Time          `bson:"consent_at" json:"consent_at"`
-	IdentityStatus   string             `bson:"identity_status" json:"identity_status"`
-	IdentityRevision primitive.ObjectID `bson:"identity_revision,omitempty" json:"identity_revision,omitempty"`
-	ActiveJobs       int                `bson:"active_jobs" json:"active_jobs"`
-	FinishedJobs     int                `bson:"finished_jobs" json:"finished_jobs"`
-	PublishedJobs    int                `bson:"published_jobs" json:"published_jobs"`
-	Rating           float64            `bson:"rating" json:"rating"`
-	RatingTotal      int                `bson:"rating_total" json:"-"`
-	RatingCount      int                `bson:"rating_count" json:"rating_count"`
-	Connects         int                `bson:"connects" json:"connects"`
-	ConnectWeek      time.Time          `bson:"connect_week" json:"connect_week"`
-	UpdatedAt        time.Time          `bson:"updated_at" json:"updated_at"`
+	Skills           []string             `bson:"skills" json:"skills"`
+	Languages        []FreelancerLanguage `bson:"languages,omitempty" json:"languages"`
+	Photo            string               `bson:"photo" json:"photo"`
+	Public           bool                 `bson:"public" json:"public"`
+	ConsentVersion   string               `bson:"consent_version" json:"consent_version"`
+	ConsentAt        time.Time            `bson:"consent_at" json:"consent_at"`
+	IdentityStatus   string               `bson:"identity_status" json:"identity_status"`
+	IdentityRevision primitive.ObjectID   `bson:"identity_revision,omitempty" json:"identity_revision,omitempty"`
+	ActiveJobs       int                  `bson:"active_jobs" json:"active_jobs"`
+	FinishedJobs     int                  `bson:"finished_jobs" json:"finished_jobs"`
+	PublishedJobs    int                  `bson:"published_jobs" json:"published_jobs"`
+	Rating           float64              `bson:"rating" json:"rating"`
+	RatingTotal      int                  `bson:"rating_total" json:"-"`
+	RatingCount      int                  `bson:"rating_count" json:"rating_count"`
+	Connects         int                  `bson:"connects" json:"connects"`
+	ConnectWeek      time.Time            `bson:"connect_week" json:"connect_week"`
+	UpdatedAt        time.Time            `bson:"updated_at" json:"updated_at"`
+}
+
+type FreelancerLanguage struct {
+	Language string `bson:"language" json:"language"`
+	Level    string `bson:"level" json:"level"` // "basic", "middle", "advance", "native"
 }
 
 type PortfolioDetail struct {

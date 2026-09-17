@@ -65,6 +65,43 @@ func normalizeMarketplaceSkills(values []string) ([]string, error) {
 	return result, nil
 }
 
+func normalizeFreelancerLanguages(items []models.FreelancerLanguage) ([]models.FreelancerLanguage, error) {
+	if len(items) > 20 {
+		return nil, errors.New("add up to 20 languages")
+	}
+	validLevels := map[string]bool{
+		"basic":   true,
+		"middle":  true,
+		"advance": true,
+		"native":  true,
+	}
+	result := make([]models.FreelancerLanguage, 0, len(items))
+	seen := make(map[string]bool)
+	for _, item := range items {
+		lang := strings.TrimSpace(item.Language)
+		level := strings.ToLower(strings.TrimSpace(item.Level))
+		if lang == "" && level == "" {
+			continue
+		}
+		if lang == "" || len(lang) > 60 {
+			return nil, errors.New("enter a valid language name (up to 60 characters)")
+		}
+		if !validLevels[level] {
+			return nil, errors.New("choose a fluency level: basic, middle, advance, or native")
+		}
+		key := strings.ToLower(lang)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, models.FreelancerLanguage{
+			Language: lang,
+			Level:    level,
+		})
+	}
+	return result, nil
+}
+
 func (s *Server) marketplaceRoutes(router *gin.Engine, api, authed *gin.RouterGroup) {
 	authed = authed.Group("")
 	authed.Use(func(c *gin.Context) {
@@ -244,9 +281,10 @@ func (s *Server) marketplaceSaveProfile(c *gin.Context) {
 	var req struct {
 		Availability     *string                   `json:"availability"`
 		PortfolioDetails *[]models.PortfolioDetail `json:"portfolio_details"`
-		PortfolioPhotos  *[]string                 `json:"portfolio_photos"`
-		YouTubeURLs      *[]string                 `json:"youtube_urls"`
-		Name             string                    `json:"name"`
+		PortfolioPhotos  *[]string                    `json:"portfolio_photos"`
+		YouTubeURLs      *[]string                    `json:"youtube_urls"`
+		Languages        *[]models.FreelancerLanguage `json:"languages"`
+		Name             string                       `json:"name"`
 		Title            string                    `json:"title"`
 		Bio              string                    `json:"bio"`
 		Country          string                    `json:"country"`
@@ -347,6 +385,14 @@ func (s *Server) marketplaceSaveProfile(c *gin.Context) {
 		}
 		set["youtube_urls"] = videos
 	}
+	if req.Languages != nil {
+		langs, err := normalizeFreelancerLanguages(*req.Languages)
+		if err != nil {
+			marketplaceError(c, marketInvalid(err.Error()))
+			return
+		}
+		set["languages"] = langs
+	}
 	if req.Public {
 		set["consent_version"] = marketplaceConsentVersion
 		set["consent_at"] = time.Now().UTC()
@@ -370,7 +416,11 @@ func validMarketplaceCountry(code string) bool {
 }
 
 func publicFreelancer(p models.FreelancerProfile) gin.H {
-	return gin.H{"id": p.ID, "name": p.Name, "title": p.Title, "bio": p.Bio, "country": p.Country, "location": p.Location, "skills": p.Skills, "photo": p.Photo, "rating": p.Rating, "rating_count": p.RatingCount, "finished_jobs": p.FinishedJobs, "published_jobs": p.PublishedJobs, "available": freelancerAvailability(p) == "available", "availability": freelancerAvailability(p), "portfolio_photos": p.PortfolioPhotos, "portfolio_details": p.PortfolioDetails, "youtube_urls": p.YouTubeURLs, "verified": p.IdentityStatus == "verified"}
+	langs := p.Languages
+	if langs == nil {
+		langs = []models.FreelancerLanguage{}
+	}
+	return gin.H{"id": p.ID, "name": p.Name, "title": p.Title, "bio": p.Bio, "country": p.Country, "location": p.Location, "skills": p.Skills, "languages": langs, "photo": p.Photo, "rating": p.Rating, "rating_count": p.RatingCount, "finished_jobs": p.FinishedJobs, "published_jobs": p.PublishedJobs, "available": freelancerAvailability(p) == "available", "availability": freelancerAvailability(p), "portfolio_photos": p.PortfolioPhotos, "portfolio_details": p.PortfolioDetails, "youtube_urls": p.YouTubeURLs, "verified": p.IdentityStatus == "verified"}
 }
 
 func (s *Server) marketplaceFreelancers(c *gin.Context) {

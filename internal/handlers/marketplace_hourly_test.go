@@ -56,7 +56,7 @@ func TestHourlyTimerDeadlineAndResume(t *testing.T) {
 
 func TestInvalidHourlyContracts(t *testing.T) {
 	for name, change := range map[string]func(*models.MarketplaceJob){
-		"missing scope":            func(j *models.MarketplaceJob) { j.ScopeTasks = nil },
+		"rate below minimum":       func(j *models.MarketplaceJob) { j.HourlyRate = 50 },
 		"conflicting prices":       func(j *models.MarketplaceJob) { j.ScopePriceMode = "per_task" },
 		"negative rate":            func(j *models.MarketplaceJob) { j.HourlyRate = -1 },
 		"missing limit":            func(j *models.MarketplaceJob) { j.MaxSeconds = 0 },
@@ -75,6 +75,16 @@ func TestInvalidHourlyContracts(t *testing.T) {
 	}
 	if err := validateHourlyJob(models.MarketplaceJob{}); err != nil {
 		t.Fatal("legacy fixed job rejected", err)
+	}
+	// Standalone hourly marketplace job without ScopeTasks is allowed
+	standaloneHourly := models.MarketplaceJob{
+		BillingType: "hourly",
+		HourlyRate:  3000,
+		Budget:      30000,
+		MaxSeconds:  10 * 3600,
+	}
+	if err := validateHourlyJob(standaloneHourly); err != nil {
+		t.Fatalf("expected standalone hourly job to be valid, got: %v", err)
 	}
 }
 

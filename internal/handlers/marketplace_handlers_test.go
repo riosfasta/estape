@@ -827,3 +827,138 @@ func TestLoadUserReviews(t *testing.T) {
 		t.Fatalf("unexpected reviews in response: %+v", resp.Reviews)
 	}
 }
+
+func TestFreelancerLanguages(t *testing.T) {
+	validLangs := []models.FreelancerLanguage{
+		{Language: "English", Level: "native"},
+		{Language: "Indonesian", Level: "advance"},
+		{Language: "Spanish", Level: "middle"},
+		{Language: "French", Level: "basic"},
+	}
+	normalized, err := normalizeFreelancerLanguages(validLangs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(normalized) != 4 {
+		t.Fatalf("expected 4 languages, got %d", len(normalized))
+	}
+	if normalized[0].Level != "native" || normalized[1].Level != "advance" || normalized[2].Level != "middle" || normalized[3].Level != "basic" {
+		t.Fatalf("unexpected normalized levels: %+v", normalized)
+	}
+
+	invalidLangs := []models.FreelancerLanguage{
+		{Language: "English", Level: "expert"},
+	}
+	if _, err := normalizeFreelancerLanguages(invalidLangs); err == nil {
+		t.Fatal("expected error for invalid level 'expert', got nil")
+	}
+
+	emptyLangs := []models.FreelancerLanguage{
+		{Language: "", Level: "basic"},
+	}
+	if _, err := normalizeFreelancerLanguages(emptyLangs); err == nil {
+		t.Fatal("expected error for empty language name, got nil")
+	}
+}
+
+func TestMarketplaceProfileLanguagesAndHourlyJob(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	client, err := tryConnectTestMongo(ctx)
+	if err != nil {
+		t.Skipf("skipping MongoDB test: %v", err)
+		return
+	}
+	defer client.Disconnect(context.Background())
+
+	dbName := "bugmark_profiletest_" + primitive.NewObjectID().Hex()
+	st := &store.Store{Client: client, DB: client.Database(dbName)}
+	defer func() {
+		cleanupCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stop()
+		if strings.HasPrefix(st.DB.Name(), "bugmark_profiletest_") {
+			_ = st.DB.Drop(cleanupCtx)
+		}
+	}()
+
+	s := &Server{store: st}
+	userID := primitive.NewObjectID()
+	u := models.User{ID: userID, Name: "Dev Tester", Status: models.StatusActive, EmailVerified: true}
+	_, _ = st.C("users").InsertOne(ctx, u)
+	photoURL := userUploadURLPrefix(userID) + "photo.jpg"
+	_, _ = st.C("freelancer_profiles").InsertOne(ctx, models.FreelancerProfile{
+		ID:             userID,
+		Name:           "Dev Tester",
+		Photo:          photoURL,
+		IdentityStatus: "verified",
+		Skills:         []string{"Golang"},
+	})
+	_, _ = st.C("marketplace_wallets").InsertOne(ctx, models.MarketplaceWallet{
+		ID:       userID,
+		Deposits: 50000,
+	})
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	apiGroup := router.Group("/api")
+	authed := apiGroup.Group("")
+	authed.Use(func(c *gin.Context) {
+		c.Set(middleware.UserContextKey, middleware.UserContext{ID: userID, Role: models.RoleMember})
+		c.Next()
+	})
+	s.marketplaceRoutes(router, apiGroup, authed)
+
+	// 1. Save profile with languages
+	profileReq := gin.H{
+		"name":     "Dev Tester",
+		"title":    "Backend Go Engineer",
+		"bio":      "Experienced Go backend developer building microservices and web APIs.",
+		"country":  "US",
+		"location": "New York",
+		"skills":   []string{"Golang", "MongoDB"},
+		"photo":    photoURL,
+		"public":   true,
+		"consent":  true,
+		"languages": []gin.H{
+			{"language": "English", "level": "native"},
+			{"language": "Spanish", "level": "middle"},
+		},
+	}
+	raw, _ := json.Marshal(profileReq)
+	req := httptest.NewRequest("PUT", "/api/marketplace/profile", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("save profile failed: HTTP %d: %s", w.Code, w.Body.String())
+	}
+
+	var updated models.FreelancerProfile
+	if err := st.C("freelancer_profiles").FindOne(ctx, bson.M{"_id": userID}).Decode(&updated); err != nil {
+		t.Fatalf("find profile failed: %v", err)
+	}
+	if len(updated.Languages) != 2 || updated.Languages[0].Language != "English" || updated.Languages[0].Level != "native" || updated.Languages[1].Level != "middle" {
+		t.Fatalf("unexpected profile languages: %+v", updated.Languages)
+	}
+
+	// 2. Publish standalone hourly job
+	hourlyJob := gin.H{
+		"title":        "Build Go Microservice",
+		"description":  "Need an experienced Go developer to build a robust microservice with unit tests.",
+		"skills":       []string{"Golang"},
+		"billing_type": "hourly",
+		"hourly_rate":  3000,
+		"max_seconds":  10 * 3600,
+		"budget":       30000,
+	}
+	rawJob, _ := json.Marshal(hourlyJob)
+	jobReq := httptest.NewRequest("POST", "/api/marketplace/jobs", bytes.NewReader(rawJob))
+	jobReq.Header.Set("Content-Type", "application/json")
+	wJob := httptest.NewRecorder()
+	router.ServeHTTP(wJob, jobReq)
+	if wJob.Code != 201 {
+		t.Fatalf("create hourly job failed: HTTP %d: %s", wJob.Code, wJob.Body.String())
+	}
+}
+

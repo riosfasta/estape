@@ -21,8 +21,11 @@ func validateHourlyJob(j models.MarketplaceJob) error {
 		}
 		return nil
 	}
-	if j.BillingType != "hourly" || j.HourlyRate < 100 || j.HourlyRate > maximumMarketplaceAmount || j.MaxSeconds < 60 || j.MaxSeconds > 36000000 || j.Budget < 100 || j.Budget > maximumMarketplaceAmount || len(j.ScopeTasks) == 0 || j.ScopePriceMode != "domain" {
-		return marketInvalid("Hourly work requires selected tasks, a $1-$100,000 hourly rate and maximum cost, and a time limit from 1 minute to 10,000 hours. Use one shared limit for the contract.")
+	if j.BillingType != "hourly" || j.HourlyRate < 100 || j.HourlyRate > maximumMarketplaceAmount || j.MaxSeconds < 60 || j.MaxSeconds > 36000000 || j.Budget < 100 || j.Budget > maximumMarketplaceAmount {
+		return marketInvalid("Hourly work requires a $1-$100,000 hourly rate and maximum cost, and a time limit from 1 minute to 10,000 hours.")
+	}
+	if len(j.ScopeTasks) > 0 && j.ScopePriceMode != "domain" {
+		return marketInvalid("Hourly work requires one shared limit for the contract.")
 	}
 	if hourlySecondLimit(j) < 1 {
 		return marketInvalid("The cost limit is too small for this hourly rate")
@@ -63,8 +66,13 @@ func (s *Server) finishHourlyTimer(sc mongo.SessionContext, j *models.Marketplac
 	seconds := max(int64(0), total-j.TrackedSeconds)
 	end := j.TimerStartedAt.Add(time.Duration(seconds) * time.Second)
 	var task models.ClientTask
-	_ = s.store.C("client_tasks").FindOne(sc, bson.M{"_id": j.TimerTaskID}).Decode(&task)
-	entry := models.TimeEntry{ID: primitive.NewObjectID(), MarketplaceJobID: j.ID, TaskID: j.TimerTaskID, UserID: j.FreelancerID, TeamID: task.TeamID, StartTime: *j.TimerStartedAt, EndTime: &end, DurationSeconds: seconds, DurationMinutes: int(seconds / 60), Billable: true, Note: "Protected hourly contract timer", CreatedAt: now}
+	teamID := j.TeamID
+	if !j.TimerTaskID.IsZero() {
+		if err := s.store.C("client_tasks").FindOne(sc, bson.M{"_id": j.TimerTaskID}).Decode(&task); err == nil && teamID.IsZero() {
+			teamID = task.TeamID
+		}
+	}
+	entry := models.TimeEntry{ID: primitive.NewObjectID(), MarketplaceJobID: j.ID, TaskID: j.TimerTaskID, UserID: j.FreelancerID, TeamID: teamID, StartTime: *j.TimerStartedAt, EndTime: &end, DurationSeconds: seconds, DurationMinutes: int(seconds / 60), Billable: true, Note: "Protected hourly contract timer", CreatedAt: now}
 	if _, err := s.store.C("time_entries").InsertOne(sc, entry); err != nil {
 		return err
 	}
@@ -115,12 +123,17 @@ func (s *Server) marketplaceTimer(c *gin.Context) {
 		if action == "stop" {
 			return s.finishHourlyTimer(sc, &j, now)
 		}
-		if action != "start" || !scopedJobContains(j, req.TaskID) {
-			return marketInvalid("Choose a task in this hourly contract")
+		if action != "start" {
+			return marketInvalid("Invalid timer action")
 		}
-		var task models.ClientTask
-		if err = s.store.C("client_tasks").FindOne(sc, bson.M{"_id": req.TaskID}).Decode(&task); err != nil {
-			return marketInvalid("This task is no longer available")
+		if len(j.ScopeTasks) > 0 {
+			if !scopedJobContains(j, req.TaskID) {
+				return marketInvalid("Choose a task in this hourly contract")
+			}
+			var task models.ClientTask
+			if err = s.store.C("client_tasks").FindOne(sc, bson.M{"_id": req.TaskID}).Decode(&task); err != nil {
+				return marketInvalid("This task is no longer available")
+			}
 		}
 		cursor, err := s.store.C("marketplace_jobs").Find(sc, bson.M{"freelancer_id": j.FreelancerID, "timer_started_at": bson.M{"$ne": nil}})
 		if err != nil {
@@ -134,7 +147,7 @@ func (s *Server) marketplaceTimer(c *gin.Context) {
 		}
 		for _, previous := range running {
 			if previous.TimerUntil != nil && now.Before(*previous.TimerUntil) {
-				if previous.ID == j.ID && previous.TimerTaskID == req.TaskID {
+				if previous.ID == j.ID && ((!req.TaskID.IsZero() && previous.TimerTaskID == req.TaskID) || (req.TaskID.IsZero() && previous.TimerTaskID.IsZero())) {
 					return nil
 				}
 				return marketInvalid("Stop your running contract timer before starting another task")
