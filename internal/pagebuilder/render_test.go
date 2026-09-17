@@ -64,3 +64,20 @@ func TestBlogGridShortcode(t *testing.T) {
 		t.Fatalf("blog shortcode was not expanded: %s", rendered)
 	}
 }
+
+func TestRenderRichTextImages(t *testing.T) {
+	input := `<p>Photo:</p><img src="/uploads/users/article.webp" alt="My photo" title="Cover"><figure><img src="https://example.com/pic.jpg" alt="Remote"><figcaption>Caption</figcaption></figure><img src="javascript:alert(1)" alt="Bad">`
+	rendered := RenderRichText(input, RenderContext{})
+	if !strings.Contains(rendered, `<img src="/uploads/users/article.webp" alt="My photo" title="Cover" loading="lazy">`) {
+		t.Errorf("expected safe local image with attributes, got: %s", rendered)
+	}
+	if !strings.Contains(rendered, `<img src="https://example.com/pic.jpg" alt="Remote" loading="lazy">`) {
+		t.Errorf("expected safe remote image, got: %s", rendered)
+	}
+	if !strings.Contains(rendered, `<figure>`) || !strings.Contains(rendered, `<figcaption>Caption</figcaption></figure>`) {
+		t.Errorf("expected figure and figcaption to be preserved, got: %s", rendered)
+	}
+	if strings.Contains(rendered, "javascript:") || strings.Contains(rendered, `alt="Bad"`) {
+		t.Errorf("unsafe image was not stripped: %s", rendered)
+	}
+}

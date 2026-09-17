@@ -7036,9 +7036,25 @@ function richEditorHTML(name, value = "", placeholder = "") {
   return `<div class="rich-editor" contenteditable="true" data-rich-editor="${esc(name)}" data-placeholder="${esc(placeholder)}">${esc(value)}</div><input type="hidden" name="${esc(name)}" value="${esc(value)}">`;
 }
 
+function safeRichTextImageURL(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw || /["'()\\\r\n\t]/.test(raw)) return "";
+  if (raw.startsWith("/uploads/") || raw.startsWith("/")) return raw;
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+      return parsed.href;
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
 function pageRichEditorHTML(name, value = "", placeholder = "") {
   const id = `pageRichEditor_${name}_${Math.random().toString(36).slice(2)}`;
-  return `<div class="page-rich-editor-wrap" data-page-rich-wrap>
+  const initialValue = pageRichSafeHTML(value || "");
+  return `<div class="page-rich-editor-wrap" data-page-rich-wrap data-rich-mode="visual">
     <div class="page-rich-toolbar" role="toolbar" aria-label="Rich text formatting">
       <select data-rich-format title="Heading style">
         <option value="p">Paragraph</option>
@@ -7056,9 +7072,18 @@ function pageRichEditorHTML(name, value = "", placeholder = "") {
         <input type="color" data-rich-color value="#0b8f7a" aria-label="Font color">
       </label>
       <button class="btn icon quiet" type="button" data-rich-table title="Insert table">${icon("table-2")}</button>
+      <span class="page-rich-divider" aria-hidden="true"></span>
+      <button class="btn icon quiet" type="button" data-rich-image title="Insert image from Image Manager">${icon("image")}</button>
+      <div class="page-rich-mode-tabs" role="tablist" aria-label="Editor view mode">
+        <button type="button" class="page-rich-mode-btn active" data-rich-mode="visual" role="tab" aria-selected="true" title="Visual WYSIWYG mode">${icon("eye")}Visual</button>
+        <button type="button" class="page-rich-mode-btn" data-rich-mode="html" role="tab" aria-selected="false" title="HTML source mode">${icon("code")}HTML</button>
+      </div>
     </div>
-    <div id="${esc(id)}" class="rich-editor page-rich-editor" contenteditable="true" data-page-rich-editor="${esc(name)}" data-placeholder="${esc(placeholder)}">${pageRichSafeHTML(value || "")}</div>
-    <input type="hidden" name="${esc(name)}" value="${esc(pageRichSafeHTML(value || ""))}">
+    <div class="page-rich-body">
+      <div id="${esc(id)}" class="rich-editor page-rich-editor" contenteditable="true" data-page-rich-editor="${esc(name)}" data-placeholder="${esc(placeholder)}">${initialValue}</div>
+      <textarea class="page-rich-html-editor" data-page-rich-html="${esc(name)}" placeholder="Enter HTML source..." hidden spellcheck="false">${esc(initialValue)}</textarea>
+    </div>
+    <input type="hidden" name="${esc(name)}" value="${esc(initialValue)}">
   </div>`;
 }
 
@@ -7086,50 +7111,203 @@ function bindPageRichEditors(root = document) {
     wrap.dataset.pageRichBound = "1";
     const editor = wrap.querySelector("[data-page-rich-editor]");
     if (!editor) return;
+    const htmlEditor = wrap.querySelector("[data-page-rich-html]");
     const input = wrap.querySelector(`input[name="${selectorEscape(editor.dataset.pageRichEditor)}"]`);
+    let currentMode = wrap.dataset.richMode || "visual";
+    let savedVisualRange = null;
+
     const sync = () => {
-      if (input) input.value = editor.innerHTML.trim();
+      if (!input) return;
+      if (currentMode === "html" && htmlEditor) {
+        input.value = htmlEditor.value.trim();
+      } else {
+        input.value = editor.innerHTML.trim();
+      }
     };
-    const focusEditor = () => {
-      editor.focus();
+
+    const saveVisualSelection = () => {
+      if (currentMode !== "visual") return;
+      try {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+          savedVisualRange = sel.getRangeAt(0).cloneRange();
+        }
+      } catch {}
+    };
+
+    const focusActiveEditor = () => {
+      if (currentMode === "html" && htmlEditor) {
+        htmlEditor.focus();
+      } else {
+        editor.focus();
+      }
       sync();
     };
+
+    const setMode = (mode) => {
+      if (mode === currentMode) return;
+      if (mode === "html") {
+        if (htmlEditor) {
+          htmlEditor.value = editor.innerHTML.trim();
+          editor.hidden = true;
+          htmlEditor.hidden = false;
+        }
+        currentMode = "html";
+        wrap.dataset.richMode = "html";
+      } else {
+        if (htmlEditor) {
+          editor.innerHTML = pageRichSafeHTML(htmlEditor.value);
+          htmlEditor.hidden = true;
+          editor.hidden = false;
+        }
+        currentMode = "visual";
+        wrap.dataset.richMode = "visual";
+      }
+
+      wrap.querySelectorAll("[data-rich-mode]").forEach((btn) => {
+        const isActive = btn.dataset.richMode === currentMode;
+        btn.classList.toggle("active", isActive);
+        btn.setAttribute("aria-selected", isActive ? "true" : "false");
+      });
+
+      const formattingControls = wrap.querySelectorAll("[data-rich-command], [data-rich-format], [data-rich-table]");
+      formattingControls.forEach((el) => {
+        el.disabled = (currentMode === "html");
+      });
+      const colorInput = wrap.querySelector("[data-rich-color]");
+      if (colorInput) colorInput.disabled = (currentMode === "html");
+      const colorLabel = wrap.querySelector(".page-rich-color");
+      if (colorLabel) {
+        colorLabel.classList.toggle("disabled", currentMode === "html");
+      }
+
+      focusActiveEditor();
+      sync();
+    };
+
+    wrap.querySelectorAll("[data-rich-mode]").forEach((btn) => {
+      btn.addEventListener("click", () => setMode(btn.dataset.richMode));
+    });
+
     wrap.querySelectorAll("[data-rich-command]").forEach((btn) => btn.addEventListener("click", () => {
-      focusEditor();
+      if (currentMode !== "visual") return;
+      editor.focus();
       document.execCommand(btn.dataset.richCommand, false, null);
       sync();
     }));
+
     wrap.querySelector("[data-rich-format]")?.addEventListener("change", (event) => {
-      focusEditor();
+      if (currentMode !== "visual") return;
+      editor.focus();
       document.execCommand("formatBlock", false, event.currentTarget.value || "p");
       sync();
     });
+
     wrap.querySelector("[data-rich-color]")?.addEventListener("input", (event) => {
-      focusEditor();
+      if (currentMode !== "visual") return;
+      editor.focus();
       document.execCommand("foreColor", false, event.currentTarget.value || "#0b8f7a");
       sync();
     });
+
     wrap.querySelector("[data-rich-table]")?.addEventListener("click", () => {
-      focusEditor();
+      if (currentMode !== "visual") return;
+      editor.focus();
       document.execCommand("insertHTML", false, `<table><tbody><tr><td>Cell</td><td>Cell</td></tr><tr><td>Cell</td><td>Cell</td></tr></tbody></table><p><br></p>`);
       sync();
     });
+
+    const imageBtn = wrap.querySelector("[data-rich-image]");
+    if (imageBtn) {
+      imageBtn.addEventListener("mousedown", saveVisualSelection);
+      imageBtn.addEventListener("click", () => {
+        saveVisualSelection();
+        openMediaManagerModal({
+          onSelect: (selectedUrl) => {
+            if (!selectedUrl) return;
+            const safeUrl = safeRichTextImageURL(selectedUrl);
+            if (!safeUrl) return;
+            if (currentMode === "html" && htmlEditor) {
+              htmlEditor.focus();
+              const start = htmlEditor.selectionStart ?? htmlEditor.value.length;
+              const end = htmlEditor.selectionEnd ?? start;
+              const snippet = `<img src="${safeUrl}" alt="" loading="lazy">`;
+              htmlEditor.value = `${htmlEditor.value.slice(0, start)}${snippet}${htmlEditor.value.slice(end)}`;
+              const next = start + snippet.length;
+              htmlEditor.setSelectionRange?.(next, next);
+              htmlEditor.dispatchEvent(new Event("input", { bubbles: true }));
+              sync();
+            } else {
+              editor.focus();
+              if (savedVisualRange) {
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(savedVisualRange);
+              }
+              const imgHTML = `<img src="${esc(safeUrl)}" alt="" loading="lazy"><p><br></p>`;
+              let inserted = false;
+              try {
+                inserted = document.execCommand("insertHTML", false, imgHTML);
+              } catch {}
+              if (!inserted) {
+                const img = document.createElement("img");
+                img.src = safeUrl;
+                img.alt = "";
+                img.loading = "lazy";
+                if (savedVisualRange) {
+                  savedVisualRange.deleteContents();
+                  savedVisualRange.insertNode(img);
+                } else {
+                  editor.appendChild(img);
+                }
+              }
+              editor.dispatchEvent(new Event("input", { bubbles: true }));
+              sync();
+            }
+          }
+        });
+      });
+    }
+
+    editor.addEventListener("keyup", saveVisualSelection);
+    editor.addEventListener("mouseup", saveVisualSelection);
+    editor.addEventListener("touchend", saveVisualSelection);
     editor.addEventListener("input", sync);
     editor.addEventListener("blur", sync);
+
+    if (htmlEditor) {
+      htmlEditor.addEventListener("input", sync);
+      htmlEditor.addEventListener("blur", sync);
+    }
+
     sync();
   });
 }
 
 function syncPageRichEditors(root = document) {
-  root.querySelectorAll("[data-page-rich-editor]").forEach((editor) => {
-    const wrap = editor.closest("[data-page-rich-wrap]") || root;
+  root.querySelectorAll("[data-page-rich-wrap]").forEach((wrap) => {
+    const editor = wrap.querySelector("[data-page-rich-editor]");
+    if (!editor) return;
+    const htmlEditor = wrap.querySelector("[data-page-rich-html]");
     const input = wrap.querySelector(`input[name="${selectorEscape(editor.dataset.pageRichEditor)}"]`);
-    if (input) input.value = editor.innerHTML.trim();
+    if (!input) return;
+    const isHtml = wrap.dataset.richMode === "html" || (htmlEditor && !htmlEditor.hidden);
+    if (isHtml && htmlEditor) {
+      input.value = htmlEditor.value.trim();
+      editor.innerHTML = pageRichSafeHTML(htmlEditor.value);
+    } else {
+      input.value = editor.innerHTML.trim();
+      if (htmlEditor) htmlEditor.value = editor.innerHTML.trim();
+    }
   });
 }
 
 function pageRichSafeHTML(value = "") {
-  const allowedTags = new Set(["DIV", "P", "BR", "STRONG", "B", "EM", "I", "U", "UL", "OL", "LI", "H1", "H2", "H3", "H4", "BLOCKQUOTE", "CODE", "PRE", "A", "SPAN", "FONT", "TABLE", "THEAD", "TBODY", "TR", "TH", "TD"]);
+  const allowedTags = new Set([
+    "DIV", "P", "BR", "STRONG", "B", "EM", "I", "U", "UL", "OL", "LI",
+    "H1", "H2", "H3", "H4", "BLOCKQUOTE", "CODE", "PRE", "A", "SPAN",
+    "FONT", "TABLE", "THEAD", "TBODY", "TR", "TH", "TD", "IMG", "FIGURE", "FIGCAPTION"
+  ]);
   const template = document.createElement("template");
   template.innerHTML = String(value || "");
   const clean = (node) => {
@@ -7140,6 +7318,9 @@ function pageRichSafeHTML(value = "") {
         return;
       }
       const href = child.getAttribute("href") || "";
+      const src = child.getAttribute("src") || "";
+      const alt = child.getAttribute("alt") || "";
+      const title = child.getAttribute("title") || "";
       const colorStyle = child.getAttribute("style") || "";
       const fontColor = child.getAttribute("color") || "";
       Array.from(child.attributes).forEach((attr) => child.removeAttribute(attr.name));
@@ -7148,6 +7329,18 @@ function pageRichSafeHTML(value = "") {
           child.setAttribute("href", href);
           child.setAttribute("rel", "noopener");
           if (/^https?:/i.test(href)) child.setAttribute("target", "_blank");
+        }
+      }
+      if (child.tagName === "IMG") {
+        const safeSrc = safeRichTextImageURL(src);
+        if (safeSrc) {
+          child.setAttribute("src", safeSrc);
+          if (alt) child.setAttribute("alt", alt);
+          if (title) child.setAttribute("title", title);
+          child.setAttribute("loading", "lazy");
+        } else {
+          child.remove();
+          return;
         }
       }
       if (child.tagName === "SPAN" || child.tagName === "FONT") {
