@@ -405,10 +405,28 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
         <form id="marketNewJob" class="market-form">
           <label class="field">Job title<input name="title" minlength="5" maxlength="160" required></label>
           <label class="field">Scope, deliverables and expectations<textarea name="description" rows="5" minlength="30" maxlength="10000" required></textarea></label>
-          <div class="market-pricing-toggle">
-            <span style="font-weight:600;">Pricing type:</span>
-            <label><input type="radio" name="billing_type" value="fixed" checked> Fixed price</label>
-            <label><input type="radio" name="billing_type" value="hourly"> Hourly price</label>
+          <div class="field">
+            <label style="font-weight:750;color:var(--text-secondary);font-size:13px;">Pricing type</label>
+            <div class="market-pricing-grid" role="radiogroup" aria-label="Pricing type">
+              <label class="market-pricing-card is-selected">
+                <input type="radio" name="billing_type" value="fixed" checked>
+                <div class="market-pricing-body">
+                  <div class="market-pricing-head">
+                    <strong class="market-pricing-title">Fixed price</strong>
+                  </div>
+                  <p class="market-pricing-desc">Pay a set price for the completed project deliverables</p>
+                </div>
+              </label>
+              <label class="market-pricing-card">
+                <input type="radio" name="billing_type" value="hourly">
+                <div class="market-pricing-body">
+                  <div class="market-pricing-head">
+                    <strong class="market-pricing-title">Hourly price</strong>
+                  </div>
+                  <p class="market-pricing-desc">Pay by tracked hour with an agreed maximum cost cap</p>
+                </div>
+              </label>
+            </div>
           </div>
           <div id="marketFixedPricing">
             <label class="field">Fixed-price budget / job price (USD)
@@ -454,6 +472,10 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
 
     function syncPricingMode() {
       const hourly = isHourlyMode();
+      formNewJob?.querySelectorAll(".market-pricing-card").forEach(card => {
+        const radio = card.querySelector('input[name="billing_type"]');
+        card.classList.toggle("is-selected", !!radio?.checked);
+      });
       if (fixedPricing) fixedPricing.hidden = hourly;
       if (hourlyPricing) hourlyPricing.hidden = !hourly;
       if (budgetInput) budgetInput.required = !hourly;
@@ -466,6 +488,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     formNewJob?.querySelectorAll('input[name="billing_type"]').forEach(radio => {
       radio.addEventListener("change", syncPricingMode);
     });
+    syncPricingMode();
 
     function autoCalcHourlyBudget() {
       const rate = Number(hourlyRateInput?.value || 0);

@@ -18331,7 +18331,7 @@ async function route(options = {}) {
 // Login can render independently of marketplace feature modules.
 let marketplaceModule;
 async function loadMarketplaceModule() {
-  if (!marketplaceModule) marketplaceModule = import("/static/js/marketplace.js?v=20260906-7")
+  if (!marketplaceModule) marketplaceModule = import("/static/js/marketplace.js?v=20260918-1")
     .then(({ createMarketplace }) => createMarketplace({ api, state, shell, app, esc, icons, uploadResizedImage, openEmbeddedCheckout, cropMarketplaceImage, imagePreviewURL }))
     .catch(error => { marketplaceModule = null; throw error; });
   return marketplaceModule;

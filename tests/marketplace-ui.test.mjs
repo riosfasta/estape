@@ -222,4 +222,8 @@ test("job publishing in /marketplace/jobs displays available hiring balance and 
   assert.ok(html.includes('id="marketJobBudgetInput"'));
   assert.ok(html.includes('id="marketBudgetStatus"'));
   assert.ok(html.includes('id="marketInlineTopupForm"'));
+  assert.ok(html.includes('market-pricing-grid'));
+  assert.ok(html.includes('market-pricing-card'));
+  assert.ok(html.includes('name="billing_type" value="fixed"'));
+  assert.ok(html.includes('name="billing_type" value="hourly"'));
 });
