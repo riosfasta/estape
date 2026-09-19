@@ -50,34 +50,35 @@
       ".bugmega-menu{position:fixed;right:22px;bottom:86px;width:min(340px,calc(100vw - 32px));max-height:calc(100vh - 118px);overflow:auto;background:#fff;border:1px solid rgba(0,0,0,.14);border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.28);padding:14px;display:none}" +
       ".bugmega-menu.active{display:block}" +
       ".bugmega-menu-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}" +
-      ".bugmega-menu-head strong{font-size:16px;color:#10201c}.bugmega-menu-count{font-size:12px;color:#64736e}" +
+      ".bugmega-menu-head strong{font-size:15px;color:#10201c}.bugmega-menu-count{font-size:11px;color:#64736e}" +
       ".bugmega-annotation-list{display:grid;gap:4px;max-height:224px;overflow-y:auto;margin:0 0 12px;padding-right:3px;scrollbar-gutter:stable}" +
-      ".bugmega-annotation-row{width:100%;display:grid;grid-template-columns:28px minmax(0,1fr);align-items:center;gap:10px;border:0;border-radius:8px;background:transparent;padding:7px;text-align:left;color:#10201c;cursor:pointer}" +
+      ".bugmega-annotation-row{width:100%;display:grid;grid-template-columns:26px minmax(0,1fr);align-items:center;gap:8px;border:0;border-radius:7px;background:transparent;padding:6px;text-align:left;color:#10201c;font-size:13px;cursor:pointer}" +
       ".bugmega-annotation-row:hover{background:#eef8f5}.bugmega-annotation-row span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
-      ".bugmega-annotation-number{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#ef4444;color:#fff;font-size:12px;font-weight:900;box-shadow:0 0 0 2px rgba(239,68,68,.14)}" +
+      ".bugmega-annotation-number{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#ef4444;color:#fff;font-size:11px;font-weight:900;box-shadow:0 0 0 2px rgba(239,68,68,.14)}" +
       ".bugmega-menu-empty{margin:6px 2px 14px;color:#64736e;font-size:13px}" +
-      ".bugmega-start-annotation{width:100%;display:flex;align-items:center;justify-content:center;gap:7px;border:0;border-radius:8px;background:#08a88a;color:#fff;padding:10px 14px;font-weight:800;cursor:pointer}" +
+      ".bugmega-start-annotation{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:7px;background:#08a88a;color:#fff;padding:8px 11px;font-size:13px;font-weight:800;cursor:pointer}" +
       ".bugmega-detail[hidden],.bugmega-list-view[hidden]{display:none}" +
-      ".bugmega-detail-back{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:#087c67;padding:2px 0 10px;font-weight:800;cursor:pointer}" +
-      ".bugmega-detail-title{display:grid;grid-template-columns:30px minmax(0,1fr);align-items:center;gap:10px;margin-bottom:12px}.bugmega-detail-title h3{margin:0;font-size:17px;line-height:1.3;color:#10201c}" +
+      ".bugmega-detail-back{display:inline-flex;align-items:center;gap:5px;border:0;background:transparent;color:#087c67;padding:2px 0 9px;font-size:13px;font-weight:800;cursor:pointer}" +
+      ".bugmega-detail-title{display:grid;grid-template-columns:27px minmax(0,1fr);align-items:center;gap:8px;margin-bottom:10px}.bugmega-detail-title h3{margin:0;font-size:15px;line-height:1.3;color:#10201c}" +
       ".bugmega-detail-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.bugmega-detail-pill{border-radius:999px;background:#eef5f2;color:#52635d;padding:4px 8px;font-size:11px;font-weight:800}" +
-      ".bugmega-detail-comment{margin:0 0 12px;color:#33443e;font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}.bugmega-detail-comment.empty{color:#7a8883;font-style:italic}" +
+      ".bugmega-detail-comment{margin:0 0 10px;color:#33443e;font-size:13px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}.bugmega-detail-comment.empty{color:#7a8883;font-style:italic}" +
       ".bugmega-detail-image{display:block;width:100%;height:190px;object-fit:cover;border:1px solid #d8e1dd;border-radius:8px;margin:0 0 12px;background:#eef5f2}" +
       ".bugmega-detail-file{display:flex;align-items:center;gap:7px;border:1px solid #d8e1dd;border-radius:8px;color:#087c67;padding:9px 10px;margin:0 0 12px;font-size:13px;font-weight:800;text-decoration:none;overflow-wrap:anywhere}" +
-      ".bugmega-detail-actions{display:flex;gap:8px;flex-wrap:wrap}.bugmega-detail-actions button{flex:1;min-width:86px}" +
+      ".bugmega-detail-actions{display:flex;gap:6px;flex-wrap:wrap}.bugmega-detail-actions button{flex:1;min-width:76px}" +
       ".bugmega-panel{position:fixed;right:22px;bottom:78px;width:min(380px,calc(100vw - 32px));max-height:calc(100vh - 110px);overflow:auto;background:#fff;border:1px solid rgba(0,0,0,.14);border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.28);padding:16px;display:none}" +
       ".bugmega-panel.active{display:block}" +
       ".bugmega-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}" +
-      ".bugmega-head strong{font-size:17px;color:#10201c}" +
+      ".bugmega-head strong{font-size:15px;color:#10201c}" +
       ".bugmega-close{border:0;background:transparent;font-size:24px;line-height:1;cursor:pointer;color:#5d6b66}" +
       ".bugmega-field{display:block;margin:10px 0}.bugmega-field span{display:block;font-size:12px;font-weight:800;color:#52635d;margin-bottom:5px}" +
-      ".bugmega-field input,.bugmega-field textarea,.bugmega-field select{width:100%;border:1px solid #cdd9d5;border-radius:8px;padding:9px 10px;font-size:14px;color:#10201c;background:#fff}" +
+      ".bugmega-field input,.bugmega-field textarea,.bugmega-field select{width:100%;border:1px solid #cdd9d5;border-radius:7px;padding:8px 9px;font-size:13px;color:#10201c;background:#fff}" +
       ".bugmega-field input[type='file']{padding:6px;font-size:12px}.bugmega-field input[type='file']::file-selector-button{border:0;border-radius:6px;background:#eef5f2;color:#10201c;padding:7px 9px;margin-right:8px;font-weight:800;cursor:pointer}" +
       ".bugmega-field textarea{min-height:92px;resize:vertical}.bugmega-field select{min-height:74px}" +
       ".bugmega-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}" +
-      ".bugmega-primary{border:0;border-radius:8px;background:#08a88a;color:#fff;padding:10px 14px;font-weight:800;cursor:pointer}" +
-      ".bugmega-secondary{border:1px solid #cdd9d5;border-radius:8px;background:#fff;color:#10201c;padding:9px 12px;font-weight:700;cursor:pointer}" +
-      ".bugmega-danger{border:1px solid #fecaca;border-radius:8px;background:#fff;color:#b91c1c;padding:9px 12px;font-weight:800;cursor:pointer}" +
+      ".bugmega-primary{display:inline-flex;align-items:center;justify-content:center;gap:5px;border:0;border-radius:7px;background:#08a88a;color:#fff;padding:8px 10px;font-size:13px;font-weight:800;cursor:pointer}" +
+      ".bugmega-secondary{display:inline-flex;align-items:center;justify-content:center;gap:5px;border:1px solid #cdd9d5;border-radius:7px;background:#fff;color:#10201c;padding:7px 9px;font-size:13px;font-weight:700;cursor:pointer}" +
+      ".bugmega-danger{display:inline-flex;align-items:center;justify-content:center;gap:5px;border:1px solid #fecaca;border-radius:7px;background:#fff;color:#b91c1c;padding:7px 9px;font-size:13px;font-weight:800;cursor:pointer}" +
+      ".bugmega-button-icon{width:14px;height:14px;display:block;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}" +
       ".bugmega-muted{font-size:12px;color:#64736e;line-height:1.4}.bugmega-status{font-size:12px;margin-top:8px;color:#64736e}.bugmega-status.error{color:#c73636}.bugmega-status.success{color:#087c67}" +
       ".bugmega-preview{width:100%;max-height:180px;object-fit:cover;border:1px solid #d8e1dd;border-radius:8px;background:#eef5f2;margin:8px 0;display:none}" +
       ".bugmega-preview.active{display:block}" +
@@ -95,6 +96,19 @@
     return String(value || "").replace(/[&<>"']/g, function (char) {
       return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[char];
     });
+  }
+
+  function widgetIcon(name) {
+    var paths = {
+      back: '<path d="M19 12H5m6 6-6-6 6-6"/>',
+      pin: '<path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2"/>',
+      edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>',
+      trash: '<path d="M3 6h18M8 6V4h8v2m-9 0 1 15h8l1-15M10 10v7m4-7v7"/>',
+      save: '<path d="M20 21H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h13l4 4v13a1 1 0 0 1-1 1Z"/><path d="M7 3v6h10V3M7 21v-8h10v8"/>',
+      close: '<path d="m6 6 12 12M18 6 6 18"/>',
+      plus: '<path d="M12 5v14M5 12h14"/>'
+    };
+    return '<svg class="bugmega-button-icon" viewBox="0 0 24 24" aria-hidden="true">' + (paths[name] || "") + '</svg>';
   }
 
   function closestWidget(target) {
@@ -202,13 +216,13 @@
     listView.hidden = true;
     detailView.hidden = false;
     detailView.innerHTML =
-      '<button class="bugmega-detail-back" type="button" id="bugmegaDetailBack">&larr; Back to annotations</button>' +
+      '<button class="bugmega-detail-back" type="button" id="bugmegaDetailBack">' + widgetIcon("back") + 'Back to annotations</button>' +
       '<div class="bugmega-detail-title"><span class="bugmega-annotation-number">' + esc(index + 1) + '</span><h3>' + esc(pin.title || "Annotation " + (index + 1)) + '</h3></div>' +
       '<div class="bugmega-detail-meta"><span class="bugmega-detail-pill">' + esc(annotationStatusLabel(pin.status)) + '</span>' + (dateLabel ? '<span class="bugmega-detail-pill">' + esc(dateLabel) + '</span>' : '') + '</div>' +
       '<p class="bugmega-detail-comment' + (pin.comment ? '' : ' empty') + '">' + esc(pin.comment || "No details provided.") + '</p>' +
       (screenshotURL ? '<img class="bugmega-detail-image" src="' + esc(screenshotURL) + '" alt="Screenshot for ' + esc(pin.title || "annotation") + '">' : '') +
       annotationAttachmentHTML(pin) +
-      '<div class="bugmega-detail-actions"><button class="bugmega-secondary" type="button" id="bugmegaGoToPin">Go to pin</button><button class="bugmega-secondary" type="button" id="bugmegaEditAnnotation">Edit</button><button class="bugmega-danger" type="button" id="bugmegaDeleteAnnotation">Delete</button></div>' +
+      '<div class="bugmega-detail-actions"><button class="bugmega-secondary" type="button" id="bugmegaGoToPin">' + widgetIcon("pin") + 'Go to pin</button><button class="bugmega-secondary" type="button" id="bugmegaEditAnnotation">' + widgetIcon("edit") + 'Edit</button><button class="bugmega-danger" type="button" id="bugmegaDeleteAnnotation">' + widgetIcon("trash") + 'Delete</button></div>' +
       '<p class="bugmega-status" id="bugmegaDetailStatus"></p>';
     document.getElementById("bugmegaDetailBack").addEventListener("click", showAnnotationList);
     document.getElementById("bugmegaGoToPin").addEventListener("click", function () { focusAnnotation(index); });
@@ -241,12 +255,12 @@
     var detailView = document.getElementById("bugmegaDetailView");
     if (!pin || !detailView) return;
     detailView.innerHTML =
-      '<button class="bugmega-detail-back" type="button" id="bugmegaEditBack">&larr; Cancel</button>' +
+      '<button class="bugmega-detail-back" type="button" id="bugmegaEditBack">' + widgetIcon("back") + 'Cancel</button>' +
       '<div class="bugmega-detail-title"><span class="bugmega-annotation-number">' + esc(index + 1) + '</span><h3>Edit annotation</h3></div>' +
       '<form id="bugmegaEditForm">' +
         '<label class="bugmega-field"><span>Title</span><input name="title" maxlength="80" required value="' + esc(pin.title || "") + '"></label>' +
         '<label class="bugmega-field"><span>Details</span><textarea name="comment">' + esc(pin.comment || "") + '</textarea></label>' +
-        '<div class="bugmega-detail-actions"><button class="bugmega-primary" type="submit">Save changes</button><button class="bugmega-secondary" type="button" id="bugmegaEditCancel">Cancel</button></div>' +
+        '<div class="bugmega-detail-actions"><button class="bugmega-primary" type="submit">' + widgetIcon("save") + 'Save</button><button class="bugmega-secondary" type="button" id="bugmegaEditCancel">' + widgetIcon("close") + 'Cancel</button></div>' +
         '<p class="bugmega-status" id="bugmegaEditStatus"></p>' +
       '</form>';
     var cancel = function () { showAnnotationDetail(index); };
@@ -313,7 +327,7 @@
         '<div class="bugmega-list-view" id="bugmegaListView">' +
           '<div class="bugmega-menu-head"><strong>Annotations</strong><span class="bugmega-menu-count" id="bugmegaAnnotationCount"></span></div>' +
           '<div class="bugmega-annotation-list" id="bugmegaAnnotationList"></div>' +
-          '<button class="bugmega-start-annotation" type="button" id="bugmegaStart">+ Start annotation</button>' +
+          '<button class="bugmega-start-annotation" type="button" id="bugmegaStart">' + widgetIcon("plus") + 'Start annotation</button>' +
         '</div>' +
         '<div class="bugmega-detail" id="bugmegaDetailView" hidden></div>' +
       '</section>' +
