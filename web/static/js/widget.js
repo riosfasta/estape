@@ -64,7 +64,7 @@
       ".bugmega-detail-comment{margin:0 0 12px;color:#33443e;font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}.bugmega-detail-comment.empty{color:#7a8883;font-style:italic}" +
       ".bugmega-detail-image{display:block;width:100%;height:190px;object-fit:cover;border:1px solid #d8e1dd;border-radius:8px;margin:0 0 12px;background:#eef5f2}" +
       ".bugmega-detail-file{display:flex;align-items:center;gap:7px;border:1px solid #d8e1dd;border-radius:8px;color:#087c67;padding:9px 10px;margin:0 0 12px;font-size:13px;font-weight:800;text-decoration:none;overflow-wrap:anywhere}" +
-      ".bugmega-detail-actions{display:flex;gap:8px}.bugmega-detail-actions button{flex:1}" +
+      ".bugmega-detail-actions{display:flex;gap:8px;flex-wrap:wrap}.bugmega-detail-actions button{flex:1;min-width:86px}" +
       ".bugmega-panel{position:fixed;right:22px;bottom:78px;width:min(380px,calc(100vw - 32px));max-height:calc(100vh - 110px);overflow:auto;background:#fff;border:1px solid rgba(0,0,0,.14);border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.28);padding:16px;display:none}" +
       ".bugmega-panel.active{display:block}" +
       ".bugmega-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}" +
@@ -77,6 +77,7 @@
       ".bugmega-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}" +
       ".bugmega-primary{border:0;border-radius:8px;background:#08a88a;color:#fff;padding:10px 14px;font-weight:800;cursor:pointer}" +
       ".bugmega-secondary{border:1px solid #cdd9d5;border-radius:8px;background:#fff;color:#10201c;padding:9px 12px;font-weight:700;cursor:pointer}" +
+      ".bugmega-danger{border:1px solid #fecaca;border-radius:8px;background:#fff;color:#b91c1c;padding:9px 12px;font-weight:800;cursor:pointer}" +
       ".bugmega-muted{font-size:12px;color:#64736e;line-height:1.4}.bugmega-status{font-size:12px;margin-top:8px;color:#64736e}.bugmega-status.error{color:#c73636}.bugmega-status.success{color:#087c67}" +
       ".bugmega-preview{width:100%;max-height:180px;object-fit:cover;border:1px solid #d8e1dd;border-radius:8px;background:#eef5f2;margin:8px 0;display:none}" +
       ".bugmega-preview.active{display:block}" +
@@ -207,15 +208,97 @@
       '<p class="bugmega-detail-comment' + (pin.comment ? '' : ' empty') + '">' + esc(pin.comment || "No details provided.") + '</p>' +
       (screenshotURL ? '<img class="bugmega-detail-image" src="' + esc(screenshotURL) + '" alt="Screenshot for ' + esc(pin.title || "annotation") + '">' : '') +
       annotationAttachmentHTML(pin) +
-      '<div class="bugmega-detail-actions"><button class="bugmega-secondary" type="button" id="bugmegaGoToPin">Go to pin</button></div>';
+      '<div class="bugmega-detail-actions"><button class="bugmega-secondary" type="button" id="bugmegaGoToPin">Go to pin</button><button class="bugmega-secondary" type="button" id="bugmegaEditAnnotation">Edit</button><button class="bugmega-danger" type="button" id="bugmegaDeleteAnnotation">Delete</button></div>' +
+      '<p class="bugmega-status" id="bugmegaDetailStatus"></p>';
     document.getElementById("bugmegaDetailBack").addEventListener("click", showAnnotationList);
     document.getElementById("bugmegaGoToPin").addEventListener("click", function () { focusAnnotation(index); });
+    document.getElementById("bugmegaEditAnnotation").addEventListener("click", function () { showAnnotationEdit(index); });
+    document.getElementById("bugmegaDeleteAnnotation").addEventListener("click", function (event) { deleteAnnotation(index, event.currentTarget); });
     var screenshot = detailView.querySelector(".bugmega-detail-image");
     if (screenshot) {
       screenshot.addEventListener("load", function () { positionSurface(document.getElementById("bugmegaMenu")); }, { once: true });
       screenshot.addEventListener("error", function () { positionSurface(document.getElementById("bugmegaMenu")); }, { once: true });
     }
     positionSurface(document.getElementById("bugmegaMenu"));
+  }
+
+  function annotationRequest(annotationID, method, values) {
+    return fetch(apiBase + "/api/widget/annotations/" + encodeURIComponent(annotationID), {
+      method: method,
+      mode: "cors",
+      credentials: "include",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(Object.assign({ site_key: siteKey, url: window.location.href }, values || {}))
+    }).then(async function (response) {
+      var data = await response.json().catch(function () { return {}; });
+      if (!response.ok) throw new Error(data.error || "Could not update annotation.");
+      return data;
+    });
+  }
+
+  function showAnnotationEdit(index) {
+    var pin = state.pins[index];
+    var detailView = document.getElementById("bugmegaDetailView");
+    if (!pin || !detailView) return;
+    detailView.innerHTML =
+      '<button class="bugmega-detail-back" type="button" id="bugmegaEditBack">&larr; Cancel</button>' +
+      '<div class="bugmega-detail-title"><span class="bugmega-annotation-number">' + esc(index + 1) + '</span><h3>Edit annotation</h3></div>' +
+      '<form id="bugmegaEditForm">' +
+        '<label class="bugmega-field"><span>Title</span><input name="title" maxlength="80" required value="' + esc(pin.title || "") + '"></label>' +
+        '<label class="bugmega-field"><span>Details</span><textarea name="comment">' + esc(pin.comment || "") + '</textarea></label>' +
+        '<div class="bugmega-detail-actions"><button class="bugmega-primary" type="submit">Save changes</button><button class="bugmega-secondary" type="button" id="bugmegaEditCancel">Cancel</button></div>' +
+        '<p class="bugmega-status" id="bugmegaEditStatus"></p>' +
+      '</form>';
+    var cancel = function () { showAnnotationDetail(index); };
+    document.getElementById("bugmegaEditBack").addEventListener("click", cancel);
+    document.getElementById("bugmegaEditCancel").addEventListener("click", cancel);
+    document.getElementById("bugmegaEditForm").addEventListener("submit", async function (event) {
+      event.preventDefault();
+      var form = event.currentTarget;
+      var submit = form.querySelector("[type='submit']");
+      var status = document.getElementById("bugmegaEditStatus");
+      submit.disabled = true;
+      if (status) status.textContent = "Saving...";
+      try {
+        var data = await annotationRequest(pin.id, "PATCH", {
+          title: form.elements.title.value.trim(),
+          comment: form.elements.comment.value.trim()
+        });
+        state.pins[index] = normalizePin(Object.assign({}, state.pins[index], data.annotation || {}));
+        renderPins();
+        renderAnnotationList();
+        showAnnotationDetail(index);
+      } catch (error) {
+        if (status) {
+          status.className = "bugmega-status error";
+          status.textContent = error.message || "Could not update annotation.";
+        }
+        submit.disabled = false;
+      }
+    });
+    positionSurface(document.getElementById("bugmegaMenu"));
+    detailView.querySelector("input[name='title']")?.focus();
+  }
+
+  async function deleteAnnotation(index, button) {
+    var pin = state.pins[index];
+    if (!pin || !window.confirm("Delete this annotation? This cannot be undone.")) return;
+    var status = document.getElementById("bugmegaDetailStatus");
+    button.disabled = true;
+    if (status) status.textContent = "Deleting...";
+    try {
+      await annotationRequest(pin.id, "DELETE");
+      state.pins.splice(index, 1);
+      renderPins();
+      renderAnnotationList();
+      showAnnotationList();
+    } catch (error) {
+      button.disabled = false;
+      if (status) {
+        status.className = "bugmega-status error";
+        status.textContent = error.message || "Could not delete annotation.";
+      }
+    }
   }
 
   function render() {

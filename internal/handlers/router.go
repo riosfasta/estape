@@ -108,8 +108,11 @@ func (s *Server) Router() *gin.Engine {
 	api.GET("/paypal/cancel", s.payPalCheckoutCancel)
 	api.POST("/webhooks/paypal", s.paymentWebhook("paypal"))
 	api.OPTIONS("/widget/annotations", s.widgetOptions)
+	api.OPTIONS("/widget/annotations/:annotation_id", s.widgetOptions)
 	api.GET("/widget/session", s.widgetSession)
 	api.POST("/widget/annotations", s.createWidgetAnnotation)
+	api.PATCH("/widget/annotations/:annotation_id", s.updateWidgetAnnotation)
+	api.DELETE("/widget/annotations/:annotation_id", s.deleteWidgetAnnotation)
 
 	authed := api.Group("")
 	authed.Use(middleware.AuthRequired(s.tokens), s.requireActiveUser())
