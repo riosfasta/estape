@@ -861,6 +861,126 @@ func TestFreelancerLanguages(t *testing.T) {
 	}
 }
 
+func TestFreelancerAvailabilityDuration(t *testing.T) {
+	val, err := normalizeAvailabilityDuration("")
+	if err != nil || val != "" {
+		t.Fatalf("expected empty result without error, got %q, %v", val, err)
+	}
+
+	val, err = normalizeAvailabilityDuration("more_than_30")
+	if err != nil || val != "more_than_30" {
+		t.Fatalf("expected 'more_than_30', got %q, %v", val, err)
+	}
+
+	val, err = normalizeAvailabilityDuration("  More than 30 hrs/week  ")
+	if err != nil || val != "More than 30 hrs/week" {
+		t.Fatalf("expected trimmed 'More than 30 hrs/week', got %q, %v", val, err)
+	}
+
+	tooLong := strings.Repeat("a", 61)
+	if _, err := normalizeAvailabilityDuration(tooLong); err == nil {
+		t.Fatal("expected error for duration > 60 chars, got nil")
+	}
+}
+
+func TestFreelancerCertificates(t *testing.T) {
+	validCerts := []models.FreelancerCertificate{
+		{
+			Name:          "Google Cloud Professional Cloud Architect",
+			Issuer:        "Coursera / Google",
+			IssueDate:     "2024",
+			CredentialID:  "GCP-12345",
+			CredentialURL: "https://coursera.org/verify/GCP12345",
+		},
+		{
+			Name:   "Full Stack Web Development",
+			Issuer: "Udemy",
+		},
+		{}, // blank row should be skipped
+	}
+	normalized, err := normalizeFreelancerCertificates(validCerts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(normalized) != 2 {
+		t.Fatalf("expected 2 normalized certificates, got %d", len(normalized))
+	}
+	if normalized[0].Name != "Google Cloud Professional Cloud Architect" || normalized[0].CredentialURL != "https://coursera.org/verify/GCP12345" {
+		t.Fatalf("unexpected normalized cert[0]: %+v", normalized[0])
+	}
+
+	missingIssuer := []models.FreelancerCertificate{
+		{Name: "Some Course", Issuer: ""},
+	}
+	if _, err := normalizeFreelancerCertificates(missingIssuer); err == nil {
+		t.Fatal("expected error for certificate missing issuer, got nil")
+	}
+
+	missingName := []models.FreelancerCertificate{
+		{Name: "", Issuer: "Coursera"},
+	}
+	if _, err := normalizeFreelancerCertificates(missingName); err == nil {
+		t.Fatal("expected error for certificate missing name, got nil")
+	}
+
+	invalidURL := []models.FreelancerCertificate{
+		{Name: "Python Course", Issuer: "Coursera", CredentialURL: "javascript:alert(1)"},
+	}
+	if _, err := normalizeFreelancerCertificates(invalidURL); err == nil {
+		t.Fatal("expected error for invalid credential URL, got nil")
+	}
+
+	tooMany := make([]models.FreelancerCertificate, 21)
+	for i := range tooMany {
+		tooMany[i] = models.FreelancerCertificate{Name: "Course", Issuer: "Platform"}
+	}
+	if _, err := normalizeFreelancerCertificates(tooMany); err == nil {
+		t.Fatal("expected error for > 20 certificates, got nil")
+	}
+}
+
+func TestFreelancerEducations(t *testing.T) {
+	validEdus := []models.FreelancerEducation{
+		{
+			School:       "Stanford University",
+			Degree:       "Bachelor of Science",
+			FieldOfStudy: "Computer Science",
+			StartYear:    "2018",
+			EndYear:      "2022",
+			Description:  "Graduated with honors in distributed systems.",
+		},
+		{
+			School: "Online Tech Institute",
+		},
+		{}, // blank row should be skipped
+	}
+	normalized, err := normalizeFreelancerEducations(validEdus)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(normalized) != 2 {
+		t.Fatalf("expected 2 normalized educations, got %d", len(normalized))
+	}
+	if normalized[0].School != "Stanford University" || normalized[0].Degree != "Bachelor of Science" {
+		t.Fatalf("unexpected normalized edu[0]: %+v", normalized[0])
+	}
+
+	missingSchool := []models.FreelancerEducation{
+		{Degree: "Bachelor of Science", FieldOfStudy: "Computer Science"},
+	}
+	if _, err := normalizeFreelancerEducations(missingSchool); err == nil {
+		t.Fatal("expected error for education missing school, got nil")
+	}
+
+	tooMany := make([]models.FreelancerEducation, 21)
+	for i := range tooMany {
+		tooMany[i] = models.FreelancerEducation{School: "School"}
+	}
+	if _, err := normalizeFreelancerEducations(tooMany); err == nil {
+		t.Fatal("expected error for > 20 educations, got nil")
+	}
+}
+
 func TestMarketplaceProfileLanguagesAndHourlyJob(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -909,20 +1029,38 @@ func TestMarketplaceProfileLanguagesAndHourlyJob(t *testing.T) {
 	})
 	s.marketplaceRoutes(router, apiGroup, authed)
 
-	// 1. Save profile with languages
+	// 1. Save profile with languages, availability duration, certificates, and educations
 	profileReq := gin.H{
-		"name":     "Dev Tester",
-		"title":    "Backend Go Engineer",
-		"bio":      "Experienced Go backend developer building microservices and web APIs.",
-		"country":  "US",
-		"location": "New York",
-		"skills":   []string{"Golang", "MongoDB"},
-		"photo":    photoURL,
-		"public":   true,
-		"consent":  true,
+		"name":                  "Dev Tester",
+		"title":                 "Backend Go Engineer",
+		"bio":                   "Experienced Go backend developer building microservices and web APIs.",
+		"country":               "US",
+		"location":              "New York",
+		"skills":                []string{"Golang", "MongoDB"},
+		"photo":                 photoURL,
+		"public":                true,
+		"consent":               true,
+		"availability_duration": "more_than_30",
 		"languages": []gin.H{
 			{"language": "English", "level": "native"},
 			{"language": "Spanish", "level": "middle"},
+		},
+		"certificates": []gin.H{
+			{
+				"name":           "Google Cloud Certified",
+				"issuer":         "Google",
+				"issue_date":     "2024",
+				"credential_url": "https://coursera.org/verify/123",
+			},
+		},
+		"educations": []gin.H{
+			{
+				"school":         "Stanford University",
+				"degree":         "Bachelor of Science",
+				"field_of_study": "Computer Science",
+				"start_year":     "2018",
+				"end_year":       "2022",
+			},
 		},
 	}
 	raw, _ := json.Marshal(profileReq)
@@ -940,6 +1078,27 @@ func TestMarketplaceProfileLanguagesAndHourlyJob(t *testing.T) {
 	}
 	if len(updated.Languages) != 2 || updated.Languages[0].Language != "English" || updated.Languages[0].Level != "native" || updated.Languages[1].Level != "middle" {
 		t.Fatalf("unexpected profile languages: %+v", updated.Languages)
+	}
+	if updated.AvailabilityDuration != "more_than_30" {
+		t.Fatalf("unexpected availability duration: %s", updated.AvailabilityDuration)
+	}
+	if len(updated.Certificates) != 1 || updated.Certificates[0].Name != "Google Cloud Certified" || updated.Certificates[0].CredentialURL != "https://coursera.org/verify/123" {
+		t.Fatalf("unexpected profile certificates: %+v", updated.Certificates)
+	}
+	if len(updated.Educations) != 1 || updated.Educations[0].School != "Stanford University" || updated.Educations[0].Degree != "Bachelor of Science" {
+		t.Fatalf("unexpected profile educations: %+v", updated.Educations)
+	}
+	pub := publicFreelancer(updated)
+	if pub["availability_duration"] != "more_than_30" {
+		t.Fatalf("public freelancer missing availability_duration: %+v", pub)
+	}
+	certs, ok := pub["certificates"].([]models.FreelancerCertificate)
+	if !ok || len(certs) != 1 {
+		t.Fatalf("public freelancer certificates unexpected: %+v", pub["certificates"])
+	}
+	edus, ok := pub["educations"].([]models.FreelancerEducation)
+	if !ok || len(edus) != 1 {
+		t.Fatalf("public freelancer educations unexpected: %+v", pub["educations"])
 	}
 
 	// 2. Publish standalone hourly job

@@ -102,6 +102,115 @@ func normalizeFreelancerLanguages(items []models.FreelancerLanguage) ([]models.F
 	return result, nil
 }
 
+func normalizeAvailabilityDuration(v string) (string, error) {
+	val := strings.TrimSpace(v)
+	if val == "" {
+		return "", nil
+	}
+	if len(val) > 60 {
+		return "", errors.New("availability work duration cannot exceed 60 characters")
+	}
+	return val, nil
+}
+
+func normalizeFreelancerCertificates(items []models.FreelancerCertificate) ([]models.FreelancerCertificate, error) {
+	if len(items) > 20 {
+		return nil, errors.New("add up to 20 certificates")
+	}
+	result := make([]models.FreelancerCertificate, 0, len(items))
+	for _, item := range items {
+		name := strings.TrimSpace(item.Name)
+		issuer := strings.TrimSpace(item.Issuer)
+		issueDate := strings.TrimSpace(item.IssueDate)
+		expDate := strings.TrimSpace(item.ExpirationDate)
+		credID := strings.TrimSpace(item.CredentialID)
+		credURL := strings.TrimSpace(item.CredentialURL)
+
+		if name == "" && issuer == "" && issueDate == "" && expDate == "" && credID == "" && credURL == "" {
+			continue
+		}
+		if name == "" || len(name) > 120 {
+			return nil, errors.New("enter a valid certificate or course name (up to 120 characters)")
+		}
+		if issuer == "" || len(issuer) > 100 {
+			return nil, errors.New("enter an issuing organization or course platform (up to 100 characters)")
+		}
+		if len(issueDate) > 50 {
+			return nil, errors.New("issue date cannot exceed 50 characters")
+		}
+		if len(expDate) > 50 {
+			return nil, errors.New("expiration date cannot exceed 50 characters")
+		}
+		if len(credID) > 100 {
+			return nil, errors.New("credential ID cannot exceed 100 characters")
+		}
+		if credURL != "" {
+			if len(credURL) > 500 {
+				return nil, errors.New("credential URL cannot exceed 500 characters")
+			}
+			lower := strings.ToLower(credURL)
+			if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
+				return nil, errors.New("credential URL must begin with http:// or https://")
+			}
+		}
+		result = append(result, models.FreelancerCertificate{
+			Name:           name,
+			Issuer:         issuer,
+			IssueDate:      issueDate,
+			ExpirationDate: expDate,
+			CredentialID:   credID,
+			CredentialURL:  credURL,
+		})
+	}
+	return result, nil
+}
+
+func normalizeFreelancerEducations(items []models.FreelancerEducation) ([]models.FreelancerEducation, error) {
+	if len(items) > 20 {
+		return nil, errors.New("add up to 20 education entries")
+	}
+	result := make([]models.FreelancerEducation, 0, len(items))
+	for _, item := range items {
+		school := strings.TrimSpace(item.School)
+		degree := strings.TrimSpace(item.Degree)
+		field := strings.TrimSpace(item.FieldOfStudy)
+		startYear := strings.TrimSpace(item.StartYear)
+		endYear := strings.TrimSpace(item.EndYear)
+		desc := strings.TrimSpace(item.Description)
+
+		if school == "" && degree == "" && field == "" && startYear == "" && endYear == "" && desc == "" {
+			continue
+		}
+		if school == "" || len(school) > 150 {
+			return nil, errors.New("enter a valid school or institution name (up to 150 characters)")
+		}
+		if len(degree) > 100 {
+			return nil, errors.New("degree cannot exceed 100 characters")
+		}
+		if len(field) > 100 {
+			return nil, errors.New("field of study cannot exceed 100 characters")
+		}
+		if len(startYear) > 20 {
+			return nil, errors.New("start year cannot exceed 20 characters")
+		}
+		if len(endYear) > 20 {
+			return nil, errors.New("end year cannot exceed 20 characters")
+		}
+		if len(desc) > 1000 {
+			return nil, errors.New("education description cannot exceed 1000 characters")
+		}
+		result = append(result, models.FreelancerEducation{
+			School:       school,
+			Degree:       degree,
+			FieldOfStudy: field,
+			StartYear:    startYear,
+			EndYear:      endYear,
+			Description:  desc,
+		})
+	}
+	return result, nil
+}
+
 func (s *Server) marketplaceRoutes(router *gin.Engine, api, authed *gin.RouterGroup) {
 	authed = authed.Group("")
 	authed.Use(func(c *gin.Context) {
@@ -279,20 +388,23 @@ func (s *Server) marketplaceMe(c *gin.Context) {
 func (s *Server) marketplaceSaveProfile(c *gin.Context) {
 	user, _ := currentUser(c)
 	var req struct {
-		Availability     *string                   `json:"availability"`
-		PortfolioDetails *[]models.PortfolioDetail `json:"portfolio_details"`
-		PortfolioPhotos  *[]string                    `json:"portfolio_photos"`
-		YouTubeURLs      *[]string                    `json:"youtube_urls"`
-		Languages        *[]models.FreelancerLanguage `json:"languages"`
-		Name             string                       `json:"name"`
-		Title            string                    `json:"title"`
-		Bio              string                    `json:"bio"`
-		Country          string                    `json:"country"`
-		Location         string                    `json:"location"`
-		Skills           []string                  `json:"skills"`
-		Photo            string                    `json:"photo"`
-		Public           bool                      `json:"public"`
-		Consent          bool                      `json:"consent"`
+		Availability         *string                         `json:"availability"`
+		AvailabilityDuration *string                         `json:"availability_duration"`
+		PortfolioDetails     *[]models.PortfolioDetail       `json:"portfolio_details"`
+		PortfolioPhotos      *[]string                       `json:"portfolio_photos"`
+		YouTubeURLs          *[]string                       `json:"youtube_urls"`
+		Languages            *[]models.FreelancerLanguage    `json:"languages"`
+		Certificates         *[]models.FreelancerCertificate `json:"certificates"`
+		Educations           *[]models.FreelancerEducation   `json:"educations"`
+		Name                 string                          `json:"name"`
+		Title                string                          `json:"title"`
+		Bio                  string                          `json:"bio"`
+		Country              string                          `json:"country"`
+		Location             string                          `json:"location"`
+		Skills               []string                        `json:"skills"`
+		Photo                string                          `json:"photo"`
+		Public               bool                            `json:"public"`
+		Consent              bool                            `json:"consent"`
 	}
 	if c.ShouldBindJSON(&req) != nil {
 		marketplaceError(c, marketInvalid("Invalid profile"))
@@ -333,6 +445,14 @@ func (s *Server) marketplaceSaveProfile(c *gin.Context) {
 			return
 		}
 		set["availability"] = *req.Availability
+	}
+	if req.AvailabilityDuration != nil {
+		duration, err := normalizeAvailabilityDuration(*req.AvailabilityDuration)
+		if err != nil {
+			marketplaceError(c, marketInvalid(err.Error()))
+			return
+		}
+		set["availability_duration"] = duration
 	}
 	var current models.FreelancerProfile
 	if marketplaceError(c, s.store.C("freelancer_profiles").FindOne(ctx, bson.M{"_id": user.ID}).Decode(&current)) {
@@ -393,6 +513,22 @@ func (s *Server) marketplaceSaveProfile(c *gin.Context) {
 		}
 		set["languages"] = langs
 	}
+	if req.Certificates != nil {
+		certs, err := normalizeFreelancerCertificates(*req.Certificates)
+		if err != nil {
+			marketplaceError(c, marketInvalid(err.Error()))
+			return
+		}
+		set["certificates"] = certs
+	}
+	if req.Educations != nil {
+		edus, err := normalizeFreelancerEducations(*req.Educations)
+		if err != nil {
+			marketplaceError(c, marketInvalid(err.Error()))
+			return
+		}
+		set["educations"] = edus
+	}
 	if req.Public {
 		set["consent_version"] = marketplaceConsentVersion
 		set["consent_at"] = time.Now().UTC()
@@ -420,7 +556,38 @@ func publicFreelancer(p models.FreelancerProfile) gin.H {
 	if langs == nil {
 		langs = []models.FreelancerLanguage{}
 	}
-	return gin.H{"id": p.ID, "name": p.Name, "title": p.Title, "bio": p.Bio, "country": p.Country, "location": p.Location, "skills": p.Skills, "languages": langs, "photo": p.Photo, "rating": p.Rating, "rating_count": p.RatingCount, "finished_jobs": p.FinishedJobs, "published_jobs": p.PublishedJobs, "available": freelancerAvailability(p) == "available", "availability": freelancerAvailability(p), "portfolio_photos": p.PortfolioPhotos, "portfolio_details": p.PortfolioDetails, "youtube_urls": p.YouTubeURLs, "verified": p.IdentityStatus == "verified"}
+	certs := p.Certificates
+	if certs == nil {
+		certs = []models.FreelancerCertificate{}
+	}
+	edus := p.Educations
+	if edus == nil {
+		edus = []models.FreelancerEducation{}
+	}
+	return gin.H{
+		"id":                    p.ID,
+		"name":                  p.Name,
+		"title":                 p.Title,
+		"bio":                   p.Bio,
+		"country":               p.Country,
+		"location":              p.Location,
+		"skills":                p.Skills,
+		"languages":             langs,
+		"certificates":          certs,
+		"educations":            edus,
+		"photo":                 p.Photo,
+		"rating":                p.Rating,
+		"rating_count":          p.RatingCount,
+		"finished_jobs":         p.FinishedJobs,
+		"published_jobs":        p.PublishedJobs,
+		"available":             freelancerAvailability(p) == "available",
+		"availability":          freelancerAvailability(p),
+		"availability_duration": p.AvailabilityDuration,
+		"portfolio_photos":      p.PortfolioPhotos,
+		"portfolio_details":     p.PortfolioDetails,
+		"youtube_urls":          p.YouTubeURLs,
+		"verified":              p.IdentityStatus == "verified",
+	}
 }
 
 func (s *Server) marketplaceFreelancers(c *gin.Context) {

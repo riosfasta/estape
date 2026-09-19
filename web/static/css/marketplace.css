@@ -137,3 +137,20 @@
 .market-pricing-title{font-size:14px;font-weight:700;color:var(--text-primary,#1e293b)}
 .market-pricing-desc{margin:0;font-size:12px;line-height:1.45;color:var(--text-secondary,#64748b)}
 @media(max-width:640px){.market-pricing-grid{grid-template-columns:1fr}}
+
+.market-duration-badge{background:var(--accent-soft,#21856f18);color:var(--accent,#21856f);border:1px solid var(--accent,#21856f);font-size:12px;font-weight:600}
+.market-certificates-fieldset,.market-educations-fieldset{border:1px solid var(--border-color,#8883);border-radius:8px;padding:14px;margin:16px 0}
+.market-certificates-fieldset legend,.market-educations-fieldset legend{font-size:13px;font-weight:600;padding:0 6px}
+.market-certificates-list,.market-educations-list{display:flex;flex-direction:column;gap:12px;margin:10px 0}
+.market-certificate-row,.market-education-row{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid var(--border-color,#8883);border-radius:8px;background:var(--bg-secondary,#fff)}
+.market-certificate-row .market-cert-fields,.market-education-row .market-edu-fields{flex:1;min-width:0}
+.market-cert-del,.market-edu-del{flex-shrink:0;width:34px;height:34px;min-height:34px;padding:0;font-size:18px;line-height:1;border-radius:6px;color:var(--danger,#ef4444);display:grid;place-items:center}
+.market-cert-grid,.market-edu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-top:12px}
+.market-cert-card,.market-edu-card{border:1px solid var(--border-color,#8883);border-radius:8px;padding:14px 16px;background:var(--bg-secondary,#fff);display:flex;flex-direction:column;gap:6px}
+.market-cert-header,.market-edu-header{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.market-cert-header h3,.market-edu-header h3{margin:0;font-size:15px;font-weight:600;color:var(--text-primary,#1e293b)}
+.market-cert-meta,.market-edu-years{font-size:12px;color:var(--text-secondary,#64748b)}
+.market-cert-issuer{font-size:11px;background:var(--bg-tertiary,#f1f5f9);padding:2px 8px;border-radius:4px;border:1px solid var(--border-color,#8883)}
+.market-cert-link{align-self:flex-start;margin-top:4px;font-size:12px}
+.market-edu-degree{margin:2px 0 0;font-size:13px;color:var(--text-primary,#1e293b)}
+.market-edu-desc{margin:2px 0 0;font-size:13px;line-height:1.45;color:var(--text-secondary,#64748b)}

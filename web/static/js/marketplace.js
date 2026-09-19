@@ -49,6 +49,46 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
   const cents = (value) => { if (!/^\d+(\.\d{1,2})?$/.test(String(value))) throw new Error("Enter a positive amount with at most two decimals"); return Math.round(Number(value) * 100); };
   const fluencyLabels = { basic: "Basic", middle: "Middle", advance: "Advance", native: "Native" };
   const fluencyLabel = (level) => fluencyLabels[level] || level || "Basic";
+  const durationLabels = {
+    more_than_30: "More than 30 hrs/week",
+    less_than_30: "Less than 30 hrs/week",
+    full_time: "Full-time (40+ hrs/week)",
+    part_time: "Part-time (< 20 hrs/week)",
+    as_needed: "As needed / Flexible",
+  };
+  const availabilityDurationLabel = (key) => durationLabels[key] || key || "";
+  const certificatesHTML = (certs) => {
+    if (!certs || !certs.length) return "";
+    return `<section class="panel market-profile-section market-certificates-panel"><h2>Certifications & Online Courses</h2><div class="market-cert-grid">${certs.map(c => `
+      <article class="market-cert-card">
+        <div class="market-cert-header">
+          <h3>${esc(c.name)}</h3>
+          ${c.issuer ? `<span class="market-badge market-cert-issuer">${esc(c.issuer)}</span>` : ""}
+        </div>
+        <div class="market-cert-meta muted">
+          ${c.issue_date ? `<span>Issued ${esc(c.issue_date)}</span>` : ""}
+          ${c.expiration_date ? `<span> · Expires ${esc(c.expiration_date)}</span>` : ""}
+          ${c.credential_id ? `<span> · ID: ${esc(c.credential_id)}</span>` : ""}
+        </div>
+        ${c.credential_url ? `<a class="btn compact quiet market-cert-link" href="${esc(c.credential_url)}" target="_blank" rel="noopener noreferrer">Show credential</a>` : ""}
+      </article>`).join("")}</div></section>`;
+  };
+  const educationsHTML = (edus) => {
+    if (!edus || !edus.length) return "";
+    return `<section class="panel market-profile-section market-educations-panel"><h2>Education</h2><div class="market-edu-grid">${edus.map(e => {
+      const years = [e.start_year, e.end_year].filter(Boolean).join(" – ");
+      const degreeInfo = [e.degree, e.field_of_study].filter(Boolean).join(", ");
+      return `
+        <article class="market-edu-card">
+          <div class="market-edu-header">
+            <h3>${esc(e.school)}</h3>
+            ${years ? `<span class="muted market-edu-years">${esc(years)}</span>` : ""}
+          </div>
+          ${degreeInfo ? `<p class="market-edu-degree"><strong>${esc(degreeInfo)}</strong></p>` : ""}
+          ${e.description ? `<p class="market-edu-desc muted">${esc(e.description)}</p>` : ""}
+        </article>`;
+    }).join("")}</div></section>`;
+  };
   const languagesChips = (langs) => {
     if (!langs || !langs.length) return "";
     return `<div class="market-languages">${langs.map(l => `<span class="market-badge market-lang-badge"><strong>${esc(l.language)}</strong><span class="market-lang-level">(${esc(fluencyLabel(l.level))})</span></span>`).join("")}</div>`;
@@ -92,7 +132,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
   const heading = (kicker, title, text, actions = "") => `<header class="market-heading"><div><p class="market-kicker">${esc(kicker)}</p><h1>${esc(title)}</h1><p class="muted">${esc(text)}</p></div><div class="toolbar">${actions}</div></header>`;
   const availabilityLabel = p => p.active_jobs > 0 || p.availability === "running_project" ? "In a running project" : p.availability === "on_break" ? "Off for break" : p.availability === "busy" ? "Busy" : p.available === false ? "Busy" : "Available now";
   const portfolio = p => (p.portfolio_photos?.length || p.youtube_urls?.length) ? `<section class="panel"><h2>Project portfolio</h2><div class="market-portfolio">${(p.portfolio_photos || []).map(url => { const detail = (p.portfolio_details || []).find(item => item.photo === url) || {}; return `<figure><a href="${esc(url)}" target="_blank" rel="noopener"><img src="${esc(url)}" alt="${esc(detail.title || "Project work sample")}" loading="lazy"></a>${detail.title ? `<h3>${esc(detail.title)}</h3>` : ""}${detail.description ? `<p class="market-bio">${esc(detail.description)}</p>` : ""}${detail.url ? `<a href="${esc(detail.url)}" target="_blank" rel="noopener noreferrer">Visit project</a>` : ""}</figure>`; }).join("")}</div><div class="toolbar">${(p.youtube_urls || []).map((url, i) => `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Watch project video ${i + 1} on YouTube</a>`).join("")}</div></section>` : "";
-  const stats = (p) => `<div class="market-stats"><div><div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;"><strong>${p.rating_count ? Number(p.rating).toFixed(1) + " / 5" : "New"}</strong>${p.rating_count ? starsHTML(p.rating, 16) : ""}</div><span>${Number(p.rating_count || 0)} reviews</span></div><div><strong>${Number(p.finished_jobs || 0)}</strong><span>Finished jobs</span></div><div><strong>${Number(p.published_jobs || 0)}</strong><span>Published jobs</span></div><div><strong>${availabilityLabel(p)}</strong><span>Current availability</span></div></div>`;
+  const stats = (p) => `<div class="market-stats"><div><div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;"><strong>${p.rating_count ? Number(p.rating).toFixed(1) + " / 5" : "New"}</strong>${p.rating_count ? starsHTML(p.rating, 16) : ""}</div><span>${Number(p.rating_count || 0)} reviews</span></div><div><strong>${Number(p.finished_jobs || 0)}</strong><span>Finished jobs</span></div><div><strong>${Number(p.published_jobs || 0)}</strong><span>Published jobs</span></div><div><strong>${availabilityLabel(p)}</strong><span>${p.availability_duration ? esc(availabilityDurationLabel(p.availability_duration)) : "Current availability"}</span></div></div>`;
   const countryName = code => { if (!code) return ""; try { return regionNames.of(code) || code; } catch { return code; } };
   const ownerSnippet = j => `
     <div class="market-job-owner">
@@ -145,12 +185,23 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     const data = await api("/api/marketplace/me"); const p = data.profile;
     connectsPolicy = data.connects_policy || connectsPolicy;
     page("My profile", `${heading("YOUR MARKETPLACE PROFILE", "Build your next opportunity", "Hire talent, find work, and grow your reputation.", `<a class="btn" href="/marketplace/jobs">My jobs & offers</a><a class="btn primary" href="/find-jobs">Find work</a>`)}${notice()}
-      <section class="panel market-profile-summary"><div class="market-person">${photo(p)}<div><h2>${esc(p.name)}</h2><p>${esc(p.title || "Add your professional title")}</p><span class="muted">${esc(p.location || "Add location")}${p.country ? ", " + esc(regionNames.of(p.country)) : ""}</span></div>${profileShareActions(p)}</div>${stats(p)}${chips(p.skills)}${languagesChips(p.languages)}<p class="market-bio">${esc(p.bio)}</p></section>
-      ${shareProfile(p)}${portfolio(p)}
+      <section class="panel market-profile-summary"><div class="market-person">${photo(p)}<div><h2>${esc(p.name)}</h2><p>${esc(p.title || "Add your professional title")}</p><span class="muted">${esc(p.location || "Add location")}${p.country ? ", " + esc(regionNames.of(p.country)) : ""}</span>${p.availability_duration ? ` <span class="market-badge market-duration-badge">${esc(availabilityDurationLabel(p.availability_duration))}</span>` : ""}</div>${profileShareActions(p)}</div>${stats(p)}${chips(p.skills)}${languagesChips(p.languages)}<p class="market-bio">${esc(p.bio)}</p></section>
+      ${shareProfile(p)}${certificatesHTML(p.certificates)}${educationsHTML(p.educations)}${portfolio(p)}
       <div class="market-columns"><section class="panel"><h2>Profile details</h2><p class="muted">Complete these details and submit an ID before applying or hiring. Public profiles are visible to visitors.</p>
       <form id="marketProfile" class="market-form"><div class="grid-2"><label class="field">Display name<input name="name" value="${esc(p.name)}" maxlength="100" required></label><label class="field">Professional title<input name="title" value="${esc(p.title)}" maxlength="120" required placeholder="WordPress developer & designer"></label><label class="field">Country<select name="country" required>${countryOptions(p.country)}</select></label><label class="field">City / region<input name="location" value="${esc(p.location)}" maxlength="120" required></label></div>
       <label class="field">About you<textarea name="bio" rows="5" minlength="30" maxlength="5000" required placeholder="Tell clients what you do and the results you can deliver.">${esc(p.bio)}</textarea></label>
-      <label class="field">Availability<select name="availability"><option value="available" ${!p.availability || p.availability === "available" ? "selected" : ""}>Available now</option><option value="busy" ${p.availability === "busy" ? "selected" : ""}>Busy</option><option value="running_project" ${p.availability === "running_project" ? "selected" : ""}>In a running project</option><option value="on_break" ${p.availability === "on_break" ? "selected" : ""}>Off for break</option></select></label><p class="muted">An active Bugmega job always shows you as in a running project until it finishes.</p>
+      <div class="grid-2">
+        <label class="field">Availability status<select name="availability"><option value="available" ${!p.availability || p.availability === "available" ? "selected" : ""}>Available now</option><option value="busy" ${p.availability === "busy" ? "selected" : ""}>Busy</option><option value="running_project" ${p.availability === "running_project" ? "selected" : ""}>In a running project</option><option value="on_break" ${p.availability === "on_break" ? "selected" : ""}>Off for break</option></select></label>
+        <label class="field">Availability work duration / capacity<select name="availability_duration">
+          <option value="" ${!p.availability_duration ? "selected" : ""}>Not specified</option>
+          <option value="more_than_30" ${p.availability_duration === "more_than_30" ? "selected" : ""}>More than 30 hrs/week</option>
+          <option value="less_than_30" ${p.availability_duration === "less_than_30" ? "selected" : ""}>Less than 30 hrs/week</option>
+          <option value="full_time" ${p.availability_duration === "full_time" ? "selected" : ""}>Full-time (40+ hrs/week)</option>
+          <option value="part_time" ${p.availability_duration === "part_time" ? "selected" : ""}>Part-time (&lt; 20 hrs/week)</option>
+          <option value="as_needed" ${p.availability_duration === "as_needed" ? "selected" : ""}>As needed / Flexible</option>
+        </select></label>
+      </div>
+      <p class="muted">An active Bugmega job always shows you as in a running project until it finishes.</p>
       <label class="field">Profile photo (max 500 KB)<input type="file" name="photo_file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"></label><img id="marketPhotoPreview" class="market-photo-preview" alt="Profile photo preview" ${p.photo ? `src="${esc(p.photo)}"` : "hidden"}><p class="muted">Choose an image, crop it, and confirm the preview before saving.</p>
       <fieldset class="market-skill-picker"><legend>Project proof / portfolio</legend><p>Up to 12 project photos and 6 YouTube videos. These are public when you publish your profile. Only share work you have permission to display.</p><label class="field">Add project photos (max 500 KB each)<input type="file" id="marketPortfolioFiles" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple></label><section id="marketPortfolioPreview" class="market-portfolio"></section><label class="field">YouTube video URLs (one per line)<textarea name="youtube_urls" rows="3" placeholder="https://www.youtube.com/watch?v=...">${esc((p.youtube_urls || []).join("\n"))}</textarea></label></fieldset>${skillPicker(p.skills)}
       <fieldset class="market-languages-fieldset">
@@ -176,6 +227,18 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
           <option value="Vietnamese">
           <option value="Turkish">
         </datalist>
+      </fieldset>
+      <fieldset class="market-certificates-fieldset">
+        <legend>Certificates & Online Courses</legend>
+        <p class="muted" style="margin:0 0 10px;font-size:13px;">Add your online courses, certificates (Coursera, Udemy, edX, Google, AWS, etc.), or professional licenses.</p>
+        <div id="marketCertificatesList" class="market-certificates-list"></div>
+        <button type="button" class="btn compact" id="marketAddCertificateBtn">+ Add certificate / course</button>
+      </fieldset>
+      <fieldset class="market-educations-fieldset">
+        <legend>Education</legend>
+        <p class="muted" style="margin:0 0 10px;font-size:13px;">Add your educational background, universities, colleges, degrees, or schools.</p>
+        <div id="marketEducationsList" class="market-educations-list"></div>
+        <button type="button" class="btn compact" id="marketAddEducationBtn">+ Add education</button>
       </fieldset>
       <label class="market-check"><input type="checkbox" name="public" ${p.public ? "checked" : ""}><span>Make my profile public and shareable (also listed in the freelancer directory)</span></label>
       <label class="market-check"><input type="checkbox" name="consent" ${p.public ? "checked" : ""}><span>I agree that the platform may display my profile photo, portfolio photos and YouTube links, display name, bio, skills, city/country, availability, job counts and reviews across its pages, including the homepage, directory and job pages. I have read the <a href="/marketplace/privacy" target="_blank" rel="noopener">marketplace privacy policy</a>. My ID image stays private.</span></label>
@@ -216,6 +279,68 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
       if (inputs.length) inputs[inputs.length - 1].focus();
     });
 
+    const certsList = $("#marketCertificatesList");
+    const addCertBtn = $("#marketAddCertificateBtn");
+    function renderCertRow(item = {}) {
+      if (!certsList) return;
+      const row = document.createElement("div");
+      row.className = "market-certificate-row";
+      row.innerHTML = `
+        <div class="market-cert-fields">
+          <div class="grid-2">
+            <input type="text" class="market-cert-name" placeholder="Course / Certificate name (e.g. AWS Solutions Architect)" maxlength="120" value="${esc(item.name || "")}" required>
+            <input type="text" class="market-cert-issuer" placeholder="Issuing organization (e.g. Coursera, Udemy, Amazon)" maxlength="100" value="${esc(item.issuer || "")}" required>
+          </div>
+          <div class="grid-4" style="margin-top:6px;">
+            <input type="text" class="market-cert-issue-date" placeholder="Issue date (e.g. May 2024)" maxlength="50" value="${esc(item.issue_date || "")}">
+            <input type="text" class="market-cert-exp-date" placeholder="Expiration date" maxlength="50" value="${esc(item.expiration_date || "")}">
+            <input type="text" class="market-cert-id" placeholder="Credential ID (optional)" maxlength="100" value="${esc(item.credential_id || "")}">
+            <input type="url" class="market-cert-url" placeholder="Credential link (https://...)" maxlength="500" value="${esc(item.credential_url || "")}">
+          </div>
+        </div>
+        <button type="button" class="btn compact quiet market-cert-del" aria-label="Remove certificate">&times;</button>
+      `;
+      row.querySelector(".market-cert-del").onclick = () => row.remove();
+      certsList.appendChild(row);
+    }
+    (p.certificates || []).forEach(renderCertRow);
+    addCertBtn?.addEventListener("click", () => {
+      renderCertRow();
+      const inputs = certsList.querySelectorAll(".market-cert-name");
+      if (inputs.length) inputs[inputs.length - 1].focus();
+    });
+
+    const edusList = $("#marketEducationsList");
+    const addEduBtn = $("#marketAddEducationBtn");
+    function renderEduRow(item = {}) {
+      if (!edusList) return;
+      const row = document.createElement("div");
+      row.className = "market-education-row";
+      row.innerHTML = `
+        <div class="market-edu-fields">
+          <div class="grid-3">
+            <input type="text" class="market-edu-school" placeholder="School / University (e.g. Stanford University)" maxlength="150" value="${esc(item.school || "")}" required>
+            <input type="text" class="market-edu-degree" placeholder="Degree (e.g. Bachelor of Science)" maxlength="100" value="${esc(item.degree || "")}">
+            <input type="text" class="market-edu-field" placeholder="Field of study (e.g. Computer Science)" maxlength="100" value="${esc(item.field_of_study || "")}">
+          </div>
+          <div class="grid-3" style="margin-top:6px;">
+            <input type="text" class="market-edu-start" placeholder="Start year (e.g. 2018)" maxlength="20" value="${esc(item.start_year || "")}">
+            <input type="text" class="market-edu-end" placeholder="End year or Present (e.g. 2022)" maxlength="20" value="${esc(item.end_year || "")}">
+            <input type="text" class="market-edu-desc" placeholder="Details or honors (optional)" maxlength="1000" value="${esc(item.description || "")}">
+          </div>
+        </div>
+        <button type="button" class="btn compact quiet market-edu-del" aria-label="Remove education">&times;</button>
+      `;
+      row.querySelector(".market-edu-del").onclick = () => row.remove();
+      edusList.appendChild(row);
+    }
+    (p.educations || []).forEach(renderEduRow);
+    addEduBtn?.addEventListener("click", () => {
+      renderEduRow();
+      const inputs = edusList.querySelectorAll(".market-edu-school");
+      if (inputs.length) inputs[inputs.length - 1].focus();
+    });
+
     bindForm("#marketProfile", async form => {
       const values = Object.fromEntries(new FormData(form)); let url = p.photo;
       if (values.photo_file?.size && !media.photo) throw new Error("Crop and confirm your profile photo first.");
@@ -227,7 +352,25 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
         language: row.querySelector(".market-lang-input")?.value.trim() || "",
         level: row.querySelector(".market-lang-select")?.value || "basic"
       })).filter(l => l.language.length > 0);
-      await api("/api/marketplace/profile", { method: "PUT", body: JSON.stringify({ name: values.name, title: values.title, bio: values.bio, country: values.country, location: values.location, skills: skillsValue(form), languages: languages, photo: url, availability: values.availability, portfolio_photos: portfolioPhotos, portfolio_details: media.portfolio.map(item => ({ photo: item.url, title: item.title || "", url: item.projectURL || "", description: item.description || "" })), youtube_urls: String(values.youtube_urls || "").split(/\r?\n/).map(url => url.trim()).filter(Boolean), public: !!values.public, consent: !!values.consent }) });
+      const certRows = certsList ? Array.from(certsList.querySelectorAll(".market-certificate-row")) : [];
+      const certificates = certRows.map(row => ({
+        name: row.querySelector(".market-cert-name")?.value.trim() || "",
+        issuer: row.querySelector(".market-cert-issuer")?.value.trim() || "",
+        issue_date: row.querySelector(".market-cert-issue-date")?.value.trim() || "",
+        expiration_date: row.querySelector(".market-cert-exp-date")?.value.trim() || "",
+        credential_id: row.querySelector(".market-cert-id")?.value.trim() || "",
+        credential_url: row.querySelector(".market-cert-url")?.value.trim() || ""
+      })).filter(c => c.name.length > 0 || c.issuer.length > 0);
+      const eduRows = edusList ? Array.from(edusList.querySelectorAll(".market-education-row")) : [];
+      const educations = eduRows.map(row => ({
+        school: row.querySelector(".market-edu-school")?.value.trim() || "",
+        degree: row.querySelector(".market-edu-degree")?.value.trim() || "",
+        field_of_study: row.querySelector(".market-edu-field")?.value.trim() || "",
+        start_year: row.querySelector(".market-edu-start")?.value.trim() || "",
+        end_year: row.querySelector(".market-edu-end")?.value.trim() || "",
+        description: row.querySelector(".market-edu-desc")?.value.trim() || ""
+      })).filter(e => e.school.length > 0);
+      await api("/api/marketplace/profile", { method: "PUT", body: JSON.stringify({ name: values.name, title: values.title, bio: values.bio, country: values.country, location: values.location, skills: skillsValue(form), languages: languages, certificates: certificates, educations: educations, photo: url, availability: values.availability, availability_duration: values.availability_duration || "", portfolio_photos: portfolioPhotos, portfolio_details: media.portfolio.map(item => ({ photo: item.url, title: item.title || "", url: item.projectURL || "", description: item.description || "" })), youtube_urls: String(values.youtube_urls || "").split(/\r?\n/).map(url => url.trim()).filter(Boolean), public: !!values.public, consent: !!values.consent }) });
       await dashboard(); message("Profile saved.");
     });
     bindForm("#marketIdentity", async form => { if (!media.identity) throw new Error("Crop and confirm the ID preview first."); const fd = new FormData(form); fd.set("file", media.identity); fd.set("consent", "true"); await api("/api/marketplace/identity", { method: "POST", body: fd }); await dashboard(); message("ID submitted for private review."); });
@@ -325,7 +468,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     const params = new URLSearchParams(location.search); const data = await api(`/api/marketplace/freelancers?${params}`);
     page("Find freelancers", `${heading("TALENT, WITHOUT BORDERS", "Find the right person for your next project", "Explore independent professionals. Filter by expertise, reputation, availability and country.")}
       <form id="marketFilters" class="panel market-filters"><label class="field">Skill<input name="skill" value="${esc(params.get("skill") || "")}" list="marketSkillOptions" placeholder="Any skill, including custom"><datalist id="marketSkillOptions">${skillCatalog.map(s => `<option value="${esc(s)}">`).join("")}</datalist></label><label class="field">Country<select name="country">${countryOptions(params.get("country"))}</select></label><label class="field">Minimum rating<select name="rating">${["", "3", "4", "4.5", "5"].map(v => `<option value="${v}" ${params.get("rating") === v ? "selected" : ""}>${v ? v + "+ stars" : "Any rating"}</option>`).join("")}</select></label><label class="field">Availability<select name="availability">${[["", "Everyone"], ["available", "Available now"], ["busy", "Busy"], ["running_project", "In a running project"], ["on_break", "Off for break"]].map(([value, label]) => `<option value="${value}" ${(params.get("availability") || (params.get("available") === "true" ? "available" : "")) === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><button class="btn primary" type="submit">Search</button></form>
-      <div class="market-talent-grid">${data.freelancers.map(p => `<article class="panel market-talent"><div class="market-person">${photo(p)}<div><h2><a href="/freelancers/${esc(p.id)}">${esc(p.name)}</a></h2><p>${esc(p.title)}</p></div></div><p class="muted">${esc(p.location)}, ${esc(regionNames.of(p.country))}</p><div class="toolbar">${badge(availabilityLabel(p))}${p.verified ? badge("ID verified") : ""}<span>${p.rating_count ? starsHTML(p.rating, 13) + " " + Number(p.rating).toFixed(1) + " / 5 · " + p.rating_count + " reviews" : "New freelancer"}</span></div><p>${esc(p.bio.slice(0, 170))}</p>${chips(p.skills.slice(0, 6))}${languagesChips((p.languages || []).slice(0, 4))}<p class="muted">${p.finished_jobs} completed jobs</p><a class="btn" href="/freelancers/${esc(p.id)}">View profile & invite</a></article>`).join("") || empty("No freelancers match these filters. Try another skill or country.")}</div>${pagination(data, params)}`);
+      <div class="market-talent-grid">${data.freelancers.map(p => `<article class="panel market-talent"><div class="market-person">${photo(p)}<div><h2><a href="/freelancers/${esc(p.id)}">${esc(p.name)}</a></h2><p>${esc(p.title)}</p></div></div><p class="muted">${esc(p.location)}, ${esc(regionNames.of(p.country))}</p><div class="toolbar">${badge(availabilityLabel(p))}${p.availability_duration ? ` <span class="market-badge market-duration-badge">${esc(availabilityDurationLabel(p.availability_duration))}</span>` : ""}${p.verified ? badge("ID verified") : ""}<span>${p.rating_count ? starsHTML(p.rating, 13) + " " + Number(p.rating).toFixed(1) + " / 5 · " + p.rating_count + " reviews" : "New freelancer"}</span></div><p>${esc(p.bio.slice(0, 170))}</p>${chips(p.skills.slice(0, 6))}${languagesChips((p.languages || []).slice(0, 4))}<p class="muted">${p.finished_jobs} completed jobs</p><a class="btn" href="/freelancers/${esc(p.id)}">View profile & invite</a></article>`).join("") || empty("No freelancers match these filters. Try another skill or country.")}</div>${pagination(data, params)}`);
     bindForm("#marketFilters", async form => { const query = new URLSearchParams(new FormData(form)); location.href = "/freelancers?" + query; });
   }
   function pagination(data, params) {
@@ -340,7 +483,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     ]);
     const p = data.profile;
     const openJobs = mine?.jobs?.filter(j => j.owner_id === state.me?.id && j.status === "open") || [];
-    page(p.name, `${heading("FREELANCER PROFILE", p.name, p.title, '<a class="btn" href="/freelancers">Browse talent</a>')}<section class="panel"><div class="market-person">${photo(p)}<div><h2>${esc(p.title)}</h2><p>${esc(p.location)}, ${esc(regionNames.of(p.country))}</p>${p.verified ? badge("ID verified") : ""}</div>${profileShareActions(p, true)}</div>${stats(p)}<p class="market-bio">${esc(p.bio)}</p>${chips(p.skills)}${languagesChips(p.languages)}</section>${portfolio(p)}
+    page(p.name, `${heading("FREELANCER PROFILE", p.name, p.title, '<a class="btn" href="/freelancers">Browse talent</a>')}<section class="panel"><div class="market-person">${photo(p)}<div><h2>${esc(p.title)}</h2><p>${esc(p.location)}, ${esc(regionNames.of(p.country))}</p>${p.verified ? badge("ID verified") : ""}${p.availability_duration ? ` <span class="market-badge market-duration-badge">${esc(availabilityDurationLabel(p.availability_duration))}</span>` : ""}</div>${profileShareActions(p, true)}</div>${stats(p)}<p class="market-bio">${esc(p.bio)}</p>${chips(p.skills)}${languagesChips(p.languages)}</section>${certificatesHTML(p.certificates)}${educationsHTML(p.educations)}${portfolio(p)}
       ${shareProfile(p, true)}
       ${state.me?.id === id ? '<p><a class="btn" href="/dashboard">Edit my profile</a></p>' : `<section class="panel"><h2>Invite ${esc(p.name)} to a job</h2>${["busy", "on_break"].includes(p.availability) ? '<p>This freelancer is not available for new work.</p>' : !state.me ? '<a class="btn primary" href="/register">Create an account to hire</a>' : openJobs.length ? `<form id="marketInvite" class="market-form"><label class="field">Your open job<select name="job_id">${openJobs.map(j => `<option value="${esc(j.id)}">${esc(j.title)} · ${money(j.budget)}</option>`).join("")}</select></label><p data-invite-terms></p><label class="field">Offer price / hourly maximum cost (USD)<input name="price" type="number" min="1" max="100000" step="0.01" required></label><label class="field">Message<textarea name="message" minlength="20" maxlength="5000" required rows="3"></textarea></label><button class="btn primary" type="submit">Send offer</button><p class="muted">The freelancer can accept or decline. You make the final hiring decision after acceptance.</p></form>` : '<p>Publish a job with a funded balance first.</p><a class="btn primary" href="/marketplace/jobs">Create a job</a>'}</section>`}
       <h2>Completed work & reviews</h2>${(data.reviews || []).map(reviewCard).join("") || empty("No completed jobs yet.")}`);
@@ -1157,7 +1300,7 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
         find("[data-fh-page]").textContent = `Page ${pageNumber}`;
         find("[data-fh-prev]").disabled = pageNumber <= 1;
         find("[data-fh-next]").disabled = !data.has_more;
-        find("[data-fh-results]").innerHTML = profiles.map(p => `<article class="panel fh-person"><div class="market-person">${photo(p)}<div><h3>${esc(p.name)}</h3><p>${esc(p.title)}</p><p class="muted">${esc(p.location)}${p.country ? ", " + esc(regionNames.of(p.country)) : ""}</p></div></div><div class="fh-person-detail"><div class="toolbar">${badge(availabilityLabel(p))}${p.verified ? badge("ID verified") : ""}</div><p>${p.rating_count ? `${Number(p.rating).toFixed(1)} / 5 from ${Number(p.rating_count)} completed-job reviews` : "No completed-job reviews yet"} · ${Number(p.finished_jobs || 0)} jobs completed</p><p>${esc((p.bio || "").slice(0, 160))}</p>${chips((p.skills || []).slice(0, 8))}${languagesChips((p.languages || []).slice(0, 3))}</div><div class="toolbar"><a class="btn" href="/freelancers/${esc(p.id)}" target="_blank" rel="noopener">View profile & reviews</a><button type="button" class="btn primary" data-fh-invite="${esc(p.id)}" ${["busy", "on_break"].includes(p.availability) ? "disabled" : ""}>Offer task</button></div></article>`).join("") || empty("No freelancers match. Try another skill, country or rating.");
+        find("[data-fh-results]").innerHTML = profiles.map(p => `<article class="panel fh-person"><div class="market-person">${photo(p)}<div><h3>${esc(p.name)}</h3><p>${esc(p.title)}</p><p class="muted">${esc(p.location)}${p.country ? ", " + esc(regionNames.of(p.country)) : ""}</p></div></div><div class="fh-person-detail"><div class="toolbar">${badge(availabilityLabel(p))}${p.availability_duration ? ` <span class="market-badge market-duration-badge">${esc(availabilityDurationLabel(p.availability_duration))}</span>` : ""}${p.verified ? badge("ID verified") : ""}</div><p>${p.rating_count ? `${Number(p.rating).toFixed(1)} / 5 from ${Number(p.rating_count)} completed-job reviews` : "No completed-job reviews yet"} · ${Number(p.finished_jobs || 0)} jobs completed</p><p>${esc((p.bio || "").slice(0, 160))}</p>${chips((p.skills || []).slice(0, 8))}${languagesChips((p.languages || []).slice(0, 3))}</div><div class="toolbar"><a class="btn" href="/freelancers/${esc(p.id)}" target="_blank" rel="noopener">View profile & reviews</a><button type="button" class="btn primary" data-fh-invite="${esc(p.id)}" ${["busy", "on_break"].includes(p.availability) ? "disabled" : ""}>Offer task</button></div></article>`).join("") || empty("No freelancers match. Try another skill, country or rating.");
         dialog.querySelectorAll("[data-fh-invite]").forEach(button => { button.onclick = () => { if (!busy) offer(profiles.find(p => p.id === button.dataset.fhInvite)); }; });
         status("");
       } catch (error) { if (!closed && current === request) { find("[data-fh-results]").innerHTML = ""; status(error.message, true); } }

@@ -33,6 +33,58 @@ test("profile shows crop previews, portfolio links and manual availability", asy
     assert.ok(!publicView.html.includes("marketIdentityPreview"));
   } finally { delete profile.portfolio_photos; delete profile.youtube_urls; delete profile.availability; }
 });
+
+test("profile supports availability work durations, certificates and educations", async () => {
+  profile.availability_duration = "more_than_30";
+  profile.certificates = [{
+    name: "AWS Certified Architect",
+    issuer: "Coursera",
+    issue_date: "2024",
+    credential_id: "AWS-12345",
+    credential_url: "https://example.com/verify",
+  }];
+  profile.educations = [{
+    school: "Stanford University",
+    degree: "B.S.",
+    field_of_study: "Computer Science",
+    start_year: "2018",
+    end_year: "2022",
+    description: "Graduated with honors",
+  }];
+
+  try {
+    const own = await render("/dashboard");
+    assert.match(own.html, /name="availability_duration"/);
+    assert.match(own.html, /value="more_than_30" selected/);
+    assert.match(own.html, /More than 30 hrs\/week/);
+    assert.match(own.html, /market-certificates-fieldset/);
+    assert.match(own.html, /market-educations-fieldset/);
+    assert.match(own.html, /marketAddCertificateBtn/);
+    assert.match(own.html, /marketAddEducationBtn/);
+    assert.match(own.html, /AWS Certified Architect/);
+    assert.match(own.html, /Stanford University/);
+
+    const publicView = await render(`/freelancers/${userID}`, false);
+    assert.match(publicView.html, /Certifications & Online Courses/);
+    assert.match(publicView.html, /AWS Certified Architect/);
+    assert.match(publicView.html, /Coursera/);
+    assert.match(publicView.html, /Show credential/);
+    assert.match(publicView.html, /https:\/\/example\.com\/verify/);
+    assert.match(publicView.html, /Education/);
+    assert.match(publicView.html, /Stanford University/);
+    assert.match(publicView.html, /B\.S\., Computer Science/);
+    assert.match(publicView.html, /2018 – 2022/);
+    assert.match(publicView.html, /Graduated with honors/);
+    assert.match(publicView.html, /More than 30 hrs\/week/);
+
+    const directoryView = await render("/freelancers", false);
+    assert.match(directoryView.html, /More than 30 hrs\/week/);
+  } finally {
+    delete profile.availability_duration;
+    delete profile.certificates;
+    delete profile.educations;
+  }
+});
 const job = { id: jobID, owner_id: userID, title: "Build a website", description: "Create a responsive website with reusable components.", budget: 10000, skills: ["PHP"], status: "open", owner_name: "Employer" };
 const fixtures = {
   "/api/marketplace/skills": { skills: ["PHP", "Golang"] },
