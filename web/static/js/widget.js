@@ -79,8 +79,9 @@
       ".bugmega-preview{width:100%;max-height:180px;object-fit:cover;border:1px solid #d8e1dd;border-radius:8px;background:#eef5f2;margin:8px 0;display:none}" +
       ".bugmega-preview.active{display:block}" +
       ".bugmega-pin-layer{position:absolute;left:0;top:0;z-index:2147482999;pointer-events:none}" +
-      ".bugmega-pin{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:#ef4444;color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;box-shadow:0 0 0 4px rgba(239,68,68,.18),0 8px 20px rgba(0,0,0,.24);pointer-events:none}" +
-      ".bugmega-pin.draft{background:#f97316}" +
+      ".bugmega-pin{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border:0;padding:0;border-radius:50%;background:#ef4444;color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;box-shadow:0 0 0 4px rgba(239,68,68,.18),0 8px 20px rgba(0,0,0,.24);pointer-events:auto;cursor:pointer}" +
+      ".bugmega-pin:hover,.bugmega-pin:focus-visible{transform:scale(1.12);outline:2px solid #fff;outline-offset:2px}" +
+      ".bugmega-pin.draft{background:#f97316;pointer-events:none}" +
       ".bugmega-select-banner{position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:2147483001;background:#10201c;color:#fff;border-radius:999px;padding:10px 14px;font-size:13px;font-weight:800;box-shadow:0 14px 38px rgba(0,0,0,.24);display:none}" +
       ".bugmega-select-banner.active{display:block}" +
       "body.bugmega-selecting,body.bugmega-selecting *{cursor:crosshair!important}";
@@ -94,7 +95,7 @@
   }
 
   function closestWidget(target) {
-    return target && target.closest && target.closest(".bugmega-widget, .bugmega-panel, .bugmega-select-banner");
+    return target && target.closest && target.closest(".bugmega-widget, .bugmega-panel, .bugmega-select-banner, .bugmega-pin-layer");
   }
 
   function setStatus(text, type) {
@@ -393,6 +394,15 @@
     window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
   }
 
+  function openAnnotationFromPin(index) {
+    if (!state.pins[index]) return;
+    closePanel();
+    renderAnnotationList();
+    setMenuOpen(true);
+    showAnnotationDetail(index);
+    positionSurface(document.getElementById("bugmegaMenu"));
+  }
+
   function pageDimensions() {
     return {
       width: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0, window.innerWidth),
@@ -430,8 +440,16 @@
       var normalized = normalizePin(pin);
       var left = normalized.pinX / 100 * dimensions.width;
       var top = normalized.pinY / 100 * dimensions.height;
-      return '<div class="bugmega-pin' + (normalized.draft ? ' draft' : '') + '" style="left:' + left + 'px;top:' + top + 'px" title="' + esc(normalized.title) + '">' + esc(index + 1) + '</div>';
+      var attrs = normalized.draft ? '' : ' data-bugmega-page-pin="' + index + '" aria-label="Open annotation ' + esc(index + 1) + ': ' + esc(normalized.title) + '"';
+      return '<button class="bugmega-pin' + (normalized.draft ? ' draft' : '') + '" type="button" style="left:' + left + 'px;top:' + top + 'px" title="' + esc(normalized.title) + '"' + attrs + '>' + esc(index + 1) + '</button>';
     }).join("");
+    Array.prototype.forEach.call(layer.querySelectorAll("[data-bugmega-page-pin]"), function (button) {
+      button.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        openAnnotationFromPin(Number(button.getAttribute("data-bugmega-page-pin")));
+      });
+    });
   }
 
   function startSelecting(event) {
