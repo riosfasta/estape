@@ -21,6 +21,8 @@
   if (!siteKey) return;
 
   var html2canvasPromise = null;
+  var launcherDrag = null;
+  var launcherWasDragged = false;
   var state = {
     selecting: false,
     point: null,
@@ -38,11 +40,13 @@
     style.textContent =
       ".bugmega-widget *{box-sizing:border-box;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}" +
       ".bugmega-widget{position:fixed;right:22px;bottom:22px;z-index:2147483000;color:#10201c}" +
-      ".bugmega-feedback-button{display:inline-flex;align-items:center;gap:4px;border:1px solid #b8d8cf;border-radius:999px;background:#fff;color:#10201c;padding:12px 17px;font-weight:800;box-shadow:0 16px 44px rgba(0,0,0,.22);cursor:pointer}" +
+      ".bugmega-feedback-button{position:relative;width:62px;height:62px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #b8d8cf;border-radius:50%;background:#fff;color:#10201c;padding:12px;font-weight:800;box-shadow:0 16px 44px rgba(0,0,0,.22);cursor:grab;touch-action:none;user-select:none}" +
+      ".bugmega-feedback-button:active{cursor:grabbing}" +
       ".bugmega-feedback-button:hover,.bugmega-feedback-button[aria-expanded='true']{border-color:#08a88a;box-shadow:0 16px 44px rgba(0,0,0,.22),0 0 0 3px rgba(8,168,138,.12)}" +
       ".bugmega-feedback-button img{width:32px;height:32px;object-fit:contain;display:block}" +
-      ".bugmega-launch-arrow{width:9px;height:9px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform .18s ease}" +
-      ".bugmega-feedback-button[aria-expanded='true'] .bugmega-launch-arrow{transform:rotate(225deg) translate(-2px,-2px)}" +
+      ".bugmega-launch-arrow{position:absolute;right:-7px;bottom:4px;width:24px;height:24px;border:1px solid #b8d8cf;border-radius:50%;background:#fff;box-shadow:0 4px 10px rgba(0,0,0,.16)}" +
+      ".bugmega-launch-arrow:after{content:'';position:absolute;left:7px;top:6px;width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);transition:transform .18s ease}" +
+      ".bugmega-feedback-button[aria-expanded='true'] .bugmega-launch-arrow:after{top:9px;transform:rotate(225deg)}" +
       ".bugmega-menu{position:fixed;right:22px;bottom:86px;width:min(340px,calc(100vw - 32px));max-height:calc(100vh - 118px);overflow:auto;background:#fff;border:1px solid rgba(0,0,0,.14);border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.28);padding:14px;display:none}" +
       ".bugmega-menu.active{display:block}" +
       ".bugmega-menu-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}" +
@@ -219,6 +223,7 @@
         '<div class="bugmega-status" id="bugmegaStatus"></div>' +
       '</section>';
     document.body.appendChild(root);
+    restoreLauncherPosition();
     var pinLayer = document.createElement("div");
     pinLayer.className = "bugmega-pin-layer";
     pinLayer.id = "bugmegaPinLayer";
@@ -227,13 +232,126 @@
     renderAnnotationList();
 
     document.getElementById("bugmegaLauncher").addEventListener("click", toggleMenu);
+    bindLauncherDrag();
     document.getElementById("bugmegaStart").addEventListener("click", startSelecting);
     document.getElementById("bugmegaReselect").addEventListener("click", startSelecting);
     document.getElementById("bugmegaClose").addEventListener("click", closePanel);
     document.getElementById("bugmegaSubmit").addEventListener("click", submitFeedback);
     document.addEventListener("click", handleDocumentClick, true);
-    window.addEventListener("resize", renderPins);
+    window.addEventListener("resize", function () {
+      constrainLauncherPosition();
+      positionOpenSurfaces();
+      renderPins();
+    });
     window.addEventListener("load", renderPins);
+  }
+
+  function launcherPositionKey() {
+    return "bugmega-widget-position:" + siteKey;
+  }
+
+  function setLauncherPosition(left, top) {
+    var root = document.querySelector(".bugmega-widget");
+    if (!root) return;
+    var width = root.offsetWidth || 62;
+    var height = root.offsetHeight || 62;
+    root.style.right = "auto";
+    root.style.bottom = "auto";
+    root.style.left = clamp(left, 8, Math.max(8, window.innerWidth - width - 8)) + "px";
+    root.style.top = clamp(top, 8, Math.max(8, window.innerHeight - height - 8)) + "px";
+  }
+
+  function saveLauncherPosition() {
+    var root = document.querySelector(".bugmega-widget");
+    if (!root) return;
+    var rect = root.getBoundingClientRect();
+    try {
+      localStorage.setItem(launcherPositionKey(), JSON.stringify({ left: rect.left, top: rect.top }));
+    } catch (error) {}
+  }
+
+  function restoreLauncherPosition() {
+    try {
+      var saved = JSON.parse(localStorage.getItem(launcherPositionKey()) || "null");
+      if (saved && Number.isFinite(Number(saved.left)) && Number.isFinite(Number(saved.top))) {
+        setLauncherPosition(Number(saved.left), Number(saved.top));
+      }
+    } catch (error) {}
+  }
+
+  function constrainLauncherPosition() {
+    var root = document.querySelector(".bugmega-widget");
+    if (!root || !root.style.left) return;
+    var rect = root.getBoundingClientRect();
+    setLauncherPosition(rect.left, rect.top);
+  }
+
+  function positionSurface(surface) {
+    var launcher = document.getElementById("bugmegaLauncher");
+    if (!surface || !launcher || !surface.classList.contains("active")) return;
+    var launcherRect = launcher.getBoundingClientRect();
+    var width = surface.offsetWidth;
+    var height = surface.offsetHeight;
+    var padding = 12;
+    var gap = 10;
+    var left = clamp(launcherRect.left + launcherRect.width / 2 - width / 2, padding, Math.max(padding, window.innerWidth - width - padding));
+    var roomAbove = launcherRect.top - padding;
+    var roomBelow = window.innerHeight - launcherRect.bottom - padding;
+    var top = roomAbove >= height + gap || roomAbove > roomBelow
+      ? launcherRect.top - height - gap
+      : launcherRect.bottom + gap;
+    surface.style.right = "auto";
+    surface.style.bottom = "auto";
+    surface.style.left = left + "px";
+    surface.style.top = clamp(top, padding, Math.max(padding, window.innerHeight - height - padding)) + "px";
+  }
+
+  function positionOpenSurfaces() {
+    positionSurface(document.getElementById("bugmegaMenu"));
+    positionSurface(document.getElementById("bugmegaPanel"));
+  }
+
+  function bindLauncherDrag() {
+    var launcher = document.getElementById("bugmegaLauncher");
+    var root = document.querySelector(".bugmega-widget");
+    if (!launcher || !root) return;
+    launcher.addEventListener("pointerdown", function (event) {
+      if (event.button !== undefined && event.button !== 0) return;
+      var rect = root.getBoundingClientRect();
+      launcherDrag = {
+        pointerID: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        left: rect.left,
+        top: rect.top,
+        moved: false
+      };
+      launcherWasDragged = false;
+      launcher.setPointerCapture?.(event.pointerId);
+    });
+    launcher.addEventListener("pointermove", function (event) {
+      if (!launcherDrag || launcherDrag.pointerID !== event.pointerId) return;
+      var deltaX = event.clientX - launcherDrag.startX;
+      var deltaY = event.clientY - launcherDrag.startY;
+      if (!launcherDrag.moved && Math.hypot(deltaX, deltaY) < 4) return;
+      launcherDrag.moved = true;
+      launcherWasDragged = true;
+      event.preventDefault();
+      setLauncherPosition(launcherDrag.left + deltaX, launcherDrag.top + deltaY);
+      positionOpenSurfaces();
+    });
+    launcher.addEventListener("pointerup", function (event) {
+      if (!launcherDrag || launcherDrag.pointerID !== event.pointerId) return;
+      if (launcherDrag.moved) {
+        saveLauncherPosition();
+        setTimeout(function () { launcherWasDragged = false; }, 250);
+      }
+      launcherDrag = null;
+    });
+    launcher.addEventListener("pointercancel", function () {
+      launcherDrag = null;
+      launcherWasDragged = false;
+    });
   }
 
   function setMenuOpen(open) {
@@ -241,9 +359,18 @@
     var launcher = document.getElementById("bugmegaLauncher");
     if (menu) menu.classList.toggle("active", Boolean(open));
     if (launcher) launcher.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) positionSurface(menu);
   }
 
   function toggleMenu(event) {
+    if (launcherWasDragged) {
+      launcherWasDragged = false;
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
     if (event) {
       event.preventDefault();
       event.stopPropagation();
@@ -366,6 +493,7 @@
     state.draftPin = state.point;
     renderPins();
     document.getElementById("bugmegaPanel").classList.add("active");
+    positionSurface(document.getElementById("bugmegaPanel"));
     setStatus("Capturing the section around the pin...");
     captureSection(state.point).then(function (dataURL) {
       state.screenshot = dataURL || "";
