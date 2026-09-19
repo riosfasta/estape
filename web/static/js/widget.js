@@ -62,7 +62,7 @@
       ".bugmega-detail-title{display:grid;grid-template-columns:30px minmax(0,1fr);align-items:center;gap:10px;margin-bottom:12px}.bugmega-detail-title h3{margin:0;font-size:17px;line-height:1.3;color:#10201c}" +
       ".bugmega-detail-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.bugmega-detail-pill{border-radius:999px;background:#eef5f2;color:#52635d;padding:4px 8px;font-size:11px;font-weight:800}" +
       ".bugmega-detail-comment{margin:0 0 12px;color:#33443e;font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}.bugmega-detail-comment.empty{color:#7a8883;font-style:italic}" +
-      ".bugmega-detail-image{display:block;width:100%;max-height:190px;object-fit:cover;border:1px solid #d8e1dd;border-radius:8px;margin:0 0 12px;background:#eef5f2}" +
+      ".bugmega-detail-image{display:block;width:100%;height:190px;object-fit:cover;border:1px solid #d8e1dd;border-radius:8px;margin:0 0 12px;background:#eef5f2}" +
       ".bugmega-detail-actions{display:flex;gap:8px}.bugmega-detail-actions button{flex:1}" +
       ".bugmega-panel{position:fixed;right:22px;bottom:78px;width:min(380px,calc(100vw - 32px));max-height:calc(100vh - 110px);overflow:auto;background:#fff;border:1px solid rgba(0,0,0,.14);border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.28);padding:16px;display:none}" +
       ".bugmega-panel.active{display:block}" +
@@ -175,6 +175,7 @@
       detailView.hidden = true;
       detailView.innerHTML = "";
     }
+    positionSurface(document.getElementById("bugmegaMenu"));
   }
 
   function showAnnotationDetail(index) {
@@ -195,6 +196,12 @@
       '<div class="bugmega-detail-actions"><button class="bugmega-secondary" type="button" id="bugmegaGoToPin">Go to pin</button></div>';
     document.getElementById("bugmegaDetailBack").addEventListener("click", showAnnotationList);
     document.getElementById("bugmegaGoToPin").addEventListener("click", function () { focusAnnotation(index); });
+    var screenshot = detailView.querySelector(".bugmega-detail-image");
+    if (screenshot) {
+      screenshot.addEventListener("load", function () { positionSurface(document.getElementById("bugmegaMenu")); }, { once: true });
+      screenshot.addEventListener("error", function () { positionSurface(document.getElementById("bugmegaMenu")); }, { once: true });
+    }
+    positionSurface(document.getElementById("bugmegaMenu"));
   }
 
   function render() {
@@ -291,16 +298,19 @@
     var launcher = document.getElementById("bugmegaLauncher");
     if (!surface || !launcher || !surface.classList.contains("active")) return;
     var launcherRect = launcher.getBoundingClientRect();
-    var width = surface.offsetWidth;
-    var height = surface.offsetHeight;
     var padding = 12;
     var gap = 10;
+    surface.style.maxHeight = Math.max(120, window.innerHeight - padding * 2) + "px";
+    var width = surface.offsetWidth;
+    var height = surface.offsetHeight;
     var left = clamp(launcherRect.left + launcherRect.width / 2 - width / 2, padding, Math.max(padding, window.innerWidth - width - padding));
-    var roomAbove = launcherRect.top - padding;
-    var roomBelow = window.innerHeight - launcherRect.bottom - padding;
-    var top = roomAbove >= height + gap || roomAbove > roomBelow
-      ? launcherRect.top - height - gap
-      : launcherRect.bottom + gap;
+    var roomAbove = Math.max(0, launcherRect.top - padding - gap);
+    var roomBelow = Math.max(0, window.innerHeight - launcherRect.bottom - padding - gap);
+    var openAbove = height <= roomAbove || (height > roomBelow && roomAbove > roomBelow);
+    var availableHeight = openAbove ? roomAbove : roomBelow;
+    surface.style.maxHeight = Math.max(120, availableHeight) + "px";
+    height = surface.offsetHeight;
+    var top = openAbove ? launcherRect.top - height - gap : launcherRect.bottom + gap;
     surface.style.right = "auto";
     surface.style.bottom = "auto";
     surface.style.left = left + "px";
