@@ -38,8 +38,21 @@
     style.textContent =
       ".bugmega-widget *{box-sizing:border-box;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}" +
       ".bugmega-widget{position:fixed;right:22px;bottom:22px;z-index:2147483000;color:#10201c}" +
-      ".bugmega-feedback-button{display:inline-flex;align-items:center;gap:8px;border:0;border-radius:999px;background:#08a88a;color:#fff;padding:9px 15px 9px 10px;font-weight:800;font-size:14px;box-shadow:0 16px 44px rgba(0,0,0,.22);cursor:pointer}" +
-      ".bugmega-feedback-button img{width:28px;height:28px;object-fit:contain;display:block}" +
+      ".bugmega-feedback-button{display:inline-flex;align-items:center;gap:9px;border:1px solid #b8d8cf;border-radius:999px;background:#fff;color:#10201c;padding:9px 12px;font-weight:800;box-shadow:0 16px 44px rgba(0,0,0,.22);cursor:pointer}" +
+      ".bugmega-feedback-button:hover,.bugmega-feedback-button[aria-expanded='true']{border-color:#08a88a;box-shadow:0 16px 44px rgba(0,0,0,.22),0 0 0 3px rgba(8,168,138,.12)}" +
+      ".bugmega-feedback-button img{width:32px;height:32px;object-fit:contain;display:block}" +
+      ".bugmega-launch-arrow{width:9px;height:9px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform .18s ease}" +
+      ".bugmega-feedback-button[aria-expanded='true'] .bugmega-launch-arrow{transform:rotate(225deg) translate(-2px,-2px)}" +
+      ".bugmega-menu{position:fixed;right:22px;bottom:86px;width:min(340px,calc(100vw - 32px));max-height:calc(100vh - 118px);overflow:auto;background:#fff;border:1px solid rgba(0,0,0,.14);border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.28);padding:14px;display:none}" +
+      ".bugmega-menu.active{display:block}" +
+      ".bugmega-menu-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}" +
+      ".bugmega-menu-head strong{font-size:16px;color:#10201c}.bugmega-menu-count{font-size:12px;color:#64736e}" +
+      ".bugmega-annotation-list{display:grid;gap:4px;margin:0 0 12px}" +
+      ".bugmega-annotation-row{width:100%;display:grid;grid-template-columns:28px minmax(0,1fr);align-items:center;gap:10px;border:0;border-radius:8px;background:transparent;padding:7px;text-align:left;color:#10201c;cursor:pointer}" +
+      ".bugmega-annotation-row:hover{background:#eef8f5}.bugmega-annotation-row span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+      ".bugmega-annotation-number{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#ef4444;color:#fff;font-size:12px;font-weight:900;box-shadow:0 0 0 2px rgba(239,68,68,.14)}" +
+      ".bugmega-menu-empty{margin:6px 2px 14px;color:#64736e;font-size:13px}" +
+      ".bugmega-start-annotation{width:100%;display:flex;align-items:center;justify-content:center;gap:7px;border:0;border-radius:8px;background:#08a88a;color:#fff;padding:10px 14px;font-weight:800;cursor:pointer}" +
       ".bugmega-panel{position:fixed;right:22px;bottom:78px;width:min(380px,calc(100vw - 32px));max-height:calc(100vh - 110px);overflow:auto;background:#fff;border:1px solid rgba(0,0,0,.14);border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.28);padding:16px;display:none}" +
       ".bugmega-panel.active{display:block}" +
       ".bugmega-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}" +
@@ -100,14 +113,38 @@
     }).join("");
   }
 
+  function renderAnnotationList() {
+    var list = document.getElementById("bugmegaAnnotationList");
+    var count = document.getElementById("bugmegaAnnotationCount");
+    if (count) count.textContent = state.pins.length + (state.pins.length === 1 ? " annotation" : " annotations");
+    if (!list) return;
+    if (!state.pins.length) {
+      list.innerHTML = '<p class="bugmega-menu-empty">No annotations on this page yet.</p>';
+      return;
+    }
+    list.innerHTML = state.pins.map(function (pin, index) {
+      return '<button class="bugmega-annotation-row" type="button" data-bugmega-pin-index="' + index + '"><span class="bugmega-annotation-number">' + esc(index + 1) + '</span><span>' + esc(pin.title || "Annotation " + (index + 1)) + '</span></button>';
+    }).join("");
+    Array.prototype.forEach.call(list.querySelectorAll("[data-bugmega-pin-index]"), function (button) {
+      button.addEventListener("click", function () {
+        focusAnnotation(Number(button.getAttribute("data-bugmega-pin-index")));
+      });
+    });
+  }
+
   function render() {
     addStyles();
     var user = state.session.user || {};
     var root = document.createElement("div");
     root.className = "bugmega-widget";
     root.innerHTML =
-      '<button class="bugmega-feedback-button" type="button" id="bugmegaStart"><img src="' + esc(iconURL) + '" alt="" aria-hidden="true"><span>Feedback</span></button>' +
+      '<button class="bugmega-feedback-button" type="button" id="bugmegaLauncher" aria-label="Open BugMega annotations" aria-expanded="false"><img src="' + esc(iconURL) + '" alt="BugMega"><span class="bugmega-launch-arrow" aria-hidden="true"></span></button>' +
       '<div class="bugmega-select-banner" id="bugmegaSelectBanner">Click the exact area you want to report</div>' +
+      '<section class="bugmega-menu" id="bugmegaMenu" aria-label="Page annotations">' +
+        '<div class="bugmega-menu-head"><strong>Annotations</strong><span class="bugmega-menu-count" id="bugmegaAnnotationCount"></span></div>' +
+        '<div class="bugmega-annotation-list" id="bugmegaAnnotationList"></div>' +
+        '<button class="bugmega-start-annotation" type="button" id="bugmegaStart">+ Start annotation</button>' +
+      '</section>' +
       '<section class="bugmega-panel" id="bugmegaPanel" aria-live="polite">' +
         '<div class="bugmega-head"><strong>Send feedback</strong><button class="bugmega-close" type="button" id="bugmegaClose" aria-label="Close">x</button></div>' +
         '<p class="bugmega-muted">Signed in as ' + esc(user.name || user.username || user.email || "BugMega user") + '.</p>' +
@@ -124,7 +161,9 @@
     pinLayer.id = "bugmegaPinLayer";
     document.body.appendChild(pinLayer);
     renderPins();
+    renderAnnotationList();
 
+    document.getElementById("bugmegaLauncher").addEventListener("click", toggleMenu);
     document.getElementById("bugmegaStart").addEventListener("click", startSelecting);
     document.getElementById("bugmegaReselect").addEventListener("click", startSelecting);
     document.getElementById("bugmegaClose").addEventListener("click", closePanel);
@@ -132,6 +171,35 @@
     document.addEventListener("click", handleDocumentClick, true);
     window.addEventListener("resize", renderPins);
     window.addEventListener("load", renderPins);
+  }
+
+  function setMenuOpen(open) {
+    var menu = document.getElementById("bugmegaMenu");
+    var launcher = document.getElementById("bugmegaLauncher");
+    if (menu) menu.classList.toggle("active", Boolean(open));
+    if (launcher) launcher.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function toggleMenu(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    var menu = document.getElementById("bugmegaMenu");
+    var open = !menu || !menu.classList.contains("active");
+    if (open) closePanel();
+    renderAnnotationList();
+    setMenuOpen(open);
+  }
+
+  function focusAnnotation(index) {
+    var pin = state.pins[index];
+    if (!pin) return;
+    var normalized = normalizePin(pin);
+    var dimensions = pageDimensions();
+    var top = normalized.pinY / 100 * dimensions.height - window.innerHeight / 2;
+    setMenuOpen(false);
+    window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
   }
 
   function pageDimensions() {
@@ -178,6 +246,8 @@
     }
     state.point = null;
     state.draftPin = null;
+    setMenuOpen(false);
+    document.getElementById("bugmegaPanel").classList.remove("active");
     renderPins();
     state.selecting = true;
     document.body.classList.add("bugmega-selecting");
@@ -192,11 +262,16 @@
     document.body.classList.remove("bugmega-selecting");
     document.getElementById("bugmegaSelectBanner").classList.remove("active");
     document.getElementById("bugmegaPanel").classList.remove("active");
+    setMenuOpen(false);
     renderPins();
   }
 
   function handleDocumentClick(event) {
-    if (!state.selecting) return;
+    if (!state.selecting) {
+      var menu = document.getElementById("bugmegaMenu");
+      if (menu && menu.classList.contains("active") && !closestWidget(event.target)) setMenuOpen(false);
+      return;
+    }
     if (closestWidget(event.target)) return;
     event.preventDefault();
     event.stopPropagation();
@@ -349,6 +424,7 @@
       state.point = null;
       state.draftPin = null;
       renderPins();
+      renderAnnotationList();
       setStatus("Feedback sent. Thank you.", "success");
       document.getElementById("bugmegaTitle").value = "";
       document.getElementById("bugmegaComment").value = "";
