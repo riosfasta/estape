@@ -3837,6 +3837,7 @@ function shell(title, html) {
             ${workspaceChild("/admin/pages", "Pages", "file-pen")}
             ${workspaceChild("/admin/blogs", "Blogs", "newspaper")}
             ${workspaceChild("/admin/backup", "Database & Backup", "database")}
+            ${workspaceChild("/admin/deleted-projects", "Deleted Projects", "archive-restore")}
             ${workspaceChild("/admin/settings", "Settings", "settings")}
           ` : ""}
         </nav>
@@ -9722,13 +9723,34 @@ async function renderClientProjects() {
     <section class="client-grid project-client-grid">
       ${visibleClients.map((client) => {
         const canManage = canManageSidebarClient(client);
+        const canDelete = isTeamOwner || client.created_by === myID || state.me?.role === "owner_adm" || (isPersonalWorkspaceContext() && state.me?.role === "users_admin");
         return `<article class="panel client-card project-client-card project-folder-drop-card" data-project-folder-drop="${esc(client.id)}" data-project-folder-manage="${canManage ? "true" : "false"}">
-        <div class="panel-head"><div><h2>${esc(client.name)}</h2><p class="muted">${esc(client.company_email || client.contact_name || "Client folder")}</p></div><span class="pill">${icon("folder")}client</span></div>
+        <div class="panel-head">
+          <div><h2>${esc(client.name)}</h2><p class="muted">${esc(client.company_email || client.contact_name || "Client folder")}</p></div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span class="pill">${icon("folder")}client</span>
+            ${canManage ? `<button class="btn icon quiet" type="button" data-edit-project="${esc(client.id)}" title="Edit project" aria-label="Edit project">${icon("pencil")}</button>` : ""}
+            ${canDelete ? `<button class="btn icon quiet danger-text" type="button" data-delete-project="${esc(client.id)}" data-project-name="${esc(client.name)}" title="Delete project" aria-label="Delete project">${icon("trash-2")}</button>` : ""}
+            ${(canManage || canDelete) ? `
+              <details class="row-menu project-card-menu">
+                <summary class="btn icon quiet" title="Project menu" aria-label="Project menu">${icon("more-vertical")}</summary>
+                <div class="row-menu-list">
+                  ${canManage ? `<button type="button" data-edit-project="${esc(client.id)}">${icon("pencil")}<span>Edit project</span></button>` : ""}
+                  ${canDelete ? `<button type="button" class="danger-text" data-delete-project="${esc(client.id)}" data-project-name="${esc(client.name)}">${icon("trash-2")}<span>Delete project</span></button>` : ""}
+                </div>
+              </details>
+            ` : ""}
+          </div>
+        </div>
         <p>${chatText(client.details || "No client notes yet.")}</p>
         <div class="access-list project-domain-list">
           ${(sitesByClient[client.id] || []).map((site) => projectWebsiteLinkHTML(client, site, "access-row project-domain-row", true)).join("") || `<p class="muted">No websites yet.</p>`}
         </div>
-        <div class="toolbar"><a class="btn primary" href="/projects/${esc(client.id)}">${icon("folder-open")}Open folder</a></div>
+        <div class="toolbar">
+          <a class="btn primary" href="/projects/${esc(client.id)}">${icon("folder-open")}Open folder</a>
+          ${canManage ? `<button class="btn icon quiet" type="button" data-edit-project="${esc(client.id)}" title="Edit project" aria-label="Edit project">${icon("pencil")}</button>` : ""}
+          ${canDelete ? `<button class="btn icon quiet danger-text" type="button" data-delete-project="${esc(client.id)}" data-project-name="${esc(client.name)}" title="Delete project" aria-label="Delete project">${icon("trash-2")}</button>` : ""}
+        </div>
       </article>`;
       }).join("") || `<section class="panel"><p class="muted">No client projects yet.</p></section>`}
     </section>
@@ -9741,6 +9763,27 @@ async function renderClientProjects() {
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Create</button><button class="btn" type="button" data-close-dialog="clientDialog">Cancel</button></div>
         <p class="status-line"></p>
       </form>
+    </dialog>
+    <dialog id="editProjectDialog" class="modal client-dialog">
+      <form id="editProjectForm" class="form-grid" method="dialog">
+        <div class="modal-head"><h2>Edit client company</h2><button class="btn icon quiet" type="button" data-close-dialog="editProjectDialog" title="Close">${icon("x")}</button></div>
+        <input type="hidden" name="id">
+        <div class="field"><label>Company name</label><input name="name" required></div>
+        <div class="grid-2"><div class="field"><label>Company email</label><input type="email" name="company_email"></div><div class="field"><label>Contact name</label><input name="contact_name"></div></div>
+        <div class="field"><label>Client information</label><textarea name="details" data-mentionable></textarea></div>
+        <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="editProjectDialog">Cancel</button></div>
+        <p class="status-line"></p>
+      </form>
+    </dialog>
+    <dialog id="deleteProjectWarningDialog" class="modal client-dialog">
+      <form id="deleteProjectWarningForm" class="form-grid" method="dialog">
+        <div class="modal-head"><h2>Delete project</h2><button class="btn icon quiet" type="button" data-close-dialog="deleteProjectWarningDialog" title="Close">${icon("x")}</button></div>
+        <input type="hidden" name="id">
+        <p class="warning-text" style="color:var(--danger);font-weight:600;line-height:1.5;">are you sure want to delete this projects and all of domain inside, your folder will keep for 15 days, ask help to recover your deleted folders?</p>
+        <p class="muted">All domains and assets inside <strong id="deleteProjectTargetName">this project</strong> will be softly removed on the client end. Platform owner retains the folder for 35 days.</p>
+        <div class="toolbar"><button class="btn danger" type="submit">${icon("trash-2")}Delete project</button><button class="btn" type="button" data-close-dialog="deleteProjectWarningDialog">Cancel</button></div>
+        <p class="status-line"></p>
+      </form>
     </dialog>`);
   $("#newClientBtn")?.addEventListener("click", () => $("#clientDialog")?.showModal());
   $("#clientForm")?.addEventListener("submit", async (event) => {
@@ -9749,6 +9792,73 @@ async function renderClientProjects() {
     try {
       const created = await api("/api/client-projects", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
       window.location.href = `/projects/${created.client.id}`;
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
+  document.querySelectorAll("[data-edit-project]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const clientID = btn.dataset.editProject;
+      const client = (state.clientProjects || []).find((c) => c.id === clientID);
+      if (!client) return;
+      const form = $("#editProjectForm");
+      if (!form) return;
+      form.reset();
+      form.elements.id.value = client.id;
+      form.elements.name.value = client.name || "";
+      form.elements.company_email.value = client.company_email || "";
+      form.elements.contact_name.value = client.contact_name || "";
+      form.elements.details.value = client.details || "";
+      setFormStatus(form, "");
+      $("#editProjectDialog")?.showModal();
+    });
+  });
+  $("#editProjectForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const clientID = form.elements.id.value;
+    try {
+      await api(`/api/client-projects/${clientID}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: form.elements.name.value,
+          company_email: form.elements.company_email.value,
+          contact_name: form.elements.contact_name.value,
+          details: form.elements.details.value,
+        }),
+      });
+      $("#editProjectDialog")?.close();
+      await refreshClientSidebarCache();
+      renderClientProjects();
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
+  document.querySelectorAll("[data-delete-project]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const clientID = btn.dataset.deleteProject;
+      const projectName = btn.dataset.projectName || "this project";
+      const form = $("#deleteProjectWarningForm");
+      if (!form) return;
+      form.reset();
+      form.elements.id.value = clientID;
+      const nameEl = $("#deleteProjectTargetName");
+      if (nameEl) nameEl.textContent = projectName;
+      setFormStatus(form, "");
+      $("#deleteProjectWarningDialog")?.showModal();
+    });
+  });
+  $("#deleteProjectWarningForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const clientID = form.elements.id.value;
+    try {
+      await api(`/api/client-projects/${clientID}`, { method: "DELETE" });
+      $("#deleteProjectWarningDialog")?.close();
+      await refreshClientSidebarCache();
+      renderClientProjects();
     } catch (error) {
       setFormStatus(form, error.message, true);
     }
@@ -9795,7 +9905,8 @@ async function renderClientProject(clientID) {
     <dialog id="deleteClientFolderDialog" class="modal client-dialog">
       <form id="deleteClientFolderForm" class="form-grid" method="dialog">
         <div class="modal-head"><h2>Delete folder</h2><button class="btn icon quiet" type="button" data-close-dialog="deleteClientFolderDialog" title="Close">${icon("x")}</button></div>
-        <p class="muted">This will delete ${esc(client.name)} and its websites, tabs, task boards, documents, comments, and logs.</p>
+        <p class="warning-text" style="color:var(--danger);font-weight:600;line-height:1.5;">are you sure want to delete this projects and all of domain inside, your folder will keep for 15 days, ask help to recover your deleted folders?</p>
+        <p class="muted">This will softly remove ${esc(client.name)} and its websites, tabs, task boards, documents, comments, and logs from your workspace. Platform owner retains the data for 35 days.</p>
         <div class="field"><label>Type Confirm to delete</label><input name="confirm_text" autocomplete="off" required></div>
         <div class="toolbar"><button class="btn danger" type="submit">${icon("trash-2")}Delete folder</button><button class="btn" type="button" data-close-dialog="deleteClientFolderDialog">Cancel</button></div>
         <p class="status-line"></p>
@@ -13756,6 +13867,235 @@ async function renderDatabaseAdmin() {
       startBtn.disabled = false;
     }
   });
+}
+
+async function renderAdminDeletedProjects() {
+  if (state.me?.role !== "owner_adm") {
+    shell("Access Denied", `
+      <div class="page-title"><div><h1>Access Denied</h1><p class="muted">Only the platform owner can access deleted projects management.</p></div></div>
+      <section class="panel">
+        <p class="muted">You do not have permission to view or manage deleted projects.</p>
+        <div class="toolbar"><a class="btn primary" href="/dashboard">${icon("arrow-left")}Back to dashboard</a></div>
+      </section>`);
+    return;
+  }
+
+  let data;
+  try {
+    data = await api("/api/admin/deleted-projects");
+  } catch (error) {
+    shell("Deleted Projects", `
+      <div class="page-title">
+        <div><h1>Deleted Projects</h1><p class="muted">Client folders and websites retention archive.</p></div>
+      </div>
+      <section class="panel">
+        <h2>Unable to load deleted projects</h2>
+        <p class="muted">${esc(error.message)}</p>
+        <div class="toolbar">
+          <a class="btn primary" href="/dashboard">${icon("arrow-left")}Back to dashboard</a>
+          <button class="btn" type="button" onclick="window.location.reload()">${icon("refresh-cw")}Retry</button>
+        </div>
+      </section>`);
+    return;
+  }
+
+  const projects = data.projects || [];
+
+  const renderProjectRows = (list) => {
+    if (!list.length) {
+      return `<section class="panel"><p class="muted">No deleted projects found in retention.</p></section>`;
+    }
+    return `
+      <div class="deleted-projects-grid" style="display:grid;gap:16px;">
+        ${list.map((p) => {
+          const daysPillClass = p.days_remaining <= 5 ? "pill danger" : p.days_remaining <= 15 ? "pill warn" : "pill";
+          return `
+            <article class="panel deleted-project-card" data-deleted-project-card="${esc(p.id)}" style="display:grid;gap:12px;">
+              <div class="panel-head" style="margin-bottom:0;">
+                <div>
+                  <h2 style="font-size:18px;">${esc(p.name)}</h2>
+                  <p class="muted" style="font-size:13px;margin:2px 0 0 0;">${esc(p.company_email || p.contact_name || "Client project")} · Workspace: <strong>${esc(p.team_name || "Default workspace")}</strong></p>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span class="${daysPillClass}" title="Preserved for 35 days on platform owner end.">${icon("clock")} ${p.days_remaining} ${p.days_remaining === 1 ? "day" : "days"} left</span>
+                  <span class="pill">${icon("folder")}deleted</span>
+                </div>
+              </div>
+
+              ${p.details ? `<p style="margin:0;font-size:14px;color:var(--text-secondary);">${chatText(p.details)}</p>` : ""}
+
+              <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:13px;color:var(--text-muted);padding:8px 12px;background:var(--bg-tertiary);border-radius:6px;">
+                <span>${icon("globe-2")} <strong>${p.domains_count}</strong> ${p.domains_count === 1 ? "domain" : "domains"}</span>
+                <span>${icon("list-checks")} <strong>${p.tasks_count}</strong> ${p.tasks_count === 1 ? "task" : "tasks"}</span>
+                <span>${icon("file-text")} <strong>${p.documents_count}</strong> ${p.documents_count === 1 ? "document" : "documents"}</span>
+                <span>${icon("calendar")} Deleted on <strong>${fmtDate(p.deleted_at)}</strong>${p.deleted_by_name ? ` by <strong>${esc(p.deleted_by_name)}</strong>` : ""}</span>
+                <span>${icon("shield-alert")} Auto-purges on <strong>${fmtDate(p.expires_at)}</strong></span>
+              </div>
+
+              <div class="toolbar" style="display:flex;justify-content:flex-end;gap:8px;">
+                <button class="btn primary compact" type="button" data-admin-restore-project="${esc(p.id)}" data-project-name="${esc(p.name)}">
+                  ${icon("rotate-ccw")}Restore project
+                </button>
+                <button class="btn danger compact" type="button" data-admin-permanent-delete-project="${esc(p.id)}" data-project-name="${esc(p.name)}">
+                  ${icon("trash-2")}Delete permanently
+                </button>
+              </div>
+            </article>
+          `;
+        }).join("")}
+      </div>
+    `;
+  };
+
+  shell("Deleted Projects", `
+    <div class="page-title">
+      <div>
+        <h1>Deleted Projects</h1>
+        <p class="muted">Platform Owner recovery archive for soft-deleted client projects, domains, and tasks.</p>
+      </div>
+      <div class="toolbar">
+        <a class="btn" href="/projects">${icon("folder-open")}All projects</a>
+        <a class="btn" href="/admin/users">${icon("users")}Manage users</a>
+        <a class="btn" href="/admin/backup">${icon("database")}Database</a>
+        <button class="btn" id="refreshDeletedProjectsBtn" type="button">${icon("refresh-cw")}Refresh</button>
+      </div>
+    </div>
+
+    <div class="notice" style="margin-bottom:16px;padding:14px 16px;border-left:4px solid var(--accent);background:var(--bg-secondary);border-radius:6px;">
+      <strong style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">${icon("info")} 35-Day Platform Owner Retention Policy</strong>
+      <p class="muted" style="margin:0;font-size:13px;line-height:1.5;">
+        Folders and websites softly deleted on the client end are kept here for <strong>35 days</strong> before being permanently destroyed. Clients receive a <strong>15-day</strong> recovery request notice. As Platform Owner, you can restore any folder and all child domains, tabs, tasks, and documents back to active status, or permanently destroy them immediately.
+      </p>
+    </div>
+
+    <div class="admin-user-filters" style="margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+      <label style="flex:1;">
+        <span>Search deleted projects</span>
+        <input type="search" id="deletedProjectSearchInput" placeholder="Filter by project name, email, contact, or workspace team...">
+      </label>
+      <span class="pill" style="align-self:flex-end;padding:8px 14px;font-size:13px;" id="deletedProjectTotalBadge">${projects.length} in retention</span>
+    </div>
+
+    <div id="deletedProjectsContainer">
+      ${renderProjectRows(projects)}
+    </div>
+
+    <dialog id="adminRestoreProjectDialog" class="modal client-dialog">
+      <form id="adminRestoreProjectForm" class="form-grid" method="dialog">
+        <div class="modal-head">
+          <h2>Restore project</h2>
+          <button class="btn icon quiet" type="button" data-close-dialog="adminRestoreProjectDialog" title="Close">${icon("x")}</button>
+        </div>
+        <input type="hidden" name="id">
+        <p>Are you sure you want to restore <strong id="adminRestoreTargetName">this project</strong> and all of its domains, websites, and task assets back to the client workspace?</p>
+        <div class="toolbar">
+          <button class="btn primary" type="submit">${icon("rotate-ccw")}Restore project</button>
+          <button class="btn" type="button" data-close-dialog="adminRestoreProjectDialog">Cancel</button>
+        </div>
+        <p class="status-line"></p>
+      </form>
+    </dialog>
+
+    <dialog id="adminPermanentDeleteDialog" class="modal client-dialog">
+      <form id="adminPermanentDeleteForm" class="form-grid" method="dialog">
+        <div class="modal-head">
+          <h2>Permanently delete project</h2>
+          <button class="btn icon quiet" type="button" data-close-dialog="adminPermanentDeleteDialog" title="Close">${icon("x")}</button>
+        </div>
+        <input type="hidden" name="id">
+        <p class="warning-text" style="color:var(--danger);font-weight:600;">
+          Warning: This action is permanent and cannot be undone!
+        </p>
+        <p class="muted">
+          Permanently destroying <strong id="adminPermanentDeleteTargetName">this project</strong> will wipe all domains, tabs, tasks, documents, comments, and audit logs immediately from MongoDB.
+        </p>
+        <div class="toolbar">
+          <button class="btn danger" type="submit">${icon("trash-2")}Delete permanently</button>
+          <button class="btn" type="button" data-close-dialog="adminPermanentDeleteDialog">Cancel</button>
+        </div>
+        <p class="status-line"></p>
+      </form>
+    </dialog>
+  `);
+
+  const searchInput = $("#deletedProjectSearchInput");
+  searchInput?.addEventListener("input", () => {
+    const q = searchInput.value.trim().toLowerCase();
+    const filtered = projects.filter((p) => {
+      if (!q) return true;
+      return (p.name || "").toLowerCase().includes(q) ||
+        (p.company_email || "").toLowerCase().includes(q) ||
+        (p.contact_name || "").toLowerCase().includes(q) ||
+        (p.team_name || "").toLowerCase().includes(q);
+    });
+    const container = $("#deletedProjectsContainer");
+    if (container) container.innerHTML = renderProjectRows(filtered);
+    const badge = $("#deletedProjectTotalBadge");
+    if (badge) badge.textContent = `${filtered.length} of ${projects.length} in retention`;
+    bindActions();
+    icons();
+  });
+
+  const bindActions = () => {
+    document.querySelectorAll("[data-admin-restore-project]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const form = $("#adminRestoreProjectForm");
+        if (!form) return;
+        form.reset();
+        form.elements.id.value = btn.dataset.adminRestoreProject;
+        const nameEl = $("#adminRestoreTargetName");
+        if (nameEl) nameEl.textContent = btn.dataset.projectName || "this project";
+        setFormStatus(form, "");
+        $("#adminRestoreProjectDialog")?.showModal();
+      });
+    });
+
+    document.querySelectorAll("[data-admin-permanent-delete-project]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const form = $("#adminPermanentDeleteForm");
+        if (!form) return;
+        form.reset();
+        form.elements.id.value = btn.dataset.adminPermanentDeleteProject;
+        const nameEl = $("#adminPermanentDeleteTargetName");
+        if (nameEl) nameEl.textContent = btn.dataset.projectName || "this project";
+        setFormStatus(form, "");
+        $("#adminPermanentDeleteDialog")?.showModal();
+      });
+    });
+  };
+
+  $("#adminRestoreProjectForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const projectID = form.elements.id.value;
+    try {
+      await api(`/api/admin/deleted-projects/${projectID}/restore`, { method: "POST" });
+      $("#adminRestoreProjectDialog")?.close();
+      await refreshClientSidebarCache();
+      await renderAdminDeletedProjects();
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
+
+  $("#adminPermanentDeleteForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const projectID = form.elements.id.value;
+    try {
+      await api(`/api/admin/deleted-projects/${projectID}/permanent`, { method: "DELETE" });
+      $("#adminPermanentDeleteDialog")?.close();
+      await refreshClientSidebarCache();
+      await renderAdminDeletedProjects();
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
+
+  $("#refreshDeletedProjectsBtn")?.addEventListener("click", () => renderAdminDeletedProjects());
+  bindActions();
+  bindDialogCloseButtons();
+  icons();
 }
 
 async function renderCompanySettings() {
@@ -18312,6 +18652,7 @@ async function route(options = {}) {
     }
     if (path() === "/admin" || path() === "/admin/users") return await renderAdmin();
     if (path() === "/admin/conflicts") return await renderAdminConflictHub();
+    if (path() === "/admin/deleted-projects") return await renderAdminDeletedProjects();
     if (path() === "/admin/settings") return await renderSettings();
     if (path() === "/admin/plans") return await renderPlansAdmin();
     if (path() === "/admin/pages") return await renderPages();

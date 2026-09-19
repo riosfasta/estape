@@ -53,6 +53,7 @@ func (s *Server) listClientProjects(c *gin.Context) {
 			filter["team_id"] = userCtx.TeamID
 		}
 	}
+	filter["deleted_at"] = bson.M{"$in": []any{nil, primitive.Null{}}}
 	cursor, err := s.store.C("client_projects").Find(c.Request.Context(), filter, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load client projects"})
@@ -73,7 +74,7 @@ func (s *Server) listClientProjects(c *gin.Context) {
 	}
 	websites := []models.ClientWebsite{}
 	if len(clientIDs) > 0 {
-		siteFilter := bson.M{"client_id": bson.M{"$in": clientIDs}}
+		siteFilter := bson.M{"client_id": bson.M{"$in": clientIDs}, "deleted_at": bson.M{"$in": []any{nil, primitive.Null{}}}}
 		if !userCtx.TeamID.IsZero() {
 			siteFilter["team_id"] = userCtx.TeamID
 		}
@@ -154,6 +155,7 @@ func (s *Server) clientAccessSets(ctx context.Context, userCtx middleware.UserCo
 			},
 		}
 	}
+	clientFilter["deleted_at"] = bson.M{"$in": []any{nil, primitive.Null{}}}
 	cursor, err := s.store.C("client_projects").Find(ctx, clientFilter, options.Find().SetProjection(bson.M{"_id": 1, "team_id": 1, "created_by": 1, "client_admin_ids": 1, "member_ids": 1, "member_roles": 1}))
 	if err == nil {
 		defer cursor.Close(ctx)
@@ -189,6 +191,7 @@ func (s *Server) clientAccessSets(ctx context.Context, userCtx middleware.UserCo
 			},
 		}
 	}
+	siteFilter["deleted_at"] = bson.M{"$in": []any{nil, primitive.Null{}}}
 	siteCursor, err := s.store.C("client_websites").Find(ctx, siteFilter, options.Find().SetProjection(bson.M{"_id": 1, "client_id": 1}))
 	if err == nil {
 		defer siteCursor.Close(ctx)
@@ -419,23 +422,34 @@ func (s *Server) deleteClientProject(c *gin.Context) {
 		return
 	}
 	userCtx, _ := currentUser(c)
-	if !s.canManageTeamSilently(c.Request.Context(), userCtx, client.TeamID) {
+	if !s.canManageTeamSilently(c.Request.Context(), userCtx, client.TeamID) && client.CreatedBy != userCtx.ID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "only user admins or platform owners can delete client folders"})
 		return
 	}
-	if _, err := s.store.C("client_projects").DeleteOne(c.Request.Context(), bson.M{"_id": client.ID}); err != nil {
+	now := time.Now().UTC()
+	update := bson.M{
+		"$set": bson.M{
+			"deleted_at": now,
+			"deleted_by": userCtx.ID,
+		},
+	}
+	if _, err := s.store.C("client_projects").UpdateByID(c.Request.Context(), client.ID, update); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete client"})
 		return
 	}
-	s.deleteClientTaskNotificationsForFilter(c.Request.Context(), bson.M{"client_id": client.ID})
-	s.deleteNotificationsByRelatedIDs(c.Request.Context(), []primitive.ObjectID{client.ID}, "client_project_added", "client_project_role_updated")
-	_, _ = s.store.C("client_websites").DeleteMany(c.Request.Context(), bson.M{"client_id": client.ID})
-	_, _ = s.store.C("client_documents").DeleteMany(c.Request.Context(), bson.M{"client_id": client.ID})
-	_, _ = s.store.C("client_tabs").DeleteMany(c.Request.Context(), bson.M{"client_id": client.ID})
-	_, _ = s.store.C("client_tasks").DeleteMany(c.Request.Context(), bson.M{"client_id": client.ID})
-	_, _ = s.store.C("client_task_comments").DeleteMany(c.Request.Context(), bson.M{"client_id": client.ID})
-	_, _ = s.store.C("client_task_logs").DeleteMany(c.Request.Context(), bson.M{"client_id": client.ID})
-	c.JSON(http.StatusOK, gin.H{"deleted": true})
+	childUpdate := bson.M{
+		"$set": bson.M{
+			"deleted_at": now,
+			"deleted_by": userCtx.ID,
+		},
+	}
+	_, _ = s.store.C("client_websites").UpdateMany(c.Request.Context(), bson.M{"client_id": client.ID, "deleted_at": bson.M{"$in": []any{nil, primitive.Null{}}}}, childUpdate)
+	_, _ = s.store.C("client_documents").UpdateMany(c.Request.Context(), bson.M{"client_id": client.ID, "deleted_at": bson.M{"$in": []any{nil, primitive.Null{}}}}, childUpdate)
+	_, _ = s.store.C("client_tabs").UpdateMany(c.Request.Context(), bson.M{"client_id": client.ID, "deleted_at": bson.M{"$in": []any{nil, primitive.Null{}}}}, childUpdate)
+	_, _ = s.store.C("client_tasks").UpdateMany(c.Request.Context(), bson.M{"client_id": client.ID, "deleted_at": bson.M{"$in": []any{nil, primitive.Null{}}}}, childUpdate)
+	_, _ = s.store.C("client_task_comments").UpdateMany(c.Request.Context(), bson.M{"client_id": client.ID, "deleted_at": bson.M{"$in": []any{nil, primitive.Null{}}}}, childUpdate)
+	_, _ = s.store.C("client_task_logs").UpdateMany(c.Request.Context(), bson.M{"client_id": client.ID, "deleted_at": bson.M{"$in": []any{nil, primitive.Null{}}}}, childUpdate)
+	c.JSON(http.StatusOK, gin.H{"deleted": true, "soft": true})
 }
 
 func clientAccessStaffRole(requested string, member models.User) string {
@@ -1479,6 +1493,7 @@ func (s *Server) listAssignedClientTasks(c *gin.Context) {
 			clientFilter["team_id"] = userCtx.TeamID
 		}
 	}
+	clientFilter["deleted_at"] = bson.M{"$in": []any{nil, primitive.Null{}}}
 
 	clientCursor, err := s.store.C("client_projects").Find(c.Request.Context(), clientFilter, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
 	if err != nil {
@@ -1520,7 +1535,7 @@ func (s *Server) listAssignedClientTasks(c *gin.Context) {
 				taskAccessFilter = bson.M{"$or": or}
 			}
 		}
-		andList := []bson.M{taskAccessFilter}
+		andList := []bson.M{taskAccessFilter, {"deleted_at": bson.M{"$in": []any{nil, primitive.Null{}}}}}
 		if !userCtx.TeamID.IsZero() {
 			andList = append(andList, bson.M{"team_id": userCtx.TeamID})
 		}
@@ -1560,7 +1575,7 @@ func (s *Server) listAssignedClientTasks(c *gin.Context) {
 	websites := []models.ClientWebsite{}
 	websiteIDs := []primitive.ObjectID{}
 	if len(clientIDs) > 0 {
-		siteFilter := bson.M{"client_id": bson.M{"$in": clientIDs}}
+		siteFilter := bson.M{"client_id": bson.M{"$in": clientIDs}, "deleted_at": bson.M{"$in": []any{nil, primitive.Null{}}}}
 		if !userCtx.TeamID.IsZero() {
 			siteFilter["team_id"] = userCtx.TeamID
 		}
@@ -1597,7 +1612,7 @@ func (s *Server) listAssignedClientTasks(c *gin.Context) {
 
 	tabs := []models.ClientTab{}
 	if len(websiteIDs) > 0 {
-		tabCursor, err := s.store.C("client_tabs").Find(c.Request.Context(), bson.M{"website_id": bson.M{"$in": websiteIDs}, "type": "task_board"}, options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}))
+		tabCursor, err := s.store.C("client_tabs").Find(c.Request.Context(), bson.M{"website_id": bson.M{"$in": websiteIDs}, "type": "task_board", "deleted_at": bson.M{"$in": []any{nil, primitive.Null{}}}}, options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load task boards"})
 			return
@@ -2512,6 +2527,10 @@ func (s *Server) loadClientProjectForAccess(c *gin.Context, id primitive.ObjectI
 		c.JSON(http.StatusNotFound, gin.H{"error": "client folder not found"})
 		return models.ClientProject{}, false
 	}
+	if client.DeletedAt != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "client folder not found"})
+		return models.ClientProject{}, false
+	}
 	if manage {
 		if s.canManageClientProject(c.Request.Context(), userCtx, client) {
 			return client, true
@@ -2532,6 +2551,15 @@ func (s *Server) loadClientProjectForAccess(c *gin.Context, id primitive.ObjectI
 func (s *Server) loadClientWebsiteForAccess(c *gin.Context, id primitive.ObjectID, manage bool) (models.ClientWebsite, bool) {
 	var site models.ClientWebsite
 	if err := s.store.C("client_websites").FindOne(c.Request.Context(), bson.M{"_id": id}).Decode(&site); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "website not found"})
+		return models.ClientWebsite{}, false
+	}
+	if site.DeletedAt != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "website not found"})
+		return models.ClientWebsite{}, false
+	}
+	var parent models.ClientProject
+	if err := s.store.C("client_projects").FindOne(c.Request.Context(), bson.M{"_id": site.ClientID}).Decode(&parent); err == nil && parent.DeletedAt != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "website not found"})
 		return models.ClientWebsite{}, false
 	}
@@ -2636,20 +2664,23 @@ func (s *Server) canManageClientTask(ctx context.Context, userCtx middleware.Use
 		return true
 	}
 	var client models.ClientProject
-	if err := s.store.C("client_projects").FindOne(ctx, bson.M{"_id": task.ClientID}).Decode(&client); err != nil {
+	if err := s.store.C("client_projects").FindOne(ctx, bson.M{"_id": task.ClientID}).Decode(&client); err != nil || client.DeletedAt != nil {
 		return false
 	}
 	if s.canManageClientProject(ctx, userCtx, client) {
 		return true
 	}
 	var site models.ClientWebsite
-	if err := s.store.C("client_websites").FindOne(ctx, bson.M{"_id": task.WebsiteID}).Decode(&site); err != nil {
+	if err := s.store.C("client_websites").FindOne(ctx, bson.M{"_id": task.WebsiteID}).Decode(&site); err != nil || site.DeletedAt != nil {
 		return false
 	}
 	return containsObjectID(site.ClientAdminIDs, userCtx.ID)
 }
 
 func (s *Server) canManageClientProject(ctx context.Context, userCtx middleware.UserContext, client models.ClientProject) bool {
+	if client.DeletedAt != nil {
+		return false
+	}
 	return s.canManageTeamSilently(ctx, userCtx, client.TeamID) || containsObjectID(client.ClientAdminIDs, userCtx.ID)
 }
 
@@ -2657,7 +2688,7 @@ func (s *Server) canAccessAnyClientWebsite(ctx context.Context, userCtx middlewa
 	if userCtx.Role == models.RoleOwnerAdmin {
 		return true
 	}
-	count, err := s.store.C("client_websites").CountDocuments(ctx, bson.M{"client_id": clientID, "$or": []bson.M{
+	count, err := s.store.C("client_websites").CountDocuments(ctx, bson.M{"client_id": clientID, "deleted_at": bson.M{"$in": []any{nil, primitive.Null{}}}, "$or": []bson.M{
 		{"member_ids": userCtx.ID},
 		{"client_admin_ids": userCtx.ID},
 		{"created_by": userCtx.ID},
@@ -2665,7 +2696,7 @@ func (s *Server) canAccessAnyClientWebsite(ctx context.Context, userCtx middlewa
 	if err == nil && count > 0 {
 		return true
 	}
-	taskCount, err := s.store.C("client_tasks").CountDocuments(ctx, bson.M{"client_id": clientID, "$or": []bson.M{
+	taskCount, err := s.store.C("client_tasks").CountDocuments(ctx, bson.M{"client_id": clientID, "deleted_at": bson.M{"$in": []any{nil, primitive.Null{}}}, "$or": []bson.M{
 		{"assignee_ids": userCtx.ID},
 		{"annotations.assignee_ids": userCtx.ID},
 	}})
@@ -2673,8 +2704,11 @@ func (s *Server) canAccessAnyClientWebsite(ctx context.Context, userCtx middlewa
 }
 
 func (s *Server) canAccessClientWebsite(ctx context.Context, userCtx middleware.UserContext, site models.ClientWebsite) bool {
+	if site.DeletedAt != nil {
+		return false
+	}
 	var client models.ClientProject
-	if err := s.store.C("client_projects").FindOne(ctx, bson.M{"_id": site.ClientID}).Decode(&client); err != nil {
+	if err := s.store.C("client_projects").FindOne(ctx, bson.M{"_id": site.ClientID}).Decode(&client); err != nil || client.DeletedAt != nil {
 		return false
 	}
 	if s.canManageClientProject(ctx, userCtx, client) ||
@@ -2684,7 +2718,7 @@ func (s *Server) canAccessClientWebsite(ctx context.Context, userCtx middleware.
 		site.CreatedBy == userCtx.ID {
 		return true
 	}
-	taskCount, err := s.store.C("client_tasks").CountDocuments(ctx, bson.M{"website_id": site.ID, "$or": []bson.M{
+	taskCount, err := s.store.C("client_tasks").CountDocuments(ctx, bson.M{"website_id": site.ID, "deleted_at": bson.M{"$in": []any{nil, primitive.Null{}}}, "$or": []bson.M{
 		{"assignee_ids": userCtx.ID},
 		{"annotations.assignee_ids": userCtx.ID},
 	}})
@@ -2692,8 +2726,11 @@ func (s *Server) canAccessClientWebsite(ctx context.Context, userCtx middleware.
 }
 
 func (s *Server) canManageClientWebsite(ctx context.Context, userCtx middleware.UserContext, site models.ClientWebsite) bool {
+	if site.DeletedAt != nil {
+		return false
+	}
 	var client models.ClientProject
-	if err := s.store.C("client_projects").FindOne(ctx, bson.M{"_id": site.ClientID}).Decode(&client); err != nil {
+	if err := s.store.C("client_projects").FindOne(ctx, bson.M{"_id": site.ClientID}).Decode(&client); err != nil || client.DeletedAt != nil {
 		return false
 	}
 	return s.canManageClientProject(ctx, userCtx, client) || containsObjectID(site.ClientAdminIDs, userCtx.ID)

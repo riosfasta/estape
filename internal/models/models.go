@@ -157,6 +157,8 @@ type ClientProject struct {
 	ClientAdminIDs     []primitive.ObjectID `bson:"client_admin_ids" json:"client_admin_ids"`
 	MemberRoles        map[string]string    `bson:"member_roles,omitempty" json:"member_roles,omitempty"`
 	CreatedBy          primitive.ObjectID   `bson:"created_by" json:"created_by"`
+	DeletedAt          *time.Time           `bson:"deleted_at,omitempty" json:"deleted_at,omitempty"`
+	DeletedBy          *primitive.ObjectID  `bson:"deleted_by,omitempty" json:"deleted_by,omitempty"`
 	CreatedAt          time.Time            `bson:"created_at" json:"created_at"`
 	UpdatedAt          time.Time            `bson:"updated_at" json:"updated_at"`
 }
@@ -175,6 +177,8 @@ type ClientWebsite struct {
 	ClientAdminIDs     []primitive.ObjectID `bson:"client_admin_ids,omitempty" json:"client_admin_ids,omitempty"`
 	MemberRoles        map[string]string    `bson:"member_roles,omitempty" json:"member_roles,omitempty"`
 	CreatedBy          primitive.ObjectID   `bson:"created_by" json:"created_by"`
+	DeletedAt          *time.Time           `bson:"deleted_at,omitempty" json:"deleted_at,omitempty"`
+	DeletedBy          *primitive.ObjectID  `bson:"deleted_by,omitempty" json:"deleted_by,omitempty"`
 	CreatedAt          time.Time            `bson:"created_at" json:"created_at"`
 	UpdatedAt          time.Time            `bson:"updated_at" json:"updated_at"`
 }
@@ -190,6 +194,7 @@ type ClientDocument struct {
 	URL       string             `bson:"url,omitempty" json:"url,omitempty"`
 	FileURL   string             `bson:"file_url,omitempty" json:"file_url,omitempty"`
 	CreatedBy primitive.ObjectID `bson:"created_by" json:"created_by"`
+	DeletedAt *time.Time         `bson:"deleted_at,omitempty" json:"deleted_at,omitempty"`
 	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
 	UpdatedAt time.Time          `bson:"updated_at" json:"updated_at"`
 }
@@ -210,6 +215,7 @@ type ClientTab struct {
 	Statuses     []string                         `bson:"statuses,omitempty" json:"statuses,omitempty"`
 	StatusStyles map[string]ClientTaskStatusStyle `bson:"status_styles,omitempty" json:"status_styles,omitempty"`
 	CreatedBy    primitive.ObjectID               `bson:"created_by" json:"created_by"`
+	DeletedAt    *time.Time                       `bson:"deleted_at,omitempty" json:"deleted_at,omitempty"`
 	CreatedAt    time.Time                        `bson:"created_at" json:"created_at"`
 	UpdatedAt    time.Time                        `bson:"updated_at" json:"updated_at"`
 }
@@ -249,6 +255,7 @@ type ClientTask struct {
 	LastCompletedAt  *time.Time             `bson:"last_completed_at,omitempty" json:"last_completed_at,omitempty"`
 	Ratings          []TaskRating           `bson:"ratings,omitempty" json:"ratings,omitempty"`
 	CreatedBy        primitive.ObjectID     `bson:"created_by" json:"created_by"`
+	DeletedAt        *time.Time             `bson:"deleted_at,omitempty" json:"deleted_at,omitempty"`
 	CreatedAt        time.Time              `bson:"created_at" json:"created_at"`
 	UpdatedAt        time.Time              `bson:"updated_at" json:"updated_at"`
 }
