@@ -738,6 +738,18 @@ function annotationPageURL(baseURL, pagePath = "") {
   return `${base}${pathValue.startsWith("/") ? "" : "/"}${pathValue}`;
 }
 
+function normalizedAnnotationPageURL(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    parsed.hash = "";
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    return raw.replace(/#.*$/, "").replace(/\/$/, "");
+  }
+}
+
 const ANNOTATION_VIEWPORT = { width: 1440, height: 6000, maxHeight: 50000 };
 const ANNOTATION_TALL_FALLBACK_HEIGHT = 18000;
 const ANNOTATION_DEVICE_VIEWPORTS = [
@@ -10128,7 +10140,8 @@ async function renderClientWebsite(clientID, websiteID) {
   const selectedTab = (data.tabs || []).find((tab) => tab.id === selectedTabID) || data.tabs?.[0] || null;
   const clientUsersByID = clientTaskUsersByID(data.members || []);
   const clientBoardStatuses = clientTaskStatuses(selectedTab, data.tasks || []);
-  const annotationTasks = (data.tasks || []).filter((task) => task.type === "annotation" && (!selectedTab?.id || task.tab_id === selectedTab.id));
+  const websiteAnnotationTasks = (data.tasks || []).filter((task) => task.type === "annotation");
+  const annotationTasks = websiteAnnotationTasks.filter((task) => !selectedTab?.id || task.tab_id === selectedTab.id);
   const tabsByID = Object.fromEntries((data.tabs || []).map((tab) => [tab.id, tab]));
   shell(website.name, `
     <div class="page-title">
@@ -10318,6 +10331,20 @@ async function renderClientWebsite(clientID, websiteID) {
   let clientAnnotationDirty = false;
   const selectorForID = (value) => (window.CSS?.escape ? CSS.escape(value) : String(value).replace(/"/g, '\\"'));
   const clientAnnotationsForPage = () => currentClientAnnotationItems.filter((item) => !currentClientAnnotationURL || item.url === currentClientAnnotationURL);
+  const websiteAnnotationsForPage = () => {
+    const pageURL = normalizedAnnotationPageURL(currentClientAnnotationURL);
+    const tasksByID = new Map(websiteAnnotationTasks.map((task) => [String(task.id || ""), task]));
+    Object.values(clientAnnotationTasksByID).forEach((task) => tasksByID.set(String(task.id || ""), task));
+    return Array.from(tasksByID.values())
+      .sort((left, right) => new Date(left.created_at || 0) - new Date(right.created_at || 0))
+      .flatMap((task) => clientTaskAnnotationItems(task))
+      .filter((item) => !pageURL || normalizedAnnotationPageURL(item.url) === pageURL);
+  };
+  const clientAnnotationPageIndex = (item, fallbackIndex = 0) => {
+    const annotationID = String(item?.id || "");
+    const pageIndex = websiteAnnotationsForPage().findIndex((entry) => String(entry.id || "") === annotationID);
+    return pageIndex >= 0 ? pageIndex : fallbackIndex;
+  };
   const syncClientAnnotationStatusControls = (taskID, value) => {
     const status = feedbackStatusObject(clientBoardStatuses, value || "todo");
     document.querySelectorAll(`[data-client-annotation-status-form="${selectorForID(taskID)}"]`).forEach((box) => {
@@ -10353,7 +10380,7 @@ async function renderClientWebsite(clientID, websiteID) {
   const renderClientAnnotationPins = (extraPin = "") => {
     const layer = $("#clientAnnotationPinLayer");
     if (!layer) return;
-    layer.innerHTML = `${clientAnnotationsForPage().map((item, index) => clientAnnotationItemPinHTML(item, index, currentClientAnnotationPageWidth, currentClientAnnotationPageHeight)).join("")}${extraPin}`;
+    layer.innerHTML = `${clientAnnotationsForPage().map((item, index) => clientAnnotationItemPinHTML(item, clientAnnotationPageIndex(item, index), currentClientAnnotationPageWidth, currentClientAnnotationPageHeight)).join("")}${extraPin}`;
     icons();
   };
   const renderClientAnnotationList = () => {
@@ -10565,7 +10592,7 @@ async function renderClientWebsite(clientID, websiteID) {
       fallbackHeight: ANNOTATION_TALL_FALLBACK_HEIGHT,
       catcherID: "clientAnnotationClickCatcher",
       pinLayerID: "clientAnnotationPinLayer",
-      pins: clientAnnotationsForPage().map((item, index) => ({ id: item.id, x: item.pin_x, y: item.pin_y, page_width: item.page_width, page_height: item.page_height, label: String(index + 1), title: item.title || "Annotation" })),
+      pins: clientAnnotationsForPage().map((item, index) => ({ id: item.id, x: item.pin_x, y: item.pin_y, page_width: item.page_width, page_height: item.page_height, label: String(clientAnnotationPageIndex(item, index) + 1), title: item.title || "Annotation" })),
     });
     currentClientAnnotationURL = fullURL;
     currentClientAnnotationPageWidth = ANNOTATION_VIEWPORT.width;
@@ -10623,7 +10650,7 @@ async function renderClientWebsite(clientID, websiteID) {
       form.elements.pin_x.value = x.toFixed(2);
       form.elements.pin_y.value = y.toFixed(2);
       $("#clientAnnotationCoordLabel").value = `${x.toFixed(1)}%, ${y.toFixed(1)}%`;
-      renderClientAnnotationPins(annotationPinHTML({ x, y, target_page_width: currentClientAnnotationPageWidth, target_page_height: currentClientAnnotationPageHeight, label: String(clientAnnotationsForPage().length + 1), title: "New annotation" }));
+      renderClientAnnotationPins(annotationPinHTML({ x, y, target_page_width: currentClientAnnotationPageWidth, target_page_height: currentClientAnnotationPageHeight, label: String(websiteAnnotationsForPage().length + 1), title: "New annotation" }));
       $("#clientAnnotationTaskForm textarea[name='comment']")?.focus();
       icons();
     });
