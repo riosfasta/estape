@@ -73,7 +73,7 @@ func (s *Server) widgetSession(c *gin.Context) {
 
 func (s *Server) createWidgetAnnotation(c *gin.Context) {
 	s.setWidgetCORS(c)
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<20)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 10<<20)
 	var req struct {
 		SiteKey        string   `json:"site_key"`
 		URL            string   `json:"url"`
@@ -83,6 +83,8 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 		ReporterEmail  string   `json:"reporter_email"`
 		AssigneeIDs    []string `json:"assignee_ids"`
 		ScreenshotData string   `json:"screenshot_data"`
+		AttachmentName string   `json:"attachment_name"`
+		AttachmentData string   `json:"attachment_data"`
 		CaptureError   string   `json:"capture_error"`
 		PinX           *float64 `json:"pin_x"`
 		PinY           *float64 `json:"pin_y"`
@@ -176,6 +178,19 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 		}
 		screenshotURL = url
 	}
+	attachmentURL := ""
+	if strings.TrimSpace(req.AttachmentData) != "" {
+		url, err := s.saveWidgetAttachment(user.ID, req.AttachmentName, req.AttachmentData)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		attachmentURL = url
+	}
+	attachments := []string{}
+	if attachmentURL != "" {
+		attachments = append(attachments, attachmentURL)
+	}
 	tab, err := s.ensureWidgetTaskBoard(c.Request.Context(), site)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare task board"})
@@ -207,7 +222,7 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 		PinY:          &y,
 		PageWidth:     pageWidth,
 		PageHeight:    pageHeight,
-		Attachments:   []string{},
+		Attachments:   attachments,
 		AssigneeIDs:   assigneeIDs,
 		Status:        status,
 		CreatedBy:     user.ID,
@@ -231,7 +246,7 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 		PageWidth:     pageWidth,
 		PageHeight:    pageHeight,
 		Annotations:   []models.ClientTaskAnnotation{annotation},
-		Attachments:   []string{},
+		Attachments:   attachments,
 		Checklist:     []models.ChecklistItem{},
 		Blocks:        []models.ClientTaskBlock{},
 		AssigneeIDs:   assigneeIDs,
@@ -248,7 +263,7 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 	s.notifyClientTaskAssignees(c.Request.Context(), task)
 	s.notifyUserIDs(c.Request.Context(), s.clientWebsiteLiveRecipients(c.Request.Context(), site), user.ID, "client_task_updated", firstNonEmpty(user.Name, user.Username, user.Email, "Someone")+" submitted website feedback: "+task.Title, task.ID)
 	s.broadcastClientTaskChanged(c.Request.Context(), task, user.ID, "client_task_created")
-	c.JSON(http.StatusCreated, gin.H{"task_id": task.ID.Hex(), "annotation_id": annotation.ID.Hex(), "screenshot_url": screenshotURL, "status": status, "created_at": now})
+	c.JSON(http.StatusCreated, gin.H{"task_id": task.ID.Hex(), "annotation_id": annotation.ID.Hex(), "screenshot_url": screenshotURL, "attachment_url": attachmentURL, "status": status, "created_at": now})
 }
 
 func (s *Server) setWidgetCORS(c *gin.Context) {
@@ -437,6 +452,7 @@ func (s *Server) widgetAnnotationPins(ctx context.Context, site models.ClientWeb
 					"comment":        annotation.Comment,
 					"status":         annotation.Status,
 					"screenshot_url": annotation.ScreenshotURL,
+					"attachments":    annotation.Attachments,
 					"pin_x":          *annotation.PinX,
 					"pin_y":          *annotation.PinY,
 					"page_width":     annotation.PageWidth,
@@ -456,6 +472,7 @@ func (s *Server) widgetAnnotationPins(ctx context.Context, site models.ClientWeb
 			"comment":        firstNonEmpty(task.Comment, task.Content),
 			"status":         task.Status,
 			"screenshot_url": task.ScreenshotURL,
+			"attachments":    task.Attachments,
 			"pin_x":          *task.PinX,
 			"pin_y":          *task.PinY,
 			"page_width":     task.PageWidth,
@@ -595,6 +612,42 @@ func (s *Server) saveWidgetScreenshot(ownerID primitive.ObjectID, dataURL string
 	}
 	if err := os.WriteFile(path, decoded, 0644); err != nil {
 		return "", errors.New("could not save screenshot")
+	}
+	return "/uploads/" + filepath.ToSlash(filepath.Join(relativeDir, name)), nil
+}
+
+func (s *Server) saveWidgetAttachment(ownerID primitive.ObjectID, filename string, dataURL string) (string, error) {
+	if ownerID.IsZero() {
+		return "", errors.New("website owner is missing")
+	}
+	ext := strings.ToLower(filepath.Ext(strings.TrimSpace(filename)))
+	allowed := map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true, ".pdf": true, ".txt": true, ".csv": true, ".doc": true, ".docx": true, ".xls": true, ".xlsx": true, ".zip": true}
+	if !allowed[ext] {
+		return "", errors.New("unsupported attachment type")
+	}
+	raw := strings.TrimSpace(dataURL)
+	separator := strings.Index(raw, ",")
+	if !strings.HasPrefix(raw, "data:") || separator < 0 || !strings.HasSuffix(strings.ToLower(raw[:separator]), ";base64") {
+		return "", errors.New("attachment must be a base64 data URL")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(raw[separator+1:]))
+	if err != nil {
+		return "", errors.New("attachment could not be decoded")
+	}
+	if len(decoded) == 0 {
+		return "", errors.New("attachment is empty")
+	}
+	if len(decoded) > 1<<20 {
+		return "", errors.New("attachment must be 1 MB or smaller")
+	}
+	name := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
+	relativeDir := filepath.Join(userUploadDir(ownerID), "widget")
+	path := filepath.Join(s.cfg.UploadDir, relativeDir, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return "", errors.New("could not prepare upload directory")
+	}
+	if err := os.WriteFile(path, decoded, 0644); err != nil {
+		return "", errors.New("could not save attachment")
 	}
 	return "/uploads/" + filepath.ToSlash(filepath.Join(relativeDir, name)), nil
 }

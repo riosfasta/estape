@@ -63,6 +63,7 @@
       ".bugmega-detail-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.bugmega-detail-pill{border-radius:999px;background:#eef5f2;color:#52635d;padding:4px 8px;font-size:11px;font-weight:800}" +
       ".bugmega-detail-comment{margin:0 0 12px;color:#33443e;font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}.bugmega-detail-comment.empty{color:#7a8883;font-style:italic}" +
       ".bugmega-detail-image{display:block;width:100%;height:190px;object-fit:cover;border:1px solid #d8e1dd;border-radius:8px;margin:0 0 12px;background:#eef5f2}" +
+      ".bugmega-detail-file{display:flex;align-items:center;gap:7px;border:1px solid #d8e1dd;border-radius:8px;color:#087c67;padding:9px 10px;margin:0 0 12px;font-size:13px;font-weight:800;text-decoration:none;overflow-wrap:anywhere}" +
       ".bugmega-detail-actions{display:flex;gap:8px}.bugmega-detail-actions button{flex:1}" +
       ".bugmega-panel{position:fixed;right:22px;bottom:78px;width:min(380px,calc(100vw - 32px));max-height:calc(100vh - 110px);overflow:auto;background:#fff;border:1px solid rgba(0,0,0,.14);border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.28);padding:16px;display:none}" +
       ".bugmega-panel.active{display:block}" +
@@ -71,6 +72,7 @@
       ".bugmega-close{border:0;background:transparent;font-size:24px;line-height:1;cursor:pointer;color:#5d6b66}" +
       ".bugmega-field{display:block;margin:10px 0}.bugmega-field span{display:block;font-size:12px;font-weight:800;color:#52635d;margin-bottom:5px}" +
       ".bugmega-field input,.bugmega-field textarea,.bugmega-field select{width:100%;border:1px solid #cdd9d5;border-radius:8px;padding:9px 10px;font-size:14px;color:#10201c;background:#fff}" +
+      ".bugmega-field input[type='file']{padding:6px;font-size:12px}.bugmega-field input[type='file']::file-selector-button{border:0;border-radius:6px;background:#eef5f2;color:#10201c;padding:7px 9px;margin-right:8px;font-weight:800;cursor:pointer}" +
       ".bugmega-field textarea{min-height:92px;resize:vertical}.bugmega-field select{min-height:74px}" +
       ".bugmega-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}" +
       ".bugmega-primary{border:0;border-radius:8px;background:#08a88a;color:#fff;padding:10px 14px;font-weight:800;cursor:pointer}" +
@@ -167,6 +169,17 @@
     }
   }
 
+  function annotationAttachmentHTML(pin) {
+    var attachment = Array.isArray(pin.attachments) ? pin.attachments[0] : "";
+    var attachmentURL = annotationScreenshotURL(attachment);
+    if (!attachmentURL) return "";
+    var path = attachmentURL.split("?")[0];
+    if (/\.(png|jpe?g|gif|webp)$/i.test(path)) {
+      return '<a href="' + esc(attachmentURL) + '" target="_blank" rel="noopener noreferrer"><img class="bugmega-detail-image" src="' + esc(attachmentURL) + '" alt="Annotation attachment"></a>';
+    }
+    return '<a class="bugmega-detail-file" href="' + esc(attachmentURL) + '" target="_blank" rel="noopener noreferrer">&#128206; Open attachment</a>';
+  }
+
   function showAnnotationList() {
     var listView = document.getElementById("bugmegaListView");
     var detailView = document.getElementById("bugmegaDetailView");
@@ -193,6 +206,7 @@
       '<div class="bugmega-detail-meta"><span class="bugmega-detail-pill">' + esc(annotationStatusLabel(pin.status)) + '</span>' + (dateLabel ? '<span class="bugmega-detail-pill">' + esc(dateLabel) + '</span>' : '') + '</div>' +
       '<p class="bugmega-detail-comment' + (pin.comment ? '' : ' empty') + '">' + esc(pin.comment || "No details provided.") + '</p>' +
       (screenshotURL ? '<img class="bugmega-detail-image" src="' + esc(screenshotURL) + '" alt="Screenshot for ' + esc(pin.title || "annotation") + '">' : '') +
+      annotationAttachmentHTML(pin) +
       '<div class="bugmega-detail-actions"><button class="bugmega-secondary" type="button" id="bugmegaGoToPin">Go to pin</button></div>';
     document.getElementById("bugmegaDetailBack").addEventListener("click", showAnnotationList);
     document.getElementById("bugmegaGoToPin").addEventListener("click", function () { focusAnnotation(index); });
@@ -226,6 +240,7 @@
         '<img class="bugmega-preview" id="bugmegaPreview" alt="Captured section preview">' +
         '<label class="bugmega-field"><span>Title</span><input id="bugmegaTitle" maxlength="80" placeholder="What needs attention?"></label>' +
         '<label class="bugmega-field"><span>Details</span><textarea id="bugmegaComment" placeholder="Describe the issue"></textarea></label>' +
+        '<label class="bugmega-field"><span>Attachment (optional, max 1 MB)</span><input id="bugmegaAttachment" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.zip"></label>' +
         '<label class="bugmega-field"><span>Assign to</span><select id="bugmegaAssignees" multiple>' + memberOptions() + '</select></label>' +
         '<div class="bugmega-toolbar"><button class="bugmega-primary" type="button" id="bugmegaSubmit">Send feedback</button><button class="bugmega-secondary" type="button" id="bugmegaReselect">Move pin</button></div>' +
         '<div class="bugmega-status" id="bugmegaStatus"></div>' +
@@ -245,6 +260,7 @@
     document.getElementById("bugmegaReselect").addEventListener("click", startSelecting);
     document.getElementById("bugmegaClose").addEventListener("click", closePanel);
     document.getElementById("bugmegaSubmit").addEventListener("click", submitFeedback);
+    document.getElementById("bugmegaAttachment").addEventListener("change", validateAttachmentSelection);
     document.addEventListener("click", handleDocumentClick, true);
     window.addEventListener("resize", function () {
       constrainLauncherPosition();
@@ -433,6 +449,7 @@
       comment: raw.comment || "",
       status: raw.status || "",
       screenshotURL: raw.screenshot_url || raw.screenshotURL || "",
+      attachments: Array.isArray(raw.attachments) ? raw.attachments.filter(Boolean) : (raw.attachment_url ? [raw.attachment_url] : []),
       createdAt: raw.created_at || raw.createdAt || "",
       pinX: Math.max(0, Math.min(100, Number.isFinite(pinX) ? pinX : 0)),
       pinY: Math.max(0, Math.min(100, Number.isFinite(pinY) ? pinY : 0)),
@@ -628,6 +645,27 @@
     }).filter(Boolean);
   }
 
+  function validateAttachmentSelection(event) {
+    var input = event.currentTarget;
+    var file = input.files && input.files[0];
+    if (!file) return;
+    if (file.size > 1024 * 1024) {
+      input.value = "";
+      setStatus("Attachment must be 1 MB or smaller.", "error");
+      return;
+    }
+    setStatus(file.name + " is ready to attach.");
+  }
+
+  function readAttachmentData(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(String(reader.result || "")); };
+      reader.onerror = function () { reject(new Error("Could not read the attachment.")); };
+      reader.readAsDataURL(file);
+    });
+  }
+
   async function submitFeedback() {
     if (!state.point) {
       startSelecting();
@@ -636,10 +674,14 @@
     var button = document.getElementById("bugmegaSubmit");
     var title = document.getElementById("bugmegaTitle").value.trim();
     var comment = document.getElementById("bugmegaComment").value.trim();
+    var attachmentInput = document.getElementById("bugmegaAttachment");
+    var attachment = attachmentInput && attachmentInput.files ? attachmentInput.files[0] : null;
     button.disabled = true;
     button.textContent = "Sending...";
     setStatus("Sending feedback...");
     try {
+      if (attachment && attachment.size > 1024 * 1024) throw new Error("Attachment must be 1 MB or smaller.");
+      var attachmentData = attachment ? await readAttachmentData(attachment) : "";
       var response = await fetch(apiBase + "/api/widget/annotations", {
         method: "POST",
         mode: "cors",
@@ -652,6 +694,8 @@
           comment: comment,
           assignee_ids: selectedAssignees(),
           screenshot_data: state.screenshot || "",
+          attachment_name: attachment ? attachment.name : "",
+          attachment_data: attachmentData,
           capture_error: state.captureError || "",
           pin_x: state.point.pinX,
           pin_y: state.point.pinY,
@@ -670,6 +714,7 @@
           comment: comment,
           status: data.status || "todo",
           screenshotURL: data.screenshot_url || "",
+          attachments: data.attachment_url ? [data.attachment_url] : [],
           createdAt: data.created_at || new Date().toISOString(),
           pinX: state.draftPin.pinX,
           pinY: state.draftPin.pinY
@@ -682,6 +727,7 @@
       setStatus("Feedback sent. Thank you.", "success");
       document.getElementById("bugmegaTitle").value = "";
       document.getElementById("bugmegaComment").value = "";
+      if (attachmentInput) attachmentInput.value = "";
       setTimeout(closePanel, 1200);
     } catch (error) {
       setStatus(error && error.message ? error.message : "Could not send feedback.", "error");
