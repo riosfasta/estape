@@ -248,7 +248,7 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 	s.notifyClientTaskAssignees(c.Request.Context(), task)
 	s.notifyUserIDs(c.Request.Context(), s.clientWebsiteLiveRecipients(c.Request.Context(), site), user.ID, "client_task_updated", firstNonEmpty(user.Name, user.Username, user.Email, "Someone")+" submitted website feedback: "+task.Title, task.ID)
 	s.broadcastClientTaskChanged(c.Request.Context(), task, user.ID, "client_task_created")
-	c.JSON(http.StatusCreated, gin.H{"task_id": task.ID.Hex(), "annotation_id": annotation.ID.Hex(), "screenshot_url": screenshotURL})
+	c.JSON(http.StatusCreated, gin.H{"task_id": task.ID.Hex(), "annotation_id": annotation.ID.Hex(), "screenshot_url": screenshotURL, "status": status, "created_at": now})
 }
 
 func (s *Server) setWidgetCORS(c *gin.Context) {
@@ -431,14 +431,17 @@ func (s *Server) widgetAnnotationPins(ctx context.Context, site models.ClientWeb
 					continue
 				}
 				rows = append(rows, gin.H{
-					"id":          annotation.ID.Hex(),
-					"task_id":     task.ID.Hex(),
-					"title":       annotation.Title,
-					"pin_x":       *annotation.PinX,
-					"pin_y":       *annotation.PinY,
-					"page_width":  annotation.PageWidth,
-					"page_height": annotation.PageHeight,
-					"created_at":  annotation.CreatedAt,
+					"id":             annotation.ID.Hex(),
+					"task_id":        task.ID.Hex(),
+					"title":          annotation.Title,
+					"comment":        annotation.Comment,
+					"status":         annotation.Status,
+					"screenshot_url": annotation.ScreenshotURL,
+					"pin_x":          *annotation.PinX,
+					"pin_y":          *annotation.PinY,
+					"page_width":     annotation.PageWidth,
+					"page_height":    annotation.PageHeight,
+					"created_at":     annotation.CreatedAt,
 				})
 			}
 			continue
@@ -447,14 +450,17 @@ func (s *Server) widgetAnnotationPins(ctx context.Context, site models.ClientWeb
 			continue
 		}
 		rows = append(rows, gin.H{
-			"id":          task.ID.Hex(),
-			"task_id":     task.ID.Hex(),
-			"title":       task.Title,
-			"pin_x":       *task.PinX,
-			"pin_y":       *task.PinY,
-			"page_width":  task.PageWidth,
-			"page_height": task.PageHeight,
-			"created_at":  task.CreatedAt,
+			"id":             task.ID.Hex(),
+			"task_id":        task.ID.Hex(),
+			"title":          task.Title,
+			"comment":        firstNonEmpty(task.Comment, task.Content),
+			"status":         task.Status,
+			"screenshot_url": task.ScreenshotURL,
+			"pin_x":          *task.PinX,
+			"pin_y":          *task.PinY,
+			"page_width":     task.PageWidth,
+			"page_height":    task.PageHeight,
+			"created_at":     task.CreatedAt,
 		})
 	}
 	return rows

@@ -38,7 +38,7 @@
     style.textContent =
       ".bugmega-widget *{box-sizing:border-box;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}" +
       ".bugmega-widget{position:fixed;right:22px;bottom:22px;z-index:2147483000;color:#10201c}" +
-      ".bugmega-feedback-button{display:inline-flex;align-items:center;gap:9px;border:1px solid #b8d8cf;border-radius:999px;background:#fff;color:#10201c;padding:9px 12px;font-weight:800;box-shadow:0 16px 44px rgba(0,0,0,.22);cursor:pointer}" +
+      ".bugmega-feedback-button{display:inline-flex;align-items:center;gap:4px;border:1px solid #b8d8cf;border-radius:999px;background:#fff;color:#10201c;padding:12px 17px;font-weight:800;box-shadow:0 16px 44px rgba(0,0,0,.22);cursor:pointer}" +
       ".bugmega-feedback-button:hover,.bugmega-feedback-button[aria-expanded='true']{border-color:#08a88a;box-shadow:0 16px 44px rgba(0,0,0,.22),0 0 0 3px rgba(8,168,138,.12)}" +
       ".bugmega-feedback-button img{width:32px;height:32px;object-fit:contain;display:block}" +
       ".bugmega-launch-arrow{width:9px;height:9px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform .18s ease}" +
@@ -47,12 +47,19 @@
       ".bugmega-menu.active{display:block}" +
       ".bugmega-menu-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}" +
       ".bugmega-menu-head strong{font-size:16px;color:#10201c}.bugmega-menu-count{font-size:12px;color:#64736e}" +
-      ".bugmega-annotation-list{display:grid;gap:4px;margin:0 0 12px}" +
+      ".bugmega-annotation-list{display:grid;gap:4px;max-height:224px;overflow-y:auto;margin:0 0 12px;padding-right:3px;scrollbar-gutter:stable}" +
       ".bugmega-annotation-row{width:100%;display:grid;grid-template-columns:28px minmax(0,1fr);align-items:center;gap:10px;border:0;border-radius:8px;background:transparent;padding:7px;text-align:left;color:#10201c;cursor:pointer}" +
       ".bugmega-annotation-row:hover{background:#eef8f5}.bugmega-annotation-row span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
       ".bugmega-annotation-number{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#ef4444;color:#fff;font-size:12px;font-weight:900;box-shadow:0 0 0 2px rgba(239,68,68,.14)}" +
       ".bugmega-menu-empty{margin:6px 2px 14px;color:#64736e;font-size:13px}" +
       ".bugmega-start-annotation{width:100%;display:flex;align-items:center;justify-content:center;gap:7px;border:0;border-radius:8px;background:#08a88a;color:#fff;padding:10px 14px;font-weight:800;cursor:pointer}" +
+      ".bugmega-detail[hidden],.bugmega-list-view[hidden]{display:none}" +
+      ".bugmega-detail-back{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:#087c67;padding:2px 0 10px;font-weight:800;cursor:pointer}" +
+      ".bugmega-detail-title{display:grid;grid-template-columns:30px minmax(0,1fr);align-items:center;gap:10px;margin-bottom:12px}.bugmega-detail-title h3{margin:0;font-size:17px;line-height:1.3;color:#10201c}" +
+      ".bugmega-detail-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.bugmega-detail-pill{border-radius:999px;background:#eef5f2;color:#52635d;padding:4px 8px;font-size:11px;font-weight:800}" +
+      ".bugmega-detail-comment{margin:0 0 12px;color:#33443e;font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}.bugmega-detail-comment.empty{color:#7a8883;font-style:italic}" +
+      ".bugmega-detail-image{display:block;width:100%;max-height:190px;object-fit:cover;border:1px solid #d8e1dd;border-radius:8px;margin:0 0 12px;background:#eef5f2}" +
+      ".bugmega-detail-actions{display:flex;gap:8px}.bugmega-detail-actions button{flex:1}" +
       ".bugmega-panel{position:fixed;right:22px;bottom:78px;width:min(380px,calc(100vw - 32px));max-height:calc(100vh - 110px);overflow:auto;background:#fff;border:1px solid rgba(0,0,0,.14);border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.28);padding:16px;display:none}" +
       ".bugmega-panel.active{display:block}" +
       ".bugmega-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}" +
@@ -127,9 +134,62 @@
     }).join("");
     Array.prototype.forEach.call(list.querySelectorAll("[data-bugmega-pin-index]"), function (button) {
       button.addEventListener("click", function () {
-        focusAnnotation(Number(button.getAttribute("data-bugmega-pin-index")));
+        showAnnotationDetail(Number(button.getAttribute("data-bugmega-pin-index")));
       });
     });
+  }
+
+  function annotationStatusLabel(value) {
+    var label = String(value || "Open").replace(/[_-]+/g, " ");
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  }
+
+  function annotationDateLabel(value) {
+    if (!value) return "";
+    var date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  }
+
+  function annotationScreenshotURL(value) {
+    var raw = String(value || "").trim();
+    if (!raw) return "";
+    try {
+      var parsed = new URL(raw, apiBase);
+      return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.toString() : "";
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function showAnnotationList() {
+    var listView = document.getElementById("bugmegaListView");
+    var detailView = document.getElementById("bugmegaDetailView");
+    if (listView) listView.hidden = false;
+    if (detailView) {
+      detailView.hidden = true;
+      detailView.innerHTML = "";
+    }
+  }
+
+  function showAnnotationDetail(index) {
+    var pin = state.pins[index];
+    var listView = document.getElementById("bugmegaListView");
+    var detailView = document.getElementById("bugmegaDetailView");
+    if (!pin || !listView || !detailView) return;
+    var screenshotURL = annotationScreenshotURL(pin.screenshotURL);
+    var dateLabel = annotationDateLabel(pin.createdAt);
+    listView.hidden = true;
+    detailView.hidden = false;
+    detailView.innerHTML =
+      '<button class="bugmega-detail-back" type="button" id="bugmegaDetailBack">&larr; Back to annotations</button>' +
+      '<div class="bugmega-detail-title"><span class="bugmega-annotation-number">' + esc(index + 1) + '</span><h3>' + esc(pin.title || "Annotation " + (index + 1)) + '</h3></div>' +
+      '<div class="bugmega-detail-meta"><span class="bugmega-detail-pill">' + esc(annotationStatusLabel(pin.status)) + '</span>' + (dateLabel ? '<span class="bugmega-detail-pill">' + esc(dateLabel) + '</span>' : '') + '</div>' +
+      '<p class="bugmega-detail-comment' + (pin.comment ? '' : ' empty') + '">' + esc(pin.comment || "No details provided.") + '</p>' +
+      (screenshotURL ? '<img class="bugmega-detail-image" src="' + esc(screenshotURL) + '" alt="Screenshot for ' + esc(pin.title || "annotation") + '">' : '') +
+      '<div class="bugmega-detail-actions"><button class="bugmega-secondary" type="button" id="bugmegaGoToPin">Go to pin</button></div>';
+    document.getElementById("bugmegaDetailBack").addEventListener("click", showAnnotationList);
+    document.getElementById("bugmegaGoToPin").addEventListener("click", function () { focusAnnotation(index); });
   }
 
   function render() {
@@ -141,9 +201,12 @@
       '<button class="bugmega-feedback-button" type="button" id="bugmegaLauncher" aria-label="Open BugMega annotations" aria-expanded="false"><img src="' + esc(iconURL) + '" alt="BugMega"><span class="bugmega-launch-arrow" aria-hidden="true"></span></button>' +
       '<div class="bugmega-select-banner" id="bugmegaSelectBanner">Click the exact area you want to report</div>' +
       '<section class="bugmega-menu" id="bugmegaMenu" aria-label="Page annotations">' +
-        '<div class="bugmega-menu-head"><strong>Annotations</strong><span class="bugmega-menu-count" id="bugmegaAnnotationCount"></span></div>' +
-        '<div class="bugmega-annotation-list" id="bugmegaAnnotationList"></div>' +
-        '<button class="bugmega-start-annotation" type="button" id="bugmegaStart">+ Start annotation</button>' +
+        '<div class="bugmega-list-view" id="bugmegaListView">' +
+          '<div class="bugmega-menu-head"><strong>Annotations</strong><span class="bugmega-menu-count" id="bugmegaAnnotationCount"></span></div>' +
+          '<div class="bugmega-annotation-list" id="bugmegaAnnotationList"></div>' +
+          '<button class="bugmega-start-annotation" type="button" id="bugmegaStart">+ Start annotation</button>' +
+        '</div>' +
+        '<div class="bugmega-detail" id="bugmegaDetailView" hidden></div>' +
       '</section>' +
       '<section class="bugmega-panel" id="bugmegaPanel" aria-live="polite">' +
         '<div class="bugmega-head"><strong>Send feedback</strong><button class="bugmega-close" type="button" id="bugmegaClose" aria-label="Close">x</button></div>' +
@@ -189,6 +252,7 @@
     var open = !menu || !menu.classList.contains("active");
     if (open) closePanel();
     renderAnnotationList();
+    if (open) showAnnotationList();
     setMenuOpen(open);
   }
 
@@ -219,6 +283,10 @@
     return {
       id: raw.id || raw.annotation_id || "",
       title: raw.title || "Annotation pin",
+      comment: raw.comment || "",
+      status: raw.status || "",
+      screenshotURL: raw.screenshot_url || raw.screenshotURL || "",
+      createdAt: raw.created_at || raw.createdAt || "",
       pinX: Math.max(0, Math.min(100, Number.isFinite(pinX) ? pinX : 0)),
       pinY: Math.max(0, Math.min(100, Number.isFinite(pinY) ? pinY : 0)),
       draft: Boolean(raw.draft)
@@ -417,6 +485,10 @@
         state.pins.push({
           id: data.annotation_id || "",
           title: title || comment || "Website feedback",
+          comment: comment,
+          status: data.status || "todo",
+          screenshotURL: data.screenshot_url || "",
+          createdAt: data.created_at || new Date().toISOString(),
           pinX: state.draftPin.pinX,
           pinY: state.draftPin.pinY
         });
