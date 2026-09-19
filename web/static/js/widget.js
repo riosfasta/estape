@@ -406,12 +406,38 @@
     return Math.min(Math.max(value, min), max);
   }
 
+  async function waitForCaptureContent(left, top, width, height) {
+    window.dispatchEvent(new Event("scroll"));
+    await new Promise(function (resolve) {
+      requestAnimationFrame(function () { requestAnimationFrame(resolve); });
+    });
+    var visibleImages = Array.prototype.filter.call(document.images || [], function (img) {
+      var rect = img.getBoundingClientRect();
+      return rect.right > left && rect.left < left + width && rect.bottom > top && rect.top < top + height;
+    });
+    await Promise.all(visibleImages.map(function (img) {
+      if (img.complete) return Promise.resolve();
+      return new Promise(function (resolve) {
+        var timeout = setTimeout(resolve, 1500);
+        var done = function () {
+          clearTimeout(timeout);
+          resolve();
+        };
+        img.addEventListener("load", done, { once: true });
+        img.addEventListener("error", done, { once: true });
+      });
+    }));
+  }
+
   async function captureSection(point) {
     var html2canvas = await loadHtml2Canvas();
     var cropWidth = Math.min(760, window.innerWidth);
     var cropHeight = Math.min(560, window.innerHeight);
     var left = clamp(point.clientX - cropWidth / 2, 0, Math.max(0, window.innerWidth - cropWidth));
     var top = clamp(point.clientY - cropHeight / 2, 0, Math.max(0, window.innerHeight - cropHeight));
+    await waitForCaptureContent(left, top, cropWidth, cropHeight);
+    var scrollX = window.scrollX;
+    var scrollY = window.scrollY;
     var root = document.querySelector(".bugmega-widget");
     var previousVisibility = root ? root.style.visibility : "";
     if (root) root.style.visibility = "hidden";
@@ -423,14 +449,14 @@
         allowTaint: false,
         logging: false,
         scale: Math.min(2, window.devicePixelRatio || 1),
-        x: window.scrollX + left,
-        y: window.scrollY + top,
+        x: scrollX + left,
+        y: scrollY + top,
         width: cropWidth,
         height: cropHeight,
-        windowWidth: Math.max(document.documentElement.scrollWidth, window.innerWidth),
-        windowHeight: Math.max(document.documentElement.scrollHeight, window.innerHeight),
-        scrollX: -window.scrollX,
-        scrollY: -window.scrollY
+        windowWidth: window.innerWidth,
+        windowHeight: window.innerHeight,
+        scrollX: scrollX,
+        scrollY: scrollY
       });
       return canvas.toDataURL("image/png", 0.92);
     } finally {
