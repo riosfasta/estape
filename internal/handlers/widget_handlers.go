@@ -63,11 +63,16 @@ func (s *Server) widgetSession(c *gin.Context) {
 		c.JSON(http.StatusPaymentRequired, gin.H{"error": "membership required", "code": "membership_required"})
 		return
 	}
+	statuses := defaultClientTaskStatuses()
+	if tab, err := s.widgetTaskBoard(c.Request.Context(), site); err == nil {
+		statuses = normalizeClientTaskStatuses(tab.Statuses)
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"logged_in": true,
 		"user":      user,
 		"members":   s.widgetAssignableMembers(c.Request.Context(), client, site),
-		"pins":      s.widgetAnnotationPins(c.Request.Context(), site, c.Query("url")),
+		"statuses":  statuses,
+		"pins":      s.widgetAnnotationPins(c.Request.Context(), site, c.Query("url"), user),
 	})
 }
 
@@ -82,6 +87,7 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 		ReporterName   string   `json:"reporter_name"`
 		ReporterEmail  string   `json:"reporter_email"`
 		AssigneeIDs    []string `json:"assignee_ids"`
+		Status         string   `json:"status"`
 		ScreenshotData string   `json:"screenshot_data"`
 		AttachmentName string   `json:"attachment_name"`
 		AttachmentData string   `json:"attachment_data"`
@@ -197,9 +203,13 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 		return
 	}
 	statuses := normalizeClientTaskStatuses(tab.Statuses)
-	status := "todo"
-	if len(statuses) > 0 {
+	status := normalizeClientTaskStatus(req.Status)
+	if status == "" && len(statuses) > 0 {
 		status = statuses[0]
+	}
+	if !containsString(statuses, status) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "status is not in this task board"})
+		return
 	}
 	x := clampFloat(*req.PinX, 0, 100)
 	y := clampFloat(*req.PinY, 0, 100)
@@ -412,10 +422,237 @@ func (s *Server) deleteWidgetAnnotation(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"deleted": true})
 }
 
-func (s *Server) loadWidgetAnnotationForManage(c *gin.Context, siteKey string) (models.User, models.ClientTask, int, bool) {
+func widgetAnnotationFromTask(task models.ClientTask, annotationIndex int) models.ClientTaskAnnotation {
+	if annotationIndex >= 0 && annotationIndex < len(task.Annotations) {
+		return task.Annotations[annotationIndex]
+	}
+	return models.ClientTaskAnnotation{
+		ID:            task.ID,
+		Title:         task.Title,
+		URL:           task.URL,
+		Comment:       firstNonEmpty(task.Comment, task.Content),
+		ScreenshotURL: task.ScreenshotURL,
+		PinX:          task.PinX,
+		PinY:          task.PinY,
+		PageWidth:     task.PageWidth,
+		PageHeight:    task.PageHeight,
+		Attachments:   task.Attachments,
+		AssigneeIDs:   task.AssigneeIDs,
+		Status:        task.Status,
+		CreatedBy:     task.CreatedBy,
+		CreatedAt:     task.CreatedAt,
+		UpdatedAt:     task.UpdatedAt,
+	}
+}
+
+func (s *Server) canEditWidgetAnnotation(ctx context.Context, user models.User, task models.ClientTask, annotation models.ClientTaskAnnotation) bool {
+	if user.ID.IsZero() {
+		return false
+	}
+	if annotation.CreatedBy == user.ID || task.CreatedBy == user.ID {
+		return true
+	}
+	userCtx := middleware.UserContext{ID: user.ID, Role: user.Role, TeamID: user.TeamID}
+	return s.canManageClientTask(ctx, userCtx, task)
+}
+
+func (s *Server) canCollaborateWidgetAnnotation(ctx context.Context, user models.User, task models.ClientTask, annotation models.ClientTaskAnnotation) bool {
+	return s.canEditWidgetAnnotation(ctx, user, task, annotation) ||
+		containsObjectID(annotation.AssigneeIDs, user.ID) ||
+		(annotation.ID == task.ID && containsObjectID(task.AssigneeIDs, user.ID))
+}
+
+func (s *Server) widgetTaskStatuses(ctx context.Context, task models.ClientTask) []string {
+	var tab models.ClientTab
+	if !task.TabID.IsZero() && s.store.C("client_tabs").FindOne(ctx, bson.M{"_id": task.TabID}).Decode(&tab) == nil {
+		return normalizeClientTaskStatuses(tab.Statuses)
+	}
+	return defaultClientTaskStatuses()
+}
+
+func (s *Server) widgetCommentRows(ctx context.Context, comments []models.ClientTaskComment) []gin.H {
+	authorIDs := []primitive.ObjectID{}
+	for _, comment := range comments {
+		authorIDs = append(authorIDs, comment.AuthorID)
+	}
+	authors := map[primitive.ObjectID]models.User{}
+	if ids := uniqueObjectIDs(authorIDs); len(ids) > 0 {
+		cursor, err := s.store.C("users").Find(ctx, bson.M{"_id": bson.M{"$in": ids}}, options.Find().SetProjection(bson.M{"name": 1, "username": 1, "email": 1, "avatar_url": 1}))
+		if err == nil {
+			defer cursor.Close(ctx)
+			for cursor.Next(ctx) {
+				var user models.User
+				if cursor.Decode(&user) == nil {
+					authors[user.ID] = user
+				}
+			}
+		}
+	}
+	rows := make([]gin.H, 0, len(comments))
+	for _, comment := range comments {
+		author := authors[comment.AuthorID]
+		rows = append(rows, gin.H{
+			"id":              comment.ID.Hex(),
+			"content":         comment.Content,
+			"attachment_url":  comment.AttachmentURL,
+			"attachment_name": comment.AttachmentName,
+			"created_at":      comment.CreatedAt,
+			"author": gin.H{
+				"id":         comment.AuthorID.Hex(),
+				"name":       firstNonEmpty(author.Name, author.Username, author.Email, "Team member"),
+				"avatar_url": author.AvatarURL,
+			},
+		})
+	}
+	return rows
+}
+
+func (s *Server) getWidgetAnnotation(c *gin.Context) {
+	s.setWidgetCORS(c)
+	user, task, annotationIndex, ok := s.loadWidgetAnnotationForAccess(c, c.Query("site_key"))
+	if !ok {
+		return
+	}
+	annotation := widgetAnnotationFromTask(task, annotationIndex)
+	comments, _ := s.clientTaskComments(c.Request.Context(), task.ID)
+	c.JSON(http.StatusOK, gin.H{
+		"annotation": annotation,
+		"task_id":    task.ID.Hex(),
+		"statuses":   s.widgetTaskStatuses(c.Request.Context(), task),
+		"comments":   s.widgetCommentRows(c.Request.Context(), comments),
+		"can_manage": s.canCollaborateWidgetAnnotation(c.Request.Context(), user, task, annotation),
+		"can_edit":   s.canEditWidgetAnnotation(c.Request.Context(), user, task, annotation),
+	})
+}
+
+func (s *Server) updateWidgetAnnotationStatus(c *gin.Context) {
+	s.setWidgetCORS(c)
+	var req struct {
+		SiteKey string `json:"site_key"`
+		Status  string `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid annotation status update"})
+		return
+	}
+	user, task, annotationIndex, ok := s.loadWidgetAnnotationForAccess(c, req.SiteKey)
+	if !ok {
+		return
+	}
+	annotation := widgetAnnotationFromTask(task, annotationIndex)
+	if !s.canCollaborateWidgetAnnotation(c.Request.Context(), user, task, annotation) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only an assignee, creator, or folder admin can update this annotation"})
+		return
+	}
+	status := normalizeClientTaskStatus(req.Status)
+	statuses := s.widgetTaskStatuses(c.Request.Context(), task)
+	if status == "" || !containsString(statuses, status) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "status is not in this task board"})
+		return
+	}
+	oldStatus := annotation.Status
+	now := time.Now()
+	set := bson.M{"updated_at": now}
+	if annotationIndex >= 0 {
+		annotations := append([]models.ClientTaskAnnotation{}, task.Annotations...)
+		annotations[annotationIndex].Status = status
+		annotations[annotationIndex].UpdatedAt = now
+		annotation = annotations[annotationIndex]
+		set["annotations"] = annotations
+		if len(annotations) == 1 {
+			set["status"] = status
+		}
+	} else {
+		annotation.Status = status
+		annotation.UpdatedAt = now
+		set["status"] = status
+	}
+	if _, err := s.store.C("client_tasks").UpdateByID(c.Request.Context(), task.ID, bson.M{"$set": set}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update annotation status"})
+		return
+	}
+	task.UpdatedAt = now
+	s.recordClientTaskLog(c.Request.Context(), task, user.ID, "updated_status", "changed annotation status from "+clientTaskStatusLogLabel(oldStatus)+" to "+clientTaskStatusLogLabel(status)+" from the website widget")
+	actor := s.notificationActorName(c.Request.Context(), user.ID)
+	s.notifyUserIDs(c.Request.Context(), s.clientTaskNotificationRecipients(c.Request.Context(), task), user.ID, "client_task_updated", actor+" set annotation status as "+clientTaskStatusLogLabel(status)+" in task: "+task.Title, task.ID)
+	s.broadcastClientTaskChanged(c.Request.Context(), task, user.ID, "client_task_updated")
+	c.JSON(http.StatusOK, gin.H{"status": status, "annotation": annotation})
+}
+
+func (s *Server) createWidgetAnnotationComment(c *gin.Context) {
+	s.setWidgetCORS(c)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4<<20)
+	var req struct {
+		SiteKey        string `json:"site_key"`
+		Content        string `json:"content"`
+		AttachmentName string `json:"attachment_name"`
+		AttachmentData string `json:"attachment_data"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid annotation comment"})
+		return
+	}
+	user, task, annotationIndex, ok := s.loadWidgetAnnotationForAccess(c, req.SiteKey)
+	if !ok {
+		return
+	}
+	annotation := widgetAnnotationFromTask(task, annotationIndex)
+	if !s.canCollaborateWidgetAnnotation(c.Request.Context(), user, task, annotation) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only an assignee, creator, or folder admin can comment on this annotation"})
+		return
+	}
+	content := strings.TrimSpace(req.Content)
+	attachmentURL := ""
+	if strings.TrimSpace(req.AttachmentData) != "" {
+		url, err := s.saveWidgetAttachment(user.ID, req.AttachmentName, req.AttachmentData)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		attachmentURL = url
+	}
+	if content == "" && attachmentURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "comment or attachment is required"})
+		return
+	}
+	comment := models.ClientTaskComment{
+		ID:             primitive.NewObjectID(),
+		TaskID:         task.ID,
+		ClientID:       task.ClientID,
+		WebsiteID:      task.WebsiteID,
+		TabID:          task.TabID,
+		TeamID:         task.TeamID,
+		AuthorID:       user.ID,
+		Content:        content,
+		AttachmentURL:  attachmentURL,
+		AttachmentName: strings.TrimSpace(req.AttachmentName),
+		ReadBy:         []primitive.ObjectID{user.ID},
+		CreatedAt:      time.Now(),
+	}
+	if _, err := s.store.C("client_task_comments").InsertOne(c.Request.Context(), comment); err != nil {
+		if attachmentURL != "" {
+			s.deleteLocalUploadFile(attachmentURL)
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create comment"})
+		return
+	}
+	detail := "created a comment from the website widget"
+	if attachmentURL != "" {
+		detail = "created a comment with attachment from the website widget"
+	}
+	s.recordClientTaskLog(c.Request.Context(), task, user.ID, "created_comment", detail)
+	mentionedIDs := s.notifyClientTaskCommentMentions(c.Request.Context(), task, user.ID, comment.Content, comment.ID)
+	actor := s.notificationActorName(c.Request.Context(), user.ID)
+	recipients := withoutObjectIDs(s.clientTaskNotificationRecipients(c.Request.Context(), task), mentionedIDs)
+	s.notifyUserIDs(c.Request.Context(), recipients, user.ID, "client_task_comment", actor+" sent a comment in task: "+task.Title, comment.ID)
+	s.broadcastClientTaskChanged(c.Request.Context(), task, user.ID, "client_task_comment")
+	c.JSON(http.StatusCreated, gin.H{"comment": s.widgetCommentRows(c.Request.Context(), []models.ClientTaskComment{comment})[0]})
+}
+
+func (s *Server) loadWidgetAnnotationForAccess(c *gin.Context, siteKey string) (models.User, models.ClientTask, int, bool) {
 	user, ok := s.widgetAuthenticatedUser(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in to BugMega before managing website feedback"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "sign in to BugMega before viewing website feedback"})
 		return models.User{}, models.ClientTask{}, -1, false
 	}
 	site, ok := s.loadWidgetWebsiteByKey(c, siteKey)
@@ -423,7 +660,7 @@ func (s *Server) loadWidgetAnnotationForManage(c *gin.Context, siteKey string) (
 		return models.User{}, models.ClientTask{}, -1, false
 	}
 	if !widgetOriginAllowed(site.URL, c.GetHeader("Origin")) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "this website is not allowed to manage feedback for this domain"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "this website is not allowed to access feedback for this domain"})
 		return models.User{}, models.ClientTask{}, -1, false
 	}
 	var client models.ClientProject
@@ -452,11 +689,9 @@ func (s *Server) loadWidgetAnnotationForManage(c *gin.Context, siteKey string) (
 		return models.User{}, models.ClientTask{}, -1, false
 	}
 	annotationIndex := -1
-	createdBy := task.CreatedBy
 	for index := range task.Annotations {
 		if task.Annotations[index].ID == annotationID {
 			annotationIndex = index
-			createdBy = task.Annotations[index].CreatedBy
 			break
 		}
 	}
@@ -464,7 +699,16 @@ func (s *Server) loadWidgetAnnotationForManage(c *gin.Context, siteKey string) (
 		c.JSON(http.StatusNotFound, gin.H{"error": "annotation not found"})
 		return models.User{}, models.ClientTask{}, -1, false
 	}
-	if createdBy != user.ID && !s.canManageClientTask(c.Request.Context(), userCtx, task) {
+	return user, task, annotationIndex, true
+}
+
+func (s *Server) loadWidgetAnnotationForManage(c *gin.Context, siteKey string) (models.User, models.ClientTask, int, bool) {
+	user, task, annotationIndex, ok := s.loadWidgetAnnotationForAccess(c, siteKey)
+	if !ok {
+		return models.User{}, models.ClientTask{}, -1, false
+	}
+	annotation := widgetAnnotationFromTask(task, annotationIndex)
+	if !s.canEditWidgetAnnotation(c.Request.Context(), user, task, annotation) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "only the annotation creator or a folder admin can manage this annotation"})
 		return models.User{}, models.ClientTask{}, -1, false
 	}
@@ -625,7 +869,7 @@ func (s *Server) widgetAssignableMembers(ctx context.Context, client models.Clie
 	return rows
 }
 
-func (s *Server) widgetAnnotationPins(ctx context.Context, site models.ClientWebsite, pageURL string) []gin.H {
+func (s *Server) widgetAnnotationPins(ctx context.Context, site models.ClientWebsite, pageURL string, user models.User) []gin.H {
 	pageURL = normalizeWidgetPageURL(pageURL)
 	if pageURL == "" {
 		return []gin.H{}
@@ -663,6 +907,8 @@ func (s *Server) widgetAnnotationPins(ctx context.Context, site models.ClientWeb
 					"page_width":     annotation.PageWidth,
 					"page_height":    annotation.PageHeight,
 					"created_at":     annotation.CreatedAt,
+					"can_manage":     s.canCollaborateWidgetAnnotation(ctx, user, task, annotation),
+					"can_edit":       s.canEditWidgetAnnotation(ctx, user, task, annotation),
 				})
 			}
 			continue
@@ -683,6 +929,8 @@ func (s *Server) widgetAnnotationPins(ctx context.Context, site models.ClientWeb
 			"page_width":     task.PageWidth,
 			"page_height":    task.PageHeight,
 			"created_at":     task.CreatedAt,
+			"can_manage":     s.canCollaborateWidgetAnnotation(ctx, user, task, widgetAnnotationFromTask(task, -1)),
+			"can_edit":       s.canEditWidgetAnnotation(ctx, user, task, widgetAnnotationFromTask(task, -1)),
 		})
 	}
 	return rows
@@ -858,12 +1106,7 @@ func (s *Server) saveWidgetAttachment(ownerID primitive.ObjectID, filename strin
 }
 
 func (s *Server) ensureWidgetTaskBoard(ctx context.Context, site models.ClientWebsite) (models.ClientTab, error) {
-	var tab models.ClientTab
-	err := s.store.C("client_tabs").FindOne(
-		ctx,
-		bson.M{"website_id": site.ID, "type": "task_board"},
-		options.FindOne().SetSort(bson.D{{Key: "created_at", Value: 1}}),
-	).Decode(&tab)
+	tab, err := s.widgetTaskBoard(ctx, site)
 	if err == nil {
 		return tab, nil
 	}
@@ -877,4 +1120,14 @@ func (s *Server) ensureWidgetTaskBoard(ctx context.Context, site models.ClientWe
 	}
 	s.broadcastClientTabChanged(ctx, tab, site.CreatedBy, "client_tab_created")
 	return tab, nil
+}
+
+func (s *Server) widgetTaskBoard(ctx context.Context, site models.ClientWebsite) (models.ClientTab, error) {
+	var tab models.ClientTab
+	err := s.store.C("client_tabs").FindOne(
+		ctx,
+		bson.M{"website_id": site.ID, "type": "task_board"},
+		options.FindOne().SetSort(bson.D{{Key: "created_at", Value: 1}}),
+	).Decode(&tab)
+	return tab, err
 }

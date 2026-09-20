@@ -57,13 +57,13 @@
       ".bugmega-launch-arrow{position:absolute;right:-7px;bottom:4px;width:24px;height:24px;border:1px solid #b8d8cf;border-radius:50%;background:#fff;box-shadow:0 4px 10px rgba(0,0,0,.16)}" +
       ".bugmega-launch-arrow:after{content:'';position:absolute;left:7px;top:6px;width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);transition:transform .18s ease}" +
       ".bugmega-feedback-button[aria-expanded='true'] .bugmega-launch-arrow:after{top:9px;transform:rotate(225deg)}" +
-      ".bugmega-menu{position:fixed;right:22px;bottom:86px;width:min(340px,calc(100vw - 32px));max-height:calc(100vh - 118px);overflow:auto;background:#fff;border:1px solid rgba(0,0,0,.14);border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.28);padding:14px;display:none}" +
+      ".bugmega-menu{position:fixed;right:22px;bottom:86px;width:min(390px,calc(100vw - 32px));max-height:calc(100vh - 118px);overflow:auto;background:#fff;border:1px solid rgba(0,0,0,.14);border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.28);padding:14px;display:none}" +
       ".bugmega-menu.active{display:block}" +
       ".bugmega-menu-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}" +
       ".bugmega-menu-head strong{font-size:15px;color:#10201c}.bugmega-menu-count{font-size:11px;color:#64736e}" +
       ".bugmega-annotation-list{display:grid;gap:4px;max-height:224px;overflow-y:auto;margin:0 0 12px;padding-right:3px;scrollbar-gutter:stable}" +
       ".bugmega-annotation-row{width:100%;display:grid;grid-template-columns:26px minmax(0,1fr);align-items:center;gap:8px;border:0;border-radius:7px;background:transparent;padding:6px;text-align:left;color:#10201c;font-size:13px;cursor:pointer}" +
-      ".bugmega-annotation-row:hover{background:#eef8f5}.bugmega-annotation-row span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+      ".bugmega-annotation-row:hover{background:#eef8f5}.bugmega-annotation-copy{min-width:0;display:grid;gap:2px}.bugmega-annotation-copy>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bugmega-annotation-copy small{color:#64736e;font-size:10px;font-weight:800}" +
       ".bugmega-annotation-number{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#ef4444;color:#fff;font-size:11px;font-weight:900;box-shadow:0 0 0 2px rgba(239,68,68,.14)}" +
       ".bugmega-menu-empty{margin:6px 2px 14px;color:#64736e;font-size:13px}" +
       ".bugmega-start-annotation{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:7px;background:#08a88a;color:#fff;padding:8px 11px;font-size:13px;font-weight:800;cursor:pointer}" +
@@ -74,6 +74,10 @@
       ".bugmega-detail-comment{margin:0 0 10px;color:#33443e;font-size:13px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}.bugmega-detail-comment.empty{color:#7a8883;font-style:italic}" +
       ".bugmega-detail-image{display:block;width:100%;height:190px;object-fit:cover;border:1px solid #d8e1dd;border-radius:8px;margin:0 0 12px;background:#eef5f2}" +
       ".bugmega-detail-file{display:flex;align-items:center;gap:7px;border:1px solid #d8e1dd;border-radius:8px;color:#087c67;padding:9px 10px;margin:0 0 12px;font-size:13px;font-weight:800;text-decoration:none;overflow-wrap:anywhere}" +
+      ".bugmega-detail-attachments{display:grid;gap:8px;margin-bottom:12px}.bugmega-detail-attachments .bugmega-detail-image,.bugmega-detail-attachments .bugmega-detail-file{margin:0}" +
+      ".bugmega-detail-status{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px;margin:0 0 12px}.bugmega-detail-status label{font-size:12px;font-weight:800;color:#52635d}.bugmega-detail-status select{width:100%;border:1px solid #cdd9d5;border-radius:7px;background:#fff;color:#10201c;padding:7px 8px;font-size:13px;font-weight:700}" +
+      ".bugmega-comments{border-top:1px solid #d8e1dd;margin-top:14px;padding-top:12px}.bugmega-comments h4{margin:0 0 9px;font-size:13px}.bugmega-comment-list{display:grid;gap:8px;max-height:220px;overflow:auto}.bugmega-comment{border:1px solid #e0e8e5;border-radius:8px;background:#f8fbfa;padding:8px}.bugmega-comment-head{display:flex;justify-content:space-between;gap:8px;margin-bottom:5px}.bugmega-comment-head strong{font-size:12px}.bugmega-comment-head time{color:#7a8883;font-size:10px}.bugmega-comment p{margin:0;color:#33443e;font-size:12px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}.bugmega-comment .bugmega-detail-file{margin:7px 0 0;padding:7px 8px;font-size:11px}" +
+      ".bugmega-comment-form{display:grid;gap:7px;margin-top:10px}.bugmega-comment-form textarea{width:100%;min-height:62px;resize:vertical;border:1px solid #cdd9d5;border-radius:7px;padding:8px;font-size:12px}.bugmega-comment-form input[type='file']{width:100%;font-size:11px}.bugmega-comment-form .bugmega-primary{justify-self:start}" +
       ".bugmega-detail-actions{display:flex;gap:6px;flex-wrap:wrap}.bugmega-detail-actions button{flex:1;min-width:76px}" +
       ".bugmega-panel{position:fixed;right:22px;bottom:78px;width:min(380px,calc(100vw - 32px));max-height:calc(100vh - 110px);overflow:auto;background:#fff;border:1px solid rgba(0,0,0,.14);border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.28);padding:16px;display:none}" +
       ".bugmega-panel.active{display:block}" +
@@ -176,7 +180,7 @@
       return;
     }
     list.innerHTML = state.pins.map(function (pin, index) {
-      return '<button class="bugmega-annotation-row" type="button" data-bugmega-pin-index="' + index + '"><span class="bugmega-annotation-number">' + esc(index + 1) + '</span><span>' + esc(pin.title || "Annotation " + (index + 1)) + '</span></button>';
+      return '<button class="bugmega-annotation-row" type="button" data-bugmega-pin-index="' + index + '"><span class="bugmega-annotation-number">' + esc(index + 1) + '</span><span class="bugmega-annotation-copy"><span>' + esc(pin.title || "Annotation " + (index + 1)) + '</span><small>' + esc(annotationStatusLabel(pin.status)) + '</small></span></button>';
     }).join("");
     Array.prototype.forEach.call(list.querySelectorAll("[data-bugmega-pin-index]"), function (button) {
       button.addEventListener("click", function () {
@@ -188,6 +192,18 @@
   function annotationStatusLabel(value) {
     var label = String(value || "Open").replace(/[_-]+/g, " ");
     return label.charAt(0).toUpperCase() + label.slice(1);
+  }
+
+  function annotationStatuses(pin) {
+    var values = pin && Array.isArray(pin.statuses) && pin.statuses.length ? pin.statuses : (state.session && Array.isArray(state.session.statuses) ? state.session.statuses : []);
+    return values.length ? values : ["todo", "in_progress", "done"];
+  }
+
+  function annotationStatusOptions(selected, pin) {
+    var current = String(selected || "");
+    return annotationStatuses(pin).map(function (status) {
+      return '<option value="' + esc(status) + '"' + (status === current ? ' selected' : '') + '>' + esc(annotationStatusLabel(status)) + '</option>';
+    }).join("");
   }
 
   function annotationDateLabel(value) {
@@ -209,14 +225,32 @@
   }
 
   function annotationAttachmentHTML(pin) {
-    var attachment = Array.isArray(pin.attachments) ? pin.attachments[0] : "";
-    var attachmentURL = annotationScreenshotURL(attachment);
+    var attachments = Array.isArray(pin.attachments) ? pin.attachments : [];
+    var items = attachments.map(function (attachment, index) {
+      var attachmentURL = annotationScreenshotURL(attachment);
+      if (!attachmentURL) return "";
+      var path = attachmentURL.split("?")[0];
+      if (/\.(png|jpe?g|gif|webp)$/i.test(path)) {
+        return '<a href="' + esc(attachmentURL) + '" target="_blank" rel="noopener noreferrer"><img class="bugmega-detail-image" src="' + esc(attachmentURL) + '" alt="Annotation attachment ' + esc(index + 1) + '"></a>';
+      }
+      return '<a class="bugmega-detail-file" href="' + esc(attachmentURL) + '" target="_blank" rel="noopener noreferrer">&#128206; Open attachment ' + esc(index + 1) + '</a>';
+    }).filter(Boolean);
+    return items.length ? '<div class="bugmega-detail-attachments">' + items.join("") + '</div>' : "";
+  }
+
+  function annotationCommentAttachmentHTML(comment) {
+    var attachmentURL = annotationScreenshotURL(comment && comment.attachment_url);
     if (!attachmentURL) return "";
-    var path = attachmentURL.split("?")[0];
-    if (/\.(png|jpe?g|gif|webp)$/i.test(path)) {
-      return '<a href="' + esc(attachmentURL) + '" target="_blank" rel="noopener noreferrer"><img class="bugmega-detail-image" src="' + esc(attachmentURL) + '" alt="Annotation attachment"></a>';
-    }
-    return '<a class="bugmega-detail-file" href="' + esc(attachmentURL) + '" target="_blank" rel="noopener noreferrer">&#128206; Open attachment</a>';
+    return '<a class="bugmega-detail-file" href="' + esc(attachmentURL) + '" target="_blank" rel="noopener noreferrer">&#128206; ' + esc(comment.attachment_name || "Open attachment") + '</a>';
+  }
+
+  function annotationCommentsHTML(comments) {
+    if (!Array.isArray(comments) || !comments.length) return '<p class="bugmega-menu-empty">No comments yet.</p>';
+    return comments.map(function (comment) {
+      var author = comment.author || {};
+      return '<article class="bugmega-comment"><div class="bugmega-comment-head"><strong>' + esc(author.name || "Team member") + '</strong><time>' + esc(annotationDateLabel(comment.created_at)) + '</time></div>' +
+        (comment.content ? '<p>' + esc(comment.content) + '</p>' : '') + annotationCommentAttachmentHTML(comment) + '</article>';
+    }).join("");
   }
 
   function showAnnotationList() {
@@ -226,11 +260,12 @@
     if (detailView) {
       detailView.hidden = true;
       detailView.innerHTML = "";
+      detailView.removeAttribute("data-bugmega-detail-id");
     }
     positionSurface(document.getElementById("bugmegaMenu"));
   }
 
-  function showAnnotationDetail(index) {
+  function renderAnnotationDetail(index) {
     var pin = state.pins[index];
     var listView = document.getElementById("bugmegaListView");
     var detailView = document.getElementById("bugmegaDetailView");
@@ -239,25 +274,160 @@
     var dateLabel = annotationDateLabel(pin.createdAt);
     listView.hidden = true;
     detailView.hidden = false;
+    detailView.setAttribute("data-bugmega-detail-id", pin.id || "");
+    var canManage = Boolean(pin.canManage);
+    var canEdit = Boolean(pin.canEdit);
+    var statusControl = canManage
+      ? '<div class="bugmega-detail-status"><label for="bugmegaAnnotationStatus">Status</label><select id="bugmegaAnnotationStatus">' + annotationStatusOptions(pin.status, pin) + '</select></div>'
+      : '<div class="bugmega-detail-meta"><span class="bugmega-detail-pill">' + esc(annotationStatusLabel(pin.status)) + '</span></div>';
+    var commentsLoaded = Array.isArray(pin.comments);
     detailView.innerHTML =
       '<button class="bugmega-detail-back" type="button" id="bugmegaDetailBack">' + widgetIcon("back") + 'Back to annotations</button>' +
       '<div class="bugmega-detail-title"><span class="bugmega-annotation-number">' + esc(index + 1) + '</span><h3>' + esc(pin.title || "Annotation " + (index + 1)) + '</h3></div>' +
-      '<div class="bugmega-detail-meta"><span class="bugmega-detail-pill">' + esc(annotationStatusLabel(pin.status)) + '</span>' + (dateLabel ? '<span class="bugmega-detail-pill">' + esc(dateLabel) + '</span>' : '') + '</div>' +
+      statusControl +
+      (dateLabel ? '<div class="bugmega-detail-meta"><span class="bugmega-detail-pill">' + esc(dateLabel) + '</span></div>' : '') +
       '<p class="bugmega-detail-comment' + (pin.comment ? '' : ' empty') + '">' + esc(pin.comment || "No details provided.") + '</p>' +
       (screenshotURL ? '<img class="bugmega-detail-image" src="' + esc(screenshotURL) + '" alt="Screenshot for ' + esc(pin.title || "annotation") + '">' : '') +
       annotationAttachmentHTML(pin) +
-      '<div class="bugmega-detail-actions"><button class="bugmega-secondary" type="button" id="bugmegaGoToPin">' + widgetIcon("pin") + 'Go to pin</button><button class="bugmega-secondary" type="button" id="bugmegaEditAnnotation">' + widgetIcon("edit") + 'Edit</button><button class="bugmega-danger" type="button" id="bugmegaDeleteAnnotation">' + widgetIcon("trash") + 'Delete</button></div>' +
+      '<div class="bugmega-comments"><h4>Comments</h4><div class="bugmega-comment-list" id="bugmegaCommentList">' + (commentsLoaded ? annotationCommentsHTML(pin.comments) : '<p class="bugmega-menu-empty">Loading comments...</p>') + '</div>' +
+        (canManage ? '<form class="bugmega-comment-form" id="bugmegaCommentForm"><textarea name="content" placeholder="Leave a comment"></textarea><input type="file" name="attachment" aria-label="Comment attachment" accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.zip"><button class="bugmega-primary" type="submit">Add comment</button></form>' : '<p class="bugmega-muted">Only assigned teammates, the creator, or an admin can update this annotation.</p>') + '</div>' +
+      '<div class="bugmega-detail-actions"><button class="bugmega-secondary" type="button" id="bugmegaGoToPin">' + widgetIcon("pin") + 'Go to pin</button>' + (canEdit ? '<button class="bugmega-secondary" type="button" id="bugmegaEditAnnotation">' + widgetIcon("edit") + 'Edit</button><button class="bugmega-danger" type="button" id="bugmegaDeleteAnnotation">' + widgetIcon("trash") + 'Delete</button>' : '') + '</div>' +
       '<p class="bugmega-status" id="bugmegaDetailStatus"></p>';
     document.getElementById("bugmegaDetailBack").addEventListener("click", showAnnotationList);
     document.getElementById("bugmegaGoToPin").addEventListener("click", function () { focusAnnotation(index); });
-    document.getElementById("bugmegaEditAnnotation").addEventListener("click", function () { showAnnotationEdit(index); });
-    document.getElementById("bugmegaDeleteAnnotation").addEventListener("click", function (event) { deleteAnnotation(index, event.currentTarget); });
+    var editButton = document.getElementById("bugmegaEditAnnotation");
+    var deleteButton = document.getElementById("bugmegaDeleteAnnotation");
+    if (editButton) editButton.addEventListener("click", function () { showAnnotationEdit(index); });
+    if (deleteButton) deleteButton.addEventListener("click", function (event) { deleteAnnotation(index, event.currentTarget); });
+    var statusSelect = document.getElementById("bugmegaAnnotationStatus");
+    if (statusSelect) statusSelect.addEventListener("change", function (event) { updateAnnotationStatus(index, event.currentTarget); });
+    var commentForm = document.getElementById("bugmegaCommentForm");
+    if (commentForm) commentForm.addEventListener("submit", function (event) { submitAnnotationComment(index, event); });
     var screenshot = detailView.querySelector(".bugmega-detail-image");
     if (screenshot) {
       screenshot.addEventListener("load", function () { positionSurface(document.getElementById("bugmegaMenu")); }, { once: true });
       screenshot.addEventListener("error", function () { positionSurface(document.getElementById("bugmegaMenu")); }, { once: true });
     }
     positionSurface(document.getElementById("bugmegaMenu"));
+  }
+
+  function showAnnotationDetail(index) {
+    var pin = state.pins[index];
+    if (!pin) return;
+    renderAnnotationDetail(index);
+    loadAnnotationDetails(index);
+  }
+
+  async function loadAnnotationDetails(index) {
+    var pin = state.pins[index];
+    if (!pin || !pin.id) return;
+    try {
+      var response = await fetch(apiBase + "/api/widget/annotations/" + encodeURIComponent(pin.id) + "?site_key=" + encodeURIComponent(siteKey), {
+        method: "GET",
+        mode: "cors",
+        credentials: "include"
+      });
+      var data = await response.json().catch(function () { return {}; });
+      if (!response.ok) throw new Error(data.error || "Could not load annotation details.");
+      var updated = normalizePin(Object.assign({}, pin, data.annotation || {}, {
+        task_id: data.task_id || pin.taskID,
+        statuses: data.statuses || pin.statuses,
+        comments: data.comments || [],
+        can_manage: data.can_manage,
+        can_edit: data.can_edit
+      }));
+      state.pins[index] = updated;
+      var detailView = document.getElementById("bugmegaDetailView");
+      if (detailView && !detailView.hidden && detailView.getAttribute("data-bugmega-detail-id") === String(pin.id)) renderAnnotationDetail(index);
+      renderAnnotationList();
+    } catch (error) {
+      var status = document.getElementById("bugmegaDetailStatus");
+      if (status) {
+        status.className = "bugmega-status error";
+        status.textContent = error.message || "Could not load annotation details.";
+      }
+    }
+  }
+
+  async function updateAnnotationStatus(index, select) {
+    var pin = state.pins[index];
+    var status = document.getElementById("bugmegaDetailStatus");
+    if (!pin || !select) return;
+    select.disabled = true;
+    if (status) status.textContent = "Updating status...";
+    try {
+      var response = await fetch(apiBase + "/api/widget/annotations/" + encodeURIComponent(pin.id) + "/status", {
+        method: "PATCH",
+        mode: "cors",
+        credentials: "include",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ site_key: siteKey, status: select.value })
+      });
+      var data = await response.json().catch(function () { return {}; });
+      if (!response.ok) throw new Error(data.error || "Could not update status.");
+      state.pins[index].status = data.status || select.value;
+      renderPins();
+      renderAnnotationList();
+      renderAnnotationDetail(index);
+      var savedStatus = document.getElementById("bugmegaDetailStatus");
+      if (savedStatus) {
+        savedStatus.className = "bugmega-status success";
+        savedStatus.textContent = "Status updated.";
+      }
+    } catch (error) {
+      select.disabled = false;
+      select.value = pin.status || "";
+      if (status) {
+        status.className = "bugmega-status error";
+        status.textContent = error.message || "Could not update status.";
+      }
+    }
+  }
+
+  async function submitAnnotationComment(index, event) {
+    event.preventDefault();
+    var pin = state.pins[index];
+    var form = event.currentTarget;
+    var button = form.querySelector("button[type='submit']");
+    var status = document.getElementById("bugmegaDetailStatus");
+    var file = form.elements.attachment.files && form.elements.attachment.files[0];
+    var content = form.elements.content.value.trim();
+    if (!content && !file) {
+      if (status) {
+        status.className = "bugmega-status error";
+        status.textContent = "Write a comment or attach a file.";
+      }
+      return;
+    }
+    button.disabled = true;
+    button.textContent = "Adding...";
+    try {
+      if (file && file.size > 1024 * 1024) throw new Error("Attachment must be 1 MB or smaller.");
+      var attachmentData = file ? await readAttachmentData(file) : "";
+      var response = await fetch(apiBase + "/api/widget/annotations/" + encodeURIComponent(pin.id) + "/comments", {
+        method: "POST",
+        mode: "cors",
+        credentials: "include",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ site_key: siteKey, content: content, attachment_name: file ? file.name : "", attachment_data: attachmentData })
+      });
+      var data = await response.json().catch(function () { return {}; });
+      if (!response.ok) throw new Error(data.error || "Could not add comment.");
+      state.pins[index].comments = (state.pins[index].comments || []).concat(data.comment ? [data.comment] : []);
+      renderAnnotationDetail(index);
+      var savedStatus = document.getElementById("bugmegaDetailStatus");
+      if (savedStatus) {
+        savedStatus.className = "bugmega-status success";
+        savedStatus.textContent = "Comment added.";
+      }
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "Add comment";
+      if (status) {
+        status.className = "bugmega-status error";
+        status.textContent = error.message || "Could not add comment.";
+      }
+    }
   }
 
   function annotationRequest(annotationID, method, values) {
@@ -374,6 +544,7 @@
         '<label class="bugmega-field"><span>Title</span><input id="bugmegaTitle" maxlength="80" placeholder="What needs attention?"></label>' +
         '<label class="bugmega-field"><span>Details</span><textarea id="bugmegaComment" placeholder="Describe the issue"></textarea></label>' +
         '<label class="bugmega-field"><span>Attachment (optional, max 1 MB)</span><input id="bugmegaAttachment" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.zip"></label>' +
+        '<label class="bugmega-field"><span>Status</span><select id="bugmegaCreateStatus">' + annotationStatusOptions() + '</select></label>' +
         '<label class="bugmega-field"><span>Assign to</span><select id="bugmegaAssignees" multiple>' + memberOptions() + '</select></label>' +
         '<div class="bugmega-toolbar"><button class="bugmega-primary" type="button" id="bugmegaSubmit">Send feedback</button><button class="bugmega-secondary" type="button" id="bugmegaReselect">Move pin</button></div>' +
         '<div class="bugmega-status" id="bugmegaStatus"></div>' +
@@ -756,9 +927,14 @@
     if (!Number.isFinite(pinY) && Number.isFinite(Number(raw.pageY))) pinY = Number(raw.pageY) / Math.max(1, dimensions.height) * 100;
     return {
       id: raw.id || raw.annotation_id || "",
+      taskID: raw.task_id || raw.taskID || "",
       title: raw.title || "Annotation pin",
       comment: raw.comment || "",
       status: raw.status || "",
+      statuses: Array.isArray(raw.statuses) ? raw.statuses.filter(Boolean) : [],
+      comments: Array.isArray(raw.comments) ? raw.comments : null,
+      canManage: raw.can_manage != null ? Boolean(raw.can_manage) : Boolean(raw.canManage),
+      canEdit: raw.can_edit != null ? Boolean(raw.can_edit) : Boolean(raw.canEdit),
       screenshotURL: raw.screenshot_url || raw.screenshotURL || "",
       attachments: Array.isArray(raw.attachments) ? raw.attachments.filter(Boolean) : (raw.attachment_url ? [raw.attachment_url] : []),
       createdAt: raw.created_at || raw.createdAt || "",
@@ -982,6 +1158,7 @@
     var button = document.getElementById("bugmegaSubmit");
     var title = document.getElementById("bugmegaTitle").value.trim();
     var comment = document.getElementById("bugmegaComment").value.trim();
+    var createStatus = document.getElementById("bugmegaCreateStatus");
     var attachmentInput = document.getElementById("bugmegaAttachment");
     var attachment = attachmentInput && attachmentInput.files ? attachmentInput.files[0] : null;
     button.disabled = true;
@@ -1005,6 +1182,7 @@
           url: window.location.href,
           title: title,
           comment: comment,
+          status: createStatus ? createStatus.value : "",
           assignee_ids: selectedAssignees(),
           screenshot_data: state.screenshot || "",
           attachment_name: attachment ? attachment.name : "",
@@ -1026,6 +1204,10 @@
           title: title || comment || "Website feedback",
           comment: comment,
           status: data.status || "todo",
+          statuses: annotationStatuses(),
+          comments: [],
+          canManage: true,
+          canEdit: true,
           screenshotURL: data.screenshot_url || "",
           attachments: data.attachment_url ? [data.attachment_url] : [],
           createdAt: data.created_at || new Date().toISOString(),
