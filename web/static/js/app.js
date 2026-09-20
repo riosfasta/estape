@@ -1075,6 +1075,17 @@ function annotationSnapshotHTML(item = {}) {
   </section>`;
 }
 
+function clientAnnotationMediaHTML(item = {}, comments = []) {
+  const screenshotURL = String(item.screenshot_url || "").trim();
+  return `<div class="annotation-viewer-media-content">
+    <section class="annotation-viewer-capture">
+      <div class="panel-head compact-panel-head"><div><span class="muted">Captured picture</span><h2>${esc(item.title || "Annotation")}</h2></div>${screenshotURL ? `<span class="pill">${icon("image")}Screenshot</span>` : ""}</div>
+      ${screenshotURL ? `<button class="annotation-viewer-capture-button" type="button" data-open-attachment data-attachment-url="${esc(screenshotURL)}" data-attachment-name="${esc(item.title || "Annotation screenshot")}"><img src="${esc(screenshotURL)}" alt="${esc(item.title || "Annotation")} screenshot"></button>` : `<div class="annotation-viewer-capture-empty">${icon("image-off")}<strong>No captured picture</strong><span>This annotation does not have a saved screenshot.</span></div>`}
+    </section>
+    <div class="annotation-viewer-attachments">${taskAttachmentGalleryHTML(item, comments) || `<section class="task-attachment-gallery"><h3>Attachments</h3><p class="muted">No attachments added to this annotation.</p></section>`}</div>
+  </div>`;
+}
+
 function setAnnotationScreenshotPreview(form, url = "", label = "Section screenshot") {
   const preview = form?.querySelector("[data-annotation-screenshot-preview]");
   const input = form?.elements?.screenshot_url;
@@ -8021,6 +8032,7 @@ function clientAnnotationTaskDetailHTML(task = {}, statuses = [], usersByID = {}
   const showStatus = options.showStatus !== false;
   const commentTaskID = options.commentTaskID || task.id;
   const annotationStatusTaskID = options.annotationStatusTaskID || "";
+  const showMedia = options.showMedia !== false;
   return `<div class="feedback-detail">
     <div class="feedback-detail-head">
       <span class="muted">Annotation detail</span>
@@ -8033,8 +8045,8 @@ function clientAnnotationTaskDetailHTML(task = {}, statuses = [], usersByID = {}
       <div><span class="muted">Created</span><strong>${esc(fmtDateTime(task.created_at))}</strong></div>
     </div>
     ${task.comment ? `<h3>Details</h3><p>${chatText(task.comment)}</p>` : ""}
-    ${annotationSnapshotHTML(task)}
-    ${taskAttachmentGalleryHTML(task, comments)}
+    ${showMedia ? annotationSnapshotHTML(task) : ""}
+    ${showMedia ? taskAttachmentGalleryHTML(task, comments) : ""}
     <section class="feedback-comments">
       <h3>Comments</h3>
       <div class="client-task-comment-list feedback-comment-list">${clientTaskCommentsHTML(comments || [], usersByID, canManageFolder)}</div>
@@ -8880,13 +8892,13 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
   const canUpdateProgress = Boolean(data.can_update_progress || canManageTask);
   const canManageStatuses = Boolean(data.can_manage_statuses);
   const statuses = clientTaskStatuses(data.tab, [task]);
-  const selectorForID = (value) => (window.CSS?.escape ? CSS.escape(String(value)) : String(value).replace(/"/g, '\\"'));
   const pageWidth = annotationViewportDimension(task.page_width, ANNOTATION_VIEWPORT.width, 320, 8000);
   const pageHeight = annotationViewportDimension(task.page_height, ANNOTATION_VIEWPORT.height, 900, ANNOTATION_VIEWPORT.maxHeight);
   const pageURL = task.url || data.website?.url || "";
   const annotationItems = clientTaskAnnotationItems(task);
   let activeAnnotationID = String(openAnnotationID || "");
   if (!activeAnnotationID && focusCommentID && annotationItems[0]?.id) activeAnnotationID = String(annotationItems[0].id);
+  if (!activeAnnotationID && annotationItems[0]?.id) activeAnnotationID = String(annotationItems[0].id);
   let panel = $("#clientTaskPanel");
   if (panel && (asModal ? panel.tagName.toLowerCase() !== "dialog" : panel.tagName.toLowerCase() !== "section")) {
     panel.remove();
@@ -8915,21 +8927,12 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     </header>
     <div class="client-task-panel-body annotation-viewer-body">
       ${scopedFreelancerTeamHTML(data)}
-      <section class="annotation-stage annotation-viewer-stage" id="clientAnnotationViewerStage">
-        ${annotationFrameHTML({
-          url: pageURL,
-          title: task.title || "Annotation task",
-          width: pageWidth,
-          height: pageHeight,
-          fallbackHeight: pageHeight,
-          catcherID: "clientAnnotationViewerClickCatcher",
-          pinLayerID: "clientAnnotationViewerPinLayer",
-          pins: annotationItems.map((item, index) => ({ id: item.id, x: item.pin_x, y: item.pin_y, page_width: item.page_width || pageWidth, page_height: item.page_height || pageHeight, label: String(index + 1), title: item.title || "Annotation" })),
-        })}
+      <section class="annotation-viewer-stage annotation-viewer-media" id="clientAnnotationViewerMedia">
+        ${annotationItems[0] ? clientAnnotationMediaHTML(annotationItems.find((item) => String(item.id) === activeAnnotationID) || annotationItems[0], data.comments || []) : `<div class="annotation-viewer-capture-empty">${icon("image-off")}<strong>No annotations</strong><span>This task does not have any captured pictures yet.</span></div>`}
       </section>
       <aside class="bug-side annotation-task-side feedback-side annotation-viewer-side">
         <div class="feedback-detail-toolbar annotation-sidebar-toolbar">
-          <h2>Annotations</h2>
+          <h2 id="annotationViewerSidebarTitle">Annotations</h2>
           <button class="btn icon quiet" type="button" data-toggle-annotation-sidebar title="Collapse annotations">${icon("panel-right-close")}</button>
         </div>
         ${canUpdateProgress ? `<form id="clientTaskQuickEditForm" class="task-detail-meta task-detail-meta-form annotation-viewer-progress">
@@ -9007,15 +9010,16 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     panel.dataset.liveAnnotationId = activeAnnotationID;
     panel.querySelector("#annotationViewerListView")?.setAttribute("hidden", "");
     panel.querySelector("#annotationViewerDetailView")?.removeAttribute("hidden");
-    body.innerHTML = `${clientAnnotationTaskDetailHTML(annotation, statuses, usersByID, data.comments || [], canManageFolder, { showStatus: false, commentTaskID: taskID, annotationStatusTaskID: taskID })}
+    const sidebarTitle = panel.querySelector("#annotationViewerSidebarTitle");
+    if (sidebarTitle) sidebarTitle.textContent = "Annotation details";
+    body.innerHTML = `${clientAnnotationTaskDetailHTML(annotation, statuses, usersByID, data.comments || [], canManageFolder, { showStatus: false, showMedia: false, commentTaskID: taskID, annotationStatusTaskID: taskID })}
       ${taskMetaTimerHTML(taskID)}`;
+    const media = panel.querySelector("#clientAnnotationViewerMedia");
+    if (media) {
+      media.innerHTML = clientAnnotationMediaHTML(annotation, data.comments || []);
+      bindAttachmentOpeners(media);
+    }
     panel.querySelectorAll("[data-client-annotation-item-row]").forEach((row) => row.classList.toggle("active", row.dataset.clientAnnotationItemRow === String(annotation.id)));
-    panel.querySelectorAll("[data-feedback-pin]").forEach((pin) => {
-      const active = pin.dataset.feedbackPin === String(annotation.id);
-      pin.classList.toggle("highlighted", active);
-      pin.classList.toggle("expanded", active);
-    });
-    panel.querySelector(`[data-feedback-pin="${selectorForID(annotation.id)}"]`)?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
     bindAttachmentOpeners(body);
     bindMentionSuggestions(body);
     bindStatusPickers(body);
@@ -9028,29 +9032,7 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     if (focusCommentID) setTimeout(() => focusClientTaskComment(body, focusCommentID), 60);
     icons();
   };
-  const renderViewerPins = () => {
-    const viewport = panel.querySelector("[data-annotation-viewport]");
-    const targetHeight = Number(viewport?.dataset.annotationHeight || pageHeight);
-    const targetWidth = Number(viewport?.dataset.annotationWidth || pageWidth);
-    const layer = panel.querySelector("#clientAnnotationViewerPinLayer");
-    if (layer) layer.innerHTML = annotationItems.map((item, index) => clientAnnotationItemPinHTML({ ...item, page_width: item.page_width || pageWidth, page_height: item.page_height || pageHeight }, index, targetWidth, targetHeight)).join("");
-    icons();
-  };
-  bindAnnotationViewportResize(panel.querySelector("#clientAnnotationViewerStage"));
-  bindAnnotationFrameAutoHeight(panel.querySelector("#clientAnnotationViewerStage"), {
-    fallbackHeight: pageHeight,
-    onHeight: renderViewerPins,
-  });
-  bindAnnotationDeviceControls(panel.querySelector("#clientAnnotationViewerStage"), {
-    fallbackHeight: pageHeight,
-    onChange: renderViewerPins,
-  });
-  renderViewerPins();
   panel.querySelector("#annotationViewerList")?.querySelectorAll("[data-open-client-annotation-item]").forEach((btn) => btn.addEventListener("click", () => openViewerAnnotationDetail(btn.dataset.openClientAnnotationItem)));
-  panel.querySelector("#clientAnnotationViewerStage")?.addEventListener("click", (event) => {
-    const pin = event.target.closest("[data-feedback-pin]");
-    if (pin) openViewerAnnotationDetail(pin.dataset.feedbackPin);
-  });
   panel.querySelector("#annotationViewerBackBtn")?.addEventListener("click", () => {
     activeAnnotationID = "";
     panel.dataset.liveAnnotationId = "";
@@ -9058,9 +9040,10 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     state.clientTaskCommentEdit = null;
     panel.querySelector("#annotationViewerDetailView")?.setAttribute("hidden", "");
     panel.querySelector("#annotationViewerListView")?.removeAttribute("hidden");
+    const sidebarTitle = panel.querySelector("#annotationViewerSidebarTitle");
+    if (sidebarTitle) sidebarTitle.textContent = "Annotations";
     const body = panel.querySelector("#annotationViewerDetailBody");
     if (body) body.innerHTML = "";
-    panel.querySelectorAll("[data-feedback-pin]").forEach((pin) => pin.classList.remove("highlighted", "expanded"));
     panel.querySelectorAll("[data-client-annotation-item-row]").forEach((row) => row.classList.remove("active"));
   });
 
@@ -9141,10 +9124,17 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
   bindAnnotationSidebarToggles(panel);
 
   async function refreshAnnotationViewerComments(root = panel) {
-    return refreshClientTaskCommentList(root, taskID, usersByID, canManageFolder, (scope) => {
+    return refreshClientTaskCommentList(root, taskID, usersByID, canManageFolder, (scope, latest) => {
       bindAttachmentOpeners(scope);
       bindMentionSuggestions(scope);
       bindAnnotationViewerCommentForm(scope);
+      const annotation = clientTaskAnnotationItems(latest.task || task).find((item) => String(item.id) === activeAnnotationID);
+      const media = panel.querySelector("#clientAnnotationViewerMedia");
+      if (annotation && media) {
+        media.innerHTML = clientAnnotationMediaHTML(annotation, latest.comments || []);
+        bindAttachmentOpeners(media);
+        icons();
+      }
     });
   }
 
