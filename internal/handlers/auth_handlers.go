@@ -265,6 +265,7 @@ func (s *Server) login(c *gin.Context) {
 	}
 	_, _ = s.store.C("users").UpdateByID(c.Request.Context(), user.ID, bson.M{"$set": bson.M{"last_active_at": time.Now()}})
 	s.setSessionCookies(c, access, refresh)
+	s.enqueueLoginNotificationEmail(c, user, "Password")
 	c.JSON(http.StatusOK, gin.H{"user": user, "access_token": access, "refresh_token": refresh})
 }
 

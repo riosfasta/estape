@@ -146,6 +146,7 @@ func (s *Server) googleAuthCallback(c *gin.Context) {
 		return
 	}
 	_, _ = s.store.C("users").UpdateByID(c.Request.Context(), user.ID, bson.M{"$set": bson.M{"last_active_at": time.Now()}})
+	s.enqueueLoginNotificationEmail(c, user, "Google")
 	s.socialAuthSuccess(c, access, refresh, created)
 }
 
@@ -189,6 +190,7 @@ func (s *Server) googleAuthVerifyTwoFactor(c *gin.Context) {
 	}
 	_, _ = s.store.C("users").UpdateByID(c.Request.Context(), user.ID, bson.M{"$set": bson.M{"last_active_at": time.Now()}})
 	s.setSessionCookies(c, access, refresh)
+	s.enqueueLoginNotificationEmail(c, user, "Google with two-factor authentication")
 	c.JSON(http.StatusOK, gin.H{"access_token": access, "refresh_token": refresh})
 }
 
