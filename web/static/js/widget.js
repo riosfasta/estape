@@ -75,7 +75,7 @@
       ".bugmega-detail-image{display:block;width:100%;height:190px;object-fit:cover;border:1px solid #d8e1dd;border-radius:8px;margin:0 0 12px;background:#eef5f2}" +
       ".bugmega-detail-file{display:flex;align-items:center;gap:7px;border:1px solid #d8e1dd;border-radius:8px;color:#087c67;padding:9px 10px;margin:0 0 12px;font-size:13px;font-weight:800;text-decoration:none;overflow-wrap:anywhere}" +
       ".bugmega-detail-attachments{display:grid;gap:8px;margin-bottom:12px}.bugmega-detail-attachments .bugmega-detail-image,.bugmega-detail-attachments .bugmega-detail-file{margin:0}" +
-      ".bugmega-detail-status{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px;margin:0 0 12px}.bugmega-detail-status label{font-size:12px;font-weight:800;color:#52635d}.bugmega-detail-status select{width:100%;border:1px solid #cdd9d5;border-radius:7px;background:#fff;color:#10201c;padding:7px 8px;font-size:13px;font-weight:700}" +
+      ".bugmega-detail-meta-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 12px}.bugmega-detail-meta-row .bugmega-detail-meta{margin:0}.bugmega-detail-status{display:flex;align-items:center;margin-left:auto}.bugmega-detail-status select{width:auto;max-width:150px;min-height:28px;border:1px solid var(--bugmega-status-color,#9ca3af);border-radius:999px;background:var(--bugmega-status-bg,#f3f4f6);color:var(--bugmega-status-text,#4b5563);padding:4px 25px 4px 10px;font-size:11px;font-weight:900;cursor:pointer}.bugmega-detail-status-readonly{display:inline-flex;align-items:center;border:1px solid var(--bugmega-status-color,#9ca3af);border-radius:999px;background:var(--bugmega-status-bg,#f3f4f6);color:var(--bugmega-status-text,#4b5563);padding:5px 9px;font-size:11px;font-weight:900}" +
       ".bugmega-comments{border-top:1px solid #d8e1dd;margin-top:14px;padding-top:12px}.bugmega-comments h4{margin:0 0 9px;font-size:13px}.bugmega-comment-list{display:grid;gap:8px;max-height:220px;overflow:auto}.bugmega-comment{border:1px solid #e0e8e5;border-radius:8px;background:#f8fbfa;padding:8px}.bugmega-comment-head{display:flex;justify-content:space-between;gap:8px;margin-bottom:5px}.bugmega-comment-head strong{font-size:12px}.bugmega-comment-head time{color:#7a8883;font-size:10px}.bugmega-comment p{margin:0;color:#33443e;font-size:12px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}.bugmega-comment .bugmega-detail-file{margin:7px 0 0;padding:7px 8px;font-size:11px}" +
       ".bugmega-comment-form{display:grid;gap:7px;margin-top:10px}.bugmega-comment-form textarea{width:100%;min-height:62px;resize:vertical;border:1px solid #cdd9d5;border-radius:7px;padding:8px;font-size:12px}.bugmega-comment-form input[type='file']{width:100%;font-size:11px}.bugmega-comment-form .bugmega-primary{justify-self:start}" +
       ".bugmega-detail-actions{display:flex;gap:6px;flex-wrap:wrap}.bugmega-detail-actions button{flex:1;min-width:76px}" +
@@ -206,6 +206,21 @@
     }).join("");
   }
 
+  function annotationStatusColors(value) {
+    var status = String(value || "").toLowerCase().replace(/[\s-]+/g, "_");
+    if (["done", "completed", "complete", "closed"].includes(status)) return { color: "#10b981", background: "#ecfdf5", text: "#047857" };
+    if (["in_progress", "inprogress", "progress"].includes(status)) return { color: "#f59e0b", background: "#fffbeb", text: "#b45309" };
+    if (["revision", "needs_revision", "blocked"].includes(status)) return { color: "#ef4444", background: "#fef2f2", text: "#b91c1c" };
+    if (["review", "ready_for_review", "ready_review"].includes(status)) return { color: "#38bdf8", background: "#f0f9ff", text: "#0369a1" };
+    if (["todo", "to_do", "open"].includes(status)) return { color: "#9ca3af", background: "#f3f4f6", text: "#4b5563" };
+    return { color: "#8b5cf6", background: "#f5f3ff", text: "#6d28d9" };
+  }
+
+  function annotationStatusStyle(value) {
+    var colors = annotationStatusColors(value);
+    return ' style="--bugmega-status-color:' + esc(colors.color) + ';--bugmega-status-bg:' + esc(colors.background) + ';--bugmega-status-text:' + esc(colors.text) + '"';
+  }
+
   function annotationDateLabel(value) {
     if (!value) return "";
     var date = new Date(value);
@@ -278,14 +293,13 @@
     var canManage = Boolean(pin.canManage);
     var canEdit = Boolean(pin.canEdit);
     var statusControl = canManage
-      ? '<div class="bugmega-detail-status"><label for="bugmegaAnnotationStatus">Status</label><select id="bugmegaAnnotationStatus">' + annotationStatusOptions(pin.status, pin) + '</select></div>'
-      : '<div class="bugmega-detail-meta"><span class="bugmega-detail-pill">' + esc(annotationStatusLabel(pin.status)) + '</span></div>';
+      ? '<div class="bugmega-detail-status"' + annotationStatusStyle(pin.status) + '><select id="bugmegaAnnotationStatus" aria-label="Annotation status">' + annotationStatusOptions(pin.status, pin) + '</select></div>'
+      : '<span class="bugmega-detail-status-readonly"' + annotationStatusStyle(pin.status) + '>' + esc(annotationStatusLabel(pin.status)) + '</span>';
     var commentsLoaded = Array.isArray(pin.comments);
     detailView.innerHTML =
       '<button class="bugmega-detail-back" type="button" id="bugmegaDetailBack">' + widgetIcon("back") + 'Back to annotations</button>' +
       '<div class="bugmega-detail-title"><span class="bugmega-annotation-number">' + esc(index + 1) + '</span><h3>' + esc(pin.title || "Annotation " + (index + 1)) + '</h3></div>' +
-      statusControl +
-      (dateLabel ? '<div class="bugmega-detail-meta"><span class="bugmega-detail-pill">' + esc(dateLabel) + '</span></div>' : '') +
+      '<div class="bugmega-detail-meta-row">' + (dateLabel ? '<div class="bugmega-detail-meta"><span class="bugmega-detail-pill">' + esc(dateLabel) + '</span></div>' : '<span></span>') + statusControl + '</div>' +
       '<p class="bugmega-detail-comment' + (pin.comment ? '' : ' empty') + '">' + esc(pin.comment || "No details provided.") + '</p>' +
       (screenshotURL ? '<img class="bugmega-detail-image" src="' + esc(screenshotURL) + '" alt="Screenshot for ' + esc(pin.title || "annotation") + '">' : '') +
       annotationAttachmentHTML(pin) +
