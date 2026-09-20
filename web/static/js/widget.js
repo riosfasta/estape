@@ -128,7 +128,7 @@
       plus: '<path d="M12 5v14M5 12h14"/>',
       pencil: '<path d="m4 20 4-1 11-11a2.1 2.1 0 0 0-3-3L5 16Z"/><path d="m14 7 3 3"/>',
       circle: '<circle cx="12" cy="12" r="8"/>',
-      square: '<rect x="4" y="4" width="16" height="16" rx="1"/>',
+      rectangle: '<rect x="3" y="5" width="18" height="14" rx="1"/>',
       undo: '<path d="M9 7 4 12l5 5"/><path d="M4 12h10a6 6 0 0 1 6 6"/>',
       camera: '<path d="M14.5 5 13 3h-2L9.5 5H5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><circle cx="12" cy="13" r="4"/>'
     };
@@ -363,7 +363,7 @@
           '<div class="bugmega-markup-tools">' +
             '<button class="bugmega-tool-button active" type="button" data-bugmega-draw-tool="pencil">' + widgetIcon("pencil") + 'Pencil</button>' +
             '<button class="bugmega-tool-button" type="button" data-bugmega-draw-tool="circle">' + widgetIcon("circle") + 'Circle</button>' +
-            '<button class="bugmega-tool-button" type="button" data-bugmega-draw-tool="square">' + widgetIcon("square") + 'Square</button>' +
+            '<button class="bugmega-tool-button" type="button" data-bugmega-draw-tool="rectangle">' + widgetIcon("rectangle") + 'Rectangle</button>' +
             '<input class="bugmega-color" id="bugmegaDrawColor" type="color" value="#ef4444" title="Drawing color" aria-label="Drawing color">' +
             '<button class="bugmega-tool-button" type="button" id="bugmegaDrawUndo">' + widgetIcon("undo") + 'Undo</button>' +
             '<button class="bugmega-tool-button" type="button" id="bugmegaDrawClear">' + widgetIcon("trash") + 'Clear</button>' +
@@ -592,7 +592,7 @@
   }
 
   function setDrawingTool(tool) {
-    if (!["pencil", "circle", "square"].includes(tool)) return;
+    if (!["pencil", "circle", "rectangle"].includes(tool)) return;
     drawingState.tool = tool;
     document.querySelectorAll("[data-bugmega-draw-tool]").forEach(function (button) {
       button.classList.toggle("active", button.getAttribute("data-bugmega-draw-tool") === tool);
@@ -662,11 +662,10 @@
       } else if (drawingState.tool === "circle") {
         drawingState.current.setAttribute("r", String(Math.hypot(deltaX, deltaY)));
       } else {
-        var side = Math.max(Math.abs(deltaX), Math.abs(deltaY));
-        drawingState.current.setAttribute("x", String(deltaX < 0 ? drawingState.startX - side : drawingState.startX));
-        drawingState.current.setAttribute("y", String(deltaY < 0 ? drawingState.startY - side : drawingState.startY));
-        drawingState.current.setAttribute("width", String(side));
-        drawingState.current.setAttribute("height", String(side));
+        drawingState.current.setAttribute("x", String(Math.min(drawingState.startX, event.pageX)));
+        drawingState.current.setAttribute("y", String(Math.min(drawingState.startY, event.pageY)));
+        drawingState.current.setAttribute("width", String(Math.abs(deltaX)));
+        drawingState.current.setAttribute("height", String(Math.abs(deltaY)));
       }
     });
     var finishDrawing = function () {
