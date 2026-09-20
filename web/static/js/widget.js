@@ -598,14 +598,14 @@
       button.classList.toggle("active", button.getAttribute("data-bugmega-draw-tool") === tool);
     });
     setDrawingActive(true);
-    setStatus("Draw on the page, then capture the screenshot.");
+    setStatus("Draw on the page, then capture now or send feedback to capture automatically.");
   }
 
   function invalidateMarkupCapture() {
     state.screenshot = "";
     state.captureError = "";
     setPreview("");
-    setStatus("Drawing changed. Capture the screenshot when ready.");
+    setStatus("Drawing changed. Capture now or send feedback to capture automatically.");
   }
 
   function drawingElement(name) {
@@ -704,31 +704,40 @@
     setDrawingActive(false);
   }
 
-  async function captureMarkupScreenshot(event) {
-    var button = event.currentTarget;
+  async function captureMarkupScreenshot(event, options) {
+    options = options || {};
+    var button = event && event.currentTarget ? event.currentTarget : document.getElementById("bugmegaCapture");
     if (!state.point) {
       setStatus("Place an annotation pin first.", "error");
-      return;
+      if (options.throwOnError) throw new Error("Place an annotation pin first.");
+      return false;
     }
-    button.disabled = true;
-    button.innerHTML = widgetIcon("camera") + "Capturing...";
+    if (button) {
+      button.disabled = true;
+      button.innerHTML = widgetIcon("camera") + "Capturing...";
+    }
     setDrawingActive(false);
-    setStatus("Capturing the marked section...");
+    setStatus(options.automatic ? "Capturing the screenshot before sending..." : "Capturing the marked section...");
     try {
       state.screenshot = await captureSection(state.point);
       state.captureError = "";
       setPreview(state.screenshot);
       setStatus("Screenshot captured with your markup.", "success");
       requestAnimationFrame(function () { positionSurface(document.getElementById("bugmegaPanel")); });
+      return true;
     } catch (error) {
       state.screenshot = "";
       state.captureError = error && error.message ? error.message : "Could not capture this page.";
       setPreview("");
       setDrawingActive(true);
       setStatus("Screenshot was not available. You can adjust the markup and try again.", "error");
+      if (options.throwOnError) throw new Error(state.captureError);
+      return false;
     } finally {
-      button.disabled = false;
-      button.innerHTML = widgetIcon("camera") + "Capture screenshot";
+      if (button) {
+        button.disabled = false;
+        button.innerHTML = widgetIcon("camera") + "Capture screenshot";
+      }
     }
   }
 
@@ -851,7 +860,7 @@
     document.getElementById("bugmegaPanel").classList.add("active");
     positionSurface(document.getElementById("bugmegaPanel"));
     setDrawingTool("pencil");
-    setStatus("Draw on the page, then click Capture screenshot.");
+    setStatus("Draw on the page, then capture now or send feedback to capture automatically.");
   }
 
   function loadHtml2Canvas() {
@@ -977,10 +986,15 @@
     var attachmentInput = document.getElementById("bugmegaAttachment");
     var attachment = attachmentInput && attachmentInput.files ? attachmentInput.files[0] : null;
     button.disabled = true;
-    button.textContent = "Sending...";
-    setStatus("Sending feedback...");
+    button.textContent = state.screenshot ? "Sending..." : "Capturing...";
+    setStatus(state.screenshot ? "Sending feedback..." : "Capturing the screenshot before sending...");
     try {
       if (attachment && attachment.size > 1024 * 1024) throw new Error("Attachment must be 1 MB or smaller.");
+      if (!state.screenshot) {
+        await captureMarkupScreenshot(null, { automatic: true, throwOnError: true });
+        button.textContent = "Sending...";
+        setStatus("Sending feedback...");
+      }
       var attachmentData = attachment ? await readAttachmentData(attachment) : "";
       var response = await fetch(apiBase + "/api/widget/annotations", {
         method: "POST",
