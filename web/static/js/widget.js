@@ -77,8 +77,8 @@
       ".bugmega-detail-attachments{display:grid;gap:8px;margin-bottom:12px}.bugmega-detail-attachments .bugmega-detail-image,.bugmega-detail-attachments .bugmega-detail-file{margin:0}" +
       ".bugmega-detail-meta-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 10px}.bugmega-detail-meta-row .bugmega-detail-meta{margin:0}.bugmega-detail-status{position:relative;display:inline-flex;align-items:center;margin-left:auto}.bugmega-detail-status:after{content:'';position:absolute;right:9px;top:50%;width:6px;height:6px;border-right:1.5px solid var(--bugmega-status-text,#4b5563);border-bottom:1.5px solid var(--bugmega-status-text,#4b5563);transform:translateY(-65%) rotate(45deg);pointer-events:none}.bugmega-detail-status select{appearance:none!important;-webkit-appearance:none!important;width:auto!important;max-width:150px!important;height:26px!important;min-height:26px!important;border:1px solid var(--bugmega-status-color,#9ca3af)!important;border-radius:7px!important;background:var(--bugmega-status-bg,#f3f4f6)!important;color:var(--bugmega-status-text,#4b5563)!important;padding:2px 25px 2px 9px!important;font-size:11px!important;line-height:18px!important;font-weight:900!important;cursor:pointer}.bugmega-detail-status-readonly{display:inline-flex;align-items:center;min-height:26px;border:1px solid var(--bugmega-status-color,#9ca3af);border-radius:7px;background:var(--bugmega-status-bg,#f3f4f6);color:var(--bugmega-status-text,#4b5563);padding:2px 9px;font-size:11px;line-height:18px;font-weight:900}" +
       ".bugmega-comments{border-top:1px solid #d8e1dd;margin-top:14px;padding-top:12px}.bugmega-comments h4{margin:0 0 9px;font-size:13px}.bugmega-comment-list{display:grid;gap:8px;max-height:220px;overflow:auto}.bugmega-comment{border:1px solid #e0e8e5;border-radius:8px;background:#f8fbfa;padding:8px}.bugmega-comment-head{display:flex;justify-content:space-between;gap:8px;margin-bottom:5px}.bugmega-comment-head strong{font-size:12px}.bugmega-comment-head time{color:#7a8883;font-size:10px}.bugmega-comment p{margin:0;color:#33443e;font-size:12px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}.bugmega-comment .bugmega-detail-file{margin:7px 0 0;padding:7px 8px;font-size:11px}" +
-      ".bugmega-comment-form{display:grid;gap:7px;margin-top:10px}.bugmega-comment-form textarea{width:100%;min-height:62px;resize:vertical;border:1px solid #cdd9d5;border-radius:7px;padding:8px;font-size:12px}.bugmega-comment-form input[type='file']{width:100%;font-size:11px}.bugmega-comment-form .bugmega-primary{justify-self:start}" +
-      ".bugmega-detail-actions{display:flex;gap:6px;flex-wrap:wrap}.bugmega-detail-actions button{flex:1;min-width:76px}" +
+      ".bugmega-comment-form{display:grid;gap:8px;margin:12px 0 10px}.bugmega-comment-form textarea{width:100%;min-height:62px;resize:vertical;border:1px solid #cdd9d5;border-radius:7px;padding:8px;font-size:12px}.bugmega-comment-toolbar{display:flex;align-items:center;gap:7px;min-height:30px}.bugmega-comment-attach{width:28px!important;height:28px!important;min-width:28px!important;min-height:28px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;border:1px solid #cdd9d5!important;border-radius:6px!important;background:#fff!important;color:#52635d!important;padding:5px!important;cursor:pointer}.bugmega-comment-submit{width:auto!important;height:28px!important;min-height:28px!important;margin:2px 0!important;padding:2px 9px!important;border-radius:6px!important;font-size:11px!important;line-height:18px!important;justify-self:start}.bugmega-comment-attachment-preview{display:flex;align-items:center;gap:7px;min-width:0;padding:5px 6px;border:1px solid #d8e1dd;border-radius:7px;background:#f8fbfa}.bugmega-comment-attachment-preview[hidden]{display:none!important}.bugmega-comment-attachment-preview img{width:32px;height:32px;flex:0 0 auto;border-radius:5px;object-fit:cover}.bugmega-comment-attachment-preview>.bugmega-button-icon{width:18px;height:18px;flex:0 0 auto}.bugmega-comment-attachment-preview>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#33443e;font-size:11px;font-weight:700}.bugmega-comment-attachment-clear{width:22px!important;height:22px!important;min-width:22px!important;min-height:22px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;margin-left:auto!important;border:0!important;border-radius:50%!important;background:#e8efec!important;color:#52635d!important;padding:4px!important;cursor:pointer}.bugmega-comment-attachment-clear .bugmega-button-icon{width:12px;height:12px}" +
+      ".bugmega-detail-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}.bugmega-detail-actions button{flex:1;min-width:76px}" +
       ".bugmega-panel{position:fixed;right:22px;bottom:78px;width:min(380px,calc(100vw - 32px));max-height:calc(100vh - 110px);overflow:auto;background:#fff;border:1px solid rgba(0,0,0,.14);border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.28);padding:16px;display:none}" +
       ".bugmega-panel.active{display:block}" +
       ".bugmega-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}" +
@@ -134,7 +134,8 @@
       circle: '<circle cx="12" cy="12" r="8"/>',
       rectangle: '<rect x="3" y="5" width="18" height="14" rx="1"/>',
       undo: '<path d="M9 7 4 12l5 5"/><path d="M4 12h10a6 6 0 0 1 6 6"/>',
-      camera: '<path d="M14.5 5 13 3h-2L9.5 5H5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><circle cx="12" cy="13" r="4"/>'
+      camera: '<path d="M14.5 5 13 3h-2L9.5 5H5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><circle cx="12" cy="13" r="4"/>',
+      paperclip: '<path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/>'
     };
     return '<svg class="bugmega-button-icon" viewBox="0 0 24 24" aria-hidden="true">' + (paths[name] || "") + '</svg>';
   }
@@ -304,7 +305,7 @@
       (screenshotURL ? '<img class="bugmega-detail-image" src="' + esc(screenshotURL) + '" alt="Screenshot for ' + esc(pin.title || "annotation") + '">' : '') +
       annotationAttachmentHTML(pin) +
       '<div class="bugmega-comments"><h4>Comments</h4><div class="bugmega-comment-list" id="bugmegaCommentList">' + (commentsLoaded ? annotationCommentsHTML(pin.comments) : '<p class="bugmega-menu-empty">Loading comments...</p>') + '</div>' +
-        (canManage ? '<form class="bugmega-comment-form" id="bugmegaCommentForm"><textarea name="content" placeholder="Leave a comment"></textarea><input type="file" name="attachment" aria-label="Comment attachment" accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.zip"><button class="bugmega-primary" type="submit">Add comment</button></form>' : '<p class="bugmega-muted">Only assigned teammates, the creator, or an admin can update this annotation.</p>') + '</div>' +
+        (canManage ? '<form class="bugmega-comment-form" id="bugmegaCommentForm"><textarea name="content" placeholder="Leave a comment"></textarea><input type="file" name="attachment" hidden aria-label="Comment attachment" accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.zip"><div class="bugmega-comment-toolbar"><button class="bugmega-comment-attach" type="button" id="bugmegaCommentAttach" title="Attach file" aria-label="Attach file">' + widgetIcon("paperclip") + '</button><div class="bugmega-comment-attachment-preview" id="bugmegaCommentAttachmentPreview" hidden></div></div><button class="bugmega-primary bugmega-comment-submit" type="submit">Add comment</button></form>' : '<p class="bugmega-muted">Only assigned teammates, the creator, or an admin can update this annotation.</p>') + '</div>' +
       '<div class="bugmega-detail-actions"><button class="bugmega-secondary" type="button" id="bugmegaGoToPin">' + widgetIcon("pin") + 'Go to pin</button>' + (canEdit ? '<button class="bugmega-secondary" type="button" id="bugmegaEditAnnotation">' + widgetIcon("edit") + 'Edit</button><button class="bugmega-danger" type="button" id="bugmegaDeleteAnnotation">' + widgetIcon("trash") + 'Delete</button>' : '') + '</div>' +
       '<p class="bugmega-status" id="bugmegaDetailStatus"></p>';
     document.getElementById("bugmegaDetailBack").addEventListener("click", showAnnotationList);
@@ -316,7 +317,12 @@
     var statusSelect = document.getElementById("bugmegaAnnotationStatus");
     if (statusSelect) statusSelect.addEventListener("change", function (event) { updateAnnotationStatus(index, event.currentTarget); });
     var commentForm = document.getElementById("bugmegaCommentForm");
-    if (commentForm) commentForm.addEventListener("submit", function (event) { submitAnnotationComment(index, event); });
+    if (commentForm) {
+      commentForm.addEventListener("submit", function (event) { submitAnnotationComment(index, event); });
+      var attachmentInput = commentForm.elements.attachment;
+      document.getElementById("bugmegaCommentAttach").addEventListener("click", function () { attachmentInput.click(); });
+      attachmentInput.addEventListener("change", function () { renderCommentAttachmentPreview(commentForm); });
+    }
     var screenshot = detailView.querySelector(".bugmega-detail-image");
     if (screenshot) {
       screenshot.addEventListener("load", function () { positionSurface(document.getElementById("bugmegaMenu")); }, { once: true });
@@ -395,6 +401,51 @@
         status.className = "bugmega-status error";
         status.textContent = error.message || "Could not update status.";
       }
+    }
+  }
+
+  function clearCommentAttachment(form) {
+    if (!form) return;
+    var input = form.elements.attachment;
+    var preview = form.querySelector("#bugmegaCommentAttachmentPreview");
+    if (input) input.value = "";
+    if (preview) {
+      preview.hidden = true;
+      preview.innerHTML = "";
+    }
+  }
+
+  function renderCommentAttachmentPreview(form) {
+    var input = form && form.elements.attachment;
+    var preview = form && form.querySelector("#bugmegaCommentAttachmentPreview");
+    var file = input && input.files && input.files[0];
+    if (!preview || !file) {
+      clearCommentAttachment(form);
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      clearCommentAttachment(form);
+      var status = document.getElementById("bugmegaDetailStatus");
+      if (status) {
+        status.className = "bugmega-status error";
+        status.textContent = "Attachment must be 1 MB or smaller.";
+      }
+      return;
+    }
+    var showPreview = function (imageURL) {
+      if (!input.files || input.files[0] !== file) return;
+      preview.hidden = false;
+      preview.innerHTML = (imageURL ? '<img src="' + esc(imageURL) + '" alt="Attachment preview">' : widgetIcon("paperclip")) + '<span>' + esc(file.name) + '</span><button class="bugmega-comment-attachment-clear" type="button" title="Remove attachment" aria-label="Remove attachment">' + widgetIcon("close") + '</button>';
+      preview.querySelector(".bugmega-comment-attachment-clear").addEventListener("click", function () { clearCommentAttachment(form); });
+      positionSurface(document.getElementById("bugmegaMenu"));
+    };
+    if (file.type && file.type.indexOf("image/") === 0) {
+      var reader = new FileReader();
+      reader.onload = function () { showPreview(String(reader.result || "")); };
+      reader.onerror = function () { showPreview(""); };
+      reader.readAsDataURL(file);
+    } else {
+      showPreview("");
     }
   }
 
