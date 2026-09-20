@@ -23,6 +23,16 @@
   var html2canvasPromise = null;
   var launcherDrag = null;
   var launcherWasDragged = false;
+  var drawingState = {
+    active: false,
+    tool: "pencil",
+    color: "#ef4444",
+    drawing: false,
+    startX: 0,
+    startY: 0,
+    current: null,
+    elements: []
+  };
   var state = {
     selecting: false,
     point: null,
@@ -82,10 +92,19 @@
       ".bugmega-muted{font-size:12px;color:#64736e;line-height:1.4}.bugmega-status{font-size:12px;margin-top:8px;color:#64736e}.bugmega-status.error{color:#c73636}.bugmega-status.success{color:#087c67}" +
       ".bugmega-preview{width:100%;max-height:180px;object-fit:cover;border:1px solid #d8e1dd;border-radius:8px;background:#eef5f2;margin:8px 0;display:none}" +
       ".bugmega-preview.active{display:block}" +
+      ".bugmega-markup{border:1px solid #d8e1dd;border-radius:8px;background:#f8fbfa;padding:9px;margin:10px 0}" +
+      ".bugmega-markup-label{display:block;font-size:12px;font-weight:800;color:#52635d;margin-bottom:7px}" +
+      ".bugmega-markup-tools{display:flex;align-items:center;gap:5px;flex-wrap:wrap}" +
+      ".bugmega-tool-button{display:inline-flex;align-items:center;justify-content:center;gap:4px;border:1px solid #cdd9d5;border-radius:6px;background:#fff;color:#33443e;padding:6px 7px;font-size:12px;font-weight:700;cursor:pointer}" +
+      ".bugmega-tool-button.active{border-color:#08a88a;background:#e9f8f4;color:#087c67}" +
+      ".bugmega-color{width:30px!important;height:30px;padding:2px!important;border-radius:6px!important;cursor:pointer}" +
+      ".bugmega-capture-button{width:100%;margin-top:7px}" +
       ".bugmega-pin-layer{position:absolute;left:0;top:0;z-index:2147482999;pointer-events:none}" +
       ".bugmega-pin{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border:0;padding:0;border-radius:50%;background:#ef4444;color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;box-shadow:0 0 0 4px rgba(239,68,68,.18),0 8px 20px rgba(0,0,0,.24);pointer-events:auto;cursor:pointer}" +
       ".bugmega-pin:hover,.bugmega-pin:focus-visible{transform:scale(1.12);outline:2px solid #fff;outline-offset:2px}" +
       ".bugmega-pin.draft{background:#f97316;pointer-events:none}" +
+      ".bugmega-drawing-layer{position:absolute;left:0;top:0;z-index:2147482998;pointer-events:none;overflow:visible}" +
+      ".bugmega-drawing-layer.active{pointer-events:auto;cursor:crosshair;touch-action:none}" +
       ".bugmega-select-banner{position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:2147483001;background:#10201c;color:#fff;border-radius:999px;padding:10px 14px;font-size:13px;font-weight:800;box-shadow:0 14px 38px rgba(0,0,0,.24);display:none}" +
       ".bugmega-select-banner.active{display:block}" +
       "body.bugmega-selecting,body.bugmega-selecting *{cursor:crosshair!important}";
@@ -106,7 +125,12 @@
       trash: '<path d="M3 6h18M8 6V4h8v2m-9 0 1 15h8l1-15M10 10v7m4-7v7"/>',
       save: '<path d="M20 21H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h13l4 4v13a1 1 0 0 1-1 1Z"/><path d="M7 3v6h10V3M7 21v-8h10v8"/>',
       close: '<path d="m6 6 12 12M18 6 6 18"/>',
-      plus: '<path d="M12 5v14M5 12h14"/>'
+      plus: '<path d="M12 5v14M5 12h14"/>',
+      pencil: '<path d="m4 20 4-1 11-11a2.1 2.1 0 0 0-3-3L5 16Z"/><path d="m14 7 3 3"/>',
+      circle: '<circle cx="12" cy="12" r="8"/>',
+      square: '<rect x="4" y="4" width="16" height="16" rx="1"/>',
+      undo: '<path d="M9 7 4 12l5 5"/><path d="M4 12h10a6 6 0 0 1 6 6"/>',
+      camera: '<path d="M14.5 5 13 3h-2L9.5 5H5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><circle cx="12" cy="13" r="4"/>'
     };
     return '<svg class="bugmega-button-icon" viewBox="0 0 24 24" aria-hidden="true">' + (paths[name] || "") + '</svg>';
   }
@@ -334,6 +358,18 @@
       '<section class="bugmega-panel" id="bugmegaPanel" aria-live="polite">' +
         '<div class="bugmega-head"><strong>Send feedback</strong><button class="bugmega-close" type="button" id="bugmegaClose" aria-label="Close">x</button></div>' +
         '<p class="bugmega-muted">Signed in as ' + esc(user.name || user.username || user.email || "BugMega user") + '.</p>' +
+        '<div class="bugmega-markup">' +
+          '<span class="bugmega-markup-label">Draw on the page</span>' +
+          '<div class="bugmega-markup-tools">' +
+            '<button class="bugmega-tool-button active" type="button" data-bugmega-draw-tool="pencil">' + widgetIcon("pencil") + 'Pencil</button>' +
+            '<button class="bugmega-tool-button" type="button" data-bugmega-draw-tool="circle">' + widgetIcon("circle") + 'Circle</button>' +
+            '<button class="bugmega-tool-button" type="button" data-bugmega-draw-tool="square">' + widgetIcon("square") + 'Square</button>' +
+            '<input class="bugmega-color" id="bugmegaDrawColor" type="color" value="#ef4444" title="Drawing color" aria-label="Drawing color">' +
+            '<button class="bugmega-tool-button" type="button" id="bugmegaDrawUndo">' + widgetIcon("undo") + 'Undo</button>' +
+            '<button class="bugmega-tool-button" type="button" id="bugmegaDrawClear">' + widgetIcon("trash") + 'Clear</button>' +
+          '</div>' +
+          '<button class="bugmega-primary bugmega-capture-button" type="button" id="bugmegaCapture">' + widgetIcon("camera") + 'Capture screenshot</button>' +
+        '</div>' +
         '<img class="bugmega-preview" id="bugmegaPreview" alt="Captured section preview">' +
         '<label class="bugmega-field"><span>Title</span><input id="bugmegaTitle" maxlength="80" placeholder="What needs attention?"></label>' +
         '<label class="bugmega-field"><span>Details</span><textarea id="bugmegaComment" placeholder="Describe the issue"></textarea></label>' +
@@ -348,6 +384,12 @@
     pinLayer.className = "bugmega-pin-layer";
     pinLayer.id = "bugmegaPinLayer";
     document.body.appendChild(pinLayer);
+    var drawingLayer = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    drawingLayer.setAttribute("class", "bugmega-drawing-layer");
+    drawingLayer.setAttribute("id", "bugmegaDrawingLayer");
+    document.body.appendChild(drawingLayer);
+    syncDrawingLayerSize();
+    bindDrawingLayer(drawingLayer);
     renderPins();
     renderAnnotationList();
 
@@ -358,10 +400,18 @@
     document.getElementById("bugmegaClose").addEventListener("click", closePanel);
     document.getElementById("bugmegaSubmit").addEventListener("click", submitFeedback);
     document.getElementById("bugmegaAttachment").addEventListener("change", validateAttachmentSelection);
+    document.getElementById("bugmegaCapture").addEventListener("click", captureMarkupScreenshot);
+    document.getElementById("bugmegaDrawColor").addEventListener("input", function (event) { drawingState.color = event.currentTarget.value || "#ef4444"; });
+    document.getElementById("bugmegaDrawUndo").addEventListener("click", undoDrawing);
+    document.getElementById("bugmegaDrawClear").addEventListener("click", clearDrawings);
+    document.querySelectorAll("[data-bugmega-draw-tool]").forEach(function (button) {
+      button.addEventListener("click", function () { setDrawingTool(button.getAttribute("data-bugmega-draw-tool")); });
+    });
     document.addEventListener("click", handleDocumentClick, true);
     window.addEventListener("resize", function () {
       constrainLauncherPosition();
       positionOpenSurfaces();
+      syncDrawingLayerSize();
       renderPins();
     });
     window.addEventListener("load", renderPins);
@@ -526,6 +576,162 @@
     positionSurface(document.getElementById("bugmegaMenu"));
   }
 
+  function syncDrawingLayerSize() {
+    var layer = document.getElementById("bugmegaDrawingLayer");
+    if (!layer) return;
+    var dimensions = pageDimensions();
+    layer.setAttribute("width", String(dimensions.width));
+    layer.setAttribute("height", String(dimensions.height));
+    layer.setAttribute("viewBox", "0 0 " + dimensions.width + " " + dimensions.height);
+  }
+
+  function setDrawingActive(active) {
+    drawingState.active = Boolean(active);
+    var layer = document.getElementById("bugmegaDrawingLayer");
+    if (layer) layer.classList.toggle("active", drawingState.active);
+  }
+
+  function setDrawingTool(tool) {
+    if (!["pencil", "circle", "square"].includes(tool)) return;
+    drawingState.tool = tool;
+    document.querySelectorAll("[data-bugmega-draw-tool]").forEach(function (button) {
+      button.classList.toggle("active", button.getAttribute("data-bugmega-draw-tool") === tool);
+    });
+    setDrawingActive(true);
+    setStatus("Draw on the page, then capture the screenshot.");
+  }
+
+  function invalidateMarkupCapture() {
+    state.screenshot = "";
+    state.captureError = "";
+    setPreview("");
+    setStatus("Drawing changed. Capture the screenshot when ready.");
+  }
+
+  function drawingElement(name) {
+    return document.createElementNS("http://www.w3.org/2000/svg", name);
+  }
+
+  function bindDrawingLayer(layer) {
+    layer.addEventListener("pointerdown", function (event) {
+      if (!drawingState.active || !state.point || (event.button !== undefined && event.button !== 0)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      syncDrawingLayerSize();
+      drawingState.drawing = true;
+      drawingState.startX = event.pageX;
+      drawingState.startY = event.pageY;
+      drawingState.moved = false;
+      var shape;
+      if (drawingState.tool === "pencil") {
+        shape = drawingElement("path");
+        shape.setAttribute("d", "M " + event.pageX + " " + event.pageY);
+        shape.setAttribute("fill", "none");
+        shape.setAttribute("stroke-linecap", "round");
+        shape.setAttribute("stroke-linejoin", "round");
+      } else if (drawingState.tool === "circle") {
+        shape = drawingElement("circle");
+        shape.setAttribute("cx", String(event.pageX));
+        shape.setAttribute("cy", String(event.pageY));
+        shape.setAttribute("r", "0");
+        shape.setAttribute("fill", "none");
+      } else {
+        shape = drawingElement("rect");
+        shape.setAttribute("x", String(event.pageX));
+        shape.setAttribute("y", String(event.pageY));
+        shape.setAttribute("width", "0");
+        shape.setAttribute("height", "0");
+        shape.setAttribute("fill", "none");
+      }
+      shape.setAttribute("stroke", drawingState.color);
+      shape.setAttribute("stroke-width", "3");
+      shape.setAttribute("vector-effect", "non-scaling-stroke");
+      layer.appendChild(shape);
+      drawingState.current = shape;
+      layer.setPointerCapture?.(event.pointerId);
+      invalidateMarkupCapture();
+    });
+    layer.addEventListener("pointermove", function (event) {
+      if (!drawingState.drawing || !drawingState.current) return;
+      event.preventDefault();
+      var deltaX = event.pageX - drawingState.startX;
+      var deltaY = event.pageY - drawingState.startY;
+      if (Math.abs(deltaX) + Math.abs(deltaY) > 2) drawingState.moved = true;
+      if (drawingState.tool === "pencil") {
+        drawingState.current.setAttribute("d", drawingState.current.getAttribute("d") + " L " + event.pageX + " " + event.pageY);
+      } else if (drawingState.tool === "circle") {
+        drawingState.current.setAttribute("r", String(Math.hypot(deltaX, deltaY)));
+      } else {
+        var side = Math.max(Math.abs(deltaX), Math.abs(deltaY));
+        drawingState.current.setAttribute("x", String(deltaX < 0 ? drawingState.startX - side : drawingState.startX));
+        drawingState.current.setAttribute("y", String(deltaY < 0 ? drawingState.startY - side : drawingState.startY));
+        drawingState.current.setAttribute("width", String(side));
+        drawingState.current.setAttribute("height", String(side));
+      }
+    });
+    var finishDrawing = function () {
+      if (!drawingState.drawing) return;
+      if (drawingState.current) {
+        if (drawingState.moved) drawingState.elements.push(drawingState.current);
+        else drawingState.current.remove();
+      }
+      drawingState.drawing = false;
+      drawingState.current = null;
+    };
+    layer.addEventListener("pointerup", finishDrawing);
+    layer.addEventListener("pointercancel", finishDrawing);
+  }
+
+  function undoDrawing() {
+    var shape = drawingState.elements.pop();
+    if (shape) shape.remove();
+    setDrawingActive(true);
+    invalidateMarkupCapture();
+  }
+
+  function clearDrawings() {
+    resetDrawings();
+    setDrawingActive(true);
+    invalidateMarkupCapture();
+  }
+
+  function resetDrawings() {
+    var layer = document.getElementById("bugmegaDrawingLayer");
+    if (layer) layer.replaceChildren();
+    drawingState.drawing = false;
+    drawingState.current = null;
+    drawingState.elements = [];
+    setDrawingActive(false);
+  }
+
+  async function captureMarkupScreenshot(event) {
+    var button = event.currentTarget;
+    if (!state.point) {
+      setStatus("Place an annotation pin first.", "error");
+      return;
+    }
+    button.disabled = true;
+    button.innerHTML = widgetIcon("camera") + "Capturing...";
+    setDrawingActive(false);
+    setStatus("Capturing the marked section...");
+    try {
+      state.screenshot = await captureSection(state.point);
+      state.captureError = "";
+      setPreview(state.screenshot);
+      setStatus("Screenshot captured with your markup.", "success");
+      requestAnimationFrame(function () { positionSurface(document.getElementById("bugmegaPanel")); });
+    } catch (error) {
+      state.screenshot = "";
+      state.captureError = error && error.message ? error.message : "Could not capture this page.";
+      setPreview("");
+      setDrawingActive(true);
+      setStatus("Screenshot was not available. You can adjust the markup and try again.", "error");
+    } finally {
+      button.disabled = false;
+      button.innerHTML = widgetIcon("camera") + "Capture screenshot";
+    }
+  }
+
   function pageDimensions() {
     return {
       width: Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0, window.innerWidth),
@@ -583,6 +789,10 @@
     }
     state.point = null;
     state.draftPin = null;
+    state.screenshot = "";
+    state.captureError = "";
+    setPreview("");
+    resetDrawings();
     setMenuOpen(false);
     document.getElementById("bugmegaPanel").classList.remove("active");
     renderPins();
@@ -596,6 +806,10 @@
     state.selecting = false;
     state.point = null;
     state.draftPin = null;
+    state.screenshot = "";
+    state.captureError = "";
+    setPreview("");
+    resetDrawings();
     document.body.classList.remove("bugmega-selecting");
     document.getElementById("bugmegaSelectBanner").classList.remove("active");
     document.getElementById("bugmegaPanel").classList.remove("active");
@@ -636,20 +850,8 @@
     renderPins();
     document.getElementById("bugmegaPanel").classList.add("active");
     positionSurface(document.getElementById("bugmegaPanel"));
-    setStatus("Capturing the section around the pin...");
-    captureSection(state.point).then(function (dataURL) {
-      state.screenshot = dataURL || "";
-      state.captureError = "";
-      setPreview(state.screenshot);
-      setStatus(state.screenshot ? "Section captured automatically." : "Pin saved. Screenshot was not available on this page.");
-      document.getElementById("bugmegaTitle").focus();
-    }).catch(function (error) {
-      state.screenshot = "";
-      state.captureError = error && error.message ? error.message : "Could not capture this page.";
-      setPreview("");
-      setStatus("Pin saved. Screenshot was not available on this page.", "error");
-      document.getElementById("bugmegaTitle").focus();
-    });
+    setDrawingTool("pencil");
+    setStatus("Draw on the page, then click Capture screenshot.");
   }
 
   function loadHtml2Canvas() {
@@ -703,9 +905,10 @@
     var html2canvas = await loadHtml2Canvas();
     var cropWidth = Math.min(760, window.innerWidth);
     var cropHeight = Math.min(560, window.innerHeight);
-    var left = clamp(point.clientX - cropWidth / 2, 0, Math.max(0, window.innerWidth - cropWidth));
-    var top = clamp(point.clientY - cropHeight / 2, 0, Math.max(0, window.innerHeight - cropHeight));
-    await waitForCaptureContent(left, top, cropWidth, cropHeight);
+    var dimensions = pageDimensions();
+    var documentLeft = clamp(point.pageX - cropWidth / 2, 0, Math.max(0, dimensions.width - cropWidth));
+    var documentTop = clamp(point.pageY - cropHeight / 2, 0, Math.max(0, dimensions.height - cropHeight));
+    await waitForCaptureContent(documentLeft - window.scrollX, documentTop - window.scrollY, cropWidth, cropHeight);
     var scrollX = window.scrollX;
     var scrollY = window.scrollY;
     var root = document.querySelector(".bugmega-widget");
@@ -719,8 +922,8 @@
         allowTaint: false,
         logging: false,
         scale: Math.min(2, window.devicePixelRatio || 1),
-        x: scrollX + left,
-        y: scrollY + top,
+        x: documentLeft,
+        y: documentTop,
         width: cropWidth,
         height: cropHeight,
         windowWidth: window.innerWidth,
@@ -819,6 +1022,7 @@
       }
       state.point = null;
       state.draftPin = null;
+      resetDrawings();
       renderPins();
       renderAnnotationList();
       setStatus("Feedback sent. Thank you.", "success");
