@@ -454,3 +454,12 @@ test("Platform Owner navigation includes Conflict & Audit Hub and routes to rend
   assert.match(appSource, /\/api\/admin\/conflicts\/audit/);
   assert.match(appSource, /\/api\/admin\/conflicts\/resolve/);
 });
+
+test("Conflict & Audit Hub user lists provide independent live search fields", () => {
+  assert.match(appSource, /id="conflictSearchAdmin" type="search"/);
+  assert.match(appSource, /id="conflictSearchFreelancer" type="search"/);
+  assert.match(appSource, /id="conflictAdminDirectorySearch" type="search"/);
+  assert.match(appSource, /id="conflictFreelancerDirectorySearch" type="search"/);
+  assert.match(appSource, /bindConflictSelectSearch\("#conflictSearchAdmin"/);
+  assert.match(appSource, /bindConflictDirectorySearch\("#conflictFreelancerDirectorySearch"/);
+});

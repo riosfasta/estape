@@ -17395,18 +17395,22 @@ async function renderAdminConflictHub() {
         </div>
         <div class="grid-2" style="margin-top:10px;">
           <div class="field">
-            <label><strong>User Admin End (Employer)</strong></label>
-            <select id="conflictSelectAdmin" style="width:100%;">
+            <label for="conflictSearchAdmin"><strong>User Admin End (Employer)</strong></label>
+            <input id="conflictSearchAdmin" type="search" placeholder="Search admins by name, email, or company" aria-label="Search User Admins" aria-controls="conflictSelectAdmin">
+            <select id="conflictSelectAdmin" style="width:100%;" aria-label="Select a User Admin">
               <option value="">-- Select a User Admin --</option>
               ${admins.map(a => `<option value="${esc(a.id)}" ${conflictHubState.adminId === a.id ? "selected" : ""}>${esc(a.name)} (${esc(a.company_name || a.email)})</option>`).join("")}
             </select>
+            <p id="conflictSearchAdminEmpty" class="muted" hidden>No User Admins match your search.</p>
           </div>
           <div class="field">
-            <label><strong>Freelancer End (Member)</strong></label>
-            <select id="conflictSelectFreelancer" style="width:100%;">
+            <label for="conflictSearchFreelancer"><strong>Freelancer End (Member)</strong></label>
+            <input id="conflictSearchFreelancer" type="search" placeholder="Search freelancers by name or email" aria-label="Search Freelancers" aria-controls="conflictSelectFreelancer">
+            <select id="conflictSelectFreelancer" style="width:100%;" aria-label="Select a Freelancer">
               <option value="">-- Select a Freelancer --</option>
               ${freelancers.map(f => `<option value="${esc(f.id)}" ${conflictHubState.freelancerId === f.id ? "selected" : ""}>${esc(f.name)} (${esc(f.email)}) - $${(f.hourly_rate || 0).toFixed(2)}/hr</option>`).join("")}
             </select>
+            <p id="conflictSearchFreelancerEmpty" class="muted" hidden>No Freelancers match your search.</p>
           </div>
         </div>
       </section>
@@ -17491,6 +17495,10 @@ async function renderAdminConflictHub() {
             <h2>User Admins Platform Overview</h2>
             <p class="muted">All employer accounts managing projects, task assignments, and freelancer payments.</p>
           </div>
+          <label class="field">
+            <span>Search User Admins</span>
+            <input id="conflictAdminDirectorySearch" type="search" placeholder="Name, email, or company" aria-controls="conflictAdminDirectoryBody">
+          </label>
         </div>
         <div class="report-table-wrapper">
           <table class="report-table">
@@ -17506,9 +17514,9 @@ async function renderAdminConflictHub() {
                 <th style="text-align:center;">Action</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody id="conflictAdminDirectoryBody">
               ${admins.map(a => `
-                <tr>
+                <tr data-conflict-admin-row data-user-search="${esc(`${a.name || ""} ${a.email || ""} ${a.company_name || ""}`.toLowerCase())}">
                   <td>
                     <div class="report-user-cell">
                       ${timeReportAvatarHTML({ avatar_url: a.avatar_url }, a.name)}
@@ -17533,6 +17541,7 @@ async function renderAdminConflictHub() {
                   </td>
                 </tr>
               `).join("") || `<tr><td colspan="8" class="muted" style="text-align:center;padding:32px;">No user admins found.</td></tr>`}
+              <tr id="conflictAdminDirectoryEmpty" hidden><td colspan="8" class="muted" style="text-align:center;padding:32px;">No User Admins match your search.</td></tr>
             </tbody>
           </table>
         </div>
@@ -17547,6 +17556,10 @@ async function renderAdminConflictHub() {
             <h2>Freelancers & Contractors Overview</h2>
             <p class="muted">All members and freelancers assigned to platform tasks and deliverables.</p>
           </div>
+          <label class="field">
+            <span>Search Freelancers</span>
+            <input id="conflictFreelancerDirectorySearch" type="search" placeholder="Name or email" aria-controls="conflictFreelancerDirectoryBody">
+          </label>
         </div>
         <div class="report-table-wrapper">
           <table class="report-table">
@@ -17562,9 +17575,9 @@ async function renderAdminConflictHub() {
                 <th style="text-align:center;">Action</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody id="conflictFreelancerDirectoryBody">
               ${freelancers.map(f => `
-                <tr>
+                <tr data-conflict-freelancer-row data-user-search="${esc(`${f.name || ""} ${f.email || ""}`.toLowerCase())}">
                   <td>
                     <div class="report-user-cell">
                       ${timeReportAvatarHTML({ avatar_url: f.avatar_url }, f.name)}
@@ -17589,6 +17602,7 @@ async function renderAdminConflictHub() {
                   </td>
                 </tr>
               `).join("") || `<tr><td colspan="8" class="muted" style="text-align:center;padding:32px;">No freelancers found.</td></tr>`}
+              <tr id="conflictFreelancerDirectoryEmpty" hidden><td colspan="8" class="muted" style="text-align:center;padding:32px;">No Freelancers match your search.</td></tr>
             </tbody>
           </table>
         </div>
@@ -17634,6 +17648,47 @@ async function renderAdminConflictHub() {
 
   // Refresh button
   $("#refreshConflictHubBtn")?.addEventListener("click", () => renderAdminConflictHub());
+
+  // User-list search fields
+  const bindConflictSelectSearch = (inputSelector, selectSelector, emptySelector) => {
+    const input = $(inputSelector);
+    const select = $(selectSelector);
+    const empty = $(emptySelector);
+    if (!input || !select || !empty) return;
+    input.addEventListener("input", () => {
+      const query = input.value.trim().toLowerCase();
+      let visible = 0;
+      select.querySelectorAll("option").forEach(option => {
+        if (!option.value) return;
+        const matches = option.textContent.toLowerCase().includes(query);
+        option.hidden = !matches;
+        if (matches) visible++;
+      });
+      empty.hidden = visible > 0;
+    });
+  };
+
+  const bindConflictDirectorySearch = (inputSelector, rowSelector, emptySelector) => {
+    const input = $(inputSelector);
+    const empty = $(emptySelector);
+    if (!input || !empty) return;
+    const rows = [...document.querySelectorAll(rowSelector)];
+    input.addEventListener("input", () => {
+      const query = input.value.trim().toLowerCase();
+      let visible = 0;
+      rows.forEach(row => {
+        const matches = (row.dataset.userSearch || "").includes(query);
+        row.hidden = !matches;
+        if (matches) visible++;
+      });
+      empty.hidden = rows.length === 0 || visible > 0;
+    });
+  };
+
+  bindConflictSelectSearch("#conflictSearchAdmin", "#conflictSelectAdmin", "#conflictSearchAdminEmpty");
+  bindConflictSelectSearch("#conflictSearchFreelancer", "#conflictSelectFreelancer", "#conflictSearchFreelancerEmpty");
+  bindConflictDirectorySearch("#conflictAdminDirectorySearch", "[data-conflict-admin-row]", "#conflictAdminDirectoryEmpty");
+  bindConflictDirectorySearch("#conflictFreelancerDirectorySearch", "[data-conflict-freelancer-row]", "#conflictFreelancerDirectoryEmpty");
 
   // Quick picks from directories
   document.querySelectorAll("[data-pick-admin]").forEach(btn => {
