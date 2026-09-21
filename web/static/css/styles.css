@@ -6359,9 +6359,7 @@ dialog.client-task-modal .client-task-panel-body {
   color: var(--accent-strong);
 }
 .feedback-page-link {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 6px;
+  display: inline-block;
   min-width: 0;
   color: var(--accent-strong);
   font-size: 13px;
@@ -6369,12 +6367,6 @@ dialog.client-task-modal .client-task-panel-body {
   line-height: 1.4;
   overflow-wrap: anywhere;
   text-decoration: underline;
-}
-.feedback-page-link i {
-  flex: 0 0 auto;
-  width: 14px;
-  height: 14px;
-  margin-top: 2px;
 }
 .feedback-detail-grid {
   display: grid;

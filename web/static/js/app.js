@@ -743,9 +743,9 @@ function annotationPageLinkHTML(value) {
   try {
     const parsed = new URL(raw);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("Unsupported page URL");
-    return `<div class="feedback-url-field"><span>Page</span><a class="feedback-page-link" href="${esc(parsed.href)}" target="_blank" rel="noopener noreferrer" title="${esc(parsed.href)}">${icon("external-link")}${esc(parsed.host + parsed.pathname + parsed.search + parsed.hash)}</a></div>`;
+    return `<a class="feedback-page-link" href="${esc(parsed.href)}" target="_blank" rel="noopener noreferrer" title="${esc(parsed.href)}">${esc(parsed.pathname || "/")}</a>`;
   } catch {
-    return `<div class="feedback-url-field"><span>Page</span><span class="muted">No page URL</span></div>`;
+    return "";
   }
 }
 

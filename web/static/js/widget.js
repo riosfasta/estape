@@ -72,7 +72,7 @@
       ".bugmega-detail-title{display:grid;grid-template-columns:27px minmax(0,1fr);align-items:center;gap:8px;margin-bottom:10px}.bugmega-detail-title h3{margin:0;font-size:15px;line-height:1.3;color:#10201c}" +
       ".bugmega-detail-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.bugmega-detail-pill{border-radius:999px;background:#eef5f2;color:#52635d;padding:4px 8px;font-size:11px;font-weight:800}" +
       ".bugmega-detail-comment{margin:0 0 10px;color:#33443e;font-size:13px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}.bugmega-detail-comment.empty{color:#7a8883;font-style:italic}" +
-      ".bugmega-detail-page{display:flex;align-items:flex-start;gap:8px;margin:0 0 12px;font-size:12px;line-height:1.4}.bugmega-detail-page strong{flex:0 0 auto;color:#52635d}.bugmega-detail-page a{min-width:0;color:#087c67;text-decoration:underline;overflow-wrap:anywhere}" +
+      ".bugmega-detail-page{display:block;margin:0 0 12px;font-size:12px;line-height:1.4}.bugmega-detail-page a{color:#087c67;text-decoration:underline;overflow-wrap:anywhere}" +
       ".bugmega-detail-image{display:block;width:100%;height:190px;object-fit:cover;border:1px solid #d8e1dd;border-radius:8px;margin:0 0 12px;background:#eef5f2}" +
       ".bugmega-detail-file{display:flex;align-items:center;gap:7px;border:1px solid #d8e1dd;border-radius:8px;color:#087c67;padding:9px 10px;margin:0 0 12px;font-size:13px;font-weight:800;text-decoration:none;overflow-wrap:anywhere}" +
       ".bugmega-detail-attachments{display:grid;gap:8px;margin-bottom:12px}.bugmega-detail-attachments .bugmega-detail-image,.bugmega-detail-attachments .bugmega-detail-file{margin:0}" +
@@ -247,8 +247,7 @@
     try {
       var parsed = new URL(raw);
       if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
-      var label = parsed.host + parsed.pathname + parsed.search + parsed.hash;
-      return '<div class="bugmega-detail-page"><strong>Page</strong><a href="' + esc(parsed.href) + '" target="_blank" rel="noopener noreferrer" title="' + esc(parsed.href) + '">' + esc(label) + '</a></div>';
+      return '<div class="bugmega-detail-page"><a href="' + esc(parsed.href) + '" target="_blank" rel="noopener noreferrer" title="' + esc(parsed.href) + '">' + esc(parsed.pathname || "/") + '</a></div>';
     } catch (error) {
       return "";
     }
