@@ -738,6 +738,17 @@ function annotationPageURL(baseURL, pagePath = "") {
   return `${base}${pathValue.startsWith("/") ? "" : "/"}${pathValue}`;
 }
 
+function annotationPageLinkHTML(value) {
+  const raw = String(value || "").trim();
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("Unsupported page URL");
+    return `<div class="feedback-url-field"><span>Page</span><a class="feedback-page-link" href="${esc(parsed.href)}" target="_blank" rel="noopener noreferrer" title="${esc(parsed.href)}">${icon("external-link")}${esc(parsed.host + parsed.pathname + parsed.search + parsed.hash)}</a></div>`;
+  } catch {
+    return `<div class="feedback-url-field"><span>Page</span><span class="muted">No page URL</span></div>`;
+  }
+}
+
 function normalizedAnnotationPageURL(value = "") {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -8039,7 +8050,7 @@ function clientAnnotationTaskDetailHTML(task = {}, statuses = [], usersByID = {}
       <h2>${esc(task.title || "Annotation")}</h2>
       ${showStatus ? `<div class="feedback-status-form" data-client-annotation-status-form="${esc(task.id)}">${statusPickerHTML(statuses, task.status || "todo", "status")}</div>` : clientAnnotationItemStatusPickerHTML(annotationStatusTaskID, task.id, task.status || "todo", statuses)}
     </div>
-    <label class="feedback-url-field"><span>Page URL</span><input value="${esc(task.url || "No page URL")}" readonly></label>
+    ${annotationPageLinkHTML(task.url)}
     <div class="feedback-detail-grid">
       <div><span class="muted">Assignee</span>${assignees.length ? `<div class="assignee-avatars">${assignees.map((user) => userChip(user)).join("")}</div>` : `<strong>Unassigned</strong>`}</div>
       <div><span class="muted">Created</span><strong>${esc(fmtDateTime(task.created_at))}</strong></div>

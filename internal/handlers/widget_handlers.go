@@ -897,6 +897,7 @@ func (s *Server) widgetAnnotationPins(ctx context.Context, site models.ClientWeb
 				rows = append(rows, gin.H{
 					"id":             annotation.ID.Hex(),
 					"task_id":        task.ID.Hex(),
+					"url":            annotation.URL,
 					"title":          annotation.Title,
 					"comment":        annotation.Comment,
 					"status":         annotation.Status,
@@ -919,6 +920,7 @@ func (s *Server) widgetAnnotationPins(ctx context.Context, site models.ClientWeb
 		rows = append(rows, gin.H{
 			"id":             task.ID.Hex(),
 			"task_id":        task.ID.Hex(),
+			"url":            task.URL,
 			"title":          task.Title,
 			"comment":        firstNonEmpty(task.Comment, task.Content),
 			"status":         task.Status,
