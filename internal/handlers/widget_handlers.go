@@ -78,7 +78,7 @@ func (s *Server) widgetSession(c *gin.Context) {
 
 func (s *Server) createWidgetAnnotation(c *gin.Context) {
 	s.setWidgetCORS(c)
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 10<<20)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 20<<20)
 	var req struct {
 		SiteKey        string   `json:"site_key"`
 		URL            string   `json:"url"`
@@ -91,6 +91,10 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 		ScreenshotData string   `json:"screenshot_data"`
 		AttachmentName string   `json:"attachment_name"`
 		AttachmentData string   `json:"attachment_data"`
+		Attachments    []struct {
+			Name string `json:"name"`
+			Data string `json:"data"`
+		} `json:"attachments"`
 		CaptureError   string   `json:"capture_error"`
 		PinX           *float64 `json:"pin_x"`
 		PinY           *float64 `json:"pin_y"`
@@ -184,21 +188,36 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 		}
 		screenshotURL = url
 	}
-	attachmentURL := ""
-	if strings.TrimSpace(req.AttachmentData) != "" {
-		url, err := s.saveWidgetAttachment(user.ID, req.AttachmentName, req.AttachmentData)
+	if strings.TrimSpace(req.AttachmentData) != "" && len(req.Attachments) == 0 {
+		req.Attachments = append(req.Attachments, struct {
+			Name string `json:"name"`
+			Data string `json:"data"`
+		}{Name: req.AttachmentName, Data: req.AttachmentData})
+	}
+	if len(req.Attachments) > 8 {
+		s.deleteLocalUploadFile(screenshotURL)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "you can attach up to 8 files"})
+		return
+	}
+	attachments := make([]string, 0, len(req.Attachments))
+	for _, file := range req.Attachments {
+		attachmentURL, err := s.saveWidgetAttachment(user.ID, file.Name, file.Data)
 		if err != nil {
+			s.deleteLocalUploadFile(screenshotURL)
+			for _, saved := range attachments {
+				s.deleteLocalUploadFile(saved)
+			}
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		attachmentURL = url
-	}
-	attachments := []string{}
-	if attachmentURL != "" {
 		attachments = append(attachments, attachmentURL)
 	}
 	tab, err := s.ensureWidgetTaskBoard(c.Request.Context(), site)
 	if err != nil {
+		s.deleteLocalUploadFile(screenshotURL)
+		for _, saved := range attachments {
+			s.deleteLocalUploadFile(saved)
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare task board"})
 		return
 	}
@@ -208,6 +227,10 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 		status = statuses[0]
 	}
 	if !containsString(statuses, status) {
+		s.deleteLocalUploadFile(screenshotURL)
+		for _, saved := range attachments {
+			s.deleteLocalUploadFile(saved)
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "status is not in this task board"})
 		return
 	}
@@ -266,6 +289,10 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 		UpdatedAt:     now,
 	}
 	if _, err := s.store.C("client_tasks").InsertOne(c.Request.Context(), task); err != nil {
+		s.deleteLocalUploadFile(screenshotURL)
+		for _, saved := range attachments {
+			s.deleteLocalUploadFile(saved)
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create feedback task"})
 		return
 	}
@@ -273,7 +300,11 @@ func (s *Server) createWidgetAnnotation(c *gin.Context) {
 	s.notifyClientTaskAssignees(c.Request.Context(), task)
 	s.notifyUserIDs(c.Request.Context(), s.clientWebsiteLiveRecipients(c.Request.Context(), site), user.ID, "client_task_updated", firstNonEmpty(user.Name, user.Username, user.Email, "Someone")+" submitted website feedback: "+task.Title, task.ID)
 	s.broadcastClientTaskChanged(c.Request.Context(), task, user.ID, "client_task_created")
-	c.JSON(http.StatusCreated, gin.H{"task_id": task.ID.Hex(), "annotation_id": annotation.ID.Hex(), "screenshot_url": screenshotURL, "attachment_url": attachmentURL, "status": status, "created_at": now})
+	firstAttachmentURL := ""
+	if len(attachments) > 0 {
+		firstAttachmentURL = attachments[0]
+	}
+	c.JSON(http.StatusCreated, gin.H{"task_id": task.ID.Hex(), "annotation_id": annotation.ID.Hex(), "screenshot_url": screenshotURL, "attachment_url": firstAttachmentURL, "attachment_urls": attachments, "status": status, "created_at": now})
 }
 
 func (s *Server) updateWidgetAnnotation(c *gin.Context) {

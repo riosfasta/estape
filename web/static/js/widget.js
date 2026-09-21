@@ -38,6 +38,7 @@
     point: null,
     draftPin: null,
     pins: [],
+    attachments: [],
     screenshot: "",
     captureError: "",
     session: null
@@ -89,6 +90,8 @@
       ".bugmega-field input,.bugmega-field textarea,.bugmega-field select{width:100%;border:1px solid #cdd9d5;border-radius:7px;padding:8px 9px;font-size:13px;color:#10201c;background:#fff}" +
       ".bugmega-field input[type='file']{padding:6px;font-size:12px}.bugmega-field input[type='file']::file-selector-button{border:0;border-radius:6px;background:#eef5f2;color:#10201c;padding:7px 9px;margin-right:8px;font-weight:800;cursor:pointer}" +
       ".bugmega-field textarea{min-height:92px;resize:vertical}.bugmega-field select{min-height:74px}" +
+      ".bugmega-create-attachments{display:flex;align-items:flex-start;gap:8px;margin:10px 0}.bugmega-create-attach-button{width:30px!important;height:30px!important;min-width:30px!important;min-height:30px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;border:1px solid #cdd9d5!important;border-radius:7px!important;background:#fff!important;color:#52635d!important;padding:6px!important;cursor:pointer}.bugmega-create-attach-button:hover{border-color:#08a88a!important;color:#087c67!important}.bugmega-create-attachment-list{display:grid;gap:6px;min-width:0;flex:1}.bugmega-create-attachment-list:empty{display:none}.bugmega-create-attachment-item{display:flex;align-items:center;gap:7px;min-width:0;padding:4px 6px;border:1px solid #d8e1dd;border-radius:7px;background:#f8fbfa}.bugmega-create-attachment-item img{width:30px;height:30px;flex:0 0 auto;border-radius:5px;object-fit:cover}.bugmega-create-attachment-item>span{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:700}.bugmega-create-attachment-remove{width:22px!important;height:22px!important;min-width:22px!important;min-height:22px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;border:0!important;border-radius:50%!important;background:#e8efec!important;color:#52635d!important;padding:4px!important;cursor:pointer}" +
+      ".bugmega-create-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0}.bugmega-create-meta .bugmega-field{min-width:0;margin:0}.bugmega-create-meta .bugmega-field>span{font-size:11px;margin-bottom:4px}.bugmega-create-select-wrap{position:relative}.bugmega-create-select-wrap:after{content:'';position:absolute;right:10px;top:11px;width:6px;height:6px;border-right:1.5px solid #52635d;border-bottom:1.5px solid #52635d;transform:rotate(45deg);pointer-events:none}.bugmega-create-meta select,.bugmega-assignee-trigger{width:100%!important;height:31px!important;min-height:31px!important;max-height:31px!important;border:1px solid #cdd9d5!important;border-radius:7px!important;background:#fff!important;color:#10201c!important;padding:4px 23px 4px 8px!important;font-size:12px!important;line-height:20px!important;font-weight:700!important;cursor:pointer}.bugmega-create-meta select{appearance:none!important;-webkit-appearance:none!important}.bugmega-assignee-field{position:relative}.bugmega-assignee-trigger{text-align:left!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bugmega-assignee-menu{position:absolute;top:100%;right:0;z-index:4;width:max(100%,180px);max-height:180px;overflow:auto;margin-top:4px;padding:5px;border:1px solid #cdd9d5;border-radius:8px;background:#fff;box-shadow:0 10px 25px rgba(0,0,0,.15)}.bugmega-assignee-menu[hidden]{display:none!important}.bugmega-assignee-option{display:flex;align-items:center;gap:7px;padding:5px;border-radius:5px;color:#10201c;font-size:12px;cursor:pointer}.bugmega-assignee-option:hover{background:#eef8f5}.bugmega-assignee-option input{width:14px!important;height:14px!important;min-height:14px!important;margin:0!important;accent-color:#08a88a}.bugmega-assignee-empty{margin:5px;color:#64736e;font-size:11px}" +
       ".bugmega-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}" +
       ".bugmega-primary{display:inline-flex;align-items:center;justify-content:center;gap:5px;border:0;border-radius:7px;background:#08a88a;color:#fff;padding:8px 10px;font-size:13px;font-weight:800;cursor:pointer}" +
       ".bugmega-secondary{display:inline-flex;align-items:center;justify-content:center;gap:5px;border:1px solid #cdd9d5;border-radius:7px;background:#fff;color:#10201c;padding:7px 9px;font-size:13px;font-weight:700;cursor:pointer}" +
@@ -166,9 +169,9 @@
 
   function memberOptions() {
     var members = state.session && Array.isArray(state.session.members) ? state.session.members : [];
-    if (!members.length) return '<option value="">No members available</option>';
+    if (!members.length) return '<p class="bugmega-assignee-empty">No members available</p>';
     return members.map(function (member) {
-      return '<option value="' + esc(member.id) + '">' + esc(member.name || member.username || member.email || "Member") + '</option>';
+      return '<label class="bugmega-assignee-option"><input type="checkbox" value="' + esc(member.id) + '"><span>' + esc(member.name || member.username || member.email || "Member") + '</span></label>';
     }).join("");
   }
 
@@ -622,9 +625,8 @@
         '<img class="bugmega-preview" id="bugmegaPreview" alt="Captured section preview">' +
         '<label class="bugmega-field"><span>Title</span><input id="bugmegaTitle" maxlength="80" placeholder="What needs attention?"></label>' +
         '<label class="bugmega-field"><span>Details</span><textarea id="bugmegaComment" placeholder="Describe the issue"></textarea></label>' +
-        '<label class="bugmega-field"><span>Attachment (optional, max 1 MB)</span><input id="bugmegaAttachment" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.zip"></label>' +
-        '<label class="bugmega-field"><span>Status</span><select id="bugmegaCreateStatus">' + annotationStatusOptions() + '</select></label>' +
-        '<label class="bugmega-field"><span>Assign to</span><select id="bugmegaAssignees" multiple>' + memberOptions() + '</select></label>' +
+        '<div class="bugmega-create-attachments"><button class="bugmega-create-attach-button" type="button" id="bugmegaAttachmentButton" title="Add attachments (up to 8 files, 1 MB each)" aria-label="Add attachments">' + widgetIcon("paperclip") + '</button><input id="bugmegaAttachment" type="file" multiple hidden accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.zip"><div class="bugmega-create-attachment-list" id="bugmegaAttachmentList"></div></div>' +
+        '<div class="bugmega-create-meta"><label class="bugmega-field"><span>Status</span><span class="bugmega-create-select-wrap"><select id="bugmegaCreateStatus">' + annotationStatusOptions() + '</select></span></label><div class="bugmega-field bugmega-assignee-field"><span>Assign to</span><div class="bugmega-create-select-wrap"><button class="bugmega-assignee-trigger" type="button" id="bugmegaAssigneesToggle" aria-expanded="false">Unassigned</button></div><div class="bugmega-assignee-menu" id="bugmegaAssignees" hidden>' + memberOptions() + '</div></div></div>' +
         '<div class="bugmega-toolbar"><button class="bugmega-primary" type="button" id="bugmegaSubmit">Send feedback</button><button class="bugmega-secondary" type="button" id="bugmegaReselect">Move pin</button></div>' +
         '<div class="bugmega-status" id="bugmegaStatus"></div>' +
       '</section>';
@@ -649,7 +651,13 @@
     document.getElementById("bugmegaReselect").addEventListener("click", startSelecting);
     document.getElementById("bugmegaClose").addEventListener("click", closePanel);
     document.getElementById("bugmegaSubmit").addEventListener("click", submitFeedback);
-    document.getElementById("bugmegaAttachment").addEventListener("change", validateAttachmentSelection);
+    document.getElementById("bugmegaAttachmentButton").addEventListener("click", function () { document.getElementById("bugmegaAttachment").click(); });
+    document.getElementById("bugmegaAttachment").addEventListener("change", addCreationAttachments);
+    document.getElementById("bugmegaAssigneesToggle").addEventListener("click", toggleAssigneeMenu);
+    document.getElementById("bugmegaAssignees").addEventListener("change", updateAssigneeSummary);
+    document.addEventListener("click", function (event) {
+      if (!event.target.closest || !event.target.closest(".bugmega-assignee-field")) setAssigneeMenuOpen(false);
+    });
     document.getElementById("bugmegaCapture").addEventListener("click", captureMarkupScreenshot);
     document.getElementById("bugmegaDrawColor").addEventListener("input", function (event) { drawingState.color = event.currentTarget.value || "#ef4444"; });
     document.getElementById("bugmegaDrawUndo").addEventListener("click", undoDrawing);
@@ -1073,6 +1081,7 @@
     state.screenshot = "";
     state.captureError = "";
     setPreview("");
+    clearCreationAttachments();
     resetDrawings();
     document.body.classList.remove("bugmega-selecting");
     document.getElementById("bugmegaSelectBanner").classList.remove("active");
@@ -1202,23 +1211,86 @@
   }
 
   function selectedAssignees() {
-    var select = document.getElementById("bugmegaAssignees");
-    if (!select) return [];
-    return Array.prototype.slice.call(select.selectedOptions || []).map(function (option) {
-      return option.value;
+    var menu = document.getElementById("bugmegaAssignees");
+    if (!menu) return [];
+    return Array.prototype.slice.call(menu.querySelectorAll("input:checked")).map(function (input) {
+      return input.value;
     }).filter(Boolean);
   }
 
-  function validateAttachmentSelection(event) {
+  function setAssigneeMenuOpen(open) {
+    var menu = document.getElementById("bugmegaAssignees");
+    var toggle = document.getElementById("bugmegaAssigneesToggle");
+    if (!menu || !toggle) return;
+    menu.hidden = !open;
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) positionSurface(document.getElementById("bugmegaPanel"));
+  }
+
+  function toggleAssigneeMenu() {
+    var menu = document.getElementById("bugmegaAssignees");
+    if (menu) setAssigneeMenuOpen(menu.hidden);
+  }
+
+  function updateAssigneeSummary() {
+    var button = document.getElementById("bugmegaAssigneesToggle");
+    var count = selectedAssignees().length;
+    if (button) button.textContent = count ? count + " assigned" : "Unassigned";
+  }
+
+  function clearCreationAttachments() {
+    state.attachments = [];
+    var input = document.getElementById("bugmegaAttachment");
+    var list = document.getElementById("bugmegaAttachmentList");
+    if (input) input.value = "";
+    if (list) list.innerHTML = "";
+  }
+
+  function renderCreationAttachments() {
+    var list = document.getElementById("bugmegaAttachmentList");
+    if (!list) return;
+    list.innerHTML = state.attachments.map(function (entry, index) {
+      var media = entry.preview ? '<img src="' + esc(entry.preview) + '" alt="Attachment preview">' : widgetIcon("paperclip");
+      return '<div class="bugmega-create-attachment-item">' + media + '<span title="' + esc(entry.file.name) + '">' + esc(entry.file.name) + '</span><button class="bugmega-create-attachment-remove" type="button" data-bugmega-remove-attachment="' + index + '" title="Remove attachment" aria-label="Remove ' + esc(entry.file.name) + '">' + widgetIcon("close") + '</button></div>';
+    }).join("");
+    Array.prototype.forEach.call(list.querySelectorAll("[data-bugmega-remove-attachment]"), function (button) {
+      button.addEventListener("click", function () {
+        state.attachments.splice(Number(button.getAttribute("data-bugmega-remove-attachment")), 1);
+        renderCreationAttachments();
+      });
+    });
+    positionSurface(document.getElementById("bugmegaPanel"));
+  }
+
+  function addCreationAttachments(event) {
     var input = event.currentTarget;
-    var file = input.files && input.files[0];
-    if (!file) return;
-    if (file.size > 1024 * 1024) {
-      input.value = "";
-      setStatus("Attachment must be 1 MB or smaller.", "error");
-      return;
+    var files = Array.prototype.slice.call(input.files || []);
+    input.value = "";
+    for (var i = 0; i < files.length; i++) {
+      var file = files[i];
+      if (file.size > 1024 * 1024) {
+        setStatus(file.name + " must be 1 MB or smaller.", "error");
+        continue;
+      }
+      if (state.attachments.length >= 8) {
+        setStatus("You can attach up to 8 files.", "error");
+        break;
+      }
+      if (state.attachments.some(function (entry) { return entry.file.name === file.name && entry.file.size === file.size && entry.file.lastModified === file.lastModified; })) continue;
+      let entry = { file: file, preview: "", data: "" };
+      state.attachments.push(entry);
+      entry.dataPromise = readAttachmentData(file).then(function (data) {
+        entry.data = data;
+        if (entry.file.type.indexOf("image/") === 0) entry.preview = data;
+        if (state.attachments.includes(entry)) renderCreationAttachments();
+        return data;
+      }).catch(function () {
+        entry.error = "Could not read " + entry.file.name + ".";
+        if (state.attachments.includes(entry)) setStatus(entry.error, "error");
+        return "";
+      });
     }
-    setStatus(file.name + " is ready to attach.");
+    renderCreationAttachments();
   }
 
   function readAttachmentData(file) {
@@ -1239,19 +1311,19 @@
     var title = document.getElementById("bugmegaTitle").value.trim();
     var comment = document.getElementById("bugmegaComment").value.trim();
     var createStatus = document.getElementById("bugmegaCreateStatus");
-    var attachmentInput = document.getElementById("bugmegaAttachment");
-    var attachment = attachmentInput && attachmentInput.files ? attachmentInput.files[0] : null;
+    var attachments = state.attachments.slice();
     button.disabled = true;
     button.textContent = state.screenshot ? "Sending..." : "Capturing...";
     setStatus(state.screenshot ? "Sending feedback..." : "Capturing the screenshot before sending...");
     try {
-      if (attachment && attachment.size > 1024 * 1024) throw new Error("Attachment must be 1 MB or smaller.");
+      if (attachments.some(function (entry) { return entry.file.size > 1024 * 1024; })) throw new Error("Attachment must be 1 MB or smaller.");
       if (!state.screenshot) {
         await captureMarkupScreenshot(null, { automatic: true, throwOnError: true });
         button.textContent = "Sending...";
         setStatus("Sending feedback...");
       }
-      var attachmentData = attachment ? await readAttachmentData(attachment) : "";
+      var attachmentData = await Promise.all(attachments.map(function (entry) { return entry.dataPromise; }));
+      if (attachmentData.some(function (data) { return !data; })) throw new Error("Could not read an attachment. Remove it and try again.");
       var response = await fetch(apiBase + "/api/widget/annotations", {
         method: "POST",
         mode: "cors",
@@ -1265,8 +1337,7 @@
           status: createStatus ? createStatus.value : "",
           assignee_ids: selectedAssignees(),
           screenshot_data: state.screenshot || "",
-          attachment_name: attachment ? attachment.name : "",
-          attachment_data: attachmentData,
+          attachments: attachments.map(function (entry, index) { return { name: entry.file.name, data: attachmentData[index] }; }),
           capture_error: state.captureError || "",
           pin_x: state.point.pinX,
           pin_y: state.point.pinY,
@@ -1291,7 +1362,7 @@
           canManage: true,
           canEdit: true,
           screenshotURL: data.screenshot_url || "",
-          attachments: data.attachment_url ? [data.attachment_url] : [],
+          attachments: Array.isArray(data.attachment_urls) ? data.attachment_urls : (data.attachment_url ? [data.attachment_url] : []),
           createdAt: data.created_at || new Date().toISOString(),
           pinX: state.draftPin.pinX,
           pinY: state.draftPin.pinY
@@ -1305,7 +1376,7 @@
       setStatus("Feedback sent. Thank you.", "success");
       document.getElementById("bugmegaTitle").value = "";
       document.getElementById("bugmegaComment").value = "";
-      if (attachmentInput) attachmentInput.value = "";
+      clearCreationAttachments();
       setTimeout(closePanel, 1200);
     } catch (error) {
       setStatus(error && error.message ? error.message : "Could not send feedback.", "error");
