@@ -368,6 +368,89 @@ func (s *Server) getClientProject(c *gin.Context) {
 	})
 }
 
+func clientMentionUsers(rows []gin.H) []gin.H {
+	users := []gin.H{}
+	seen := map[primitive.ObjectID]bool{}
+	for _, row := range rows {
+		member, ok := row["user"].(models.User)
+		if !ok || seen[member.ID] || member.Status != models.StatusActive {
+			continue
+		}
+		seen[member.ID] = true
+		users = append(users, gin.H{
+			"id":         member.ID,
+			"name":       member.Name,
+			"username":   member.Username,
+			"email":      member.Email,
+			"avatar_url": member.AvatarURL,
+			"staff_role": member.StaffRole,
+			"role":       member.Role,
+		})
+	}
+	return users
+}
+
+func (s *Server) clientMentionTasks(ctx context.Context, userCtx middleware.UserContext, clientID primitive.ObjectID) []gin.H {
+	accessFilter := s.clientTaskAccessFilter(ctx, userCtx, []primitive.ObjectID{clientID})
+	filter := bson.M{"$and": []bson.M{
+		accessFilter,
+		{"deleted_at": bson.M{"$in": []any{nil, primitive.Null{}}}},
+	}}
+	cursor, err := s.store.C("client_tasks").Find(ctx, filter, options.Find().SetProjection(bson.M{
+		"_id": 1, "title": 1, "type": 1, "website_id": 1,
+	}).SetSort(bson.D{{Key: "updated_at", Value: -1}}).SetLimit(250))
+	if err != nil {
+		return []gin.H{}
+	}
+	defer cursor.Close(ctx)
+	tasks := []gin.H{}
+	for cursor.Next(ctx) {
+		var task models.ClientTask
+		if cursor.Decode(&task) != nil {
+			continue
+		}
+		tasks = append(tasks, gin.H{
+			"id":         task.ID,
+			"title":      task.Title,
+			"type":       task.Type,
+			"website_id": task.WebsiteID,
+		})
+	}
+	return tasks
+}
+
+func (s *Server) listClientProjectMentions(c *gin.Context) {
+	clientID, ok := objectIDParam(c, "id")
+	if !ok {
+		return
+	}
+	client, ok := s.loadClientProjectForAccess(c, clientID, false)
+	if !ok {
+		return
+	}
+	userCtx, _ := currentUser(c)
+	if user, err := s.loadUser(c.Request.Context(), userCtx.ID); err == nil {
+		userCtx.Role = user.Role
+		userCtx.TeamID = user.TeamID
+	}
+	websites, _ := s.clientWebsitesForAccess(c.Request.Context(), client, userCtx)
+	folderAccess := s.canManageClientProject(c.Request.Context(), userCtx, client) || containsObjectID(client.MemberIDs, userCtx.ID) || containsObjectID(client.ClientAdminIDs, userCtx.ID) || client.CreatedBy == userCtx.ID
+	memberRows := []gin.H{}
+	if folderAccess {
+		memberRows = s.clientProjectMembers(c.Request.Context(), client)
+	}
+	for _, website := range websites {
+		memberRows = s.mergeMemberRows(memberRows, s.clientWebsiteMembers(c.Request.Context(), website))
+	}
+	if folderAccess && !client.TeamID.IsZero() {
+		memberRows = s.mergeMemberRows(memberRows, s.teamMemberRows(c.Request.Context(), client.TeamID))
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"users": clientMentionUsers(memberRows),
+		"tasks": s.clientMentionTasks(c.Request.Context(), userCtx, client.ID),
+	})
+}
+
 func (s *Server) updateClientProject(c *gin.Context) {
 	clientID, ok := objectIDParam(c, "id")
 	if !ok {
@@ -1464,6 +1547,7 @@ func (s *Server) createClientTask(c *gin.Context) {
 	}
 	s.recordClientTaskLog(c.Request.Context(), task, userCtx.ID, "created_task", "created this task")
 	s.notifyClientTaskAssignees(c.Request.Context(), task)
+	s.notifyClientTaskMentions(c.Request.Context(), task, userCtx.ID, clientTaskMentionText(task.Content, task.Comment, task.Blocks), task.ID, "client_task_mention")
 	s.broadcastClientTaskChanged(c.Request.Context(), task, userCtx.ID, "client_task_created")
 	c.JSON(http.StatusCreated, gin.H{"task": task})
 }
@@ -1726,24 +1810,15 @@ func (s *Server) clientTaskMembers(c *gin.Context) {
 		return
 	}
 	rows, _ := s.clientTaskPermittedMemberRows(c.Request.Context(), task)
-	users := []gin.H{}
-	seen := map[primitive.ObjectID]bool{}
-	for _, row := range rows {
-		member, ok := row["user"].(models.User)
-		if ok && !seen[member.ID] && member.Status == models.StatusActive {
-			seen[member.ID] = true
-			users = append(users, gin.H{
-				"id":         member.ID,
-				"name":       member.Name,
-				"username":   member.Username,
-				"email":      member.Email,
-				"avatar_url": member.AvatarURL,
-				"staff_role": member.StaffRole,
-				"role":       member.Role,
-			})
-		}
+	userCtx, _ := currentUser(c)
+	if user, err := s.loadUser(c.Request.Context(), userCtx.ID); err == nil {
+		userCtx.Role = user.Role
+		userCtx.TeamID = user.TeamID
 	}
-	c.JSON(http.StatusOK, gin.H{"users": users})
+	c.JSON(http.StatusOK, gin.H{
+		"users": clientMentionUsers(rows),
+		"tasks": s.clientMentionTasks(c.Request.Context(), userCtx, task.ClientID),
+	})
 }
 
 func (s *Server) getClientTask(c *gin.Context) {
@@ -1822,6 +1897,7 @@ func (s *Server) updateClientTask(c *gin.Context) {
 	}{}
 	effectiveDueDate := task.DueDate
 	updatedTitle := task.Title
+	mentionParts := []string{}
 	var updatedAssigneeIDs []primitive.ObjectID
 	assigneesChanged := false
 	recurringCompleted := false
@@ -1836,7 +1912,9 @@ func (s *Server) updateClientTask(c *gin.Context) {
 		set["title"] = title
 	}
 	if req.Content != nil {
-		set["content"] = normalizeClientTaskContent(*req.Content)
+		content := normalizeClientTaskContent(*req.Content)
+		set["content"] = content
+		mentionParts = append(mentionParts, content)
 	}
 	if req.URL != nil {
 		taskURL := strings.TrimSpace(*req.URL)
@@ -1847,7 +1925,9 @@ func (s *Server) updateClientTask(c *gin.Context) {
 		set["url"] = taskURL
 	}
 	if req.Comment != nil {
-		set["comment"] = normalizeClientTaskContent(*req.Comment)
+		comment := normalizeClientTaskContent(*req.Comment)
+		set["comment"] = comment
+		mentionParts = append(mentionParts, comment)
 	}
 	if task.Type == "annotation" && req.ScreenshotURL != nil {
 		set["screenshot_url"] = strings.TrimSpace(*req.ScreenshotURL)
@@ -1904,7 +1984,11 @@ func (s *Server) updateClientTask(c *gin.Context) {
 	if task.Type == "annotation" && req.Annotations != nil {
 		var tab models.ClientTab
 		_ = s.store.C("client_tabs").FindOne(c.Request.Context(), bson.M{"_id": task.TabID}).Decode(&tab)
-		set["annotations"] = normalizeClientTaskAnnotations(*req.Annotations, normalizeClientTaskStatuses(tab.Statuses), userCtx.ID, time.Now())
+		annotations := normalizeClientTaskAnnotations(*req.Annotations, normalizeClientTaskStatuses(tab.Statuses), userCtx.ID, time.Now())
+		set["annotations"] = annotations
+		for _, annotation := range annotations {
+			mentionParts = append(mentionParts, annotation.Comment)
+		}
 	}
 	if req.Attachments != nil {
 		set["attachments"] = compactStrings(req.Attachments)
@@ -1915,6 +1999,7 @@ func (s *Server) updateClientTask(c *gin.Context) {
 	if req.Blocks != nil {
 		blocks := normalizeClientTaskBlocks(req.Blocks)
 		set["blocks"] = blocks
+		mentionParts = append(mentionParts, clientTaskMentionText("", "", blocks))
 		set["checklist"] = flattenClientTaskBlockChecklist(blocks)
 		if req.Content == nil && task.Type != "annotation" {
 			set["content"] = normalizeClientTaskContent(firstClientTaskBlockContent(blocks))
@@ -2100,6 +2185,9 @@ func (s *Server) updateClientTask(c *gin.Context) {
 		notificationTask.Status = "todo"
 		notificationTask.CompletionCount = recurringCompletionCount
 		notificationTask.LastCompletedAt = &now
+	}
+	if mentionContent := strings.TrimSpace(strings.Join(mentionParts, " ")); mentionContent != "" {
+		s.notifyClientTaskMentions(c.Request.Context(), notificationTask, userCtx.ID, mentionContent, task.ID, "client_task_mention")
 	}
 	actor := s.notificationActorName(c.Request.Context(), userCtx.ID)
 	siteRef := s.clientTaskSiteReference(c.Request.Context(), notificationTask.WebsiteID)
@@ -3791,14 +3879,25 @@ func clientReactionLabel(emoji string) string {
 	}
 }
 
-func (s *Server) notifyClientTaskCommentMentions(ctx context.Context, task models.ClientTask, actorID primitive.ObjectID, content string, commentID primitive.ObjectID) []primitive.ObjectID {
+func clientTaskMentionText(content string, comment string, blocks []models.ClientTaskBlock) string {
+	parts := []string{content, comment}
+	for _, block := range blocks {
+		if block.Type == "content" {
+			parts = append(parts, block.Content)
+		}
+	}
+	return strings.TrimSpace(strings.Join(parts, " "))
+}
+
+func (s *Server) notifyClientTaskMentions(ctx context.Context, task models.ClientTask, actorID primitive.ObjectID, content string, relatedID primitive.ObjectID, notificationType string) []primitive.ObjectID {
 	names := mentionPattern.FindAllStringSubmatch(content, -1)
 	if len(names) == 0 {
 		return nil
 	}
 	var client models.ClientProject
 	if err := s.store.C("client_projects").FindOne(ctx, bson.M{"_id": task.ClientID}).Decode(&client); err != nil {
-		s.notifyMentions(ctx, task.TeamID, actorID, content, "client_task_comment", commentID)
+		sourceType := strings.TrimSuffix(notificationType, "_mention")
+		s.notifyMentions(ctx, task.TeamID, actorID, content, sourceType, relatedID)
 		return nil
 	}
 	rows, scopedRows := s.clientTaskPermittedMemberRows(ctx, task)
@@ -3859,14 +3958,18 @@ func (s *Server) notifyClientTaskCommentMentions(ctx context.Context, task model
 		s.insertNotification(ctx, models.Notification{
 			ID:        primitive.NewObjectID(),
 			UserID:    user.ID,
-			Type:      "client_task_comment_mention",
+			Type:      notificationType,
 			Content:   actor + " mentioned you" + sitePrefix + " in task " + task.Title + ": " + trimForNotification(content),
-			RelatedID: commentID,
+			RelatedID: relatedID,
 			Read:      false,
 			CreatedAt: time.Now(),
 		})
 	}
 	return uniqueObjectIDs(mentionedIDs)
+}
+
+func (s *Server) notifyClientTaskCommentMentions(ctx context.Context, task models.ClientTask, actorID primitive.ObjectID, content string, commentID primitive.ObjectID) []primitive.ObjectID {
+	return s.notifyClientTaskMentions(ctx, task, actorID, content, commentID, "client_task_comment_mention")
 }
 
 func (s *Server) createClientTaskRating(c *gin.Context) {

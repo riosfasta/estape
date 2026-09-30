@@ -1561,6 +1561,29 @@ func (s *Server) getTaskMembers(c *gin.Context) {
 			})
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"users": users})
+	listIDs := []primitive.ObjectID{task.ListID}
+	var list models.List
+	if s.store.C("lists").FindOne(c.Request.Context(), bson.M{"_id": task.ListID}).Decode(&list) == nil && !list.ProjectID.IsZero() {
+		if cursor, err := s.store.C("lists").Find(c.Request.Context(), bson.M{"project_id": list.ProjectID}, options.Find().SetProjection(bson.M{"_id": 1})); err == nil {
+			defer cursor.Close(c.Request.Context())
+			listIDs = []primitive.ObjectID{}
+			for cursor.Next(c.Request.Context()) {
+				var projectList models.List
+				if cursor.Decode(&projectList) == nil {
+					listIDs = append(listIDs, projectList.ID)
+				}
+			}
+		}
+	}
+	tasks := []gin.H{}
+	if cursor, err := s.store.C("tasks").Find(c.Request.Context(), bson.M{"list_id": bson.M{"$in": listIDs}}, options.Find().SetProjection(bson.M{"_id": 1, "title": 1}).SetSort(bson.D{{Key: "updated_at", Value: -1}}).SetLimit(250)); err == nil {
+		defer cursor.Close(c.Request.Context())
+		for cursor.Next(c.Request.Context()) {
+			var mentionTask models.Task
+			if cursor.Decode(&mentionTask) == nil {
+				tasks = append(tasks, gin.H{"id": mentionTask.ID, "title": mentionTask.Title})
+			}
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"users": users, "tasks": tasks})
 }
-

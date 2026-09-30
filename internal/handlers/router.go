@@ -176,6 +176,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/client-projects", s.listClientProjects)
 	authed.POST("/client-projects", s.createClientProject)
 	authed.GET("/client-projects/:id", s.getClientProject)
+	authed.GET("/client-projects/:id/mentions", s.listClientProjectMentions)
 	authed.PATCH("/client-projects/:id", s.updateClientProject)
 	authed.DELETE("/client-projects/:id", s.deleteClientProject)
 	authed.POST("/client-projects/:id/members", s.addClientProjectMember)

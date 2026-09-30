@@ -102,8 +102,10 @@ const state = {
   supportReply: null,
   mentionUsers: null,
   taskMentionUsers: {},
+  mentionChoices: {},
   mentionTarget: null,
   mentionToken: null,
+  mentionMatches: [],
   mentionActiveIndex: 0,
   clientProjects: [],
   clientWebsites: [],
@@ -710,12 +712,47 @@ function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 }
 
-function mentionText(value) {
+function highlightedMentionText(value) {
   return esc(value).replace(/(^|[\s(])@([a-zA-Z0-9_]{3,24})/g, '$1<span class="mention">@$2</span>');
 }
 
+function splitURLTrailingPunctuation(value) {
+  let url = value;
+  let trailing = "";
+  const moveLastCharacter = () => {
+    trailing = url.slice(-1) + trailing;
+    url = url.slice(0, -1);
+  };
+  while (/[.,!?;:]$/.test(url)) moveLastCharacter();
+  for (const [open, close] of [["(", ")"], ["[", "]"], ["{", "}"]]) {
+    while (url.endsWith(close) && url.split(close).length > url.split(open).length) moveLastCharacter();
+  }
+  return { url, trailing };
+}
+
+function mentionText(value) {
+  const raw = String(value ?? "");
+  const tokens = /@\[([^\]\n]{1,160})\]\(task:([a-fA-F0-9]{24})\)|(?:https?:\/\/|www\.)[^\s<]+|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?::\d{1,5})?(?:[/?#][^\s<]*)?/gi;
+  let rendered = "";
+  let lastIndex = 0;
+  for (const match of raw.matchAll(tokens)) {
+    const isBareDomain = !match[1] && !/^(?:https?:\/\/|www\.)/i.test(match[0]);
+    if (isBareDomain && match.index > 0 && /[\w@]/.test(raw[match.index - 1])) continue;
+    rendered += highlightedMentionText(raw.slice(lastIndex, match.index));
+    if (match[1] && match[2]) {
+      rendered += `<a class="mention task-mention" href="/tasks?task_id=${match[2]}">@${esc(match[1])}</a>`;
+    } else {
+      const { url, trailing } = splitURLTrailingPunctuation(match[0]);
+      const href = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+      rendered += `<a class="text-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>${highlightedMentionText(trailing)}`;
+    }
+    lastIndex = match.index + match[0].length;
+  }
+  return rendered + highlightedMentionText(raw.slice(lastIndex));
+}
+
 function chatText(value) {
-  return mentionText(value).replace(/(https?:\/\/[^\s<]+)/g, (url) => `<a class="text-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>`);
+  return mentionText(value);
 }
 
 function websiteOrigin(url) {
@@ -1371,6 +1408,7 @@ function bindWorkspaceContextSwitcher() {
       localStorage.setItem(WORKSPACE_CONTEXT_KEY, state.workspaceContext);
       state.mentionUsers = null;
       state.taskMentionUsers = {};
+      state.mentionChoices = {};
       await loadMe();
       route();
     } catch (error) {
@@ -1429,10 +1467,33 @@ async function loadMentionUsers(taskID = "") {
   return state.mentionUsers;
 }
 
+function mentionContextValue(input, key) {
+  if (input?.dataset?.[key]) return input.dataset[key];
+  const attribute = `data-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+  return input?.closest?.(`[${attribute}]`)?.dataset?.[key] || "";
+}
+
+function mentionInputValue(input) {
+  if (!input) return "";
+  return input.isContentEditable ? (input.innerText || "") : (input.value || "");
+}
+
+function mentionCursor(input) {
+  if (!input?.isContentEditable) return input?.selectionStart ?? mentionInputValue(input).length;
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return mentionInputValue(input).length;
+  const range = selection.getRangeAt(0);
+  if (!input.contains(range.endContainer)) return mentionInputValue(input).length;
+  const prefix = range.cloneRange();
+  prefix.selectNodeContents(input);
+  prefix.setEnd(range.endContainer, range.endOffset);
+  return prefix.toString().length;
+}
+
 function mentionToken(input) {
-  const cursor = input.selectionStart ?? input.value.length;
-  const before = input.value.slice(0, cursor);
-  const match = before.match(/(^|[\s(])@([A-Za-z0-9_]{0,24})$/);
+  const cursor = mentionCursor(input);
+  const before = mentionInputValue(input).slice(0, cursor);
+  const match = before.match(/(^|[\s(])@([A-Za-z0-9_-]{0,40})$/);
   if (!match) return null;
   return {
     start: cursor - match[2].length - 1,
@@ -1462,7 +1523,49 @@ function hideMentionSuggestions() {
   if (box) box.hidden = true;
   state.mentionTarget = null;
   state.mentionToken = null;
+  state.mentionMatches = [];
   state.mentionActiveIndex = 0;
+}
+
+function normalizedMentionUsers(users = []) {
+  const seen = new Set();
+  return (users || []).filter((user) => {
+    const key = String(user?.id || user?.username || "");
+    if (!key || seen.has(key) || !user?.username) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function normalizedMentionTasks(tasks = []) {
+  const seen = new Set();
+  return (tasks || []).filter((task) => {
+    const key = String(task?.id || "");
+    if (!key || seen.has(key) || !String(task?.title || "").trim()) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function loadMentionChoices(input) {
+  const taskID = mentionContextValue(input, "mentionTaskId");
+  const clientID = mentionContextValue(input, "mentionClientId");
+  const cacheKey = taskID ? `task:${taskID}` : (clientID ? `client:${clientID}` : "workspace");
+  if (state.mentionChoices[cacheKey]) return state.mentionChoices[cacheKey];
+  let data = null;
+  if (taskID) {
+    data = await api(`/api/client-tasks/${encodeURIComponent(taskID)}/members`).catch(() => null);
+    if (!data) data = await api(`/api/tasks/${encodeURIComponent(taskID)}/members`).catch(() => null);
+  } else if (clientID) {
+    data = await api(`/api/client-projects/${encodeURIComponent(clientID)}/mentions`).catch(() => null);
+  }
+  const fallbackUsers = data?.users?.length ? data.users : await loadMentionUsers(taskID);
+  const choices = {
+    users: normalizedMentionUsers(fallbackUsers),
+    tasks: normalizedMentionTasks(data?.tasks || []),
+  };
+  state.mentionChoices[cacheKey] = choices;
+  return choices;
 }
 
 async function updateMentionSuggestions(input) {
@@ -1471,20 +1574,29 @@ async function updateMentionSuggestions(input) {
     hideMentionSuggestions();
     return;
   }
-  const users = await loadMentionUsers(input.dataset.mentionTaskId || "");
-  const matches = users
+  const choices = await loadMentionChoices(input);
+  const currentToken = mentionToken(input);
+  if (!currentToken || currentToken.start !== token.start || currentToken.end !== token.end || currentToken.query !== token.query) return;
+  const userMatches = choices.users
     .filter((user) => {
       const username = (user.username || "").toLowerCase();
       const name = (user.name || "").toLowerCase();
       return username.startsWith(token.query) || name.includes(token.query);
     })
-    .slice(0, 8);
+    .slice(0, 5)
+    .map((user) => ({ kind: "user", user }));
+  const taskMatches = choices.tasks
+    .filter((task) => (task.title || "").toLowerCase().includes(token.query))
+    .slice(0, 5)
+    .map((task) => ({ kind: "task", task }));
+  const matches = [...userMatches, ...taskMatches];
   if (!matches.length) {
     hideMentionSuggestions();
     return;
   }
   state.mentionTarget = input;
   state.mentionToken = token;
+  state.mentionMatches = matches;
   state.mentionActiveIndex = Math.min(state.mentionActiveIndex, matches.length - 1);
   const rect = input.getBoundingClientRect();
   const box = mentionBox(input);
@@ -1500,31 +1612,68 @@ async function updateMentionSuggestions(input) {
     box.style.top = `${rect.bottom + 6}px`;
     box.style.bottom = "auto";
   }
-  box.innerHTML = matches.map((user, index) => `
-    <button class="mention-suggestion ${index === state.mentionActiveIndex ? "active" : ""}" type="button" data-mention-username="${esc(user.username)}">
-      <strong>@${esc(user.username)}</strong>
-      <span>${esc(user.name || user.email || "")}${user.staff_role ? " · " + esc(staffRoleLabel(user.staff_role)) : ""}</span>
+  box.innerHTML = matches.map((match, index) => match.kind === "task" ? `
+    <button class="mention-suggestion ${index === state.mentionActiveIndex ? "active" : ""}" type="button" data-mention-choice-index="${index}">
+      <strong>@${esc(match.task.title)}</strong>
+      <span>Task${match.task.type === "annotation" ? " · Annotation" : ""}</span>
+    </button>` : `
+    <button class="mention-suggestion ${index === state.mentionActiveIndex ? "active" : ""}" type="button" data-mention-choice-index="${index}">
+      <strong>@${esc(match.user.username)}</strong>
+      <span>Teammate${match.user.name || match.user.email ? " · " + esc(match.user.name || match.user.email) : ""}${match.user.staff_role ? " · " + esc(staffRoleLabel(match.user.staff_role)) : ""}</span>
     </button>`).join("");
   box.hidden = false;
   const activeBtn = box.querySelector(".mention-suggestion.active");
   activeBtn?.scrollIntoView({ block: "nearest" });
-  box.querySelectorAll("[data-mention-username]").forEach((btn) => btn.addEventListener("mousedown", (event) => {
+  box.querySelectorAll("[data-mention-choice-index]").forEach((btn) => btn.addEventListener("mousedown", (event) => {
     event.preventDefault();
-    insertMention(btn.dataset.mentionUsername);
+    insertMention(state.mentionMatches[Number(btn.dataset.mentionChoiceIndex)]);
   }));
 }
 
-function insertMention(username) {
+function setContentEditableMention(input, start, end, inserted) {
+  const value = mentionInputValue(input);
+  input.innerText = value.slice(0, start) + inserted + value.slice(end);
+  const targetOffset = start + inserted.length;
+  const walker = document.createTreeWalker(input, NodeFilter.SHOW_TEXT);
+  let remaining = targetOffset;
+  let node = walker.nextNode();
+  while (node && remaining > node.nodeValue.length) {
+    remaining -= node.nodeValue.length;
+    node = walker.nextNode();
+  }
+  const range = document.createRange();
+  if (node) {
+    range.setStart(node, Math.min(remaining, node.nodeValue.length));
+  } else {
+    range.selectNodeContents(input);
+    range.collapse(false);
+  }
+  range.collapse(true);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function insertMention(match) {
   const input = state.mentionTarget;
   const token = state.mentionToken;
-  if (!input || !token || !username) return;
-  const before = input.value.slice(0, token.start);
-  const after = input.value.slice(token.end);
-  const inserted = `@${username} `;
-  input.value = before + inserted + after;
-  const cursor = before.length + inserted.length;
+  if (!input || !token || !match) return;
+  const inserted = match.kind === "task"
+    ? `@[${String(match.task.title || "Task").replace(/\]/g, "").replace(/@/g, "＠")}](task:${match.task.id}) `
+    : `@${match.user.username} `;
   input.focus();
-  input.setSelectionRange(cursor, cursor);
+  if (input.isContentEditable) {
+    setContentEditableMention(input, token.start, token.end, inserted);
+  } else {
+    const value = mentionInputValue(input);
+    const before = value.slice(0, token.start);
+    const after = value.slice(token.end);
+    input.value = before + inserted + after;
+    const cursor = before.length + inserted.length;
+    input.setSelectionRange(cursor, cursor);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
   hideMentionSuggestions();
 }
 
@@ -1541,7 +1690,7 @@ function bindMentionSuggestions(root = document) {
     input.addEventListener("keydown", (event) => {
       const box = document.getElementById("mentionSuggestions");
       if (!box || box.hidden) return;
-      const items = Array.from(box.querySelectorAll("[data-mention-username]"));
+      const items = Array.from(box.querySelectorAll("[data-mention-choice-index]"));
       if (!items.length) return;
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
@@ -1552,7 +1701,8 @@ function bindMentionSuggestions(root = document) {
       }
       if (event.key === "Enter" || event.key === "Tab") {
         event.preventDefault();
-        insertMention(items[state.mentionActiveIndex]?.dataset.mentionUsername);
+        const itemIndex = Number(items[state.mentionActiveIndex]?.dataset.mentionChoiceIndex);
+        insertMention(state.mentionMatches[itemIndex]);
       }
       if (event.key === "Escape") hideMentionSuggestions();
     });
@@ -2967,7 +3117,10 @@ async function loadMe() {
   state.clientProjects = clientData.clients || [];
   state.clientWebsites = clientData.websites || [];
   ensureWorkspaceContext();
-  if ((state.team?.id || "") !== previousTeamID) state.mentionUsers = null;
+  if ((state.team?.id || "") !== previousTeamID) {
+    state.mentionUsers = null;
+    state.mentionChoices = {};
+  }
   const preference = state.me.theme_preference || "system";
   localStorage.setItem("bugmega_theme", preference);
   applyTheme(preference);
@@ -7068,7 +7221,7 @@ function bindFloatingDropdownDismissal() {
 }
 
 function richEditorHTML(name, value = "", placeholder = "") {
-  return `<div class="rich-editor" contenteditable="true" data-rich-editor="${esc(name)}" data-placeholder="${esc(placeholder)}">${esc(value)}</div><input type="hidden" name="${esc(name)}" value="${esc(value)}">`;
+  return `<div class="rich-editor" contenteditable="true" data-rich-editor="${esc(name)}" data-mentionable data-placeholder="${esc(placeholder)}">${esc(value)}</div><input type="hidden" name="${esc(name)}" value="${esc(value)}">`;
 }
 
 function safeRichTextImageURL(value = "") {
@@ -8164,7 +8317,7 @@ function contentBlockEditorBlockHTML(block = {}) {
       <button class="btn icon quiet" type="button" data-remove-content-block title="Remove block">${icon("x")}</button>
     </div>
     ${type === "checklist" ? `<div class="checklist-builder-rows" data-checklist-rows>${(block.checklist?.length ? block.checklist : [{ text: "", done: false }]).map(checklistBuilderRowHTML).join("")}</div>
-      <button class="btn compact" type="button" data-add-checklist-row>${icon("plus")}Item</button>` : `<div class="rich-editor block-rich-editor" contenteditable="true" data-block-content data-placeholder="Write task details">${esc(block.content || "")}</div>`}
+      <button class="btn compact" type="button" data-add-checklist-row>${icon("plus")}Item</button>` : `<div class="rich-editor block-rich-editor" contenteditable="true" data-block-content data-mentionable data-placeholder="Write task details">${esc(block.content || "")}</div>`}
   </section>`;
 }
 
@@ -8174,6 +8327,7 @@ function bindContentBlockEditors(root = document) {
     editor.dataset.blocksBound = "1";
     const list = editor.querySelector("[data-content-block-list]");
     const bindBlock = (block) => {
+      bindMentionSuggestions(block);
       block.querySelector("[data-remove-content-block]")?.addEventListener("click", () => {
         block.remove();
         if (!list.querySelector("[data-content-block]")) {
@@ -8968,7 +9122,7 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
       <button class="btn icon annotation-sidebar-expand" type="button" data-toggle-annotation-sidebar title="Show annotations" hidden>${icon("panel-right-open")}</button>
     </div>
     <dialog id="editClientAnnotationTaskDialog" class="modal client-dialog">
-      <form id="editClientAnnotationTaskForm" class="form-grid" method="dialog">
+      <form id="editClientAnnotationTaskForm" class="form-grid" method="dialog" data-mention-task-id="${esc(taskID)}" data-mention-client-id="${esc(task.client_id || "")}">
         <div class="modal-head"><h2>Edit annotation</h2><button class="btn icon quiet" type="button" data-close-dialog="editClientAnnotationTaskDialog" title="Close">${icon("x")}</button></div>
         <input type="hidden" name="page_width" value="${esc(pageWidth)}">
         <input type="hidden" name="page_height" value="${esc(pageHeight)}">
@@ -9098,6 +9252,7 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     body.page_height = Number(body.page_height || pageHeight);
     try {
       const resp = await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify(body) });
+      state.mentionChoices = {};
       panel.querySelector("#editClientAnnotationTaskDialog")?.close();
       if (body.status) {
         syncTaskStatusEverywhere(taskID, resp?.task?.status || body.status, resp?.task);
@@ -9405,7 +9560,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "", options = {}) {
       </aside>
     </div>
     <dialog id="editClientTaskDialog" class="modal client-dialog">
-      <form id="editClientTaskForm" class="form-grid" method="dialog">
+      <form id="editClientTaskForm" class="form-grid" method="dialog" data-mention-task-id="${esc(taskID)}" data-mention-client-id="${esc(task.client_id || "")}">
         <div class="modal-head"><h2>Edit task</h2><button class="btn icon quiet" type="button" data-close-dialog="editClientTaskDialog" title="Close">${icon("x")}</button></div>
         <div class="quick-task-controls"><label class="compact-field"><span>Status</span>${statusPickerHTML(statuses, task.status || "todo", "status", "", { canManageStatuses, tabID: data.tab?.id })}</label><label class="compact-field"><span>Due</span><input type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}"></label></div>
         ${recurrenceControlsHTML(task.recurrence || {}, task.due_date)}
@@ -9496,6 +9651,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "", options = {}) {
     body.max_hours = parseFloat(body.max_hours || 0) || 0;
     try {
       const resp = await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify(body) });
+      state.mentionChoices = {};
       panel.querySelector("#editClientTaskDialog")?.close();
       if (body.status) {
         syncTaskStatusEverywhere(taskID, resp?.task?.status || body.status, resp?.task);
@@ -10182,7 +10338,7 @@ async function renderClientWebsite(clientID, websiteID) {
         <button class="task-choice-card" type="button" id="chooseDescriptionTask">${icon("file-text")}<strong>Task description</strong><span>Use the current task form and workflow.</span></button>
         <button class="task-choice-card" type="button" id="chooseAnnotationTask">${icon("map-pin")}<strong>Annotation</strong><span>Open a full-page website annotation workspace.</span></button>
       </div>
-      <form id="clientTaskForm" class="form-grid" method="dialog" hidden>
+      <form id="clientTaskForm" class="form-grid" method="dialog" data-mention-client-id="${esc(clientID)}" hidden>
         <input type="hidden" name="type" value="description">
         <div class="toolbar compact-toolbar"><button class="btn compact" type="button" data-back-task-options>${icon("arrow-left")}Options</button></div>
         <div class="field"><label>Due date</label><input type="date" name="due_date"></div>
@@ -10226,7 +10382,7 @@ async function renderClientWebsite(clientID, websiteID) {
                 <h2>Pin feedback</h2>
                 <button class="btn icon quiet" type="button" data-toggle-annotation-sidebar title="Collapse annotations">${icon("panel-right-close")}</button>
               </div>
-              <form id="clientAnnotationTaskForm" class="form-grid">
+              <form id="clientAnnotationTaskForm" class="form-grid" data-mention-client-id="${esc(clientID)}">
                 <input type="hidden" name="type" value="annotation">
                 <input type="hidden" name="pin_x">
                 <input type="hidden" name="pin_y">
@@ -10789,6 +10945,7 @@ async function renderClientWebsite(clientID, websiteID) {
         body.url = "";
       }
       await api(`/api/client-tabs/${selectedTab.id}/tasks`, { method: "POST", body: JSON.stringify(body) });
+      state.mentionChoices = {};
       renderClientWebsite(clientID, websiteID);
     } catch (error) {
       setFormStatus(form, error.message, true);
@@ -10866,6 +11023,7 @@ async function renderClientWebsite(clientID, websiteID) {
         currentClientAnnotationItems = clientTaskAnnotationItems(currentClientAnnotationTask);
         clientAnnotationTasksByID[currentClientAnnotationTask.id] = currentClientAnnotationTask;
       }
+      state.mentionChoices = {};
       clientAnnotationDirty = true;
       form.reset();
       form.elements.url.value = currentClientAnnotationURL;
@@ -11279,6 +11437,7 @@ function bindAssignedTaskCreation() {
         content: "",
       };
       await api(`/api/client-tabs/${form.dataset.tabId}/tasks`, { method: "POST", body: JSON.stringify(body) });
+      state.mentionChoices = {};
       renderTasks();
     } catch (error) {
       setFormStatus(form, error.message, true);
@@ -16191,7 +16350,7 @@ function taskReportPreviewTaskHTML(task = {}) {
       <strong>${esc(task.title || "Untitled task")}</strong>
       <span>${esc(task.project || "Project")} / ${esc(task.domain || "Domain")} · ${esc(task.status || "")}${task.due_date ? ` · Due ${esc(task.due_date)}` : ""}${task.tracked_time ? ` · ${esc(task.tracked_time)}` : ""}</span>
       ${task.assignees ? `<p>Assignees: ${esc(task.assignees)}</p>` : ""}
-      ${task.content ? `<p>${esc(task.content)}</p>` : ""}
+      ${task.content ? `<p>${mentionText(task.content)}</p>` : ""}
       ${checklist.total ? `<div class="report-checklist-preview"><b>Checklist ${checklist.done || 0}/${checklist.total || 0}</b><ul>${checklistItems}${checklist.more_items ? `<li>+${checklist.more_items} more</li>` : ""}</ul></div>` : ""}
     </div>
     <span class="pill">${esc(task.type || "task")}</span>
