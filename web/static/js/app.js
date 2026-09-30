@@ -85,12 +85,14 @@ const state = {
   timerTick: null,
   notificationPoll: null,
   notificationPollBusy: false,
+  notificationsLoadedAt: 0,
   livePoll: null,
   livePollBusy: false,
   liveSocket: null,
   liveReconnectTimer: null,
   liveRefreshTimer: null,
   liveReconnectDelay: 1500,
+  liveConnectedOnce: false,
   sessionCookieSynced: false,
   adminUsersRefreshTimer: null,
   liveTaskSignature: "",
@@ -109,6 +111,8 @@ const state = {
   mentionActiveIndex: 0,
   clientProjects: [],
   clientWebsites: [],
+  clientProjectsLoadedAt: 0,
+  meLoadedAt: 0,
   projectSidebarOpen: readStoredObject("bugmega_project_sidebar_open"),
   projectSidebarOrder: readStoredObject("bugmega_project_sidebar_order"),
   sidebarCollapsed: localStorage.getItem("bugmega_sidebar_collapsed") === "1",
@@ -1409,6 +1413,7 @@ function bindWorkspaceContextSwitcher() {
       state.mentionUsers = null;
       state.taskMentionUsers = {};
       state.mentionChoices = {};
+      state.notificationsLoadedAt = 0;
       await loadMe();
       route();
     } catch (error) {
@@ -3099,33 +3104,52 @@ async function syncSessionCookie() {
   }
 }
 
+let loadMeInFlight = null;
+
 async function loadMe() {
-  const previousTeamID = state.team?.id || "";
-  const data = await api("/api/users/me");
-  state.me = data.user;
-  state.team = data.team;
-  state.personalTeam = data.personal_team || null;
-  state.companyAccess = data.company_access || null;
-  state.companyAccesses = Array.isArray(data.company_accesses)
-    ? data.company_accesses
-    : (data.company_access ? [data.company_access] : []);
-  state.membership = data.membership || null;
-  state.platformSettings = data.platform_settings || null;
-  state.unreadCommentCount = Number(data.unread_comment_count || 0);
-  syncSessionCookie();
-  const clientData = await api("/api/client-projects").catch(() => ({ clients: [], websites: [] }));
-  state.clientProjects = clientData.clients || [];
-  state.clientWebsites = clientData.websites || [];
-  ensureWorkspaceContext();
-  if ((state.team?.id || "") !== previousTeamID) {
-    state.mentionUsers = null;
-    state.mentionChoices = {};
+  if (loadMeInFlight) return loadMeInFlight;
+  loadMeInFlight = (async () => {
+    const previousTeamID = state.team?.id || "";
+    const [data, clientData] = await Promise.all([
+      api("/api/users/me"),
+      api("/api/client-projects").catch(() => ({ clients: [], websites: [] })),
+    ]);
+    state.me = data.user;
+    state.team = data.team;
+    state.personalTeam = data.personal_team || null;
+    state.companyAccess = data.company_access || null;
+    state.companyAccesses = Array.isArray(data.company_accesses)
+      ? data.company_accesses
+      : (data.company_access ? [data.company_access] : []);
+    state.membership = data.membership || null;
+    state.platformSettings = data.platform_settings || null;
+    state.unreadCommentCount = Number(data.unread_comment_count || 0);
+    state.clientProjects = clientData.clients || [];
+    state.clientWebsites = clientData.websites || [];
+    state.clientProjectsLoadedAt = Date.now();
+    state.meLoadedAt = Date.now();
+    syncSessionCookie();
+    ensureWorkspaceContext();
+    if ((state.team?.id || "") !== previousTeamID) {
+      state.mentionUsers = null;
+      state.mentionChoices = {};
+    }
+    const preference = state.me.theme_preference || "system";
+    localStorage.setItem("bugmega_theme", preference);
+    applyTheme(preference);
+    applyPlatformTheme(state.platformSettings || {});
+    applyPlatformFavicon(state.platformSettings || {});
+  })();
+  try {
+    return await loadMeInFlight;
+  } finally {
+    loadMeInFlight = null;
   }
-  const preference = state.me.theme_preference || "system";
-  localStorage.setItem("bugmega_theme", preference);
-  applyTheme(preference);
-  applyPlatformTheme(state.platformSettings || {});
-  applyPlatformFavicon(state.platformSettings || {});
+}
+
+async function ensureMeLoaded(maxAgeMs = 30000) {
+  if (state.me && state.meLoadedAt && Date.now() - state.meLoadedAt < maxAgeMs) return;
+  await loadMe();
 }
 
 function applyTheme(preference) {
@@ -4168,17 +4192,20 @@ async function renderDashboard() {
   const projectFilter = params.get("project_id") || "";
   const inboxParams = new URLSearchParams({ mention: mentionFilter });
   if (projectFilter) inboxParams.set("project_id", projectFilter);
-  const inboxData = await api(`/api/inbox/comments?${inboxParams.toString()}`).catch(() => ({ comments: [], projects: [], unread_count: 0 }));
+  const [inboxData, invitationData, notificationData, notificationBinData] = await Promise.all([
+    api(`/api/inbox/comments?${inboxParams.toString()}`).catch(() => ({ comments: [], projects: [], unread_count: 0 })),
+    api("/api/users/me/invitations").catch(() => ({ invitations: [] })),
+    api("/api/users/me/notifications").catch(() => ({ notifications: [] })),
+    api("/api/users/me/notifications?bin=1").catch(() => ({ notifications: [] })),
+  ]);
   const inboxComments = inboxData.comments || [];
   const projects = inboxData.projects || [];
   state.unreadCommentCount = Number(inboxData.unread_count || 0);
-  const invitationData = await api("/api/users/me/invitations").catch(() => ({ invitations: [] }));
   const invitations = invitationData.invitations || [];
-  const notificationData = await api("/api/users/me/notifications").catch(() => ({ notifications: [] }));
   const notifications = (notificationData.notifications || []).filter((note) => note.type !== "team_invitation");
-  const notificationBinData = await api("/api/users/me/notifications?bin=1").catch(() => ({ notifications: [] }));
   const deletedNotifications = (notificationBinData.notifications || []).filter((note) => note.type !== "team_invitation");
   state.unreadNotificationCount = unreadNotificationCount(notifications) + invitations.length;
+  state.notificationsLoadedAt = Date.now();
   shell("Inbox", `
     <div class="inbox-page">
       <div class="inbox-head">
@@ -4669,6 +4696,7 @@ async function refreshNotificationsLive() {
   try {
     const { notifications, deletedNotifications, invitations } = await loadNotificationSets();
     state.unreadNotificationCount = unreadNotificationCount(notifications) + invitations.length;
+    state.notificationsLoadedAt = Date.now();
     updateInboxUnreadUI();
     const mount = $("#notificationCenterMount");
     const invitationMount = $("#invitationCenterMount");
@@ -4690,6 +4718,7 @@ async function refreshNotificationsLive() {
 
 function startNotificationPolling() {
   if (!state.access || state.notificationPollBusy) return;
+  if (state.notificationsLoadedAt && Date.now() - state.notificationsLoadedAt < 30000) return;
   refreshNotificationsLive();
 }
 
@@ -4991,7 +5020,9 @@ function startLivePolling() {
   state.liveSocket = socket;
   socket.onopen = () => {
     state.liveReconnectDelay = 1500;
-    scheduleWorkspaceLiveRefresh(0);
+    const reconnected = state.liveConnectedOnce;
+    state.liveConnectedOnce = true;
+    if (reconnected) scheduleWorkspaceLiveRefresh(0);
   };
   socket.onmessage = (event) => {
     let payload = {};
@@ -5033,6 +5064,7 @@ function stopLivePolling() {
     state.liveSocket.close();
   }
   state.liveSocket = null;
+  state.liveConnectedOnce = false;
 }
 
 function inboxCommentRows(comments) {
@@ -5533,16 +5565,17 @@ async function renderTeam() {
   const data = await api(`/api/teams/${teamID}`);
   const members = data.members || [];
   const canManageTeam = state.me?.role === "owner_adm" || data.team?.owner_admin_id === state.me?.id || (isPersonalWorkspaceContext() && state.me?.role === "users_admin" && [state.me?.team_id, state.personalTeam?.id].filter(Boolean).includes(teamID));
-  const invitationData = canManageTeam ? await api(`/api/teams/${teamID}/invitations`).catch(() => ({ invitations: [] })) : { invitations: [] };
-  const invitations = invitationData.invitations || [];
+  let invitationData = { invitations: [] };
   let walletData = { wallet: { deposits: 0, reserved: 0, pending: 0, earnings: 0 } };
   let pendingPaymentsData = { payments: [] };
   if (canManageTeam) {
-    [walletData, pendingPaymentsData] = await Promise.all([
+    [invitationData, walletData, pendingPaymentsData] = await Promise.all([
+      api(`/api/teams/${teamID}/invitations`).catch(() => ({ invitations: [] })),
       api("/api/marketplace/wallet").catch(() => ({ wallet: { deposits: 0 } })),
       api(`/api/teams/${teamID}/pending-payments`).catch(() => ({ payments: [] })),
     ]);
   }
+  const invitations = invitationData.invitations || [];
   const deposits = Number(walletData.wallet?.deposits || 0);
   const pendingPayments = pendingPaymentsData.payments || [];
   const pendingPaymentsByMember = {};
@@ -9858,14 +9891,17 @@ function clientDocumentDialogHTML(id, title, websiteID = "") {
   </dialog>`;
 }
 
-async function refreshClientSidebarCache() {
+async function refreshClientSidebarCache(options = {}) {
+  const maxAgeMs = options.force === false ? 15000 : 0;
+  if (maxAgeMs && state.clientProjectsLoadedAt && Date.now() - state.clientProjectsLoadedAt < maxAgeMs) return;
   const clientData = await api("/api/client-projects").catch(() => ({ clients: [], websites: [] }));
   state.clientProjects = clientData.clients || [];
   state.clientWebsites = clientData.websites || [];
+  state.clientProjectsLoadedAt = Date.now();
 }
 
 async function renderClientProjects() {
-  await refreshClientSidebarCache();
+  await refreshClientSidebarCache({ force: false });
   const canCreate = state.me?.role !== "client_admin";
   const workspaceTeamID = activeWorkspaceTeamID();
   const sitesByClient = (state.clientWebsites || []).reduce((acc, site) => {
@@ -11974,8 +12010,12 @@ async function upload(file) {
 }
 
 async function renderAnnotate(id) {
-  const site = (await api(`/api/websites/${id}`)).website;
-  const bugs = (await api(`/api/websites/${id}/bugs`)).bugs || [];
+  const [siteData, bugData] = await Promise.all([
+    api(`/api/websites/${id}`),
+    api(`/api/websites/${id}/bugs`),
+  ]);
+  const site = siteData.website;
+  const bugs = bugData.bugs || [];
   const teamData = site.team_id ? await api(`/api/teams/${site.team_id}`).catch(() => ({ members: [] })) : { members: [] };
   const members = teamData.members || [];
   const memberEntries = feedbackMemberEntries(members.length ? members : [state.me].filter(Boolean));
@@ -12230,10 +12270,14 @@ async function renderBilling() {
     <strong>${paymentState === "success" ? "PayPal payment completed" : paymentState === "cancelled" ? "PayPal checkout cancelled" : "PayPal payment needs attention"}</strong>
     <span>${esc(paymentMessage || (paymentState === "success" ? "Your membership is active and the invoice is available below." : paymentState === "cancelled" ? "No payment was captured." : "No membership was activated."))}</span>
   </section>` : "";
-  const plans = (await api("/api/subscriptions/plans")).plans || [];
   const membership = activeWorkspaceMembership();
   const billingTeamID = activeWorkspaceTeamID() || state.team?.id || state.personalTeam?.id || "";
-  const invoices = billingTeamID ? ((await api(`/api/subscriptions/${billingTeamID}/invoices`)).invoices || []) : [];
+  const [planData, invoiceData] = await Promise.all([
+    api("/api/subscriptions/plans"),
+    billingTeamID ? api(`/api/subscriptions/${billingTeamID}/invoices`) : Promise.resolve({ invoices: [] }),
+  ]);
+  const plans = planData.plans || [];
+  const invoices = invoiceData.invoices || [];
   const paidMembership = currentMembershipIsPaid(membership);
   const isCompanyMember = !isPersonalWorkspaceContext() && state.me?.role !== "owner_adm";
   const companyNotice = isCompanyMember ? `<section class="panel soft-panel" style="margin-bottom:16px;">
@@ -14290,16 +14334,18 @@ async function renderCompanySettings() {
   const personalTeam = state.personalTeam || (state.me?.role === "users_member" ? null : team);
   const canManageCurrentTeam = state.me?.role === "users_admin";
   const canEditCompany = state.me?.role !== "owner_adm";
-  const invitationData = canManageCurrentTeam && team.id ? await api(`/api/teams/${team.id}/invitations`).catch(() => ({ invitations: [] })) : { invitations: [] };
-  const pendingInvitationData = await api("/api/users/me/invitations").catch(() => ({ invitations: [] }));
-  const invitations = invitationData.invitations || [];
-  const pendingInvitations = pendingInvitationData.invitations || [];
   const showBillingSettings = state.me?.role !== "owner_adm";
   const settingsMembership = activeWorkspaceMembership();
-  const settingsPlanData = showBillingSettings ? await api("/api/subscriptions/plans").catch(() => ({ plans: settingsMembership.plans || [] })) : { plans: [] };
-  const settingsPlans = settingsPlanData.plans || settingsMembership.plans || [];
   const settingsBillingTeamID = activeWorkspaceTeamID() || state.team?.id || state.personalTeam?.id || "";
-  const settingsInvoiceData = showBillingSettings && settingsBillingTeamID ? await api(`/api/subscriptions/${settingsBillingTeamID}/invoices`).catch(() => ({ invoices: [] })) : { invoices: [] };
+  const [invitationData, pendingInvitationData, settingsPlanData, settingsInvoiceData] = await Promise.all([
+    canManageCurrentTeam && team.id ? api(`/api/teams/${team.id}/invitations`).catch(() => ({ invitations: [] })) : Promise.resolve({ invitations: [] }),
+    api("/api/users/me/invitations").catch(() => ({ invitations: [] })),
+    showBillingSettings ? api("/api/subscriptions/plans").catch(() => ({ plans: settingsMembership.plans || [] })) : Promise.resolve({ plans: [] }),
+    showBillingSettings && settingsBillingTeamID ? api(`/api/subscriptions/${settingsBillingTeamID}/invoices`).catch(() => ({ invoices: [] })) : Promise.resolve({ invoices: [] }),
+  ]);
+  const invitations = invitationData.invitations || [];
+  const pendingInvitations = pendingInvitationData.invitations || [];
+  const settingsPlans = settingsPlanData.plans || settingsMembership.plans || [];
   const settingsInvoices = settingsInvoiceData.invoices || [];
   const settingsPaidMembership = currentMembershipIsPaid(settingsMembership);
   const personalCompanyName = personalTeam?.name || `${state.me?.name || "My"}'s Company`;
@@ -16774,9 +16820,11 @@ async function openMemberTasksReportsModal(userID, userName = "Member", userRate
 }
 
 async function renderReports() {
-  const list = await getFirstList().catch(() => null);
   const queryParams = buildTimeReportParams();
-  const data = await api("/api/reports/time?" + queryParams.toString()).catch(() => ({ entries: [], summary: {}, users: {} }));
+  const [list, data] = await Promise.all([
+    getFirstList().catch(() => null),
+    api("/api/reports/time?" + queryParams.toString()).catch(() => ({ entries: [], summary: {}, users: {} })),
+  ]);
   data.entries = data.entries || [];
   data.user_summary = data.user_summary || [];
   data.task_summary = data.task_summary || [];
@@ -18515,12 +18563,15 @@ function openEmojiPicker(button, input) {
 }
 
 async function renderChat() {
-  const chats = (await api("/api/chats")).chats || [];
+  const [chatData, mentionUsers] = await Promise.all([
+    api("/api/chats"),
+    loadChatPeople().catch(() => []),
+  ]);
+  const chats = chatData.chats || [];
   const requestedChatID = new URLSearchParams(location.search).get("id") || "";
   const selectedChat = requestedChatID ? chats.find((chat) => chat.id === requestedChatID) || null : null;
   const selected = selectedChat?.id || "";
   const messages = selected ? ((await api(`/api/chats/${selected}/messages`)).messages || []) : [];
-  const mentionUsers = await loadChatPeople().catch(() => []);
   const usersByID = Object.fromEntries([...mentionUsers, state.me].filter(Boolean).map((user) => [user.id, user]));
   const chatCanWrite = Boolean(selected && selectedChat?.status !== "ended" && !selectedChat?.deleted_at);
   const selectedStatus = selectedChat ? (selectedChat.deleted_at ? "Deleted room - admins can restore or remove it forever" : selectedChat.status === "ended" ? "Conversation ended" : "Conversation open") : "Choose a conversation";
@@ -18834,9 +18885,7 @@ async function route(options = {}) {
       window.location.href = "/login";
       return;
     }
-    await loadMe();
-    startNotificationPolling();
-    startLivePolling();
+    await ensureMeLoaded();
     const matchClientWebsite = path().match(/^\/projects\/([^/]+)\/sites\/([^/]+)/);
     const matchClientProject = path().match(/^\/projects\/([^/]+)$/);
     const matchAnnotate = path().match(/^\/websites\/([^/]+)\/annotate/);
@@ -18908,6 +18957,10 @@ async function route(options = {}) {
   } finally {
     finishRouteTransition(routeToken);
     syncFloatingChatLauncher();
+    if (state.access && !["/login", "/register", "/verify-email"].includes(path())) {
+      startNotificationPolling();
+      startLivePolling();
+    }
   }
 }
 
