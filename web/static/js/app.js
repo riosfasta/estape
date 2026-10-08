@@ -9875,6 +9875,28 @@ function isClientConfigTab(tab = {}) {
   return tab.type === "config" || String(tab.title || "").trim().toLowerCase() === "config";
 }
 
+function isClientProjectOwner(client = {}) {
+  const userID = state.me?.id;
+  if (!userID) return false;
+  const roles = client.member_roles || {};
+  if (Object.values(roles).includes("owner")) return roles[userID] === "owner";
+  return client.created_by === userID;
+}
+
+function clientDescriptionEntries(content = "") {
+  const template = document.createElement("template");
+  template.innerHTML = content;
+  const nodes = Array.from(template.content.childNodes).filter((node) => node.nodeType !== Node.TEXT_NODE || node.textContent.trim());
+  if (nodes.length && nodes.every((node) => node.nodeType === Node.ELEMENT_NODE && node.tagName === "DIV" && node.hasAttribute("data-client-description-entry"))) {
+    return nodes.map((node) => clientDescriptionHTML(node.innerHTML));
+  }
+  return [clientDescriptionHTML(content)];
+}
+
+function clientDescriptionEntryHTML(content, index) {
+  return `<div class="description-paper-entry" data-description-entry role="group" aria-label="Description ${index + 1}">${pageRichEditorHTML(`description_${index}`, content, "Start writing...")}</div>`;
+}
+
 function clientTabContentHTML(tab, data) {
   const canManage = data.can_manage;
   const canManageStatuses = Boolean(data.can_manage_statuses);
@@ -9896,14 +9918,16 @@ function clientTabContentHTML(tab, data) {
       ${clientTaskBoardHTML(data.tasks || [], tab, data.members || [], canManage, canManageStatuses, canUpdateProgress)}
     </section>`;
   }
-  return `<section class="panel">
-    <div class="panel-head"><h2>${esc(tab.title)}</h2></div>
-    ${canManage && state.me?.role === "owner_adm" ? `<form id="descriptionTabForm" class="form-grid">
-      <div class="field"><label>Title</label><input name="title" value="${esc(tab.title)}" required></div>
-      <div class="field"><label>Description</label>${pageRichEditorHTML("content", clientDescriptionHTML(tab.content || ""), "Write a description...")}</div>
-      <button class="btn primary">${icon("save")}Save tab</button>
+  return `<section class="description-workspace" aria-label="${esc(tab.title)}">
+    <div data-description-reading>
+      <div class="description-paper description-paper-readonly">${clientDescriptionEntries(tab.content || "No description yet.").map((content) => `<div class="description-paper-entry page-rich-editor">${content}</div>`).join("")}</div>
+      ${canManage && isClientProjectOwner(data.client) ? `<div class="toolbar description-paper-actions"><button class="btn compact" type="button" data-edit-descriptions aria-controls="descriptionTabForm">${icon("pencil")}Edit</button></div>` : ""}
+    </div>
+    ${canManage && isClientProjectOwner(data.client) ? `<form id="descriptionTabForm" class="form-grid" hidden>
+      <div class="description-paper" data-description-entries>${clientDescriptionEntries(tab.content || "").map(clientDescriptionEntryHTML).join("")}</div>
+      <div class="toolbar description-paper-actions"><button class="btn quiet" type="button" data-add-description>${icon("plus")}Add description</button><div class="toolbar"><button class="btn compact" type="button" data-cancel-descriptions>Cancel</button><button class="btn primary compact">${icon("save")}Save</button></div></div>
       <p class="status-line"></p>
-    </form>` : `<div class="page-rich-editor">${clientDescriptionHTML(tab.content || "No description yet.")}</div>`}
+    </form>` : ""}
   </section>`;
 }
 
@@ -10388,8 +10412,8 @@ async function renderClientWebsite(clientID, websiteID) {
       <form id="clientTabForm" class="form-grid" method="dialog">
         <div class="modal-head"><h2>Add tab</h2><button class="btn icon quiet" type="button" data-close-dialog="clientTabDialog" title="Close">${icon("x")}</button></div>
         <div class="field"><label>Tab option</label><select name="type"><option value="description">Description text editor</option><option value="doc_list">Document list</option><option value="task_board">Task board</option></select></div>
-        <div class="field"><label>Tab title</label><input name="title" placeholder="Description"></div>
-        <div class="field"><label>Starting note</label>${state.me?.role === "owner_adm" ? pageRichEditorHTML("content", "", "Write a starting note...") : `<textarea name="content" data-mentionable placeholder="Write a starting note..."></textarea>`}</div>
+        <div class="field" data-client-tab-title hidden><label>Tab title</label><input name="title" placeholder="Tab title" disabled></div>
+        <div class="field"><label>Starting note</label>${canManage && isClientProjectOwner(data.client) ? pageRichEditorHTML("content", "", "Write a starting note...") : `<textarea name="content" data-mentionable placeholder="Write a starting note..."></textarea>`}</div>
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Create</button><button class="btn" type="button" data-close-dialog="clientTabDialog">Cancel</button></div>
         <p class="status-line"></p>
       </form>
@@ -10942,7 +10966,16 @@ async function renderClientWebsite(clientID, websiteID) {
       }
     }
   });
-  $("#clientTabForm")?.addEventListener("submit", async (event) => {
+  const clientTabForm = $("#clientTabForm");
+  const syncClientTabTitle = () => {
+    if (!clientTabForm) return;
+    const isDescription = clientTabForm.elements.type.value === "description";
+    clientTabForm.querySelector("[data-client-tab-title]").hidden = isDescription;
+    clientTabForm.elements.title.disabled = isDescription;
+  };
+  clientTabForm?.elements.type.addEventListener("change", syncClientTabTitle);
+  syncClientTabTitle();
+  clientTabForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
     syncPageRichEditors(form);
@@ -10953,12 +10986,37 @@ async function renderClientWebsite(clientID, websiteID) {
       setFormStatus(form, error.message, true);
     }
   });
+  $("#descriptionTabForm [data-add-description]")?.addEventListener("click", () => {
+    const entries = $("#descriptionTabForm [data-description-entries]");
+    entries.insertAdjacentHTML("beforeend", clientDescriptionEntryHTML("", entries.children.length));
+    bindPageRichEditors(entries);
+    icons();
+    entries.lastElementChild.querySelector("[data-page-rich-editor]").focus();
+  });
+  $("[data-edit-descriptions]")?.addEventListener("click", () => {
+    $("[data-description-reading]").hidden = true;
+    const form = $("#descriptionTabForm");
+    form.hidden = false;
+    form.querySelector("[data-page-rich-editor]")?.focus();
+  });
+  $("[data-cancel-descriptions]")?.addEventListener("click", () => {
+    const form = $("#descriptionTabForm");
+    form.querySelector("[data-description-entries]").innerHTML = clientDescriptionEntries(selectedTab.content || "").map(clientDescriptionEntryHTML).join("");
+    bindPageRichEditors(form);
+    setFormStatus(form, "");
+    form.hidden = true;
+    $("[data-description-reading]").hidden = false;
+    icons();
+    $("[data-edit-descriptions]")?.focus();
+  });
   $("#descriptionTabForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
     syncPageRichEditors(form);
     try {
-      await api(`/api/client-tabs/${selectedTab.id}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
+      const content = Array.from(form.querySelectorAll("[data-description-entry] input[type='hidden']"))
+        .map((input) => `<div data-client-description-entry>${pageRichSafeHTML(input.value)}</div>`).join("");
+      await api(`/api/client-tabs/${selectedTab.id}`, { method: "PATCH", body: JSON.stringify({ content }) });
       renderClientWebsite(clientID, websiteID);
     } catch (error) {
       setFormStatus(form, error.message, true);
