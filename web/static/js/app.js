@@ -7286,6 +7286,8 @@ function pageRichEditorHTML(name, value = "", placeholder = "") {
       </select>
       <button class="btn icon quiet" type="button" data-rich-command="bold" title="Bold"><strong>B</strong></button>
       <button class="btn icon quiet" type="button" data-rich-command="italic" title="Italic"><em>I</em></button>
+      <button class="btn icon quiet" type="button" data-rich-command="underline" title="Underline"><u>U</u></button>
+      <button class="btn icon quiet" type="button" data-rich-link title="Insert hyperlink">${icon("link")}</button>
       <button class="btn icon quiet" type="button" data-rich-command="insertUnorderedList" title="Bullet list">${icon("list")}</button>
       <button class="btn icon quiet" type="button" data-rich-command="insertOrderedList" title="Numbered list">${icon("list-ordered")}</button>
       <label class="page-rich-color" title="Font color">
@@ -7647,6 +7649,35 @@ function bindPageRichEditors(root = document) {
 
     wrap.querySelectorAll("[data-rich-mode]").forEach((btn) => {
       btn.addEventListener("click", () => setMode(btn.dataset.richMode));
+    });
+
+    wrap.querySelectorAll("[data-rich-command], [data-rich-link]").forEach((btn) => btn.addEventListener("mousedown", (event) => {
+      saveVisualSelection();
+      event.preventDefault();
+    }));
+
+    wrap.querySelector("[data-rich-link]")?.addEventListener("click", () => {
+      if (currentMode !== "visual") return;
+      saveVisualSelection();
+      const value = prompt("Enter a link URL (https://, mailto:, or tel:)", "https://");
+      if (value === null) return;
+      const href = value.trim();
+      if (!/^(https?:\/\/\S+|mailto:\S+|tel:\S+|\/(?!\/)\S*|#\S+)$/i.test(href)) {
+        alert("Enter a valid link URL.");
+        return;
+      }
+      editor.focus();
+      if (savedVisualRange) {
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(savedVisualRange);
+      }
+      if (window.getSelection()?.isCollapsed) {
+        document.execCommand("insertHTML", false, `<a href="${esc(href)}">${esc(href)}</a>`);
+      } else {
+        document.execCommand("createLink", false, href);
+      }
+      sync();
     });
 
     wrap.querySelectorAll("[data-rich-command]").forEach((btn) => btn.addEventListener("click", () => {
@@ -9869,11 +9900,16 @@ function clientTabContentHTML(tab, data) {
     <div class="panel-head"><h2>${esc(tab.title)}</h2></div>
     ${canManage ? `<form id="descriptionTabForm" class="form-grid">
       <div class="field"><label>Title</label><input name="title" value="${esc(tab.title)}" required></div>
-      <div class="field"><label>Description</label><textarea name="content" data-mentionable>${esc(tab.content || "")}</textarea></div>
+      <div class="field"><label>Description</label>${pageRichEditorHTML("content", clientDescriptionHTML(tab.content || ""), "Write a description...")}</div>
       <button class="btn primary">${icon("save")}Save tab</button>
       <p class="status-line"></p>
-    </form>` : `<p>${chatText(tab.content || "No description yet.")}</p>`}
+    </form>` : `<div class="page-rich-editor">${clientDescriptionHTML(tab.content || "No description yet.")}</div>`}
   </section>`;
+}
+
+function clientDescriptionHTML(value = "") {
+  const text = String(value || "");
+  return pageRichSafeHTML(/<\/?[a-z][^>]*>/i.test(text) ? text : esc(text).replace(/\r?\n/g, "<br>"));
 }
 
 function clientDocumentDialogHTML(id, title, websiteID = "") {
@@ -10353,7 +10389,7 @@ async function renderClientWebsite(clientID, websiteID) {
         <div class="modal-head"><h2>Add tab</h2><button class="btn icon quiet" type="button" data-close-dialog="clientTabDialog" title="Close">${icon("x")}</button></div>
         <div class="field"><label>Tab option</label><select name="type"><option value="description">Description text editor</option><option value="doc_list">Document list</option><option value="task_board">Task board</option></select></div>
         <div class="field"><label>Tab title</label><input name="title" placeholder="Description"></div>
-        <div class="field"><label>Starting note</label><textarea name="content" data-mentionable></textarea></div>
+        <div class="field"><label>Starting note</label>${pageRichEditorHTML("content", "", "Write a starting note...")}</div>
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Create</button><button class="btn" type="button" data-close-dialog="clientTabDialog">Cancel</button></div>
         <p class="status-line"></p>
       </form>
@@ -10909,6 +10945,7 @@ async function renderClientWebsite(clientID, websiteID) {
   $("#clientTabForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
+    syncPageRichEditors(form);
     try {
       const created = await api(`/api/client-websites/${websiteID}/tabs`, { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
       window.location.href = `/projects/${clientID}/sites/${websiteID}?tab=${created.tab.id}`;
@@ -10919,6 +10956,7 @@ async function renderClientWebsite(clientID, websiteID) {
   $("#descriptionTabForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
+    syncPageRichEditors(form);
     try {
       await api(`/api/client-tabs/${selectedTab.id}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
       renderClientWebsite(clientID, websiteID);
@@ -11119,6 +11157,7 @@ async function renderClientWebsite(clientID, websiteID) {
   bindClientBoardDrag(app, async () => {
     renderClientWebsite(clientID, websiteID);
   });
+  bindPageRichEditors(app);
   bindRichEditors(app);
   bindChecklistBuilders(app);
   bindContentBlockEditors(app);
