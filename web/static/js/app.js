@@ -13488,6 +13488,11 @@ async function renderSettings() {
       </div>
       <form id="settingsForm" class="settings-tab-form">
         <section data-settings-panel="identity" class="settings-tab-section">
+          <div class="panel form-grid">
+            <div><strong>Frontend cache</strong><p class="muted">Refresh the app's JavaScript and styles after an update. Users receive the latest files when they reload the page.</p></div>
+            <div class="toolbar"><button class="btn" type="button" id="clearFrontendCacheBtn">${icon("refresh-cw")}Clear frontend cache</button></div>
+            <p class="status-line" id="frontendCacheStatus" role="status"></p>
+          </div>
           <div class="grid-2">
             <div class="field"><label>Site name</label><input name="site_name" value="${esc(settings.site_name || "")}"></div>
             <div class="field"><label>Slogan</label><input name="company_slogan" value="${esc(settings.company_slogan || "")}" placeholder="Your platform slogan"></div>
@@ -13652,6 +13657,22 @@ async function renderSettings() {
     });
   });
   bindSocialLinksBuilder($("#settingsForm"));
+  $("#clearFrontendCacheBtn")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const status = $("#frontendCacheStatus");
+    button.disabled = true;
+    status.classList.remove("error");
+    status.textContent = "Refreshing frontend cache...";
+    try {
+      const result = await api("/api/admin/cache/clear", { method: "POST" });
+      status.textContent = result.message;
+    } catch (error) {
+      status.textContent = error.message;
+      status.classList.add("error");
+    } finally {
+      button.disabled = false;
+    }
+  });
   icons();
   const settingsPayloadFromForm = (form) => {
     const body = Object.fromEntries(new FormData(form).entries());

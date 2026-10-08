@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"bugmark/internal/auth"
@@ -28,6 +29,7 @@ import (
 )
 
 type Server struct {
+	assetVersion atomic.Int64
 	cfg          config.Config
 	logger       *log.Logger
 	store        *store.Store
@@ -46,6 +48,8 @@ func New(cfg config.Config, logger *log.Logger, store *store.Store, tokens *auth
 
 func (s *Server) Router() *gin.Engine {
 	router := gin.Default()
+	s.assetVersion.Store(time.Now().UnixNano())
+	router.Use(frontendCacheHeaders())
 	_ = router.SetTrustedProxies([]string{"127.0.0.1", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"})
 	router.MaxMultipartMemory = 16 << 20
 	router.Static("/static", "web/static")
@@ -291,6 +295,7 @@ func (s *Server) Router() *gin.Engine {
 	owner.PATCH("/plans/:id", s.adminUpdatePlan)
 	owner.POST("/emails/send", s.sendAdminEmail)
 	owner.GET("/settings", s.getSettings)
+	owner.POST("/cache/clear", s.clearFrontendCache)
 	owner.PUT("/settings", s.updateSettings)
 	owner.POST("/settings/smtp/test", s.testSMTPEmail)
 	owner.GET("/pages", s.adminPages)
@@ -517,7 +522,7 @@ func formatWholeNumber(value int64) string {
 func (s *Server) appPage(c *gin.Context) {
 	settings, _ := s.loadSiteSettings(c.Request.Context())
 	settings = s.settingsWithConfigFallback(settings)
-	payload := gin.H{"AppName": firstNonEmpty(settings.SiteName, s.cfg.AppName), "FaviconURL": settings.FaviconURL, "Year": time.Now().Year()}
+	payload := gin.H{"AppName": firstNonEmpty(settings.SiteName, s.cfg.AppName), "FaviconURL": settings.FaviconURL, "Year": time.Now().Year(), "AssetVersion": s.assetVersion.Load()}
 	for key, value := range customCodeTemplatePayload(settings) {
 		payload[key] = value
 	}
