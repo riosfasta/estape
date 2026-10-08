@@ -9898,7 +9898,7 @@ function clientTabContentHTML(tab, data) {
   }
   return `<section class="panel">
     <div class="panel-head"><h2>${esc(tab.title)}</h2></div>
-    ${canManage ? `<form id="descriptionTabForm" class="form-grid">
+    ${canManage && state.me?.role === "owner_adm" ? `<form id="descriptionTabForm" class="form-grid">
       <div class="field"><label>Title</label><input name="title" value="${esc(tab.title)}" required></div>
       <div class="field"><label>Description</label>${pageRichEditorHTML("content", clientDescriptionHTML(tab.content || ""), "Write a description...")}</div>
       <button class="btn primary">${icon("save")}Save tab</button>
@@ -10389,7 +10389,7 @@ async function renderClientWebsite(clientID, websiteID) {
         <div class="modal-head"><h2>Add tab</h2><button class="btn icon quiet" type="button" data-close-dialog="clientTabDialog" title="Close">${icon("x")}</button></div>
         <div class="field"><label>Tab option</label><select name="type"><option value="description">Description text editor</option><option value="doc_list">Document list</option><option value="task_board">Task board</option></select></div>
         <div class="field"><label>Tab title</label><input name="title" placeholder="Description"></div>
-        <div class="field"><label>Starting note</label>${pageRichEditorHTML("content", "", "Write a starting note...")}</div>
+        <div class="field"><label>Starting note</label>${state.me?.role === "owner_adm" ? pageRichEditorHTML("content", "", "Write a starting note...") : `<textarea name="content" data-mentionable placeholder="Write a starting note..."></textarea>`}</div>
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Create</button><button class="btn" type="button" data-close-dialog="clientTabDialog">Cancel</button></div>
         <p class="status-line"></p>
       </form>
