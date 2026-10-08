@@ -10412,7 +10412,7 @@ async function renderClientWebsite(clientID, websiteID) {
       <form id="clientTabForm" class="form-grid" method="dialog">
         <div class="modal-head"><h2>Add tab</h2><button class="btn icon quiet" type="button" data-close-dialog="clientTabDialog" title="Close">${icon("x")}</button></div>
         <div class="field"><label>Tab option</label><select name="type"><option value="description">Description text editor</option><option value="doc_list">Document list</option><option value="task_board">Task board</option></select></div>
-        <div class="field" data-client-tab-title hidden><label>Tab title</label><input name="title" placeholder="Tab title" disabled></div>
+        <div class="field"><label>Tab title</label><input name="title" placeholder="Tab title" required></div>
         <div class="field"><label>Starting note</label>${canManage && isClientProjectOwner(data.client) ? pageRichEditorHTML("content", "", "Write a starting note...") : `<textarea name="content" data-mentionable placeholder="Write a starting note..."></textarea>`}</div>
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Create</button><button class="btn" type="button" data-close-dialog="clientTabDialog">Cancel</button></div>
         <p class="status-line"></p>
@@ -10967,14 +10967,6 @@ async function renderClientWebsite(clientID, websiteID) {
     }
   });
   const clientTabForm = $("#clientTabForm");
-  const syncClientTabTitle = () => {
-    if (!clientTabForm) return;
-    const isDescription = clientTabForm.elements.type.value === "description";
-    clientTabForm.querySelector("[data-client-tab-title]").hidden = isDescription;
-    clientTabForm.elements.title.disabled = isDescription;
-  };
-  clientTabForm?.elements.type.addEventListener("change", syncClientTabTitle);
-  syncClientTabTitle();
   clientTabForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
