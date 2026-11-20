@@ -784,7 +784,8 @@ function annotationPageLinkHTML(value) {
   try {
     const parsed = new URL(raw);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("Unsupported page URL");
-    return `<a class="feedback-page-link" href="${esc(parsed.href)}" target="_blank" rel="noopener noreferrer" title="${esc(parsed.href)}">${esc(parsed.pathname || "/")}</a>`;
+    const label = parsed.pathname && parsed.pathname !== "/" ? (parsed.host + parsed.pathname) : parsed.host;
+    return `<a class="feedback-page-link-pill" href="${esc(parsed.href)}" target="_blank" rel="noopener noreferrer" title="${esc(parsed.href)}">${icon("external-link")} <span>${esc(label)}</span></a>`;
   } catch {
     return "";
   }
@@ -1108,6 +1109,188 @@ function openAttachmentLightbox(url, name = "") {
   dialog.querySelector("[data-lightbox-image]")?.addEventListener("click", (event) => event.currentTarget.classList.toggle("is-zoomed"));
   dialog.showModal();
   icons();
+}
+
+function taskSeverity(task = {}) {
+  const sev = String(task?.severity || "").toLowerCase().trim();
+  if (sev === "urgent" || sev === "high") return sev;
+  return "normal";
+}
+
+function taskSeverityLabel(sev = "normal") {
+  const s = String(sev || "").toLowerCase().trim();
+  if (s === "urgent") return "Urgent";
+  if (s === "high") return "High";
+  return "Normal";
+}
+
+function taskSeverityBadgeHTML(severity = "normal", options = {}) {
+  const sev = taskSeverity({ severity });
+  const label = taskSeverityLabel(sev);
+  return `<span class="severity-badge ${sev}" title="Severity: ${label}">${icon("flag")}${esc(label)}</span>`;
+}
+
+function severityPickerHTML(selected = "normal", name = "severity") {
+  const current = taskSeverity({ severity: selected });
+  return `<div class="severity-picker" data-severity-picker>
+    <label class="severity-picker-option" title="Normal severity">
+      <input type="radio" name="${esc(name)}" value="normal" ${current === "normal" ? "checked" : ""}>
+      <span class="severity-badge normal">${icon("flag")}Normal</span>
+    </label>
+    <label class="severity-picker-option" title="High severity">
+      <input type="radio" name="${esc(name)}" value="high" ${current === "high" ? "checked" : ""}>
+      <span class="severity-badge high">${icon("flag")}High</span>
+    </label>
+    <label class="severity-picker-option" title="Urgent severity">
+      <input type="radio" name="${esc(name)}" value="urgent" ${current === "urgent" ? "checked" : ""}>
+      <span class="severity-badge urgent">${icon("flag")}Urgent</span>
+    </label>
+  </div>`;
+}
+
+function taskAttachmentUploadFieldHTML(name = "attachments", label = "Attachments") {
+  return `<div class="field task-attachments-field" data-attachment-field-group>
+    <label>${esc(label)} <span class="muted font-normal">(Images, documents, PDF, Word, Excel, etc.)</span></label>
+    <div class="attachment-upload-zone" data-attachment-dropzone>
+      <input type="file" name="${esc(name)}" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip" class="attachment-file-input">
+      <div class="attachment-drop-prompt">
+        <span class="attachment-drop-icon">${icon("upload")}</span>
+        <span class="attachment-drop-text"><strong>Choose files</strong> or drag &amp; drop here</span>
+        <small class="muted">Upload multiple images or documents</small>
+      </div>
+    </div>
+    <div class="attachment-chip-list" data-attachments-preview hidden></div>
+    <div class="toolbar compact-toolbar attachment-add-more-bar" data-attachment-add-more hidden>
+      <button class="btn compact quiet" type="button" data-add-more-attachments>${icon("plus")}Add more files</button>
+      <span class="muted font-normal" data-attachment-count-label></span>
+    </div>
+  </div>`;
+}
+
+function bindAttachmentsPreview(input, container) {
+  if (!input || !container) return;
+  if (input.dataset.previewBound === "1") return;
+  input.dataset.previewBound = "1";
+
+  let fileList = [];
+  input._attachedFiles = fileList;
+
+  const parent = container.closest("[data-attachment-field-group]") || container.parentElement;
+  const addMoreBar = parent?.querySelector("[data-attachment-add-more]");
+  const countLabel = parent?.querySelector("[data-attachment-count-label]");
+  const addMoreBtn = parent?.querySelector("[data-add-more-attachments]");
+  const dropzone = parent?.querySelector("[data-attachment-dropzone]");
+
+  const syncToInput = () => {
+    input._attachedFiles = fileList;
+    try {
+      const dt = new DataTransfer();
+      fileList.forEach((f) => dt.items.add(f));
+      input.files = dt.files;
+    } catch {
+      // DataTransfer fallback
+    }
+  };
+
+  const addFiles = (newFiles) => {
+    const incoming = Array.from(newFiles || []);
+    if (!incoming.length) return;
+    for (const f of incoming) {
+      const exists = fileList.some((existing) => existing.name === f.name && existing.size === f.size && existing.lastModified === f.lastModified);
+      if (!exists) {
+        fileList.push(f);
+      }
+    }
+    syncToInput();
+    render();
+  };
+
+  const removeFile = (index) => {
+    if (index >= 0 && index < fileList.length) {
+      fileList.splice(index, 1);
+      syncToInput();
+      render();
+    }
+  };
+
+  const render = () => {
+    if (!fileList.length) {
+      container.hidden = true;
+      container.innerHTML = "";
+      if (addMoreBar) addMoreBar.hidden = true;
+      if (countLabel) countLabel.textContent = "";
+      return;
+    }
+    container.hidden = false;
+    if (addMoreBar) addMoreBar.hidden = false;
+    if (countLabel) {
+      countLabel.textContent = `${fileList.length} file${fileList.length === 1 ? "" : "s"} selected`;
+    }
+
+    container.innerHTML = fileList.map((file, index) => {
+      const kind = attachmentKind("", file.name);
+      const sizeStr = file.size > 1024 * 1024 ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`;
+      return `<div class="attachment-chip" data-file-index="${index}">
+        <span class="attachment-chip-icon">${icon(kind.icon)}</span>
+        <span class="attachment-chip-name" title="${esc(file.name)}">${esc(file.name)}</span>
+        <span class="attachment-chip-size muted">(${sizeStr})</span>
+        <button class="btn icon quiet attachment-chip-remove" type="button" data-remove-attachment-index="${index}" title="Remove file">${icon("x")}</button>
+      </div>`;
+    }).join("");
+    icons();
+
+    container.querySelectorAll("[data-remove-attachment-index]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        removeFile(Number(btn.dataset.removeAttachmentIndex));
+      });
+    });
+  };
+
+  input.addEventListener("change", () => {
+    if (input.files?.length) {
+      addFiles(input.files);
+    }
+  });
+
+  input.addEventListener("click", () => {
+    input.value = "";
+  });
+
+  addMoreBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    input.click();
+  });
+
+  if (dropzone) {
+    ["dragenter", "dragover"].forEach((eventName) => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.add("is-dragover");
+      });
+    });
+    ["dragleave", "drop"].forEach((eventName) => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.remove("is-dragover");
+      });
+    });
+    dropzone.addEventListener("drop", (e) => {
+      if (e.dataTransfer?.files?.length) {
+        addFiles(e.dataTransfer.files);
+      }
+    });
+  }
+
+  input.form?.addEventListener("reset", () => {
+    fileList = [];
+    input._attachedFiles = fileList;
+    render();
+  });
 }
 
 function bindAttachmentOpeners(root = document) {
@@ -2405,7 +2588,7 @@ async function openTaskTimerModal(taskID, taskTitle = "") {
   dialog.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
       <span class="muted" style="font-size:12px;font-weight:600;">Time Tracking</span>
-      <button class="btn icon quiet" type="button" data-close-task-timer-modal title="Close">${icon("x")}</button>
+      <button class="btn icon quiet cu-timer-close-btn" type="button" data-close-task-timer-modal title="Close" style="color:#ffffff;border-color:rgba(255,255,255,0.2);">${icon("x")}</button>
     </div>
     <div class="time-tracker-modal-body" data-time-tracker-modal-body="${esc(taskID)}">
       <div style="padding:28px 0;text-align:center;" class="muted">Loading timer logs...</div>
@@ -6498,7 +6681,9 @@ function isDarkThemeActive() {
 
 function readableStatusTextColor(value, fallback = "#e5e7eb") {
   const color = normalizeStatusColor(value, fallback);
-  if (!isDarkThemeActive()) return color;
+  if (!isDarkThemeActive()) {
+    return contrastRatio(color, "#ffffff") < 3.2 ? "#334155" : color;
+  }
   return contrastRatio(color, "#101613") < 4.5 ? "#78dccb" : color;
 }
 
@@ -6958,9 +7143,18 @@ function bindStatusPickers(root = document) {
       event.preventDefault();
       event.stopPropagation();
       document.querySelectorAll(".status-menu").forEach((other) => {
-        if (other !== menu) other.hidden = true;
+        if (other !== menu) {
+          other.hidden = true;
+          other.closest("[data-status-picker]")?.classList.remove("menu-open");
+          other.closest(".task-card, .client-task-card")?.classList.remove("menu-open");
+        }
       });
-      if (menu) menu.hidden = !menu.hidden;
+      if (menu) {
+        menu.hidden = !menu.hidden;
+        picker.classList.toggle("menu-open", !menu.hidden);
+        const card = picker.closest(".task-card, .client-task-card");
+        if (card) card.classList.toggle("menu-open", !menu.hidden);
+      }
     });
     picker.querySelectorAll("[data-status-option]").forEach((option) => option.addEventListener("click", () => {
       const value = option.dataset.statusOption;
@@ -6970,7 +7164,12 @@ function bindStatusPickers(root = document) {
       picker.querySelector("[data-status-trigger-label]").textContent = label;
       trigger?.style.setProperty("--status-icon-color", option.style.getPropertyValue("--status-icon-color"));
       trigger?.style.setProperty("--status-text-color", option.style.getPropertyValue("--status-text-color"));
-      if (menu) menu.hidden = true;
+      if (menu) {
+        menu.hidden = true;
+        picker.classList.remove("menu-open");
+        const card = picker.closest(".task-card, .client-task-card");
+        if (card) card.classList.remove("menu-open");
+      }
       input?.dispatchEvent(new Event("change", { bubbles: true }));
       picker.dispatchEvent(new CustomEvent("statuschange", { bubbles: true, detail: { value } }));
     }));
@@ -7417,6 +7616,8 @@ function bindFloatingDropdownDismissal() {
   document.addEventListener("click", () => {
     document.querySelectorAll(".assignee-menu, .status-menu, .context-menu, .client-tab-menu").forEach((menu) => {
       menu.hidden = true;
+      menu.closest("[data-status-picker], [data-assignee-picker]")?.classList.remove("menu-open");
+      menu.closest(".task-card, .client-task-card")?.classList.remove("menu-open");
     });
   });
   document.addEventListener("keydown", (event) => {
@@ -8330,6 +8531,7 @@ function feedbackBugDetailHTML(bug = {}, statuses = [], usersByID = {}) {
     <div class="feedback-detail-head">
       <span class="muted">Annotation detail</span>
       <h2>${esc(feedbackBugTitle(bug))}</h2>
+      ${bug.description ? `<div class="feedback-detail-description"><h3>Details</h3><p>${chatText(bug.description)}</p></div>` : ""}
       <form class="feedback-status-form" data-feedback-status-form="${esc(bug.id)}">${statusPickerHTML(statuses, statusValue, "status")}</form>
     </div>
     <label class="feedback-url-field"><span>Page URL</span><input value="${esc(bug.page_url || "No page URL")}" readonly></label>
@@ -8337,7 +8539,6 @@ function feedbackBugDetailHTML(bug = {}, statuses = [], usersByID = {}) {
       <div><span class="muted">Assignee</span>${assignees.length ? `<div class="assignee-avatars">${assignees.map((user) => userChip(user)).join("")}</div>` : `<strong>Unassigned</strong>`}</div>
       <div><span class="muted">Created</span><strong>${esc(fmtDateTime(bug.created_at))}</strong></div>
     </div>
-    ${bug.description ? `<h3>Details</h3><p>${chatText(bug.description)}</p>` : ""}
     ${bug.attachments?.length ? `<h3>Attachments</h3><div class="task-attachment-gallery">${bug.attachments.map((url) => attachmentPreviewHTML(url, "", { source: "Feedback" })).join("")}</div>` : ""}
     <section class="feedback-comments">
       <h3>Comments</h3>
@@ -8431,32 +8632,43 @@ function bindClientAnnotationItemStatusForms(root = document, statuses = [], onS
 
 function clientAnnotationTaskDetailHTML(task = {}, statuses = [], usersByID = {}, comments = [], canManageFolder = false, options = {}) {
   const assignees = (task.assignee_ids || []).map((id) => usersByID[id]).filter(Boolean);
-  const showStatus = options.showStatus !== false;
+  const showStatus = Boolean(options.showStatus);
+  const showAssignee = Boolean(options.showAssignee);
   const commentTaskID = options.commentTaskID || task.id;
   const annotationStatusTaskID = options.annotationStatusTaskID || "";
   const showMedia = options.showMedia !== false;
   return `<div class="feedback-detail">
-    <div class="feedback-detail-head">
-      <span class="muted">Annotation detail</span>
-      <h2>${esc(task.title || "Annotation")}</h2>
-      ${showStatus ? `<div class="feedback-status-form" data-client-annotation-status-form="${esc(task.id)}">${statusPickerHTML(statuses, task.status || "todo", "status")}</div>` : clientAnnotationItemStatusPickerHTML(annotationStatusTaskID, task.id, task.status || "todo", statuses)}
+    <div class="feedback-task-card">
+      <div class="feedback-task-card-header">
+        <span class="feedback-badge">${icon("map-pin")} Annotation</span>
+        ${annotationPageLinkHTML(task.url)}
+      </div>
+      <h2 class="feedback-task-title">${esc(task.title || "Annotation")}</h2>
+      ${(task.comment || task.content) ? `
+        <div class="feedback-task-details">
+          <div class="feedback-details-label">${icon("align-left")} <span>Details</span></div>
+          <div class="feedback-details-content">${chatText(task.comment || task.content)}</div>
+        </div>
+      ` : ""}
+      ${showStatus ? `<div class="feedback-status-form" data-client-annotation-status-form="${esc(task.id)}">${statusPickerHTML(statuses, task.status || "todo", "status")}</div>` : (options.showItemStatus ? clientAnnotationItemStatusPickerHTML(annotationStatusTaskID, task.id, task.status || "todo", statuses) : "")}
+      <div class="feedback-task-meta">
+        ${showAssignee ? `<div class="feedback-meta-item"><span class="muted">Assignee:</span> ${assignees.length ? `<span class="assignee-avatars">${assignees.map((user) => userChip(user)).join("")}</span>` : `<strong>Unassigned</strong>`}</div>` : ""}
+        <span class="feedback-meta-item">${icon("clock")} Created ${esc(fmtDateTime(task.created_at))}</span>
+      </div>
     </div>
-    ${annotationPageLinkHTML(task.url)}
-    <div class="feedback-detail-grid">
-      <div><span class="muted">Assignee</span>${assignees.length ? `<div class="assignee-avatars">${assignees.map((user) => userChip(user)).join("")}</div>` : `<strong>Unassigned</strong>`}</div>
-      <div><span class="muted">Created</span><strong>${esc(fmtDateTime(task.created_at))}</strong></div>
-    </div>
-    ${task.comment ? `<h3>Details</h3><p>${chatText(task.comment)}</p>` : ""}
     ${showMedia ? annotationSnapshotHTML(task) : ""}
     ${showMedia ? taskAttachmentGalleryHTML(task, comments) : ""}
-    <section class="feedback-comments">
-      <h3>Comments</h3>
+    <section class="feedback-comments feedback-comments-card">
+      <div class="feedback-comments-header">
+        <h3>${icon("message-square")} Comments</h3>
+        <span class="feedback-comments-count-pill">${(comments || []).length}</span>
+      </div>
       <div class="client-task-comment-list feedback-comment-list">${clientTaskCommentsHTML(comments || [], usersByID, canManageFolder)}</div>
       <div class="client-comment-composer-slot" data-client-comment-composer-default>
-        <form id="clientTaskCommentForm" class="feedback-comment-form client-comment-form" data-client-annotation-comment-form="${esc(commentTaskID)}">
+        <form id="clientTaskCommentForm" class="feedback-comment-form client-comment-form feedback-composer-card" data-client-annotation-comment-form="${esc(commentTaskID)}">
           <div class="reply-preview" data-client-task-reply-preview hidden></div>
           <div class="attachment-preview" data-client-task-attachment-preview hidden></div>
-          <textarea name="content" data-mentionable data-mention-task-id="${esc(commentTaskID)}" placeholder="Comment @username"></textarea>
+          <textarea name="content" data-mentionable data-mention-task-id="${esc(commentTaskID)}" placeholder="Comment @username..."></textarea>
           <input type="file" name="attachment" hidden>
           <div class="toolbar compact-toolbar">
             <button class="btn icon quiet" type="button" data-client-comment-emoji title="Add emoji">${icon("smile")}</button>
@@ -8493,7 +8705,7 @@ function clientTaskAnnotationItems(task = {}) {
     id: item.id || `annotation-${index}`,
     title: item.title || task.title || `Annotation ${index + 1}`,
     url: item.url || task.url || "",
-    comment: item.comment || "",
+    comment: item.comment || task.comment || task.content || "",
     screenshot_url: item.screenshot_url || task.screenshot_url || "",
     attachments: item.attachments || [],
     assignee_ids: item.assignee_ids || task.assignee_ids || [],
@@ -8543,6 +8755,7 @@ function contentBlockEditorHTML(blocks = []) {
     <div class="toolbar compact-toolbar">
       <button class="btn compact" type="button" data-add-content-block>${icon("file-text")}Content</button>
       <button class="btn compact" type="button" data-add-checklist-block>${icon("list-checks")}Checklist</button>
+      <button class="btn compact" type="button" data-add-attachment-btn>${icon("paperclip")}Attachment</button>
     </div>
   </div>`;
 }
@@ -8606,6 +8819,15 @@ function bindContentBlockEditors(root = document) {
       bindBlock(list.lastElementChild);
       list.lastElementChild.querySelector("[data-checklist-text]")?.focus();
       icons();
+    });
+    editor.querySelector("[data-add-attachment-btn]")?.addEventListener("click", () => {
+      const form = editor.closest("form");
+      const attInput = form?.querySelector("input[name='attachments']");
+      if (attInput) {
+        attInput.click();
+        const dropzone = form.querySelector("[data-attachment-dropzone]") || attInput;
+        dropzone.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
     });
   });
 }
@@ -8981,12 +9203,13 @@ function clientTaskBoardHTML(tasks, tab, members, canManage, canManageStatuses =
           </div>
           <p>${chatText(taskPreviewText(task) || "No content yet.")}</p>
           <div class="client-task-card-meta">
-            ${statusBadgeHTML(status, "status-badge status-pill")}
+            ${taskSeverityBadgeHTML(task.severity)}
             ${taskCompletionBadgeHTML(task)}
             ${taskPricingBadgeHTML(task)}
             ${clientTaskRatingBadgeHTML(task, canManageTask)}
-            <span class="pill">${esc(fmtDateTime(task.created_at))}</span>
+            <span class="pill task-date-pill" title="Created: ${esc(fmtDateTime(task.created_at))}">${icon("clock")}${esc(fmtDateTime(task.created_at))}</span>
             ${dueInfo.text ? `<button class="pill warn due-count" type="button" data-due-calendar="${esc(dueInfo.date || task.due_date)}">${icon("calendar-days")}${esc(dueInfo.text)}</button>` : ""}
+            ${(task.attachments?.length) ? `<span class="pill task-attachment-pill" title="${task.attachments.length} attachment(s)">${icon("paperclip")}${task.attachments.length}</span>` : ""}
             ${assigneeAvatarsHTML(task.assignee_ids || [], usersByID)}
             <button class="pill ${isActiveTimer ? "danger timer-pill active-pulse" : "timer-pill"}" type="button" data-quick-task-timer="${esc(task.id)}" title="${isActiveTimer ? "Stop timer" : "Start timer"}">${isActiveTimer ? icon("square") + "Stop" : icon("play") + "Timer"}</button>
           </div>
@@ -9352,7 +9575,7 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
         </section>
         <section class="feedback-sidebar-view feedback-detail-view annotation-viewer-detail-view" id="annotationViewerDetailView" hidden>
           <div class="feedback-detail-toolbar">
-            <button class="btn compact" type="button" id="annotationViewerBackBtn">${icon("arrow-left")}Back</button>
+            <button class="btn compact annotation-back-btn" type="button" id="annotationViewerBackBtn" title="Back to annotations list">${icon("arrow-left")}<span>Back</span><span class="annotation-count-badge">${annotationItems.length} ${annotationItems.length === 1 ? "annotation" : "annotations"}</span></button>
           </div>
           <div id="annotationViewerDetailBody"></div>
         </section>
@@ -9364,12 +9587,28 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
         <div class="modal-head"><h2>Edit annotation</h2><button class="btn icon quiet" type="button" data-close-dialog="editClientAnnotationTaskDialog" title="Close">${icon("x")}</button></div>
         <input type="hidden" name="page_width" value="${esc(pageWidth)}">
         <input type="hidden" name="page_height" value="${esc(pageHeight)}">
-        <div class="field"><label>Title</label><input name="title" maxlength="80" value="${esc(task.title || "")}" required></div>
+        <div class="field"><label>Title</label><input name="title" maxlength="80" value="${esc(task.title || "")}" required placeholder="Annotation title"></div>
         <div class="field"><label>Annotation URL</label><input name="url" value="${esc(pageURL)}" placeholder="https://example.com/page"></div>
         <div class="field"><label>Details</label>${richEditorHTML("comment", task.comment || task.content || "", "Write annotation details")}</div>
         <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [], task.assignee_ids || [])}</div>
         <div class="grid-2"><div class="field"><label>Due date</label><input type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}"></div></div>
         ${recurrenceControlsHTML(task.recurrence || {}, task.due_date)}
+        <div class="field"><label>Severity</label>${severityPickerHTML(task.severity || "normal")}</div>
+        ${taskAttachmentUploadFieldHTML("attachments", "Attachments")}
+        ${(task.attachments?.length) ? `
+          <div class="field existing-attachments-field">
+            <label>Existing attachments</label>
+            <div class="attachment-chip-list">
+              ${task.attachments.map((url, i) => `
+                <span class="attachment-chip" data-existing-attachment="${esc(url)}">
+                  <span class="attachment-chip-icon">${icon("file")}</span>
+                  <a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="attachment-chip-name">${esc(fileNameFromURL(url))}</a>
+                  <button class="btn icon quiet compact attachment-chip-remove" type="button" data-remove-existing-attachment="${i}" title="Remove attachment">${icon("x")}</button>
+                </span>
+              `).join("")}
+            </div>
+          </div>
+        ` : ""}
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="editClientAnnotationTaskDialog">Cancel</button></div>
         <p class="status-line"></p>
       </form>
@@ -9415,6 +9654,11 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     panel.querySelector("#annotationViewerDetailView")?.removeAttribute("hidden");
     const sidebarTitle = panel.querySelector("#annotationViewerSidebarTitle");
     if (sidebarTitle) sidebarTitle.textContent = "Annotation details";
+    const backBtnBadge = panel.querySelector("#annotationViewerBackBtn .annotation-count-badge");
+    if (backBtnBadge) {
+      const count = annotationItems.length;
+      backBtnBadge.textContent = `${count} ${count === 1 ? "annotation" : "annotations"}`;
+    }
     body.innerHTML = `${clientAnnotationTaskDetailHTML(annotation, statuses, usersByID, data.comments || [], canManageFolder, { showStatus: false, showMedia: false, commentTaskID: taskID, annotationStatusTaskID: taskID })}
       ${taskMetaTimerHTML(taskID)}`;
     const media = panel.querySelector("#clientAnnotationViewerMedia");
@@ -9450,7 +9694,25 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     panel.querySelectorAll("[data-client-annotation-item-row]").forEach((row) => row.classList.remove("active"));
   });
 
-  panel.querySelector("#editClientAnnotationTaskBtn")?.addEventListener("click", () => panel.querySelector("#editClientAnnotationTaskDialog")?.showModal());
+  panel.querySelector("#editClientAnnotationTaskBtn")?.addEventListener("click", () => {
+    const dialog = panel.querySelector("#editClientAnnotationTaskDialog");
+    if (!dialog) return;
+    const currentAnnotation = annotationItems.find((item) => String(item.id) === String(activeAnnotationID)) || annotationItems[0];
+    const form = dialog.querySelector("#editClientAnnotationTaskForm");
+    if (form) {
+      if (form.elements.title) form.elements.title.value = currentAnnotation?.title || task.title || "";
+      if (form.elements.url) form.elements.url.value = currentAnnotation?.url || task.url || pageURL || "";
+      const detailsVal = currentAnnotation?.comment || task.comment || task.content || "";
+      const commentInput = form.elements.comment;
+      if (commentInput) commentInput.value = detailsVal;
+      const richEditor = form.querySelector("[data-rich-editor='comment']");
+      if (richEditor) richEditor.innerText = detailsVal;
+      const sevVal = currentAnnotation?.severity || task.severity || "normal";
+      const sevRadio = form.querySelector(`input[name='severity'][value='${sevVal}']`);
+      if (sevRadio) sevRadio.checked = true;
+    }
+    dialog.showModal();
+  });
   panel.querySelector("#deleteClientAnnotationTaskBtn")?.addEventListener("click", async () => {
     if (!typedConfirm("Delete this annotation task? Comments, logs, and attachments linked to this task will be removed.")) return;
     await api(`/api/client-tasks/${taskID}`, { method: "DELETE" });
@@ -9485,9 +9747,41 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
     body.checklist = [];
     body.blocks = [];
     body.assignee_ids = selectedAssigneeIDs(form);
+      body.severity = form.querySelector("input[name='severity']:checked")?.value || form.elements.severity?.value || "normal";
     body.recurrence = recurrencePayloadFromForm(form);
     body.page_width = Number(body.page_width || pageWidth);
     body.page_height = Number(body.page_height || pageHeight);
+    const editAttInput = form.querySelector("input[name='attachments']");
+    const editFiles = editAttInput?._attachedFiles?.length ? editAttInput._attachedFiles : Array.from(editAttInput?.files || []);
+    let keptAttachments = Array.from(form.querySelectorAll("[data-existing-attachment]")).map((el) => el.dataset.existingAttachment);
+    if (!form.querySelector(".existing-attachments-field")) {
+      keptAttachments = [...(task.attachments || [])];
+    }
+    if (editFiles.length) {
+      setFormStatus(form, `Uploading ${editFiles.length} attachment(s)...`);
+      const uploaded = [];
+      for (const file of editFiles) {
+        uploaded.push(await upload(file));
+      }
+      body.attachments = [...keptAttachments, ...uploaded];
+    } else {
+      body.attachments = keptAttachments;
+    }
+    if (Array.isArray(task.annotations) && task.annotations.length > 0) {
+      body.annotations = task.annotations.map((item, idx) => {
+        if (String(item.id) === String(activeAnnotationID) || (!activeAnnotationID && idx === 0) || task.annotations.length === 1) {
+          return {
+            ...item,
+            title: body.title,
+            comment: body.comment,
+            url: body.url || item.url,
+            assignee_ids: body.assignee_ids,
+            severity: body.severity,
+          };
+        }
+        return item;
+      });
+    }
     try {
       const resp = await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify(body) });
       state.mentionChoices = {};
@@ -9523,6 +9817,13 @@ async function openClientAnnotationTaskViewer(taskID, initialData = null, openAn
   bindRichEditors(panel);
   bindRecurrenceControls(panel);
   bindAttachmentOpeners(panel);
+  bindAttachmentsPreview(panel.querySelector("#editClientTaskForm input[name='attachments']"), panel.querySelector("#editClientTaskForm [data-attachments-preview]"));
+  bindAttachmentsPreview(panel.querySelector("#editClientAnnotationTaskForm input[name='attachments']"), panel.querySelector("#editClientAnnotationTaskForm [data-attachments-preview]"));
+  panel.querySelectorAll("#editClientAnnotationTaskDialog [data-remove-existing-attachment]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      btn.closest(".attachment-chip")?.remove();
+    });
+  });
   bindMentionSuggestions(panel);
   bindDialogCloseButtons(panel);
   bindAnnotationSidebarToggles(panel);
@@ -9754,6 +10055,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "", options = {}) {
       <section class="client-task-detail-main">
         ${canUpdateProgress ? `<form id="clientTaskQuickEditForm" class="task-detail-meta task-detail-meta-form">
           ${statusPickerHTML(statuses, task.status || "todo", "status", "", { canManageStatuses, tabID: data.tab?.id })}
+          ${taskSeverityBadgeHTML(task.severity)}
           <span class="pill">${esc(task.type || "description")}</span>
           ${taskCompletionBadgeHTML(task)}
           ${taskPricingBadgeHTML(task)}
@@ -9763,6 +10065,7 @@ async function openClientTaskPanel(taskID, focusCommentID = "", options = {}) {
           <span class="status-line"></span>
         </form>` : `<div class="task-detail-meta">
           ${statusBadgeHTML(statuses.find((item) => item.value === (task.status || "todo")) || statuses[0], "status-badge status-pill")}
+          ${taskSeverityBadgeHTML(task.severity)}
           <span class="pill">${esc(task.type || "description")}</span>
           ${taskCompletionBadgeHTML(task)}
           ${taskPricingBadgeHTML(task)}
@@ -9802,9 +10105,11 @@ async function openClientTaskPanel(taskID, focusCommentID = "", options = {}) {
         <div class="modal-head"><h2>Edit task</h2><button class="btn icon quiet" type="button" data-close-dialog="editClientTaskDialog" title="Close">${icon("x")}</button></div>
         <div class="quick-task-controls"><label class="compact-field"><span>Status</span>${statusPickerHTML(statuses, task.status || "todo", "status", "", { canManageStatuses, tabID: data.tab?.id })}</label><label class="compact-field"><span>Due</span><input type="date" name="due_date" value="${esc(String(task.due_date || "").slice(0, 10))}"></label></div>
         ${recurrenceControlsHTML(task.recurrence || {}, task.due_date)}
+        <div class="field"><label>Severity</label>${severityPickerHTML(task.severity || "normal")}</div>
         <div class="field"><label>Title</label><input name="title" maxlength="80" value="${esc(task.title || "")}" required></div>
         ${task.type === "annotation" ? `<div class="field"><label>Comment</label>${richEditorHTML("comment", taskContent || "", "Write task details")}</div>` : `<div class="field"><label>Task body</label>${contentBlockEditorHTML(taskContentBlocks(task))}</div>`}
         <div class="field" ${task.type === "annotation" ? "" : "hidden"}><label>Annotation URL</label><input name="url" value="${esc(task.url || "")}" placeholder="https://example.com/page"></div>
+        ${taskAttachmentUploadFieldHTML("attachments", "Attachments")}
         <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [], task.assignee_ids || [])}</div>
         ${taskPricingFieldsHTML(task)}
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Save</button><button class="btn" type="button" data-close-dialog="editClientTaskDialog">Cancel</button></div>
@@ -9875,6 +10180,21 @@ async function openClientTaskPanel(taskID, focusCommentID = "", options = {}) {
       body.content = body.comment;
       body.checklist = [];
       body.blocks = [];
+      if (Array.isArray(task.annotations) && task.annotations.length > 0) {
+        body.annotations = task.annotations.map((item, idx) => {
+          if (idx === 0 || task.annotations.length === 1) {
+            return {
+              ...item,
+              title: body.title,
+              comment: body.comment,
+              url: body.url || item.url,
+              assignee_ids: body.assignee_ids,
+              severity: body.severity,
+            };
+          }
+          return item;
+        });
+      }
     } else {
       body.blocks = readContentBlocks(form);
       body.content = contentFromBlocks(body.blocks);
@@ -9887,6 +10207,16 @@ async function openClientTaskPanel(taskID, focusCommentID = "", options = {}) {
     body.price = parseFloat(body.price || 0) || 0;
     body.hourly_rate = parseFloat(body.hourly_rate || 0) || 0;
     body.max_hours = parseFloat(body.max_hours || 0) || 0;
+    const editAttInput = form.querySelector("input[name='attachments']");
+    const editFiles = editAttInput?._attachedFiles?.length ? editAttInput._attachedFiles : Array.from(editAttInput?.files || []);
+    if (editFiles.length) {
+      setFormStatus(form, `Uploading ${editFiles.length} attachment(s)...`);
+      const uploaded = [];
+      for (const file of editFiles) {
+        uploaded.push(await upload(file));
+      }
+      body.attachments = [...(task.attachments || []), ...uploaded];
+    }
     try {
       const resp = await api(`/api/client-tasks/${taskID}`, { method: "PATCH", body: JSON.stringify(body) });
       state.mentionChoices = {};
@@ -10613,10 +10943,12 @@ async function renderClientWebsite(clientID, websiteID) {
         <div class="toolbar compact-toolbar"><button class="btn compact" type="button" data-back-task-options>${icon("arrow-left")}Options</button></div>
         <div class="field"><label>Due date</label><input type="date" name="due_date"></div>
         ${recurrenceControlsHTML()}
+        <div class="field"><label>Severity</label>${severityPickerHTML("normal")}</div>
         <div class="field"><label>Title</label><input name="title" maxlength="80" required></div>
         <div data-task-description-fields>
           <div class="field"><label>Task body</label>${contentBlockEditorHTML()}</div>
         </div>
+        ${taskAttachmentUploadFieldHTML("attachments", "Attachments")}
         <div class="field"><label>Assignment</label>${assigneePickerHTML(data.members || [])}</div>
         ${taskPricingFieldsHTML()}
         <div class="toolbar"><button class="btn primary" type="submit">${icon("save")}Create task</button><button class="btn" type="button" data-close-dialog="clientTaskDialog">Cancel</button></div>
@@ -10673,9 +11005,10 @@ async function renderClientWebsite(clientID, websiteID) {
                   </div>
                   <div class="annotation-screenshot-preview" id="clientAnnotationScreenshotPreview" data-annotation-screenshot-preview hidden></div>
                 </div>
-                <div class="field"><label>Attachments</label><input type="file" name="attachments" multiple></div>
+                ${taskAttachmentUploadFieldHTML("attachments", "Attachments")}
                 <div class="field"><label>Details</label><textarea name="comment" data-mentionable placeholder="Write annotation details"></textarea></div>
                 <div class="grid-2"><div class="field"><label>Due date</label><input type="date" name="due_date"></div></div>
+                <div class="field"><label>Severity</label>${severityPickerHTML("normal")}</div>
                 ${recurrenceControlsHTML()}
                 <div class="toolbar"><button class="btn primary" type="submit">${icon("map-pin")}Save annotation</button><button class="btn" type="button" data-close-dialog="clientAnnotationDialog">Cancel</button></div>
                 <p class="status-line"></p>
@@ -10685,7 +11018,7 @@ async function renderClientWebsite(clientID, websiteID) {
             </section>
             <section class="feedback-sidebar-view feedback-detail-view" id="clientAnnotationDetailView" hidden>
               <div class="feedback-detail-toolbar">
-                <button class="btn compact" type="button" id="clientAnnotationBackBtn">${icon("arrow-left")}Back</button>
+                <button class="btn compact annotation-back-btn" type="button" id="clientAnnotationBackBtn" title="Back to annotations list">${icon("arrow-left")}<span>Back</span><span class="annotation-count-badge"></span></button>
               </div>
               <div id="clientAnnotationDetailBody"></div>
             </section>
@@ -10969,6 +11302,11 @@ async function renderClientWebsite(clientID, websiteID) {
       document.querySelectorAll("[data-client-annotation-item-row]").forEach((row) => row.classList.toggle("active", row.dataset.clientAnnotationItemRow === annotationID));
       $("#clientAnnotationListView")?.setAttribute("hidden", "");
       $("#clientAnnotationDetailView")?.removeAttribute("hidden");
+      const clientBackBadge = $("#clientAnnotationBackBtn .annotation-count-badge");
+      if (clientBackBadge) {
+        const count = currentClientAnnotationItems.length;
+        clientBackBadge.textContent = `${count} ${count === 1 ? "annotation" : "annotations"}`;
+      }
       const body = $("#clientAnnotationDetailBody");
       if (body) {
         body.innerHTML = clientAnnotationTaskDetailHTML(annotation, clientBoardStatuses, usersByID, latest?.comments || [], canManage, { showStatus: false, commentTaskID: currentClientAnnotationTask?.id || annotation.id, annotationStatusTaskID: currentClientAnnotationTask?.id || "" });
@@ -11227,15 +11565,20 @@ async function renderClientWebsite(clientID, websiteID) {
       body.hourly_rate = parseFloat(body.hourly_rate || 0) || 0;
       body.max_hours = parseFloat(body.max_hours || 0) || 0;
       body.attachments = [];
+      const attInput = form.querySelector("input[name='attachments']");
+      const taskFiles = attInput?._attachedFiles?.length ? attInput._attachedFiles : Array.from(attInput?.files || []);
+      if (taskFiles.length) {
+        setFormStatus(form, `Uploading ${taskFiles.length} attachment(s)...`);
+        for (const file of taskFiles) {
+          body.attachments.push(await upload(file));
+        }
+      }
       if (body.type === "annotation") {
         body.comment = String(body.comment || "").trim();
         body.content = body.comment;
         body.checklist = [];
         if (!String(body.url || "").startsWith("https://")) {
           throw new Error("annotation URL must start with https://");
-        }
-        for (const file of Array.from(form.attachments?.files || [])) {
-          body.attachments.push(await upload(file));
         }
       } else {
         body.content = String(body.content || "").trim();
@@ -11265,6 +11608,7 @@ async function renderClientWebsite(clientID, websiteID) {
       body.checklist = [];
       body.blocks = [];
       body.assignee_ids = selectedAssigneeIDs(form);
+      body.severity = form.querySelector("input[name='severity']:checked")?.value || form.elements.severity?.value || "normal";
       body.recurrence = recurrencePayloadFromForm(form);
       body.attachments = [];
       body.screenshot_url = String(body.screenshot_url || "").trim();
@@ -11288,7 +11632,9 @@ async function renderClientWebsite(clientID, websiteID) {
           console.warn("Could not auto-capture annotation screenshot", captureError);
         }
       }
-      for (const file of Array.from(form.attachments?.files || [])) {
+      const annoAttInput = form.querySelector("input[name='attachments']");
+      const annoFiles = annoAttInput?._attachedFiles?.length ? annoAttInput._attachedFiles : Array.from(annoAttInput?.files || []);
+      for (const file of annoFiles) {
         body.attachments.push(await upload(file));
       }
       const annotation = {
@@ -11368,6 +11714,8 @@ async function renderClientWebsite(clientID, websiteID) {
     renderClientWebsite(clientID, websiteID);
   }));
   bindClientTaskTypeToggle($("#clientTaskForm"));
+  bindAttachmentsPreview($("#clientTaskForm input[name='attachments']"), $("#clientTaskForm [data-attachments-preview]"));
+  bindAttachmentsPreview($("#clientAnnotationTaskForm input[name='attachments']"), $("#clientAnnotationTaskForm [data-attachments-preview]"));
   bindAssigneePickers(app);
   bindStatusPickers(app);
   if (canManageStatuses) {

@@ -244,6 +244,7 @@ type ClientTask struct {
 	DueDate          *time.Time             `bson:"due_date,omitempty" json:"due_date,omitempty"`
 	Recurrence       ClientTaskRecurrence   `bson:"recurrence,omitempty" json:"recurrence,omitempty"`
 	Status           string                 `bson:"status" json:"status"`
+	Severity         string                 `bson:"severity,omitempty" json:"severity,omitempty"`
 	BillingType      string                 `bson:"billing_type,omitempty" json:"billing_type,omitempty"`
 	Price            float64                `bson:"price,omitempty" json:"price,omitempty"`
 	HourlyRate       float64                `bson:"hourly_rate,omitempty" json:"hourly_rate,omitempty"`
@@ -282,6 +283,7 @@ type ClientTaskAnnotation struct {
 	Attachments   []string             `bson:"attachments,omitempty" json:"attachments,omitempty"`
 	AssigneeIDs   []primitive.ObjectID `bson:"assignee_ids,omitempty" json:"assignee_ids,omitempty"`
 	Status        string               `bson:"status,omitempty" json:"status,omitempty"`
+	Severity      string               `bson:"severity,omitempty" json:"severity,omitempty"`
 	CreatedBy     primitive.ObjectID   `bson:"created_by,omitempty" json:"created_by,omitempty"`
 	CreatedAt     time.Time            `bson:"created_at,omitempty" json:"created_at,omitempty"`
 	UpdatedAt     time.Time            `bson:"updated_at,omitempty" json:"updated_at,omitempty"`

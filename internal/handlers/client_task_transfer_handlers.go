@@ -532,6 +532,7 @@ func cloneImportedClientTask(source models.ClientTask, client models.ClientProje
 		DueDate:       source.DueDate,
 		Recurrence:    normalizeClientTaskRecurrence(source.Recurrence, source.DueDate),
 		Status:        status,
+		Severity:      normalizeClientTaskSeverity(source.Severity),
 		CreatedBy:     actorID,
 		CreatedAt:     now,
 		UpdatedAt:     now,

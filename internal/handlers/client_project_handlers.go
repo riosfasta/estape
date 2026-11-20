@@ -1358,6 +1358,7 @@ func (s *Server) createClientTask(c *gin.Context) {
 		DueDate       string                        `json:"due_date"`
 		Recurrence    models.ClientTaskRecurrence   `json:"recurrence"`
 		BillingType   string                        `json:"billing_type"`
+		Severity      string                        `json:"severity"`
 		Price         float64                       `json:"price"`
 		HourlyRate    float64                       `json:"hourly_rate"`
 		MaxHours      float64                       `json:"max_hours"`
@@ -1461,6 +1462,7 @@ func (s *Server) createClientTask(c *gin.Context) {
 		pageHeight = normalizeAnnotationPageDimension(req.PageHeight, 900, 50000)
 	}
 	attachments := compactStrings(req.Attachments)
+	severity := normalizeClientTaskSeverity(req.Severity)
 	annotations := []models.ClientTaskAnnotation{}
 	if taskType == "annotation" {
 		initialAnnotation := models.ClientTaskAnnotation{
@@ -1475,6 +1477,7 @@ func (s *Server) createClientTask(c *gin.Context) {
 			Attachments:   attachments,
 			AssigneeIDs:   assigneeIDs,
 			Status:        status,
+			Severity:      severity,
 		}
 		sourceAnnotations := req.Annotations
 		if len(sourceAnnotations) == 0 {
@@ -1537,6 +1540,7 @@ func (s *Server) createClientTask(c *gin.Context) {
 		MaxHours:      maxHours,
 		MaxSeconds:    maxSeconds,
 		Status:        status,
+		Severity:      severity,
 		CreatedBy:     userCtx.ID,
 		CreatedAt:     now,
 		UpdatedAt:     now,
@@ -1865,6 +1869,7 @@ func (s *Server) updateClientTask(c *gin.Context) {
 		Comment       *string                        `json:"comment"`
 		ScreenshotURL *string                        `json:"screenshot_url"`
 		Status        *string                        `json:"status"`
+		Severity      *string                        `json:"severity"`
 		PageWidth     *int                           `json:"page_width"`
 		PageHeight    *int                           `json:"page_height"`
 		Annotations   *[]models.ClientTaskAnnotation `json:"annotations"`
@@ -1989,9 +1994,47 @@ func (s *Server) updateClientTask(c *gin.Context) {
 		for _, annotation := range annotations {
 			mentionParts = append(mentionParts, annotation.Comment)
 		}
+	} else if task.Type == "annotation" && len(task.Annotations) > 0 {
+		annotations := append([]models.ClientTaskAnnotation{}, task.Annotations...)
+		commentVal := ""
+		hasComment := false
+		if req.Comment != nil {
+			commentVal = normalizeClientTaskContent(*req.Comment)
+			hasComment = true
+		} else if req.Content != nil {
+			commentVal = normalizeClientTaskContent(*req.Content)
+			hasComment = true
+		}
+		for i := range annotations {
+			if len(annotations) == 1 || i == 0 {
+				if req.Title != nil {
+					annotations[i].Title = updatedTitle
+				}
+				if hasComment {
+					annotations[i].Comment = commentVal
+				}
+				if req.URL != nil {
+					annotations[i].URL = strings.TrimSpace(*req.URL)
+				}
+				if req.ScreenshotURL != nil {
+					annotations[i].ScreenshotURL = strings.TrimSpace(*req.ScreenshotURL)
+				}
+				if req.Severity != nil {
+					annotations[i].Severity = normalizeClientTaskSeverity(*req.Severity)
+				}
+				if req.Status != nil && updatedStatus != "" {
+					annotations[i].Status = updatedStatus
+				}
+				annotations[i].UpdatedAt = now
+			}
+		}
+		set["annotations"] = annotations
 	}
 	if req.Attachments != nil {
 		set["attachments"] = compactStrings(req.Attachments)
+	}
+	if req.Severity != nil {
+		set["severity"] = normalizeClientTaskSeverity(*req.Severity)
 	}
 	if req.Checklist != nil {
 		set["checklist"] = normalizeClientTaskChecklist(req.Checklist)
@@ -2034,6 +2077,16 @@ func (s *Server) updateClientTask(c *gin.Context) {
 			}{"updated_assignment", "updated assignment"})
 		}
 		set["assignee_ids"] = assignees
+		if task.Type == "annotation" {
+			if currAnns, ok := set["annotations"].([]models.ClientTaskAnnotation); ok {
+				for i := range currAnns {
+					if len(currAnns) == 1 || i == 0 {
+						currAnns[i].AssigneeIDs = assignees
+					}
+				}
+				set["annotations"] = currAnns
+			}
+		}
 	}
 	if req.DueDate != nil {
 		due, err := parseOptionalDate(*req.DueDate)
@@ -3251,6 +3304,7 @@ func normalizeClientTaskAnnotations(values []models.ClientTaskAnnotation, status
 			Attachments:   compactStrings(item.Attachments),
 			AssigneeIDs:   uniqueObjectIDs(item.AssigneeIDs),
 			Status:        status,
+			Severity:      normalizeClientTaskSeverity(item.Severity),
 			CreatedBy:     createdBy,
 			CreatedAt:     createdAt,
 			UpdatedAt:     now,
@@ -3260,6 +3314,14 @@ func normalizeClientTaskAnnotations(values []models.ClientTaskAnnotation, status
 		}
 	}
 	return out
+}
+
+func normalizeClientTaskSeverity(value string) string {
+	val := strings.ToLower(strings.TrimSpace(value))
+	if val == "urgent" || val == "high" {
+		return val
+	}
+	return "normal"
 }
 
 func normalizeClientTaskContent(value string) string {
