@@ -133,9 +133,12 @@ test("client-task-card removes redundant status badge from meta and styles icons
 
 test("status menu dropdown is styled smaller, professional, and elevates card stacking context", () => {
   assert.ok(css.includes("width: 190px;"), "status-menu width is compacted");
+  assert.ok(/\.status-menu\s*\{[\s\S]*?position:\s*absolute;/.test(css), "status-menu has absolute position overlay");
+  assert.ok(css.includes(".annotation-viewer-progress:has(.status-menu:not([hidden]))"), "annotation-viewer-progress elevates z-index on menu open");
   assert.ok(css.includes(".status-option-actions .btn"), "status-option-actions btn styled");
   assert.ok(css.includes(".client-task-card.menu-open"), "menu-open elevates card stacking context");
   assert.ok(source.includes("contrastRatio(color, \"#ffffff\") < 3.2"), "light mode status text contrast check exists");
+  assert.ok(source.includes("picker.closest(\".task-card, .client-task-card, .annotation-viewer-progress\")"), "bindStatusPickers manages container menu-open state");
 });
 
 test("edit annotation dialog includes severity picker, multiple attachment dropzone, and existing attachment chips", () => {
@@ -145,3 +148,22 @@ test("edit annotation dialog includes severity picker, multiple attachment dropz
   assert.ok(source.includes("data-remove-existing-attachment"), "editClientAnnotationTaskForm handles removing existing attachments");
   assert.ok(source.includes("bindAttachmentsPreview(panel.querySelector(\"#editClientAnnotationTaskForm"), "binds attachments preview for editClientAnnotationTaskForm");
 });
+
+test("assignee menu dropdown is styled compact and opens inward to prevent sidebar overflow", () => {
+  assert.ok(css.includes("width: 220px;"), "assignee-menu width is compacted");
+  assert.ok(css.includes(".annotation-viewer-side .assignee-menu"), "annotation-viewer-side assignee-menu position defined");
+  assert.ok(css.includes(".assignee-choice .user-chip"), "assignee-choice user-chip avatar size defined");
+  assert.ok(source.includes("rect.right > window.innerWidth - 8"), "boundary check exists for assignee dropdown");
+});
+
+test("clientAnnotationMediaHTML removes redundant bottom title and keeps captured picture label", () => {
+  assert.ok(source.includes('<div class="panel-head compact-panel-head"><div><span class="muted">Captured picture</span></div>'), "removes redundant title from captured picture head");
+});
+
+test("annotation iframe and viewport use realistic fallback height, anchor positioning, and dynamic resize observer", () => {
+  assert.ok(source.includes("const ANNOTATION_TALL_FALLBACK_HEIGHT = 3600;"), "tall fallback height tuned to 3600px");
+  assert.ok(source.includes("loading=\"eager\""), "annotation iframe set to eager loading");
+  assert.ok(source.includes("ResizeObserver"), "dynamic ResizeObserver attached for annotation stage");
+  assert.ok(/\.annotation-viewport\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*0;[\s\S]*?left:\s*0;/.test(css), "annotation viewport anchors top-left without inset bounding conflicts");
+});
+

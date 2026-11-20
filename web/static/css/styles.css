@@ -4216,50 +4216,85 @@ button.inbox-row {
 .assignee-trigger-icons .user-chip:first-child {
   margin-left: 0;
 }
-.assignee-menu,
-.status-menu {
+.assignee-menu {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 6px);
   left: 0;
   z-index: 120;
-  width: min(280px, calc(100vw - 32px));
+  width: 220px;
+  max-width: calc(100vw - 32px);
   display: grid;
-  gap: 9px;
-  padding: 10px;
+  gap: 6px;
+  padding: 8px;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius);
+  border-radius: 8px;
   background: var(--bg-secondary);
-  box-shadow: var(--shadow);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
 }
-.assignee-menu[hidden],
-.status-menu[hidden] {
+.status-menu[hidden],
+.assignee-menu[hidden] {
   display: none;
+}
+.annotation-viewer-side .assignee-menu,
+.task-detail-meta .assignee-menu,
+.task-detail-meta-form .assignee-menu,
+.annotation-viewer-progress .assignee-menu,
+.client-task-card .assignee-menu {
+  left: auto;
+  right: 0;
 }
 .assignee-search {
   width: 100%;
+  min-height: 26px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+  border-radius: 5px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+}
+.assignee-menu > span.muted {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  padding: 0 2px;
 }
 .assignee-list {
   display: grid;
-  gap: 4px;
-  max-height: 210px;
+  gap: 3px;
+  max-height: 180px;
   overflow: auto;
 }
 .assignee-choice {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-height: 42px;
-  padding: 6px 28px 6px 6px;
-  border-radius: var(--radius);
+  gap: 6px;
+  min-height: 28px;
+  height: 28px;
+  padding: 2px 24px 2px 6px;
+  border-radius: 5px;
   cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 0.15s ease;
 }
 .assignee-choice:hover {
   background: var(--bg-tertiary);
 }
 .assignee-choice.selected {
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent-strong);
+}
+.assignee-choice .user-chip,
+.assignee-choice .user-chip span {
+  width: 18px;
+  height: 18px;
+  font-size: 9px;
+  font-weight: 700;
+  border: 1px solid var(--bg-secondary);
 }
 .assignee-choice input {
   position: absolute;
@@ -4273,10 +4308,13 @@ button.inbox-row {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
 }
 .assignee-remove-hint {
   position: absolute;
-  top: 4px;
+  top: 50%;
+  transform: translateY(-50%) scale(0.85);
   right: 6px;
   display: inline-flex;
   align-items: center;
@@ -4288,7 +4326,6 @@ button.inbox-row {
   background: #fff;
   color: var(--danger);
   opacity: 0;
-  transform: scale(.82);
   transition: opacity .14s ease, transform .14s ease;
   pointer-events: none;
 }
@@ -4300,7 +4337,7 @@ button.inbox-row {
 .assignee-choice.selected:hover .assignee-remove-hint,
 .assignee-choice.selected:focus-within .assignee-remove-hint {
   opacity: 1;
-  transform: scale(1);
+  transform: translateY(-50%) scale(1);
 }
 .status-picker {
   position: relative;
@@ -4332,10 +4369,18 @@ button.inbox-row {
   background: var(--bg-tertiary);
 }
 .status-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 120;
   width: 190px;
+  max-width: calc(100vw - 32px);
+  display: grid;
   gap: 4px;
   padding: 6px;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
+  background: var(--bg-secondary);
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
 }
 .status-option-row {
@@ -4343,12 +4388,16 @@ button.inbox-row {
   align-items: center;
   justify-content: space-between;
   gap: 4px;
-  padding: 1px 2px;
-  border-radius: 5px;
+  padding: 2px 4px;
+  border-radius: 6px;
   transition: background 0.15s ease;
 }
-.status-option-row:hover {
+.status-option-row:hover,
+.status-option-row.selected {
   background: var(--bg-tertiary);
+}
+.status-option-row.selected [data-status-option] {
+  font-weight: 750;
 }
 .status-menu [data-status-option] {
   display: flex;
@@ -4455,13 +4504,20 @@ button.inbox-row {
 }
 .status-color-row input[type="color"] {
   width: 100%;
-  height: 20px;
-  min-height: 20px;
-  padding: 1px;
+  height: 22px;
+  min-height: 22px;
+  padding: 1px 2px;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
-  background: transparent;
+  border-radius: 5px;
+  background: var(--bg-primary);
   cursor: pointer;
+}
+.status-color-row input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.status-color-row input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 3px;
 }
 .status-add-submit,
 .status-edit-submit {
@@ -5357,12 +5413,8 @@ dialog.client-task-modal .client-task-panel-body {
   gap: 12px;
 }
 .annotation-viewer-capture .panel-head {
-  align-items: flex-end;
+  align-items: center;
   margin: 0;
-}
-.annotation-viewer-capture .panel-head h2 {
-  margin: 2px 0 0;
-  font-size: 16px;
 }
 .annotation-viewer-capture-button {
   width: 100%;
@@ -5468,6 +5520,8 @@ dialog.client-task-modal .client-task-panel-body {
   border-color: var(--accent);
 }
 .annotation-viewer-progress {
+  position: relative;
+  z-index: 20;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -5478,6 +5532,11 @@ dialog.client-task-modal .client-task-panel-body {
   padding: 6px 8px;
   margin-bottom: 12px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+.annotation-viewer-progress:has(.status-menu:not([hidden])),
+.annotation-viewer-progress:has(.assignee-menu:not([hidden])),
+.annotation-viewer-progress.menu-open {
+  z-index: 80 !important;
 }
 .client-task-detail-main,
 .client-task-comments {
@@ -6529,7 +6588,8 @@ dialog.client-task-modal .client-task-panel-body {
 }
 .annotation-viewport {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
   width: var(--annotation-width, 1440px);
   height: var(--annotation-height, 6000px);
   transform: scale(var(--annotation-scale, 1));

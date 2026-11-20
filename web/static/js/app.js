@@ -803,8 +803,8 @@ function normalizedAnnotationPageURL(value = "") {
   }
 }
 
-const ANNOTATION_VIEWPORT = { width: 1440, height: 6000, maxHeight: 50000 };
-const ANNOTATION_TALL_FALLBACK_HEIGHT = 18000;
+const ANNOTATION_VIEWPORT = { width: 1440, height: 3600, maxHeight: 50000 };
+const ANNOTATION_TALL_FALLBACK_HEIGHT = 3600;
 const ANNOTATION_DEVICE_VIEWPORTS = [
   { value: "desktop", label: "Desktop", icon: "monitor", width: 1440 },
   { value: "tablet", label: "Tablet", icon: "tablet", width: 768 },
@@ -915,7 +915,7 @@ function annotationFrameHTML(options = {}) {
   const device = options.device || annotationDeviceForWidth(width);
   const media = options.imageURL
     ? `<img src="${esc(options.imageURL)}" alt="${esc(title)} screenshot">`
-    : `<iframe src="${esc(options.url || "")}" title="${esc(title)}" width="${width}" height="${height}" data-annotation-frame></iframe>`;
+    : `<iframe src="${esc(options.url || "")}" title="${esc(title)}" width="${width}" height="${height}" loading="eager" allow="clipboard-read; clipboard-write; fullscreen" data-annotation-frame></iframe>`;
   const pins = (options.pins || []).map((pin, index) => annotationPinHTML({ ...pin, target_page_width: width, target_page_height: height }, index)).join("");
   return `${options.deviceControls === false ? "" : annotationDeviceControlsHTML(device)}<div class="annotation-viewport-shell" data-annotation-shell>
     <div class="annotation-viewport" data-annotation-viewport data-annotation-width="${width}" data-annotation-height="${height}" data-annotation-fallback-height="${fallbackHeight}" style="--annotation-width:${width}px;--annotation-height:${height}px;">
@@ -1005,9 +1005,20 @@ function syncAnnotationViewports(root = document) {
   });
 }
 
+let stageResizeObserver = null;
+
 function bindAnnotationViewportResize(root = document) {
   syncAnnotationViewports(root);
   requestAnimationFrame(() => syncAnnotationViewports(root));
+  setTimeout(() => syncAnnotationViewports(root), 60);
+  setTimeout(() => syncAnnotationViewports(root), 250);
+  if (typeof window !== "undefined" && window.ResizeObserver) {
+    if (!stageResizeObserver) {
+      stageResizeObserver = new ResizeObserver(() => syncAnnotationViewports());
+    }
+    const stages = root.classList?.contains?.("annotation-stage") ? [root] : Array.from(root.querySelectorAll?.(".annotation-stage") || []);
+    stages.forEach((stage) => stageResizeObserver.observe(stage));
+  }
   if (annotationViewportResizeBound) return;
   annotationViewportResizeBound = true;
   window.addEventListener("resize", () => syncAnnotationViewports());
@@ -1314,7 +1325,7 @@ function clientAnnotationMediaHTML(item = {}, comments = []) {
   const screenshotURL = String(item.screenshot_url || "").trim();
   return `<div class="annotation-viewer-media-content">
     <section class="annotation-viewer-capture">
-      <div class="panel-head compact-panel-head"><div><span class="muted">Captured picture</span><h2>${esc(item.title || "Annotation")}</h2></div>${screenshotURL ? `<span class="pill">${icon("image")}Screenshot</span>` : ""}</div>
+      <div class="panel-head compact-panel-head"><div><span class="muted">Captured picture</span></div>${screenshotURL ? `<span class="pill">${icon("image")}Screenshot</span>` : ""}</div>
       ${screenshotURL ? `<button class="annotation-viewer-capture-button" type="button" data-open-attachment data-attachment-url="${esc(screenshotURL)}" data-attachment-name="${esc(item.title || "Annotation screenshot")}"><img src="${esc(screenshotURL)}" alt="${esc(item.title || "Annotation")} screenshot"></button>` : `<div class="annotation-viewer-capture-empty">${icon("image-off")}<strong>No captured picture</strong><span>This annotation does not have a saved screenshot.</span></div>`}
     </section>
     <div class="annotation-viewer-attachments">${taskAttachmentGalleryHTML(item, comments) || `<section class="task-attachment-gallery"><h3>Attachments</h3><p class="muted">No attachments added to this annotation.</p></section>`}</div>
@@ -7063,7 +7074,7 @@ function statusPickerHTML(statuses = [], selected = "todo", name = "status", aut
     </button>
     <input type="hidden" name="${esc(name)}" value="${esc(selectedValue)}">
     <div class="status-menu" data-status-menu hidden>
-      ${statuses.map((item) => `<div class="status-option-row">
+      ${statuses.map((item) => `<div class="status-option-row ${item.value === selectedValue ? "selected" : ""}">
         <button type="button" data-status-option="${esc(item.value)}" ${autoTaskID ? `data-auto-client-task-status="${esc(autoTaskID)}"` : ""} ${statusStyleVars(item)}><span class="status-dot"></span><span data-status-option-label>${esc(item.label)}</span></button>
         ${canManageStatuses ? `<span class="status-option-actions">
           <button class="btn icon quiet" type="button" data-status-edit="${esc(item.value)}" data-status-label="${esc(item.label)}" data-status-icon-color="${esc(item.icon_color)}" data-status-text-color="${esc(item.text_color)}" title="Edit status">${icon("pencil")}</button>
@@ -7114,6 +7125,13 @@ function bindAssigneePickers(root = document) {
       if (shouldOpen) {
         resetSearch();
         search?.focus();
+        if (menu) {
+          const rect = menu.getBoundingClientRect();
+          if (rect.right > window.innerWidth - 8) {
+            menu.style.left = "auto";
+            menu.style.right = "0";
+          }
+        }
       }
     });
     search?.addEventListener("click", (event) => event.stopPropagation());
@@ -7152,8 +7170,18 @@ function bindStatusPickers(root = document) {
       if (menu) {
         menu.hidden = !menu.hidden;
         picker.classList.toggle("menu-open", !menu.hidden);
-        const card = picker.closest(".task-card, .client-task-card");
+        const card = picker.closest(".task-card, .client-task-card, .annotation-viewer-progress");
         if (card) card.classList.toggle("menu-open", !menu.hidden);
+        if (!menu.hidden) {
+          const rect = menu.getBoundingClientRect();
+          if (rect.right > window.innerWidth - 8) {
+            menu.style.left = "auto";
+            menu.style.right = "0";
+          } else {
+            menu.style.left = "0";
+            menu.style.right = "auto";
+          }
+        }
       }
     });
     picker.querySelectorAll("[data-status-option]").forEach((option) => option.addEventListener("click", () => {
@@ -7164,10 +7192,13 @@ function bindStatusPickers(root = document) {
       picker.querySelector("[data-status-trigger-label]").textContent = label;
       trigger?.style.setProperty("--status-icon-color", option.style.getPropertyValue("--status-icon-color"));
       trigger?.style.setProperty("--status-text-color", option.style.getPropertyValue("--status-text-color"));
+      picker.querySelectorAll(".status-option-row").forEach((row) => {
+        row.classList.toggle("selected", row.querySelector(`[data-status-option="${value}"]`) !== null);
+      });
       if (menu) {
         menu.hidden = true;
         picker.classList.remove("menu-open");
-        const card = picker.closest(".task-card, .client-task-card");
+        const card = picker.closest(".task-card, .client-task-card, .annotation-viewer-progress");
         if (card) card.classList.remove("menu-open");
       }
       input?.dispatchEvent(new Event("change", { bubbles: true }));
@@ -11341,7 +11372,14 @@ async function renderClientWebsite(clientID, websiteID) {
   });
   $("#openAnnotationPageBtn")?.addEventListener("click", () => {
     const form = $("#clientAnnotationTaskForm");
-    const fullURL = annotationPageURL(website.url, $("#clientAnnotationPageURL")?.value || "");
+    let fullURL = annotationPageURL(website.url, $("#clientAnnotationPageURL")?.value || "");
+    try {
+      const parsed = new URL(fullURL);
+      if (!parsed.pathname || parsed.pathname === "") {
+        parsed.pathname = "/";
+        fullURL = parsed.toString();
+      }
+    } catch {}
     const line = $("#clientAnnotationURLStep .status-line");
     if (!fullURL || !/^https:\/\//i.test(fullURL)) {
       if (line) {
@@ -11350,6 +11388,8 @@ async function renderClientWebsite(clientID, websiteID) {
       }
       return;
     }
+    $("#clientAnnotationURLStep")?.setAttribute("hidden", "");
+    $("#clientAnnotationWorkspace")?.removeAttribute("hidden");
     $("#clientAnnotationStage").innerHTML = annotationFrameHTML({
       url: fullURL,
       title: `${website.name || "Website"} annotation page`,
@@ -11362,8 +11402,6 @@ async function renderClientWebsite(clientID, websiteID) {
     currentClientAnnotationURL = fullURL;
     currentClientAnnotationPageWidth = ANNOTATION_VIEWPORT.width;
     currentClientAnnotationPageHeight = ANNOTATION_TALL_FALLBACK_HEIGHT;
-    $("#clientAnnotationURLStep")?.setAttribute("hidden", "");
-    $("#clientAnnotationWorkspace")?.removeAttribute("hidden");
     bindAnnotationViewportResize($("#clientAnnotationStage"));
     bindAnnotationDeviceControls($("#clientAnnotationStage"), {
       fallbackHeight: ANNOTATION_TALL_FALLBACK_HEIGHT,
