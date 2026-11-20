@@ -6555,12 +6555,18 @@ dialog.client-task-modal .client-task-panel-body {
   align-items: center;
   gap: 3px;
   margin: 0 0 8px;
-  padding: 3px;
+  padding: 3px 6px;
   border: 1px solid var(--border-color);
   border-radius: 999px;
   background: color-mix(in srgb, var(--bg-primary) 88%, transparent);
   box-shadow: 0 10px 24px rgba(0,0,0,.12);
   backdrop-filter: blur(10px);
+}
+.annotation-device-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border-color);
+  margin: 0 4px;
 }
 .annotation-device-button {
   width: 30px;
@@ -6582,6 +6588,21 @@ dialog.client-task-modal .client-task-panel-body {
   width: 15px;
   height: 15px;
 }
+.annotation-device-button.annotation-mode-btn {
+  width: auto;
+  min-height: 28px;
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.annotation-device-button.annotation-mode-btn i {
+  width: 13px;
+  height: 13px;
+}
 .annotation-viewport-shell {
   position: relative;
   flex: 0 0 auto;
@@ -6591,7 +6612,7 @@ dialog.client-task-modal .client-task-panel-body {
   top: 0;
   left: 0;
   width: var(--annotation-width, 1440px);
-  height: var(--annotation-height, 6000px);
+  height: var(--annotation-height, 900px);
   transform: scale(var(--annotation-scale, 1));
   transform-origin: top left;
   overflow: hidden;
@@ -6658,6 +6679,7 @@ dialog.client-task-modal .client-task-panel-body {
   background: var(--bg-secondary);
 }
 .click-catcher { position: absolute; inset: 0; z-index: 1; cursor: crosshair; background: transparent; }
+.click-catcher.mode-browse { pointer-events: none !important; cursor: default !important; }
 .pin-layer { position: absolute; inset: 0; pointer-events: none; }
 .pin {
   position: absolute;

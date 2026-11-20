@@ -161,9 +161,26 @@ test("clientAnnotationMediaHTML removes redundant bottom title and keeps capture
 });
 
 test("annotation iframe and viewport use realistic fallback height, anchor positioning, and dynamic resize observer", () => {
-  assert.ok(source.includes("const ANNOTATION_TALL_FALLBACK_HEIGHT = 3600;"), "tall fallback height tuned to 3600px");
+  assert.ok(source.includes("const ANNOTATION_VIEWPORT = { width: 1440, height: 900, maxHeight: 50000 };"), "standard desktop viewport height configured to 900px");
+  assert.ok(source.includes("const ANNOTATION_FULL_PAGE_HEIGHT = 3600;"), "tall full-page height configured to 3600px");
+  assert.ok(source.includes("data-annotation-toggle-full-page"), "full page toggle button supported in toolbar");
   assert.ok(source.includes("loading=\"eager\""), "annotation iframe set to eager loading");
   assert.ok(source.includes("ResizeObserver"), "dynamic ResizeObserver attached for annotation stage");
   assert.ok(/\.annotation-viewport\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*0;[\s\S]*?left:\s*0;/.test(css), "annotation viewport anchors top-left without inset bounding conflicts");
+});
+
+test("web/static/js/app.js parses cleanly with no syntax or top-level illegal return errors", async () => {
+  const { execSync } = await import("node:child_process");
+  assert.doesNotThrow(() => {
+    execSync("node -c web/static/js/app.js", { stdio: "pipe" });
+  }, "app.js parses cleanly as valid JavaScript");
+});
+
+test("annotation toolbar supports Browse and Pin modes with wheel scroll passthrough", () => {
+  assert.ok(source.includes('data-annotation-mode="browse"'), "toolbar supports browse mode");
+  assert.ok(source.includes('data-annotation-mode="pin"'), "toolbar supports pin mode");
+  assert.ok(source.includes("function setAnnotationMode"), "setAnnotationMode function defined");
+  assert.ok(source.includes("function bindClickCatcherWheel"), "bindClickCatcherWheel function defined");
+  assert.ok(css.includes(".click-catcher.mode-browse"), "mode-browse disables pointer events for native scrolling");
 });
 

@@ -803,12 +803,13 @@ function normalizedAnnotationPageURL(value = "") {
   }
 }
 
-const ANNOTATION_VIEWPORT = { width: 1440, height: 3600, maxHeight: 50000 };
-const ANNOTATION_TALL_FALLBACK_HEIGHT = 3600;
+const ANNOTATION_VIEWPORT = { width: 1440, height: 900, maxHeight: 50000 };
+const ANNOTATION_TALL_FALLBACK_HEIGHT = 900;
+const ANNOTATION_FULL_PAGE_HEIGHT = 3600;
 const ANNOTATION_DEVICE_VIEWPORTS = [
-  { value: "desktop", label: "Desktop", icon: "monitor", width: 1440 },
-  { value: "tablet", label: "Tablet", icon: "tablet", width: 768 },
-  { value: "mobile", label: "Mobile", icon: "smartphone", width: 390 },
+  { value: "desktop", label: "Desktop", icon: "monitor", width: 1440, height: 900 },
+  { value: "tablet", label: "Tablet", icon: "tablet", width: 768, height: 1024 },
+  { value: "mobile", label: "Mobile", icon: "smartphone", width: 390, height: 844 },
 ];
 const ANNOTATION_DEFAULT_DEVICE = "desktop";
 const COMMENT_REACTION_EMOJIS = ["\u{1F44D}", "\u{2705}", "\u{2764}\u{FE0F}", "\u{1F602}", "\u{1F440}"];
@@ -824,9 +825,9 @@ function annotationPinHTML(pin = {}, index = 0) {
   const rawX = clampAnnotationPercent(pin.x ?? pin.pin_x);
   const rawY = clampAnnotationPercent(pin.y ?? pin.pin_y);
   const targetWidth = annotationViewportDimension(pin.target_page_width || pin.target_width || pin.page_width || ANNOTATION_VIEWPORT.width, ANNOTATION_VIEWPORT.width, 320, 8000);
-  const targetHeight = annotationViewportDimension(pin.target_page_height || pin.target_height || pin.page_height || ANNOTATION_VIEWPORT.height, ANNOTATION_VIEWPORT.height, 900, ANNOTATION_VIEWPORT.maxHeight);
+  const targetHeight = annotationViewportDimension(pin.target_page_height || pin.target_height || pin.page_height || ANNOTATION_VIEWPORT.height, ANNOTATION_VIEWPORT.height, 480, ANNOTATION_VIEWPORT.maxHeight);
   const sourceWidth = annotationViewportDimension(pin.page_width || pin.viewport_width || targetWidth, targetWidth, 320, 8000);
-  const sourceHeight = annotationViewportDimension(pin.page_height || pin.viewport_height || targetHeight, targetHeight, 900, ANNOTATION_VIEWPORT.maxHeight);
+  const sourceHeight = annotationViewportDimension(pin.page_height || pin.viewport_height || targetHeight, targetHeight, 480, ANNOTATION_VIEWPORT.maxHeight);
   const x = clampAnnotationPercent(((rawX / 100) * sourceWidth / targetWidth) * 100);
   const y = clampAnnotationPercent(((rawY / 100) * sourceHeight / targetHeight) * 100);
   const label = pin.label || String(index + 1);
@@ -852,19 +853,67 @@ function annotationDeviceForWidth(width = ANNOTATION_VIEWPORT.width) {
   return "desktop";
 }
 
-function annotationDeviceControlsHTML(activeDevice = ANNOTATION_DEFAULT_DEVICE) {
+function annotationDeviceControlsHTML(activeDevice = ANNOTATION_DEFAULT_DEVICE, isFullPage = false, activeMode = "pin") {
   const active = annotationViewportForDevice(activeDevice).value;
   return `<div class="annotation-device-toolbar" data-annotation-device-toolbar aria-label="Annotation viewport">
-    ${ANNOTATION_DEVICE_VIEWPORTS.map((device) => `<button class="annotation-device-button${device.value === active ? " active" : ""}" type="button" data-annotation-device="${esc(device.value)}" aria-pressed="${device.value === active ? "true" : "false"}" title="${esc(device.label)} view (${device.width}px)">${icon(device.icon)}</button>`).join("")}
+    ${ANNOTATION_DEVICE_VIEWPORTS.map((device) => `<button class="annotation-device-button${device.value === active ? " active" : ""}" type="button" data-annotation-device="${esc(device.value)}" aria-pressed="${device.value === active ? "true" : "false"}" title="${esc(device.label)} view (${device.width}x${device.height}px)">${icon(device.icon)}</button>`).join("")}
+    <span class="annotation-device-divider"></span>
+    <button class="annotation-device-button annotation-full-page-toggle${isFullPage ? " active" : ""}" type="button" data-annotation-toggle-full-page aria-pressed="${isFullPage ? "true" : "false"}" title="${isFullPage ? "Switch to standard viewport (900px)" : "Expand to tall full-page view (3600px)"}">${icon(isFullPage ? "minimize-2" : "maximize-2")}</button>
+    <span class="annotation-device-divider"></span>
+    <button class="annotation-device-button annotation-mode-btn${activeMode === "browse" ? " active" : ""}" type="button" data-annotation-mode="browse" aria-pressed="${activeMode === "browse" ? "true" : "false"}" title="Browse mode (scroll and navigate the website)">${icon("mouse-pointer")}<span class="annotation-mode-label">Browse</span></button>
+    <button class="annotation-device-button annotation-mode-btn${activeMode === "pin" ? " active" : ""}" type="button" data-annotation-mode="pin" aria-pressed="${activeMode === "pin" ? "true" : "false"}" title="Pin mode (click anywhere to place a feedback pin)">${icon("map-pin")}<span class="annotation-mode-label">Pin</span></button>
   </div>`;
 }
 
-function setAnnotationDeviceToolbarState(root = document, activeDevice = ANNOTATION_DEFAULT_DEVICE) {
+function setAnnotationDeviceToolbarState(root = document, activeDevice = ANNOTATION_DEFAULT_DEVICE, isFullPage = false, activeMode = "pin") {
   const active = annotationViewportForDevice(activeDevice).value;
   root.querySelectorAll("[data-annotation-device]").forEach((button) => {
     const isActive = button.dataset.annotationDevice === active;
     button.classList.toggle("active", isActive);
     button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  root.querySelectorAll("[data-annotation-toggle-full-page]").forEach((button) => {
+    button.classList.toggle("active", isFullPage);
+    button.setAttribute("aria-pressed", isFullPage ? "true" : "false");
+    button.title = isFullPage ? "Switch to standard viewport (900px)" : "Expand to tall full-page view (3600px)";
+    button.innerHTML = icon(isFullPage ? "minimize-2" : "maximize-2");
+  });
+  root.querySelectorAll("[data-annotation-mode]").forEach((button) => {
+    const isMode = button.dataset.annotationMode === activeMode;
+    button.classList.toggle("active", isMode);
+    button.setAttribute("aria-pressed", isMode ? "true" : "false");
+  });
+  if (window.lucide) lucide.createIcons();
+}
+
+function setAnnotationMode(stage = document, mode = "pin") {
+  const isBrowse = mode === "browse";
+  stage.querySelectorAll(".click-catcher").forEach((catcher) => {
+    catcher.classList.toggle("mode-browse", isBrowse);
+    catcher.style.pointerEvents = isBrowse ? "none" : "";
+  });
+  stage.querySelectorAll("[data-annotation-mode]").forEach((btn) => {
+    const active = btn.dataset.annotationMode === mode;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+function bindClickCatcherWheel(root = document) {
+  root.querySelectorAll(".click-catcher").forEach((catcher) => {
+    if (catcher.dataset.wheelBound === "1") return;
+    catcher.dataset.wheelBound = "1";
+    let wheelTimer = null;
+    catcher.addEventListener("wheel", () => {
+      if (catcher.classList.contains("mode-browse")) return;
+      catcher.style.pointerEvents = "none";
+      clearTimeout(wheelTimer);
+      wheelTimer = setTimeout(() => {
+        if (!catcher.classList.contains("mode-browse")) {
+          catcher.style.pointerEvents = "";
+        }
+      }, 300);
+    }, { passive: true });
   });
 }
 
@@ -882,7 +931,7 @@ function setAnnotationViewportWidth(viewport, width) {
 function refreshAnnotationViewportMeasurement(viewport, fallbackHeight) {
   if (!viewport) return { width: ANNOTATION_VIEWPORT.width, height: ANNOTATION_VIEWPORT.height, measured: false };
   const width = Number(viewport.dataset.annotationWidth || ANNOTATION_VIEWPORT.width);
-  const fallback = annotationViewportDimension(fallbackHeight || viewport.dataset.annotationFallbackHeight || viewport.dataset.annotationHeight, ANNOTATION_VIEWPORT.height, 900, ANNOTATION_VIEWPORT.maxHeight);
+  const fallback = annotationViewportDimension(fallbackHeight || viewport.dataset.annotationFallbackHeight || viewport.dataset.annotationHeight, ANNOTATION_VIEWPORT.height, 480, ANNOTATION_VIEWPORT.maxHeight);
   const frame = viewport.querySelector("[data-annotation-frame]");
   const measured = frame ? measureAnnotationFrameHeight(frame) : 0;
   const height = setAnnotationViewportHeight(viewport, measured || fallback);
@@ -891,6 +940,7 @@ function refreshAnnotationViewportMeasurement(viewport, fallbackHeight) {
 
 function bindAnnotationDeviceControls(root = document, options = {}) {
   if (!root?.querySelectorAll) return;
+  bindClickCatcherWheel(root);
   root.querySelectorAll("[data-annotation-device]").forEach((button) => {
     if (button.dataset.annotationDeviceBound === "1") return;
     button.dataset.annotationDeviceBound = "1";
@@ -899,10 +949,40 @@ function bindAnnotationDeviceControls(root = document, options = {}) {
       const stage = button.closest(".annotation-stage") || root.querySelector?.(".annotation-stage") || root;
       const viewport = stage.querySelector?.("[data-annotation-viewport]") || root.querySelector?.("[data-annotation-viewport]");
       if (!viewport) return;
+      const isFull = viewport.dataset.annotationFullPage === "1";
       const width = setAnnotationViewportWidth(viewport, device.width);
-      setAnnotationDeviceToolbarState(stage, device.value);
-      const measurement = refreshAnnotationViewportMeasurement(viewport, options.fallbackHeight);
-      options.onChange?.({ device: device.value, width, height: measurement.height, measured: measurement.measured, viewport });
+      const targetHeight = isFull ? ANNOTATION_FULL_PAGE_HEIGHT : (device.height || ANNOTATION_VIEWPORT.height);
+      const height = setAnnotationViewportHeight(viewport, targetHeight);
+      setAnnotationDeviceToolbarState(stage, device.value, isFull);
+      options.onChange?.({ device: device.value, width, height, isFullPage: isFull, viewport });
+    });
+  });
+
+  root.querySelectorAll("[data-annotation-toggle-full-page]").forEach((button) => {
+    if (button.dataset.fullPageBound === "1") return;
+    button.dataset.fullPageBound = "1";
+    button.addEventListener("click", () => {
+      const stage = button.closest(".annotation-stage") || root.querySelector?.(".annotation-stage") || root;
+      const viewport = stage.querySelector?.("[data-annotation-viewport]") || root.querySelector?.("[data-annotation-viewport]");
+      if (!viewport) return;
+      const wasFull = viewport.dataset.annotationFullPage === "1";
+      const nextFull = !wasFull;
+      viewport.dataset.annotationFullPage = nextFull ? "1" : "0";
+      const currentDeviceName = stage.querySelector("[data-annotation-device].active")?.dataset.annotationDevice || "desktop";
+      const currentDevice = annotationViewportForDevice(currentDeviceName);
+      const targetHeight = nextFull ? ANNOTATION_FULL_PAGE_HEIGHT : (currentDevice.height || ANNOTATION_VIEWPORT.height);
+      const height = setAnnotationViewportHeight(viewport, targetHeight);
+      setAnnotationDeviceToolbarState(stage, currentDevice.value, nextFull);
+      options.onChange?.({ device: currentDevice.value, width: Number(viewport.dataset.annotationWidth || currentDevice.width), height, isFullPage: nextFull, viewport });
+    });
+  });
+
+  root.querySelectorAll("[data-annotation-mode]").forEach((button) => {
+    if (button.dataset.modeBound === "1") return;
+    button.dataset.modeBound = "1";
+    button.addEventListener("click", () => {
+      const stage = button.closest(".annotation-stage") || root.querySelector?.(".annotation-stage") || root;
+      setAnnotationMode(stage, button.dataset.annotationMode);
     });
   });
 }
@@ -910,15 +990,16 @@ function bindAnnotationDeviceControls(root = document, options = {}) {
 function annotationFrameHTML(options = {}) {
   const title = options.title || "Annotation page";
   const width = annotationViewportDimension(options.width, ANNOTATION_VIEWPORT.width, 320, 8000);
-  const height = annotationViewportDimension(options.height, ANNOTATION_VIEWPORT.height, 900, ANNOTATION_VIEWPORT.maxHeight);
-  const fallbackHeight = annotationViewportDimension(options.fallbackHeight || height, height, 900, ANNOTATION_VIEWPORT.maxHeight);
+  const height = annotationViewportDimension(options.height, ANNOTATION_VIEWPORT.height, 480, ANNOTATION_VIEWPORT.maxHeight);
+  const fallbackHeight = annotationViewportDimension(options.fallbackHeight || height, height, 480, ANNOTATION_VIEWPORT.maxHeight);
   const device = options.device || annotationDeviceForWidth(width);
+  const isFullPage = Boolean(options.isFullPage);
   const media = options.imageURL
     ? `<img src="${esc(options.imageURL)}" alt="${esc(title)} screenshot">`
     : `<iframe src="${esc(options.url || "")}" title="${esc(title)}" width="${width}" height="${height}" loading="eager" allow="clipboard-read; clipboard-write; fullscreen" data-annotation-frame></iframe>`;
   const pins = (options.pins || []).map((pin, index) => annotationPinHTML({ ...pin, target_page_width: width, target_page_height: height }, index)).join("");
-  return `${options.deviceControls === false ? "" : annotationDeviceControlsHTML(device)}<div class="annotation-viewport-shell" data-annotation-shell>
-    <div class="annotation-viewport" data-annotation-viewport data-annotation-width="${width}" data-annotation-height="${height}" data-annotation-fallback-height="${fallbackHeight}" style="--annotation-width:${width}px;--annotation-height:${height}px;">
+  return `${options.deviceControls === false ? "" : annotationDeviceControlsHTML(device, isFullPage)}<div class="annotation-viewport-shell" data-annotation-shell>
+    <div class="annotation-viewport" data-annotation-viewport data-annotation-width="${width}" data-annotation-height="${height}" data-annotation-fallback-height="${fallbackHeight}" data-annotation-full-page="${isFullPage ? "1" : "0"}" style="--annotation-width:${width}px;--annotation-height:${height}px;">
       ${media}
       <div class="click-catcher" id="${esc(options.catcherID || "clickCatcher")}"></div>
       <div class="pin-layer" id="${esc(options.pinLayerID || "pinLayer")}">${pins}</div>
@@ -928,7 +1009,7 @@ function annotationFrameHTML(options = {}) {
 
 function setAnnotationViewportHeight(viewport, height) {
   if (!viewport) return ANNOTATION_VIEWPORT.height;
-  const nextHeight = annotationViewportDimension(height, ANNOTATION_VIEWPORT.height, 900, ANNOTATION_VIEWPORT.maxHeight);
+  const nextHeight = annotationViewportDimension(height, ANNOTATION_VIEWPORT.height, 480, ANNOTATION_VIEWPORT.maxHeight);
   viewport.dataset.annotationHeight = String(nextHeight);
   viewport.style.setProperty("--annotation-height", `${nextHeight}px`);
   const frame = viewport.querySelector("[data-annotation-frame]");
@@ -11101,7 +11182,7 @@ async function renderClientWebsite(clientID, websiteID) {
     $("#clientAnnotationTaskForm [name='pin_x']").value = "";
     $("#clientAnnotationTaskForm [name='pin_y']").value = "";
     $("#clientAnnotationTaskForm [name='page_width']").value = ANNOTATION_VIEWPORT.width;
-    $("#clientAnnotationTaskForm [name='page_height']").value = ANNOTATION_TALL_FALLBACK_HEIGHT;
+    $("#clientAnnotationTaskForm [name='page_height']").value = ANNOTATION_VIEWPORT.height;
     setAnnotationScreenshotPreview($("#clientAnnotationTaskForm"), "");
     $("#clientAnnotationStage").innerHTML = `<div class="annotation-empty"><p class="muted">Fill the page URL, then open the annotation page.</p></div>`;
     $("#clientAnnotationDialog")?.showModal();
@@ -11117,7 +11198,7 @@ async function renderClientWebsite(clientID, websiteID) {
   let currentClientAnnotationTask = null;
   let currentClientAnnotationItems = [];
   let currentClientAnnotationURL = "";
-  let currentClientAnnotationPageHeight = ANNOTATION_TALL_FALLBACK_HEIGHT;
+  let currentClientAnnotationPageHeight = ANNOTATION_VIEWPORT.height;
   let currentClientAnnotationPageWidth = ANNOTATION_VIEWPORT.width;
   let clientAnnotationDirty = false;
   const selectorForID = (value) => (window.CSS?.escape ? CSS.escape(value) : String(value).replace(/"/g, '\\"'));
@@ -11393,18 +11474,19 @@ async function renderClientWebsite(clientID, websiteID) {
     $("#clientAnnotationStage").innerHTML = annotationFrameHTML({
       url: fullURL,
       title: `${website.name || "Website"} annotation page`,
-      height: ANNOTATION_TALL_FALLBACK_HEIGHT,
-      fallbackHeight: ANNOTATION_TALL_FALLBACK_HEIGHT,
+      width: ANNOTATION_VIEWPORT.width,
+      height: ANNOTATION_VIEWPORT.height,
+      fallbackHeight: ANNOTATION_VIEWPORT.height,
       catcherID: "clientAnnotationClickCatcher",
       pinLayerID: "clientAnnotationPinLayer",
       pins: clientAnnotationsForPage().map((item, index) => ({ id: item.id, x: item.pin_x, y: item.pin_y, page_width: item.page_width, page_height: item.page_height, label: String(clientAnnotationPageIndex(item, index) + 1), title: item.title || "Annotation" })),
     });
     currentClientAnnotationURL = fullURL;
     currentClientAnnotationPageWidth = ANNOTATION_VIEWPORT.width;
-    currentClientAnnotationPageHeight = ANNOTATION_TALL_FALLBACK_HEIGHT;
+    currentClientAnnotationPageHeight = ANNOTATION_VIEWPORT.height;
     bindAnnotationViewportResize($("#clientAnnotationStage"));
     bindAnnotationDeviceControls($("#clientAnnotationStage"), {
-      fallbackHeight: ANNOTATION_TALL_FALLBACK_HEIGHT,
+      fallbackHeight: ANNOTATION_VIEWPORT.height,
       onChange: ({ width, height }) => {
         currentClientAnnotationPageWidth = width;
         currentClientAnnotationPageHeight = height;
@@ -11420,7 +11502,7 @@ async function renderClientWebsite(clientID, websiteID) {
       },
     });
     bindAnnotationFrameAutoHeight($("#clientAnnotationStage"), {
-      fallbackHeight: ANNOTATION_TALL_FALLBACK_HEIGHT,
+      fallbackHeight: ANNOTATION_VIEWPORT.height,
       onHeight: (height, width) => {
         currentClientAnnotationPageHeight = height;
         currentClientAnnotationPageWidth = width;
@@ -11445,6 +11527,7 @@ async function renderClientWebsite(clientID, websiteID) {
     const catcher = $("#clientAnnotationClickCatcher");
     if (!catcher || catcher.dataset.bound === "1") return;
     catcher.dataset.bound = "1";
+    bindClickCatcherWheel($("#clientAnnotationStage"));
     catcher.addEventListener("click", (event) => {
       const viewport = event.currentTarget.closest("[data-annotation-viewport]");
       const form = $("#clientAnnotationTaskForm");
@@ -11456,6 +11539,9 @@ async function renderClientWebsite(clientID, websiteID) {
       renderClientAnnotationPins(annotationPinHTML({ x, y, target_page_width: currentClientAnnotationPageWidth, target_page_height: currentClientAnnotationPageHeight, label: String(websiteAnnotationsForPage().length + 1), title: "New annotation" }));
       $("#clientAnnotationTaskForm textarea[name='comment']")?.focus();
       icons();
+    });
+    $("#clientAnnotationCoordLabel")?.addEventListener("click", () => {
+      setAnnotationMode($("#clientAnnotationStage"), "pin");
     });
   };
   bindClientAnnotationClick();
