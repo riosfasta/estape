@@ -3242,7 +3242,13 @@ async function renderAuth(mode) {
             <input type="email" name="email" required ${isRegister ? `placeholder="you@real-email.com" autocomplete="email" tabindex="0"` : ""}>
             ${isRegister ? `<p class="hint-line email-hint" id="registerEmailHint" hidden style="margin:6px 0 0 0;padding:8px 10px;border:1px solid #ffe8b4;background:#fff8e1;color:#8a5f00;border-radius:6px;font-size:0.85em;line-height:1.4;">${icon("alert-triangle")}<strong>Use a real email you can access.</strong><br>We'll send a verification link here — you <em>won't</em> be able to sign in until you click it. (Tip: sign up with Google above to skip this.)</p>` : ""}
           </div>
-          <div class="field"><label>Password</label><input type="password" name="password" required minlength="8"></div>
+          <div class="field">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <label style="margin-bottom:0;">Password</label>
+              ${!isRegister ? `<a class="text-link" href="/forgot-password" style="font-size:0.85em;">Forgot password?</a>` : ""}
+            </div>
+            <input type="password" name="password" required minlength="8">
+          </div>
           ${!isRegister ? `<div class="field two-factor-field" hidden><label>Authenticator code</label><input id="twoFactorCode" name="two_factor_code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>` : ""}
           ${!isRegister ? `<label class="check-row auth-remember-row"><input type="checkbox" name="remember_me" value="1" ${rememberDefault ? "checked" : ""}> Remember me</label>` : ""}
           <button class="btn primary" type="submit" id="authSubmitBtn">${icon(isRegister ? "user-plus" : "log-in")}${isRegister ? "Create account" : "Login"}</button>
@@ -3475,6 +3481,174 @@ async function renderVerifyEmailPage() {
   }
 }
 
+async function renderForgotPasswordPage() {
+  const platformName = state.platformSettings?.site_name || "bugmega";
+  stopNotificationPolling();
+  stopLivePolling();
+  if (!state.platformSettings) {
+    const platform = await api("/api/platform-settings").catch(() => ({ settings: {} }));
+    state.platformSettings = platform.settings || {};
+    applyPlatformTheme(state.platformSettings);
+    applyPlatformFavicon(state.platformSettings);
+  }
+
+  let step = 1;
+  let userEmail = "";
+  let devCode = "";
+  let infoMessage = "";
+  let errorMessage = "";
+
+  const render = () => {
+    if (step === 3) {
+      app.innerHTML = `
+        <div class="auth-wrap">
+          <section class="auth-box">
+            <a class="brand" href="/"><span class="brand-mark">${esc(platformName.slice(0, 1) || "P")}</span>${esc(platformName)}</a>
+            <h1>Password updated</h1>
+            <p>Your password has been reset successfully. You can now sign in with your new password.</p>
+            <p style="margin-top:20px;"><a class="btn primary" href="/login" style="width:100%;justify-content:center;">${icon("log-in")}Go to login</a></p>
+          </section>
+        </div>`;
+      icons();
+      return;
+    }
+
+    if (step === 2) {
+      app.innerHTML = `
+        <div class="auth-wrap">
+          <section class="auth-box">
+            <a class="brand" href="/"><span class="brand-mark">${esc(platformName.slice(0, 1) || "P")}</span>${esc(platformName)}</a>
+            <h1>Reset your password</h1>
+            <p class="muted">Enter the 6-digit verification code sent to <strong>${esc(userEmail)}</strong> and your new password.</p>
+            ${devCode ? `
+              <div style="margin:14px 0;padding:12px;border:1px solid #bbf7d0;background:#f0fdf4;color:#166534;border-radius:6px;font-size:0.9em;line-height:1.4;">
+                ${icon("info")} <strong>Development mode notice:</strong> SMTP is not configured. Your reset code is <strong style="font-size:1.15em;letter-spacing:2px;display:inline-block;padding-left:4px;">${esc(devCode)}</strong>
+              </div>
+            ` : ""}
+            <form id="resetPasswordForm" class="form-grid">
+              <input type="hidden" name="email" value="${esc(userEmail)}">
+              <div class="field">
+                <label>Verification code</label>
+                <input name="code" value="${esc(devCode)}" required inputmode="numeric" maxlength="6" placeholder="123456" autofocus>
+              </div>
+              <div class="field">
+                <label>New password</label>
+                <input type="password" name="new_password" required minlength="8" placeholder="At least 8 characters">
+              </div>
+              <div class="field">
+                <label>Confirm new password</label>
+                <input type="password" name="confirm_password" required minlength="8" placeholder="Repeat new password">
+              </div>
+              <button class="btn primary" type="submit" id="resetSubmitBtn">${icon("key-round")}Set new password</button>
+              <p class="status-line">${errorMessage ? `<span style="color:var(--danger);">${esc(errorMessage)}</span>` : ""}</p>
+            </form>
+            <p class="muted" style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;">
+              <a class="text-link" href="#" id="backToStep1Btn">${icon("arrow-left")}Use different email</a>
+              <a class="text-link" href="/login">Back to login</a>
+            </p>
+          </section>
+        </div>`;
+      icons();
+
+      $("#backToStep1Btn")?.addEventListener("click", (e) => {
+        e.preventDefault();
+        step = 1;
+        errorMessage = "";
+        infoMessage = "";
+        render();
+      });
+
+      $("#resetPasswordForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const form = Object.fromEntries(new FormData(e.currentTarget).entries());
+        if (form.new_password !== form.confirm_password) {
+          errorMessage = "Passwords do not match.";
+          render();
+          return;
+        }
+        if (form.new_password.length < 8) {
+          errorMessage = "New password must be at least 8 characters.";
+          render();
+          return;
+        }
+
+        const btn = $("#resetSubmitBtn");
+        const stopLoading = setButtonLoading(btn, true, "Updating...");
+        try {
+          await api("/api/auth/reset-password", {
+            method: "POST",
+            body: JSON.stringify({
+              email: form.email,
+              code: form.code,
+              new_password: form.new_password,
+            }),
+          });
+          step = 3;
+          render();
+        } catch (err) {
+          stopLoading();
+          errorMessage = err.message || "Could not reset password.";
+          render();
+        }
+      });
+      return;
+    }
+
+    // Step 1: Request code
+    app.innerHTML = `
+      <div class="auth-wrap">
+        <section class="auth-box">
+          <a class="brand" href="/"><span class="brand-mark">${esc(platformName.slice(0, 1) || "P")}</span>${esc(platformName)}</a>
+          <h1>Forgot password</h1>
+          <p class="muted">Enter your email and we'll send you a 6-digit verification code to reset your password.</p>
+          <form id="forgotPasswordForm" class="form-grid">
+            <div class="field">
+              <label>Email address</label>
+              <input type="email" name="email" value="${esc(userEmail)}" required placeholder="you@example.com" autofocus>
+            </div>
+            <button class="btn primary" type="submit" id="forgotSubmitBtn">${icon("mail")}Send reset code</button>
+            <p class="status-line">
+              ${errorMessage ? `<span style="color:var(--danger);">${esc(errorMessage)}</span>` : ""}
+              ${infoMessage ? `<span style="color:var(--success);">${esc(infoMessage)}</span>` : ""}
+            </p>
+          </form>
+          <p class="muted" style="margin-top:16px;text-align:center;"><a class="text-link" href="/login" style="display:inline-flex;align-items:center;gap:6px;">${icon("arrow-left")}Back to login</a></p>
+        </section>
+      </div>`;
+    icons();
+
+    $("#forgotPasswordForm")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = Object.fromEntries(new FormData(e.currentTarget).entries());
+      userEmail = (form.email || "").trim().toLowerCase();
+      if (!userEmail) return;
+
+      const btn = $("#forgotSubmitBtn");
+      const stopLoading = setButtonLoading(btn, true, "Sending code...");
+      errorMessage = "";
+      infoMessage = "";
+
+      try {
+        const resp = await api("/api/auth/forgot-password", {
+          method: "POST",
+          body: JSON.stringify({ email: userEmail }),
+        });
+        if (resp.dev_code) {
+          devCode = resp.dev_code;
+        }
+        step = 2;
+        render();
+      } catch (err) {
+        stopLoading();
+        errorMessage = err.message || "Could not send reset code.";
+        render();
+      }
+    });
+  };
+
+  render();
+}
+
 function navLink(href, label, iconName) {
   const active = isActiveRoute(href);
   return `<a class="${active ? "active" : ""}" href="${href}">${icon(iconName)}${label}</a>`;
@@ -3499,7 +3673,7 @@ function workspaceChild(href, label, iconName, badge = "") {
 function isRoutableAppURL(url) {
   if (url.origin !== window.location.origin) return false;
   const pathname = url.pathname.replace(/\/+$/, "") || "/";
-  if (pathname === "/login" || pathname === "/register" || pathname === "/verify-email") return true;
+  if (pathname === "/login" || pathname === "/register" || pathname === "/forgot-password" || pathname === "/reset-password" || pathname === "/verify-email") return true;
   return [
     "/dashboard", "/inbox", "/freelancers", "/find-jobs", "/marketplace/jobs", "/wallet",
     "/chat",
@@ -18796,7 +18970,7 @@ function closeFloatingChat() {
 }
 
 function syncFloatingChatLauncher() {
-  const allowed = state.me && state.access && !["/login", "/register", "/verify-email"].includes(path());
+  const allowed = state.me && state.access && !["/login", "/register", "/forgot-password", "/reset-password", "/verify-email"].includes(path());
   let button = $("#floatingChatLauncher");
   if (!allowed) { closeFloatingChat(); button?.remove(); return; }
   if (button && button.dataset.userId !== state.me.id) { closeFloatingChat(); button.remove(); button = null; }
@@ -18983,6 +19157,11 @@ async function route(options = {}) {
       stopLivePolling();
       return renderVerifyEmailPage();
     }
+    if (path() === "/forgot-password" || path() === "/reset-password") {
+      stopNotificationPolling();
+      stopLivePolling();
+      return renderForgotPasswordPage();
+    }
     if (path() === "/freelancers" || path().startsWith("/freelancers/") || path() === "/find-jobs") {
       if (state.access && !state.me) {
         try { await loadMe(); } catch { state.me = null; }
@@ -19067,7 +19246,7 @@ async function route(options = {}) {
   } finally {
     finishRouteTransition(routeToken);
     syncFloatingChatLauncher();
-    if (state.access && !["/login", "/register", "/verify-email"].includes(path())) {
+    if (state.access && !["/login", "/register", "/forgot-password", "/reset-password", "/verify-email"].includes(path())) {
       startNotificationPolling();
       startLivePolling();
     }

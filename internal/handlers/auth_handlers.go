@@ -36,10 +36,13 @@ type registerRequest struct {
 }
 
 const (
-	passwordUpdateOTPPurpose      = "password_update"
-	passwordUpdateOTPMinutes      = 10
-	passwordUpdateMaxAttempts     = 5
-	emailVerificationTokenHours   = 24
+	passwordUpdateOTPPurpose        = "password_update"
+	passwordUpdateOTPMinutes        = 10
+	passwordUpdateMaxAttempts       = 5
+	passwordResetOTPPurpose         = "password_reset"
+	passwordResetOTPMinutes         = 15
+	passwordResetMaxAttempts        = 5
+	emailVerificationTokenHours     = 24
 	emailVerificationResendCooldown = 60
 )
 
@@ -1089,6 +1092,194 @@ func (s *Server) enqueuePasswordUpdateOTPEmail(ctx context.Context, user models.
 		Recipient: strings.ToLower(strings.TrimSpace(user.Email)),
 		Type:      "password_update_otp",
 		Subject:   appName + " password update code",
+		BodyHTML:  body,
+	})
+}
+
+func (s *Server) forgotPassword(c *gin.Context) {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "valid email is required"})
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if email == "" || !strings.Contains(email, "@") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "valid email is required"})
+		return
+	}
+
+	var user models.User
+	err := s.store.C("users").FindOne(c.Request.Context(), bson.M{"email": email}).Decode(&user)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"sent":               true,
+			"message":            "If an account with that email exists, a password reset code has been sent.",
+			"expires_in_minutes": passwordResetOTPMinutes,
+		})
+		return
+	}
+
+	if user.Status == models.StatusSuspended {
+		c.JSON(http.StatusForbidden, gin.H{"error": "this account is suspended; please contact support"})
+		return
+	}
+
+	code, err := randomSixDigitCode()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create verification code"})
+		return
+	}
+
+	codeHash, err := auth.HashPassword(passwordOTPSecret(user.ID, code))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not secure verification code"})
+		return
+	}
+
+	now := time.Now().UTC()
+	activeFilter := activePasswordResetOTPFilter(user.ID, now)
+	_, _ = s.store.C("password_update_otps").UpdateMany(c.Request.Context(), activeFilter, bson.M{"$set": bson.M{"used_at": now}})
+
+	otp := models.PasswordUpdateOTP{
+		ID:        primitive.NewObjectID(),
+		UserID:    user.ID,
+		Email:     email,
+		Purpose:   passwordResetOTPPurpose,
+		CodeHash:  codeHash,
+		ExpiresAt: now.Add(passwordResetOTPMinutes * time.Minute),
+		CreatedAt: now,
+	}
+
+	if _, err := s.store.C("password_update_otps").InsertOne(c.Request.Context(), otp); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save verification code"})
+		return
+	}
+
+	canSend := s.mailer != nil && s.mailer.CanSend(c.Request.Context())
+	if canSend {
+		_ = s.enqueuePasswordResetEmail(c.Request.Context(), user, code, otp.ExpiresAt)
+	}
+
+	resp := gin.H{
+		"sent":               true,
+		"email":              maskEmail(email),
+		"expires_in_minutes": passwordResetOTPMinutes,
+		"message":            "If an account with that email exists, a password reset code has been sent.",
+	}
+	if !canSend {
+		resp["dev_code"] = code
+		resp["smtp_not_configured"] = true
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) resetPassword(c *gin.Context) {
+	var req struct {
+		Email       string `json:"email"`
+		Code        string `json:"code"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid reset password payload"})
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	code := strings.TrimSpace(req.Code)
+	if email == "" || !strings.Contains(email, "@") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "valid email is required"})
+		return
+	}
+	if len(code) != 6 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "enter the 6-digit verification code"})
+		return
+	}
+	if len(req.NewPassword) < 8 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "new password must be at least 8 characters"})
+		return
+	}
+
+	var user models.User
+	err := s.store.C("users").FindOne(c.Request.Context(), bson.M{"email": email}).Decode(&user)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid email or verification code"})
+		return
+	}
+
+	now := time.Now().UTC()
+	var otp models.PasswordUpdateOTP
+	err = s.store.C("password_update_otps").FindOne(
+		c.Request.Context(),
+		activePasswordResetOTPFilter(user.ID, now),
+		options.FindOne().SetSort(bson.D{{Key: "created_at", Value: -1}}),
+	).Decode(&otp)
+	if err != nil || otp.AttemptCount >= passwordResetMaxAttempts {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "verification code is invalid or expired"})
+		return
+	}
+
+	if auth.ComparePassword(otp.CodeHash, passwordOTPSecret(user.ID, code)) != nil {
+		_, _ = s.store.C("password_update_otps").UpdateByID(c.Request.Context(), otp.ID, bson.M{"$inc": bson.M{"attempt_count": 1}})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "verification code is invalid or expired"})
+		return
+	}
+
+	hash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not hash password"})
+		return
+	}
+
+	_, err = s.store.C("users").UpdateByID(c.Request.Context(), user.ID, bson.M{
+		"$set": bson.M{
+			"password_hash": hash,
+			"status":        models.StatusActive,
+		},
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update password"})
+		return
+	}
+
+	_, _ = s.store.C("password_update_otps").UpdateMany(c.Request.Context(), activePasswordResetOTPFilter(user.ID, now), bson.M{"$set": bson.M{"used_at": now}})
+	s.audit(c.Request.Context(), user.ID, "user.password.reset", "user", user.ID)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Password reset successfully. You can now log in with your new password.",
+	})
+}
+
+func activePasswordResetOTPFilter(userID primitive.ObjectID, now time.Time) bson.M {
+	return bson.M{
+		"user_id":    userID,
+		"purpose":    passwordResetOTPPurpose,
+		"expires_at": bson.M{"$gt": now},
+		"$or": []bson.M{
+			{"used_at": bson.M{"$exists": false}},
+			{"used_at": nil},
+		},
+	}
+}
+
+func (s *Server) enqueuePasswordResetEmail(ctx context.Context, user models.User, code string, expiresAt time.Time) error {
+	if s.mailer == nil {
+		return fmt.Errorf("email service is not configured")
+	}
+	appName := firstNonEmpty(s.cfg.AppName, "bugmega")
+	name := firstNonEmpty(user.Name, user.Username, user.Email, "there")
+	body := `<p>Hello ` + html.EscapeString(name) + `,</p>` +
+		`<p>We received a request to reset your password for your ` + html.EscapeString(appName) + ` account.</p>` +
+		`<p>Use the following 6-digit code to complete the reset:</p>` +
+		`<p style="font-size:28px;font-weight:700;letter-spacing:6px;margin:18px 0;color:#2563eb;">` + html.EscapeString(code) + `</p>` +
+		`<p>This code expires at ` + html.EscapeString(expiresAt.Format("Jan 2, 2006 3:04 PM MST")) + `.</p>` +
+		`<p>If you did not request a password reset, you can safely ignore this email — your password will not change.</p>`
+	return s.mailer.Enqueue(ctx, models.EmailQueueItem{
+		Recipient: strings.ToLower(strings.TrimSpace(user.Email)),
+		Type:      "password_reset_otp",
+		Subject:   appName + " password reset code",
 		BodyHTML:  body,
 	})
 }
