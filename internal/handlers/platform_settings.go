@@ -122,8 +122,9 @@ func (s *Server) defaultSiteSettings(now time.Time) models.SiteSettings {
 func defaultPublicNavItems() []models.PublicNavItem {
 	return []models.PublicNavItem{
 		{ID: "home", Label: "Home", URL: "/", Visible: true, Order: 1},
-		{ID: "pricing", Label: "Pricing", URL: "/pricing", Visible: true, Order: 2},
-		{ID: "login", Label: "Login", URL: "/login", Visible: true, Order: 3},
+		{ID: "products", Label: "Products & Services", URL: "/products", Visible: true, Order: 2},
+		{ID: "pricing", Label: "Pricing", URL: "/pricing", Visible: true, Order: 3},
+		{ID: "login", Label: "Login", URL: "/login", Visible: true, Order: 4},
 	}
 }
 

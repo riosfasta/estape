@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"bugmark/internal/auth"
 	"bugmark/internal/billing"
 	"bugmark/internal/models"
 
@@ -501,6 +502,205 @@ func (s *Server) purchaseSubscription(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"subscription": sub, "checkout": session, "amount": amount})
+}
+
+func (s *Server) checkoutRegisterAndPurchase(c *gin.Context) {
+	if !s.allowRegistrationAttempt(c) {
+		return
+	}
+	var req struct {
+		Name          string `json:"name"`
+		Email         string `json:"email"`
+		Password      string `json:"password"`
+		CompanyName   string `json:"company_name"`
+		PlanID        string `json:"plan_id"`
+		Provider      string `json:"provider"`
+		BillingPeriod string `json:"billing_period"`
+		Quantity      int    `json:"quantity"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid registration and checkout body"})
+		return
+	}
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" || req.Email == "" || len(req.Password) < 8 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name, email, and an 8+ character password are required"})
+		return
+	}
+
+	providerName := strings.ToLower(strings.TrimSpace(req.Provider))
+	if providerName == "" {
+		providerName = "paypal"
+	}
+	if providerName != "paypal" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "PayPal is the only supported payment method"})
+		return
+	}
+	provider, ok := s.payments[providerName]
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "PayPal checkout is not available"})
+		return
+	}
+	if !s.paymentProviderEnabled(c.Request.Context(), providerName) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "PayPal payments are disabled in platform settings"})
+		return
+	}
+
+	planID, err := objectIDFromString(req.PlanID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid plan_id"})
+		return
+	}
+	var plan models.Plan
+	if err := s.store.C("plans").FindOne(c.Request.Context(), bson.M{"_id": planID}).Decode(&plan); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "plan not found"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	now := time.Now()
+
+	count, err := s.store.C("users").CountDocuments(ctx, bson.M{"email": req.Email})
+	if err == nil && count > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "An account with this email already exists. Please log in to complete your checkout."})
+		return
+	}
+
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not hash password"})
+		return
+	}
+
+	username, err := s.requestedUsername(ctx, "", req.Name, req.Email)
+	if err != nil {
+		writeUsernameError(c, err)
+		return
+	}
+
+	companyName := strings.TrimSpace(req.CompanyName)
+	if companyName == "" {
+		companyName = req.Name + "'s Workspace"
+	}
+
+	userID := primitive.NewObjectID()
+	teamID := primitive.NewObjectID()
+
+	user := models.User{
+		ID:              userID,
+		Name:            req.Name,
+		Email:           req.Email,
+		Username:        username,
+		PasswordHash:    hash,
+		Role:            models.RoleTeamAdmin,
+		StaffRole:       "manager",
+		TeamID:          teamID,
+		Status:          models.StatusActive,
+		ThemePreference: "system",
+		EmailVerified:   true,
+		AuthProvider:    "email",
+		CreatedAt:       now,
+		LastActiveAt:    now,
+	}
+	clientIP := s.prepareRegistrationMeta(c, &user)
+
+	team := models.Team{
+		ID:              teamID,
+		Name:            companyName,
+		CompanyEmail:    req.Email,
+		OwnerAdminID:    userID,
+		MemberIDs:       []primitive.ObjectID{userID},
+		SeatLimitCached: plan.SeatLimit,
+		CreatedAt:       now,
+	}
+
+	if _, err := s.store.C("teams").InsertOne(ctx, team); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create workspace"})
+		return
+	}
+	if _, err := s.store.C("users").InsertOne(ctx, user); err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			c.JSON(http.StatusConflict, gin.H{"error": "email or username already exists"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create user"})
+		return
+	}
+	s.enrichRegistrationMeta(user.ID, clientIP)
+	_ = s.createStarterWorkspace(ctx, teamID, userID, now)
+	s.enqueueOwnerRegistrationEmail(ctx, user, team, "Checkout registration", nil)
+
+	period := normalizedBillingPeriod(req.BillingPeriod)
+	quantity := normalizedBillingQuantity(req.Quantity)
+	seatCount := int64(1)
+	amount := planBillingAmount(plan, seatCount, period, quantity)
+
+	sub := models.Subscription{
+		ID:              primitive.NewObjectID(),
+		TeamID:          teamID,
+		PlanID:          plan.ID,
+		Status:          "pending_payment",
+		CheckoutAmount:  amount,
+		BillingPeriod:   period,
+		BillingQuantity: quantity,
+		PaymentProvider: provider.Name(),
+		BuyerID:         userID,
+		StartedAt:       now,
+		CreatedAt:       now,
+	}
+	sub.PaymentReference = paymentReference("PLAN", sub.BuyerID, sub.ID)
+
+	if _, err := s.store.C("subscriptions").InsertOne(ctx, sub); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create subscription"})
+		return
+	}
+	_, _ = s.store.C("teams").UpdateByID(ctx, teamID, bson.M{"$set": bson.M{"subscription_id": sub.ID}})
+
+	checkoutReq, err := s.payPalCheckoutBase(ctx)
+	if err != nil {
+		_, _ = s.store.C("subscriptions").UpdateByID(ctx, sub.ID, bson.M{"$set": bson.M{"status": "checkout_failed", "expires_at": now}})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	checkoutReq.TeamID = teamID.Hex()
+	checkoutReq.PlanID = plan.ID.Hex()
+	checkoutReq.Amount = amount
+	checkoutReq.Currency = "usd"
+	checkoutReq.CustomID = sub.PaymentReference
+	checkoutReq.InvoiceID = sub.PaymentReference
+	checkoutReq.Description = sub.PaymentReference + " | " + fmt.Sprintf("%s %s package", plan.Name, period)
+	checkoutReq.ReturnURL = s.payPalReturnURL(sub.ID)
+	checkoutReq.CancelURL = s.payPalCancelURL(sub.ID)
+
+	session, err := provider.CreateCheckout(ctx, checkoutReq)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Printf("paypal CreateCheckout failed: %v", err)
+		}
+		_, _ = s.store.C("subscriptions").UpdateByID(ctx, sub.ID, bson.M{"$set": bson.M{"status": "checkout_failed", "expires_at": now}})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "could not create PayPal checkout: " + err.Error()})
+		return
+	}
+
+	sub.ExternalTransactionID = session.ExternalID
+	_, _ = s.store.C("subscriptions").UpdateByID(ctx, sub.ID, bson.M{"$set": bson.M{"external_transaction_id": session.ExternalID}})
+
+	access, refresh, err := s.issueTokens(ctx, user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not issue auth tokens"})
+		return
+	}
+	s.setSessionCookies(c, access, refresh)
+
+	c.JSON(http.StatusCreated, gin.H{
+		"user":          user,
+		"access_token":  access,
+		"refresh_token": refresh,
+		"subscription":  sub,
+		"checkout":      session,
+		"amount":        amount,
+	})
 }
 
 func (s *Server) payPalCheckoutReturn(c *gin.Context) {

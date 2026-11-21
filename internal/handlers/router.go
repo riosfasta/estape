@@ -59,6 +59,8 @@ func (s *Server) Router() *gin.Engine {
 
 	router.GET("/", s.homePage)
 	router.GET("/pricing", s.homePage)
+	router.GET("/products", s.appPage)
+	router.GET("/services", s.appPage)
 	router.GET("/legal/:slug", s.publicLegalPage)
 	router.GET("/p/:slug", s.publicStaticPage)
 	router.GET("/blog", s.publicBlogIndex)
@@ -111,6 +113,7 @@ func (s *Server) Router() *gin.Engine {
 	api.POST("/auth/resend-verification", s.resendVerificationEmail)
 	api.GET("/platform-settings", s.getPublicPlatformSettings)
 	api.GET("/subscriptions/plans", s.listPlans)
+	api.POST("/subscriptions/checkout-register", s.checkoutRegisterAndPurchase)
 	api.GET("/pages/:slug", s.getPublicPage)
 	api.GET("/paypal/return", s.payPalCheckoutReturn)
 	api.GET("/paypal/cancel", s.payPalCheckoutCancel)
@@ -391,14 +394,21 @@ func publicVisibleNavItems(items []models.PublicNavItem) []models.PublicNavItem 
 	if len(items) == 0 {
 		items = defaultPublicNavItems()
 	}
+	hasProducts := false
 	hasFreelancers := false
 	for _, item := range items {
+		if item.URL == "/products" && item.Visible {
+			hasProducts = true
+		}
 		if item.URL == "/freelancers" && item.Visible {
 			hasFreelancers = true
 		}
 	}
+	if !hasProducts {
+		items = append(append([]models.PublicNavItem{}, items...), models.PublicNavItem{ID: "products", Label: "Products & Services", URL: "/products", Visible: true, Order: 2})
+	}
 	if !hasFreelancers {
-		items = append(append([]models.PublicNavItem{}, items...), models.PublicNavItem{ID: "freelancers", Label: "Find freelancers", URL: "/freelancers", Visible: true, Order: 2})
+		items = append(append([]models.PublicNavItem{}, items...), models.PublicNavItem{ID: "freelancers", Label: "Find freelancers", URL: "/freelancers", Visible: true, Order: 3})
 	}
 	out := []models.PublicNavItem{}
 	for _, item := range items {

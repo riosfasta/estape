@@ -2056,6 +2056,7 @@ function ensurePurchaseCartDialog() {
         <label class="field"><span>Amount</span><input id="purchaseCartQuantity" type="number" min="1" max="120" step="1" value="1"></label>
       </div>
       <section class="panel soft-panel" id="purchaseCartSummary"></section>
+      <div id="purchaseCartAccountSection"></div>
       <div class="toolbar">
         <button class="btn primary" id="purchaseCartCheckout" type="button">Continue to payment</button>
         <button class="btn" type="button" data-close-dialog="purchaseCartDialog">Continue browsing</button>
@@ -2072,6 +2073,93 @@ function ensurePurchaseCartDialog() {
   $("#purchaseCartCheckout")?.addEventListener("click", checkoutPurchaseCart);
   icons();
   return dialog;
+}
+
+function renderPurchaseCartAccountSection() {
+  const mount = $("#purchaseCartAccountSection");
+  if (!mount) return;
+  const button = $("#purchaseCartCheckout");
+  if (state.access && state.me) {
+    mount.innerHTML = `
+      <div class="purchase-cart-user-box" style="padding:12px 14px; border:1px solid var(--border-color,#e2e8f0); border-radius:8px; background:var(--bg-secondary,#f8fafc); margin:10px 0;">
+        <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-secondary,#64748b); margin-bottom:4px;">Account</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-weight:600;">${esc(state.me.name || state.me.username || state.me.email)}</span>
+          <span class="muted" style="font-size:12px;">(${esc(state.me.email)})</span>
+        </div>
+      </div>`;
+    if (button) button.textContent = "Continue to payment";
+    return;
+  }
+  mount.innerHTML = `
+    <div class="purchase-cart-auth-box" style="padding:14px; border:1px solid var(--border-color,#e2e8f0); border-radius:8px; background:var(--bg-secondary,#f8fafc); margin:12px 0;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:6px;">
+        <h3 style="font-size:14px; font-weight:700; margin:0;" id="cartAuthTitle">Create your account to continue</h3>
+        <button type="button" class="btn quiet compact" id="toggleCartAuthMode" style="font-size:12px; padding:2px 6px;">Already have an account? Sign in</button>
+      </div>
+      <div id="cartRegisterFields">
+        <div class="grid-2">
+          <label class="field"><span>Full Name *</span><input id="cartRegisterName" type="text" placeholder="John Doe" autocomplete="name" required></label>
+          <label class="field"><span>Email Address *</span><input id="cartRegisterEmail" type="email" placeholder="john@example.com" autocomplete="email" required></label>
+        </div>
+        <div class="grid-2" style="margin-top:8px;">
+          <label class="field"><span>Password (8+ chars) *</span><input id="cartRegisterPassword" type="password" placeholder="At least 8 characters" autocomplete="new-password" required minlength="8"></label>
+          <label class="field"><span>Workspace Name</span><input id="cartRegisterCompany" type="text" placeholder="My Workspace" autocomplete="organization"></label>
+        </div>
+      </div>
+      <div id="cartLoginFields" hidden>
+        <div class="grid-2">
+          <label class="field"><span>Email</span><input id="cartLoginEmail" type="email" placeholder="john@example.com" autocomplete="email"></label>
+          <label class="field"><span>Password</span><input id="cartLoginPassword" type="password" placeholder="••••••••" autocomplete="current-password"></label>
+        </div>
+        <div style="margin-top:8px; display:flex; justify-content:flex-end;">
+          <button type="button" class="btn primary compact" id="cartInlineLoginBtn">Sign in &amp; use account</button>
+        </div>
+      </div>
+    </div>`;
+  if (button) button.textContent = "Create account & Continue to payment";
+
+  let isLogin = false;
+  $("#toggleCartAuthMode")?.addEventListener("click", () => {
+    isLogin = !isLogin;
+    const reg = $("#cartRegisterFields");
+    const log = $("#cartLoginFields");
+    const title = $("#cartAuthTitle");
+    const toggle = $("#toggleCartAuthMode");
+    if (reg) reg.hidden = isLogin;
+    if (log) log.hidden = !isLogin;
+    if (title) title.textContent = isLogin ? "Sign in to your account" : "Create your account to continue";
+    if (toggle) toggle.textContent = isLogin ? "Need an account? Sign up" : "Already have an account? Sign in";
+    if (button) button.hidden = isLogin;
+  });
+
+  $("#cartInlineLoginBtn")?.addEventListener("click", async () => {
+    const email = $("#cartLoginEmail")?.value?.trim() || "";
+    const password = $("#cartLoginPassword")?.value || "";
+    if (!email || !password) {
+      setPurchaseCartStatus("Please enter your email and password.", true);
+      return;
+    }
+    const btn = $("#cartInlineLoginBtn");
+    btn.disabled = true;
+    setPurchaseCartStatus("Signing in...");
+    try {
+      const res = await api("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      });
+      state.access = res.access_token;
+      state.refresh = res.refresh_token;
+      storeTokens(res.access_token, res.refresh_token);
+      state.me = res.user;
+      renderPurchaseCartAccountSection();
+      setPurchaseCartStatus("Signed in as " + (state.me.name || state.me.email));
+    } catch (err) {
+      setPurchaseCartStatus(err.message, true);
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
 
 function setPurchaseCartStatus(text, error = false) {
@@ -2132,6 +2220,7 @@ async function openPurchaseCart(planID = "", options = {}) {
   if (quantityInput) quantityInput.value = String(state.purchaseCart.quantity);
   setPurchaseCartStatus("");
   updatePurchaseCartSummary();
+  renderPurchaseCartAccountSection();
   dialog?.showModal();
 }
 
@@ -2140,6 +2229,91 @@ async function checkoutPurchaseCart() {
   if (!cart?.plan_id) return;
   const button = $("#purchaseCartCheckout");
   const previous = button?.textContent || "Continue to payment";
+  setPurchaseCartStatus("");
+
+  if (!state.access || !state.me) {
+    const nameInput = $("#cartRegisterName");
+    const emailInput = $("#cartRegisterEmail");
+    const passwordInput = $("#cartRegisterPassword");
+    const companyInput = $("#cartRegisterCompany");
+
+    const name = nameInput?.value?.trim() || "";
+    const email = emailInput?.value?.trim() || "";
+    const password = passwordInput?.value || "";
+    const company_name = companyInput?.value?.trim() || "";
+
+    if (!name) {
+      setPurchaseCartStatus("Please enter your full name.", true);
+      nameInput?.focus();
+      return;
+    }
+    if (!email || !email.includes("@")) {
+      setPurchaseCartStatus("Please enter a valid email address.", true);
+      emailInput?.focus();
+      return;
+    }
+    if (password.length < 8) {
+      setPurchaseCartStatus("Password must be at least 8 characters.", true);
+      passwordInput?.focus();
+      return;
+    }
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Creating account & checkout...";
+    }
+    setPurchaseCartStatus("Creating your account and setting up PayPal checkout...");
+
+    try {
+      const data = await api("/api/subscriptions/checkout-register", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+          company_name,
+          plan_id: cart.plan_id,
+          provider: "paypal",
+          billing_period: cart.billing_period || "monthly",
+          quantity: Math.max(1, Number(cart.quantity || 1)),
+        }),
+      });
+
+      if (!data.checkout?.external_id) throw new Error("PayPal did not return a checkout order.");
+
+      if (data.access_token) {
+        state.access = data.access_token;
+        state.refresh = data.refresh_token;
+        storeTokens(data.access_token, data.refresh_token);
+        state.me = data.user;
+      }
+
+      $("#purchaseCartDialog")?.close();
+      await openEmbeddedCheckout({
+        api,
+        title: cart.plans.find((plan) => plan.id === cart.plan_id)?.name || "Premium bug reporting",
+        description: `${cart.quantity || 1} x ${cart.billing_period || "monthly"} package. One-time payment for premium bug reporting; no automatic renewal.`,
+        amount: data.amount,
+        orderID: data.checkout.external_id,
+        captureURL: `/api/subscriptions/${encodeURIComponent(data.subscription.id)}/capture`,
+        fallbackURL: data.checkout.url,
+        onSuccess: async () => {
+          await loadMe();
+          await cart.onDone?.();
+          window.location.href = "/settings/billing?payment=success";
+        },
+      });
+    } catch (error) {
+      setPurchaseCartStatus(error.message, true);
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = previous;
+      }
+    }
+    return;
+  }
+
   if (button) {
     button.disabled = true;
     button.textContent = "Checking out...";
@@ -2160,13 +2334,17 @@ async function checkoutPurchaseCart() {
     $("#purchaseCartDialog")?.close();
     await openEmbeddedCheckout({
       api,
-      title: cart.plans.find(plan => plan.id === cart.plan_id)?.name || "Premium bug reporting",
+      title: cart.plans.find((plan) => plan.id === cart.plan_id)?.name || "Premium bug reporting",
       description: `${cart.quantity || 1} x ${cart.billing_period || "monthly"} package. One-time payment for premium bug reporting; no automatic renewal.`,
       amount: data.amount,
       orderID: data.checkout.external_id,
       captureURL: `/api/subscriptions/${encodeURIComponent(data.subscription.id)}/capture`,
       fallbackURL: data.checkout.url,
-      onSuccess: async () => { await loadMe(); await cart.onDone?.(); window.location.href = "/settings/billing?payment=success"; },
+      onSuccess: async () => {
+        await loadMe();
+        await cart.onDone?.();
+        window.location.href = "/settings/billing?payment=success";
+      },
     });
   } catch (error) {
     setPurchaseCartStatus(error.message, true);
@@ -2265,6 +2443,313 @@ function bindPurchaseButtons(onDone = null) {
       onDone,
     });
   }));
+}
+
+let productsBillingPeriod = "monthly";
+
+async function renderProductsPage() {
+  const plansData = await api("/api/subscriptions/plans").catch(() => ({ plans: [] }));
+  let plans = plansData.plans || [];
+  if (!plans.length) {
+    plans = [
+      {
+        id: "starter",
+        name: "Starter",
+        description: "A focused package for small teams validating visual feedback workflows.",
+        pricing_model: "flat",
+        price: 2900,
+        price_yearly: 29000,
+        seat_limit: 5,
+        project_limit: 3,
+        trial_days: 14,
+        featured: false,
+      },
+      {
+        id: "team",
+        name: "Team",
+        description: "More seats, projects, and active delivery tools for collaborative teams.",
+        pricing_model: "per_seat",
+        price: 900,
+        price_yearly: 9000,
+        price_per_seat: 900,
+        price_per_seat_yearly: 9000,
+        seat_limit: 25,
+        project_limit: 15,
+        trial_days: 14,
+        featured: true,
+      },
+      {
+        id: "business",
+        name: "Business",
+        description: "Higher limits and priority workflows for agencies and growing enterprises.",
+        pricing_model: "flat",
+        price: 24900,
+        price_yearly: 249000,
+        seat_limit: 100,
+        project_limit: 100,
+        trial_days: 14,
+        featured: false,
+      },
+    ];
+  }
+
+  function getPlanPriceLine(plan, period) {
+    const isPerSeat = plan.pricing_model === "per_seat";
+    const amount = period === "yearly"
+      ? (isPerSeat ? (plan.price_per_seat_yearly || plan.price_yearly || plan.price * 10) : (plan.price_yearly || plan.price * 10))
+      : (isPerSeat ? (plan.price_per_seat || plan.price) : plan.price);
+    const suffix = isPerSeat ? " / seat" : "";
+    const term = period === "yearly" ? "year" : "month";
+    return `${money(amount)}${suffix} / ${term}`;
+  }
+
+  function getPlanTotalSubtitle(plan, period) {
+    if (period === "yearly") {
+      return "Billed annually · Save ~20%";
+    }
+    return "Billed monthly · Cancel anytime";
+  }
+
+  const contentHTML = `
+    <div class="products-page-container">
+      <header class="products-hero">
+        <div class="products-hero-badge"><span class="pill" style="background:var(--accent-soft,#21856f18);color:var(--accent,#21856f);font-weight:700;">PACKAGES &amp; CAPABILITIES</span></div>
+        <h1>Products &amp; Delivery Services</h1>
+        <p class="products-hero-subtitle">Visual website feedback, issue triage, project Kanban, team collaboration, and client review in one self-hosted workspace.</p>
+        
+        <div class="products-billing-toggle-wrap">
+          <div class="products-billing-toggle" role="group" aria-label="Billing frequency">
+            <button type="button" class="btn ${productsBillingPeriod === "monthly" ? "primary" : "quiet"}" data-toggle-period="monthly">Monthly billing</button>
+            <button type="button" class="btn ${productsBillingPeriod === "yearly" ? "primary" : "quiet"}" data-toggle-period="yearly">Yearly billing <span class="products-discount-badge">Save 20%</span></button>
+          </div>
+        </div>
+      </header>
+
+      <section class="products-pricing-section" id="packages">
+        <div class="section-head" style="text-align:center;margin-bottom:28px;">
+          <p class="eyebrow" style="color:var(--accent,#21856f);font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;">Pricing Packages</p>
+          <h2 style="font-size:26px;margin:6px 0;">Select a plan tailored for your team</h2>
+          <p class="muted">All packages include free 14-day trials. Choose your billing period and purchase with one click.</p>
+        </div>
+
+        <div class="pricing-grid products-plan-grid">
+          ${plans.map((plan) => {
+            const priceLine = getPlanPriceLine(plan, productsBillingPeriod);
+            const totalSub = getPlanTotalSubtitle(plan, productsBillingPeriod);
+            const seats = Number(plan.seat_limit || 0);
+            const projects = Number(plan.project_limit || 0);
+            const trial = Number(plan.trial_days || 0) || 14;
+            return `
+              <article class="product-plan-card ${plan.featured ? "featured" : ""}" data-plan-id="${esc(plan.id)}">
+                ${plan.featured ? `<div class="featured-ribbon">Most Popular</div>` : ""}
+                <div class="plan-card-head">
+                  <h3>${esc(plan.name)}</h3>
+                  <p class="plan-price-main">${esc(priceLine)}</p>
+                  <span class="plan-price-sub muted">${esc(totalSub)}</span>
+                </div>
+                <p class="plan-description">${esc(plan.description || "Complete visual feedback and delivery management.")}</p>
+                
+                <div class="plan-specs">
+                  <div><strong>${seats}</strong><span>Team seats</span></div>
+                  <div><strong>${projects}</strong><span>Projects</span></div>
+                  <div><strong>${trial}d</strong><span>Free trial</span></div>
+                </div>
+
+                <ul class="plan-features-list">
+                  <li>${icon("check")} Interactive visual pin annotations</li>
+                  <li>${icon("check")} Kanban task boards &amp; lists</li>
+                  <li>${icon("check")} Real-time team chat &amp; activity inbox</li>
+                  <li>${icon("check")} Time tracking &amp; reporting</li>
+                  <li>${icon("check")} Up to ${seats} workspace members</li>
+                  <li>${icon("check")} Up to ${projects} active projects</li>
+                  <li>${icon("check")} Secure PayPal purchase &amp; instant setup</li>
+                </ul>
+
+                <div class="plan-card-action">
+                  <button class="btn ${plan.featured ? "primary" : ""} large product-buy-btn" type="button" data-select-product="${esc(plan.id)}">
+                    ${icon("shopping-cart")} Buy ${esc(plan.name)}
+                  </button>
+                </div>
+              </article>
+            `;
+          }).join("")}
+        </div>
+      </section>
+
+      <section class="products-services-section">
+        <div class="section-head" style="text-align:center;margin-bottom:28px;">
+          <p class="eyebrow" style="color:var(--accent,#21856f);font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;">Core Services Included</p>
+          <h2 style="font-size:24px;margin:6px 0;">Everything needed for modern visual QA &amp; task delivery</h2>
+        </div>
+        <div class="products-services-grid">
+          <article class="service-feature-card">
+            <div class="service-icon">${icon("map-pin")}</div>
+            <h3>Visual Website Feedback</h3>
+            <p>Embed any URL or upload responsive screenshots. Drop numbered pins with precise coordinates, device data, and console details.</p>
+          </article>
+          <article class="service-feature-card">
+            <div class="service-icon">${icon("layout-list")}</div>
+            <h3>Tasks &amp; Kanban Delivery</h3>
+            <p>Turn pins into tasks with custom statuses, priorities, checklists, assignees, estimates, and drag-and-drop boards.</p>
+          </article>
+          <article class="service-feature-card">
+            <div class="service-icon">${icon("messages-square")}</div>
+            <h3>Real-Time Team Chat</h3>
+            <p>Direct support channels, instant mentions, reactions, task-linked discussions, and immediate browser notifications.</p>
+          </article>
+          <article class="service-feature-card">
+            <div class="service-icon">${icon("timer")}</div>
+            <h3>Time Tracking &amp; Reports</h3>
+            <p>Track billable project hours, record working timers, manage staff rates, and generate professional PDF &amp; CSV reports.</p>
+          </article>
+          <article class="service-feature-card">
+            <div class="service-icon">${icon("shield-check")}</div>
+            <h3>Self-Hosted &amp; Private</h3>
+            <p>Deploy on your own infrastructure with MongoDB. No third-party data tracking, complete data ownership, and role security.</p>
+          </article>
+          <article class="service-feature-card">
+            <div class="service-icon">${icon("credit-card")}</div>
+            <h3>Instant PayPal Checkout</h3>
+            <p>Secure payments via PayPal wallet and credit cards. Instant account creation and package activation during checkout.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="products-comparison-section">
+        <div class="section-head" style="text-align:center;margin-bottom:24px;">
+          <h2 style="font-size:22px;">Compare Plan Capabilities</h2>
+          <p class="muted">Full feature comparison across our service tiers</p>
+        </div>
+        <div class="products-comparison-wrap">
+          <table class="products-comparison-table">
+            <thead>
+              <tr>
+                <th>Service Feature</th>
+                ${plans.map(p => `<th>${esc(p.name)}</th>`).join("")}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Visual Website Feedback</strong></td>
+                ${plans.map(() => `<td><span class="check-icon">${icon("check")}</span> Included</td>`).join("")}
+              </tr>
+              <tr>
+                <td><strong>Team Seats Limit</strong></td>
+                ${plans.map(p => `<td><strong>${Number(p.seat_limit || 0)} seats</strong></td>`).join("")}
+              </tr>
+              <tr>
+                <td><strong>Active Projects</strong></td>
+                ${plans.map(p => `<td><strong>${Number(p.project_limit || 0)} projects</strong></td>`).join("")}
+              </tr>
+              <tr>
+                <td><strong>Task &amp; Kanban Boards</strong></td>
+                ${plans.map(() => `<td><span class="check-icon">${icon("check")}</span> Unlimited</td>`).join("")}
+              </tr>
+              <tr>
+                <td><strong>Realtime Team Chat</strong></td>
+                ${plans.map(() => `<td><span class="check-icon">${icon("check")}</span> Included</td>`).join("")}
+              </tr>
+              <tr>
+                <td><strong>Time Tracking &amp; Logs</strong></td>
+                ${plans.map(() => `<td><span class="check-icon">${icon("check")}</span> Included</td>`).join("")}
+              </tr>
+              <tr>
+                <td><strong>Self-Hosted Control</strong></td>
+                ${plans.map(() => `<td><span class="check-icon">${icon("check")}</span> Full Data Privacy</td>`).join("")}
+              </tr>
+              <tr>
+                <td><strong>Trial Period</strong></td>
+                ${plans.map(p => `<td>${Number(p.trial_days || 0) || 14} days</td>`).join("")}
+              </tr>
+              <tr>
+                <td><strong>Purchase Action</strong></td>
+                ${plans.map(p => `<td><button class="btn compact product-buy-btn" data-select-product="${esc(p.id)}">Select</button></td>`).join("")}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="products-faq-section">
+        <div class="section-head" style="text-align:center;margin-bottom:20px;">
+          <h2 style="font-size:22px;">Frequently Asked Questions</h2>
+        </div>
+        <div class="products-faq-grid">
+          <details class="faq-item" open>
+            <summary><strong>Can I create an account while making a purchase?</strong></summary>
+            <p>Yes! During checkout, simply provide your name, email, and password. Your workspace account will be created automatically, issuing your access session and taking you straight to payment.</p>
+          </details>
+          <details class="faq-item">
+            <summary><strong>How does PayPal checkout work?</strong></summary>
+            <p>You can pay using either your PayPal balance or any major debit or credit card. Payments are processed securely via PayPal's encrypted infrastructure.</p>
+          </details>
+          <details class="faq-item">
+            <summary><strong>Can I upgrade or change my plan later?</strong></summary>
+            <p>Yes, workspace owners can upgrade or renew packages at any time from the billing settings page.</p>
+          </details>
+          <details class="faq-item">
+            <summary><strong>Is my data secure?</strong></summary>
+            <p>Bugmega is self-hosted on your own server. Your website screenshots, bug pins, tasks, and communications are stored privately in your MongoDB database.</p>
+          </details>
+        </div>
+      </section>
+    </div>
+  `;
+
+  if (state.me) {
+    shell("Products & Services", contentHTML);
+  } else {
+    app.innerHTML = `
+      <header class="market-public-nav">
+        <a href="/" class="brand">
+          <span class="brand-mark">B</span>
+          ${esc(state.siteSettings?.site_name || "Bugmega")}
+        </a>
+        <nav>
+          <a href="/">Home</a>
+          <a href="/products" class="active">Products &amp; Services</a>
+          <a href="/freelancers">Find freelancers</a>
+          <a href="/find-jobs">Find jobs</a>
+          <a href="/login">Log in</a>
+          <a class="btn primary" href="/register">Sign Up</a>
+        </nav>
+      </header>
+      <main class="market-public">
+        ${contentHTML}
+      </main>
+      <footer class="public-footer" style="margin-top:40px;">
+        <div>
+          <a class="brand" href="/">
+            <span class="brand-mark">B</span>
+            ${esc(state.siteSettings?.site_name || "Bugmega")}
+          </a>
+          <p>Self-hosted task management and website feedback for delivery teams.</p>
+        </div>
+        <div><h4>Product</h4><a href="/products">Products &amp; Services</a><a href="/pricing">Pricing</a><a href="/login">Login</a></div>
+        <div><h4>Company</h4><a href="/freelancers">Freelancers</a><a href="/find-jobs">Find Jobs</a><a href="/register">Register</a></div>
+        <div><h4>Legal</h4><a href="/legal/terms-of-service">Terms</a><a href="/legal/privacy-policy">Privacy</a><a href="/marketplace/privacy">Marketplace privacy</a></div>
+      </footer>
+    `;
+  }
+
+  document.querySelectorAll("[data-toggle-period]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      productsBillingPeriod = btn.dataset.togglePeriod;
+      await renderProductsPage();
+    });
+  });
+
+  document.querySelectorAll("[data-select-product]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const planID = btn.dataset.selectProduct;
+      await openPurchaseCart(planID, {
+        period: productsBillingPeriod,
+        plans,
+      });
+    });
+  });
+
+  icons();
 }
 
 async function renderMembershipPaywall(feature = "workspace features") {
@@ -4482,6 +4967,7 @@ function shell(title, html) {
           <p class="nav-kicker project-nav-kicker"><span>Projects</span>${canCreateSidebarClient() ? `<button id="sidebarAddClientBtn" class="project-add-folder" type="button" title="Add project folder" aria-label="Add project folder">${icon("plus")}</button>` : ""}</p>
           ${sidebarProjectsHTML()}
           <p class="nav-kicker">Tools</p>
+          ${workspaceChild("/products", "Products & Services", "package")}
           ${workspaceChild("/projects", "All projects", "folder-open")}
           ${workspaceChild("/team/performance", "Team Performance", "bar-chart-3")}
           ${workspaceChild("/reports/time", "Reports", "timer")}
@@ -19633,6 +20119,12 @@ async function route(options = {}) {
       stopNotificationPolling();
       stopLivePolling();
       return renderForgotPasswordPage();
+    }
+    if (path() === "/products" || path() === "/services") {
+      if (state.access && !state.me) {
+        try { await loadMe(); } catch { state.me = null; }
+      }
+      return await renderProductsPage();
     }
     if (path() === "/freelancers" || path().startsWith("/freelancers/") || path() === "/find-jobs") {
       if (state.access && !state.me) {
