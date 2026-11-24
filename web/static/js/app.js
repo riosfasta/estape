@@ -3672,6 +3672,27 @@ function setFormStatus(form, text, error = false) {
   }
 }
 
+function showToast(message, type = "success") {
+  let toast = document.getElementById("bugmegaToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "bugmegaToast";
+    toast.style.cssText = "position:fixed;bottom:24px;right:24px;z-index:99999;padding:12px 20px;border-radius:8px;font-size:0.9rem;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,0.18);transition:all 0.3s ease;transform:translateY(100px);opacity:0;pointer-events:none;";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.style.background = type === "error" ? "var(--danger, #ef4444)" : "var(--success, #10b981)";
+  toast.style.color = "#ffffff";
+  toast.style.transform = "translateY(0)";
+  toast.style.opacity = "1";
+  setTimeout(() => {
+    if (toast) {
+      toast.style.transform = "translateY(100px)";
+      toast.style.opacity = "0";
+    }
+  }, 3500);
+}
+
 let refreshInFlightPromise = null;
 
 async function refreshAccessToken() {
