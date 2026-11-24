@@ -3,7 +3,6 @@ import '../styles/global.css';
 import '../styles/header.css';
 import Navbar from '../components/Navbar.astro';
 import Footer from '../components/Footer.astro';
-import StoreCartAndAuth from '../components/store/StoreCartAndAuth.astro';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
@@ -1451,8 +1450,6 @@ function getPopupRenderConfig(popup: any) {
     <script src="/nav-menu.js" is:inline></script>
     <!-- Products Loop Interactive Runtime -->
     <script src="/products-loop.js" is:inline></script>
-    <!-- Universal Store Cart, Checkout, and Customer Auth -->
-    <StoreCartAndAuth />
   </body>
 </html>
 

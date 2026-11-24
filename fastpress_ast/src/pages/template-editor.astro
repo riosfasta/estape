@@ -1280,7 +1280,7 @@ try {
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </button>
           <div class="topbar-dropdown-menu" id="viewActionsDropdownMenu">
-            <a href="/" target="_blank" class="topbar-dropdown-item">
+            <a href="/" target="_blank" class="topbar-dropdown-item" onclick="try{const p=new URLSearchParams(window.location.search).get('tenant');if(p){const h=window.location.hostname.replace(/^(www\.|builder\.)/,'');const pt=window.location.port?':'+window.location.port:'';this.href=window.location.protocol+'//'+p+'.'+h+pt+'/';}}catch(_){}">
               <div class="topbar-item-icon" style="color: #60a5fa;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>

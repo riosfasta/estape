@@ -59,13 +59,8 @@ const displayItems = allDbProducts.slice(0, 6).map((item) => ({
               <h3 class="furnisite-card-title">
                 <a href={`${prefix}/products/${item.slug}`}>{item.title}</a>
               </h3>
-              <div class="furnisite-card-price-row" style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
-                <div class="furnisite-card-price">
-                  ${item.price}
-                </div>
-                <button type="button" class="add-to-cart-btn" style="background:#18181b; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-size:0.8rem; font-weight:600; cursor:pointer;" aria-label="Add to cart">
-                  Add +
-                </button>
+              <div class="furnisite-card-price">
+                ${item.price}
               </div>
             </div>
           </article>

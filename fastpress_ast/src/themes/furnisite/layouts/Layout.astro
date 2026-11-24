@@ -2,7 +2,6 @@
 import '../styles/global.css';
 import Navbar from '../components/Navbar.astro';
 import Footer from '../components/Footer.astro';
-import StoreCartAndAuth from '../../../components/store/StoreCartAndAuth.astro';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -196,8 +195,6 @@ const faviconUrl = siteConfig?.faviconUrl || '/favicon.svg';
     <script src="/nav-menu.js" is:inline></script>
     <!-- Products Loop Interactive Runtime -->
     <script src="/products-loop.js" is:inline></script>
-    <!-- Universal Store Cart, Checkout, and Customer Auth -->
-    <StoreCartAndAuth />
   </body>
 </html>
 

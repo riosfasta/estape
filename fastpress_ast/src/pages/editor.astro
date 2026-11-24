@@ -55,6 +55,17 @@ try {
 
 // Cek parameter slug dari URL, misal /editor?slug=tentang-kami
 const targetSlug = Astro.url.searchParams.get('slug') || 'home';
+const tenantParam = Astro.url.searchParams.get('tenant') || Astro.request.headers.get('x-tenant-subdomain') || '';
+let liveSiteInitialUrl = '/';
+if (tenantParam) {
+  const host = Astro.url.hostname.replace(/^(www\.|builder\.)/, '');
+  const proto = Astro.url.protocol;
+  const port = Astro.url.port ? `:${Astro.url.port}` : '';
+  const pagePath = targetSlug === 'home' ? '/' : (targetSlug === 'blog' ? '/blog' : `/${targetSlug}`);
+  liveSiteInitialUrl = `${proto}//${tenantParam}.${host}${port}${pagePath}`;
+} else {
+  liveSiteInitialUrl = targetSlug === 'home' ? '/' : (targetSlug === 'blog' ? '/blog' : `/${targetSlug}`);
+}
 const themeGlobalCss = getThemeGlobalCss(activeTheme);
 
 // Baca data siteConfig.json untuk Global Header & Footer
@@ -4433,7 +4444,7 @@ try {
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </button>
           <div class="topbar-dropdown-menu" id="viewActionsDropdownMenu">
-            <a href="/" target="_blank" class="topbar-dropdown-item" id="btnViewLiveWeb" title="Open Live Site in New Tab">
+            <a href={liveSiteInitialUrl} target="_blank" class="topbar-dropdown-item" id="btnViewLiveWeb" title="Open Live Site in New Tab">
               <div class="topbar-item-icon" style="color: #60a5fa;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
@@ -7991,6 +8002,20 @@ try {
       const btnViewLiveWeb = document.getElementById('btnViewLiveWeb');
       const saveBtnLabel = document.getElementById('saveBtnLabel');
 
+      if (btnViewLiveWeb) {
+        btnViewLiveWeb.addEventListener('click', (e) => {
+          const urlParams = new URLSearchParams(window.location.search);
+          const currentTenant = urlParams.get('tenant');
+          if (currentTenant) {
+            const host = window.location.hostname.replace(/^(www\.|builder\.)/, '');
+            const proto = window.location.protocol;
+            const port = window.location.port ? `:${window.location.port}` : '';
+            const pagePath = currentSlug === 'home' ? '/' : (currentSlug === 'blog' ? '/blog' : `/${currentSlug}`);
+            btnViewLiveWeb.href = `${proto}//${currentTenant}.${host}${port}${pagePath}`;
+          }
+        });
+      }
+
       // Actions Dropdown
       const pageActionsDropdown = document.getElementById('pageActionsDropdown');
       const btnPageActionsTrigger = document.getElementById('btnPageActionsTrigger');
@@ -8453,13 +8478,17 @@ try {
           }
         }
 
-        if (currentSlug === 'home') {
-          btnViewLiveWeb.href = '/';
-        } else if (currentSlug === 'blog') {
-          btnViewLiveWeb.href = '/blog';
-        } else {
-          btnViewLiveWeb.href = `/${currentSlug}`;
+        const urlParams = new URLSearchParams(window.location.search);
+        const currentTenant = urlParams.get('tenant');
+        let liveBase = '';
+        if (currentTenant) {
+          const host = window.location.hostname.replace(/^(www\.|builder\.)/, '');
+          const proto = window.location.protocol;
+          const port = window.location.port ? `:${window.location.port}` : '';
+          liveBase = `${proto}//${currentTenant}.${host}${port}`;
         }
+        const pagePath = currentSlug === 'home' ? '/' : (currentSlug === 'blog' ? '/blog' : `/${currentSlug}`);
+        btnViewLiveWeb.href = liveBase ? `${liveBase}${pagePath}` : pagePath;
         saveBtnLabel.textContent = 'Save';
         updateCanvasHeaderFooterBanners();
       }

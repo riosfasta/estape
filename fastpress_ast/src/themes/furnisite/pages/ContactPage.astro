@@ -58,26 +58,26 @@ const cleanHtml = customData?.html || '';
           <h2 class="fs-form-title">Send a Message</h2>
           <p class="fs-form-desc">Fill out the inquiry form below and an interior consultant will reply within 24 hours.</p>
 
-          <form class="fs-contact-form contact-form" data-form-name="Furnisite Studio Inquiry">
+          <form class="fs-contact-form" onsubmit="event.preventDefault(); alert('Thank you! Your message has been received.');">
             <div class="fs-form-row">
               <div class="fs-form-group">
                 <label for="fsName">Full Name *</label>
-                <input type="text" id="fsName" name="name" required placeholder="Elena Rostova" />
+                <input type="text" id="fsName" required placeholder="Elena Rostova" />
               </div>
               <div class="fs-form-group">
                 <label for="fsEmail">Email Address *</label>
-                <input type="email" id="fsEmail" name="email" required placeholder="elena@example.com" />
+                <input type="email" id="fsEmail" required placeholder="elena@example.com" />
               </div>
             </div>
 
             <div class="fs-form-row">
               <div class="fs-form-group">
                 <label for="fsPhone">Phone Number</label>
-                <input type="tel" id="fsPhone" name="phone" placeholder="+1 (555) 019-2834" />
+                <input type="tel" id="fsPhone" placeholder="+1 (555) 019-2834" />
               </div>
               <div class="fs-form-group">
                 <label for="fsInterest">Inquiry Type</label>
-                <select id="fsInterest" name="inquiry_type">
+                <select id="fsInterest">
                   <option value="residential">Residential Living Space</option>
                   <option value="custom">Custom Solid Wood Order</option>
                   <option value="trade">Commercial / Trade Partner</option>
@@ -88,7 +88,7 @@ const cleanHtml = customData?.html || '';
 
             <div class="fs-form-group">
               <label for="fsMessage">Message *</label>
-              <textarea id="fsMessage" name="message" rows="5" required placeholder="Tell us about your room layout, desired furniture pieces, or specific dimensions..."></textarea>
+              <textarea id="fsMessage" rows="5" required placeholder="Tell us about your room layout, desired furniture pieces, or specific dimensions..."></textarea>
             </div>
 
             <button type="submit" class="fs-btn fs-btn-dark fs-btn-lg" style="width: 100%;">

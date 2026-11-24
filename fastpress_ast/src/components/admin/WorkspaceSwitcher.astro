@@ -131,6 +131,9 @@ const currentApp =
         icon: `<rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/>`,
       }
     : workspaceApps[0]);
+
+const tenant = Astro.url.searchParams.get('tenant') || '';
+const tenantQuery = tenant ? `?tenant=${encodeURIComponent(tenant)}` : '';
 ---
 
 <div class={`workspace-switcher-component ${className}`} style={`position: relative; ${style}`}>
@@ -166,9 +169,10 @@ const currentApp =
     <div class="ws-apps-list">
       {workspaceApps.map((app) => {
         const isActive = app.id === activeApp || app.url === activeApp;
+        const appHref = tenantQuery ? `${app.url}${tenantQuery}` : app.url;
         return (
           <a
-            href={app.url}
+            href={appHref}
             class={`ws-menu-item ${isActive ? 'is-active' : ''}`}
             role="menuitem"
           >
@@ -435,6 +439,21 @@ const currentApp =
 
         const btn = wrap.querySelector('.ws-switcher-btn');
         if (!btn) return;
+
+        // Propagate current tenant to all switcher links
+        try {
+          const urlParams = new URLSearchParams(window.location.search);
+          const currentTenant = urlParams.get('tenant');
+          if (currentTenant) {
+            wrap.querySelectorAll('a.ws-menu-item').forEach((link) => {
+              const url = new URL(link.href, window.location.origin);
+              if (!url.searchParams.has('tenant')) {
+                url.searchParams.set('tenant', currentTenant);
+                link.href = url.pathname + url.search;
+              }
+            });
+          }
+        } catch (_) {}
 
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
