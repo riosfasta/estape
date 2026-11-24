@@ -56,16 +56,12 @@ try {
 // Cek parameter slug dari URL, misal /editor?slug=tentang-kami
 const targetSlug = Astro.url.searchParams.get('slug') || 'home';
 const tenantParam = Astro.url.searchParams.get('tenant') || Astro.request.headers.get('x-tenant-subdomain') || '';
-let liveSiteInitialUrl = '/';
-if (tenantParam) {
-  const host = Astro.url.hostname.replace(/^(www\.|builder\.)/, '');
-  const proto = Astro.url.protocol;
-  const port = Astro.url.port ? `:${Astro.url.port}` : '';
-  const pagePath = targetSlug === 'home' ? '/' : (targetSlug === 'blog' ? '/blog' : `/${targetSlug}`);
-  liveSiteInitialUrl = `${proto}//${tenantParam}.${host}${port}${pagePath}`;
-} else {
-  liveSiteInitialUrl = targetSlug === 'home' ? '/' : (targetSlug === 'blog' ? '/blog' : `/${targetSlug}`);
-}
+const host = Astro.url.hostname.replace(/^(www\.|builder\.)/, '');
+const proto = Astro.url.protocol;
+const port = Astro.url.port ? `:${Astro.url.port}` : '';
+const tenantBaseUrl = tenantParam ? `${proto}//${tenantParam}.${host}${port}` : '';
+const pagePath = targetSlug === 'home' ? '/' : (targetSlug === 'blog' ? '/blog' : `/${targetSlug}`);
+const liveSiteInitialUrl = tenantBaseUrl ? `${tenantBaseUrl}${pagePath}` : pagePath;
 const themeGlobalCss = getThemeGlobalCss(activeTheme);
 
 // Baca data siteConfig.json untuk Global Header & Footer
@@ -1057,6 +1053,28 @@ try {
       .nav-dropdown.open .nav-dropdown-menu {
         display: block;
         animation: fadeInDropdown 0.15s ease;
+      }
+
+      #viewActionsDropdownWrap {
+        position: relative !important;
+        display: inline-block !important;
+        z-index: 9999 !important;
+      }
+
+      #viewActionsDropdownWrap.open #viewActionsDropdownMenu {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+      }
+
+      #viewActionsDropdownMenu {
+        position: absolute !important;
+        top: calc(100% + 6px) !important;
+        right: 0 !important;
+        left: auto !important;
+        min-width: 250px !important;
+        z-index: 999999 !important;
       }
 
       /* TOPBAR DROPDOWNS */
@@ -4546,7 +4564,15 @@ try {
       <div class="builder-actions">
         <!-- Live Site, Preview & Code Dropdown -->
         <div class="nav-dropdown" id="viewActionsDropdownWrap">
-          <button type="button" class="dropdown-trigger-btn" id="btnViewActionsDropdown" title="Live Site, Preview & Code" aria-haspopup="true" aria-expanded="false">
+          <button 
+            type="button" 
+            class="dropdown-trigger-btn" 
+            id="btnViewActionsDropdown" 
+            title="Live Site, Preview & Code" 
+            aria-haspopup="true" 
+            aria-expanded="false"
+            onclick="window.toggleViewActionsDropdown ? window.toggleViewActionsDropdown(event) : (function(btn){ const wrap = btn.closest('#viewActionsDropdownWrap'); if(wrap) wrap.classList.toggle('open'); })(this)"
+          >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
               <circle cx="12" cy="12" r="3"></circle>
@@ -4568,7 +4594,13 @@ try {
                 <span style="font-size: 0.7rem; color: #9ca3af;">Open live website in new tab</span>
               </div>
             </a>
-            <button type="button" class="dropdown-menu-item" id="btnPreview" title="Full Screen Preview">
+            <button 
+              type="button" 
+              class="dropdown-menu-item" 
+              id="btnPreview" 
+              title="Full Screen Preview"
+              onclick="if(window.editor){ window.editor.runCommand('preview'); }"
+            >
               <span class="item-icon-wrap" style="color: #34d399; background: rgba(52, 211, 153, 0.1);">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
@@ -4580,7 +4612,13 @@ try {
                 <span style="font-size: 0.7rem; color: #9ca3af;">Fullscreen canvas view</span>
               </div>
             </button>
-            <button type="button" class="dropdown-menu-item" id="btnViewCode" title="View HTML/CSS Code">
+            <button 
+              type="button" 
+              class="dropdown-menu-item" 
+              id="btnViewCode" 
+              title="View HTML/CSS Code"
+              onclick="if(window.editor){ window.editor.runCommand('export-template'); }"
+            >
               <span class="item-icon-wrap" style="color: #f59e0b; background: rgba(245, 158, 11, 0.1);">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="16 18 22 12 16 6"></polyline>
@@ -4594,6 +4632,35 @@ try {
             </button>
           </div>
         </div>
+        <script is:inline>
+          (function() {
+            window.toggleViewActionsDropdown = function(e) {
+              if (e) {
+                if (typeof e.preventDefault === 'function') e.preventDefault();
+                if (typeof e.stopPropagation === 'function') e.stopPropagation();
+              }
+              var wrap = document.getElementById('viewActionsDropdownWrap');
+              if (!wrap) return;
+              var isOpen = wrap.classList.contains('open');
+              document.querySelectorAll('.topbar-dropdown-wrap.open, .nav-dropdown.open').forEach(function(w) {
+                if (w !== wrap) w.classList.remove('open');
+              });
+              if (typeof window.updateLiveWebLink === 'function') window.updateLiveWebLink();
+              wrap.classList.toggle('open', !isOpen);
+              var btn = document.getElementById('btnViewActionsDropdown');
+              if (btn) btn.setAttribute('aria-expanded', !isOpen ? 'true' : 'false');
+            };
+
+            document.addEventListener('click', function(e) {
+              var wrap = document.getElementById('viewActionsDropdownWrap');
+              if (wrap && !wrap.contains(e.target)) {
+                wrap.classList.remove('open');
+                var btn = document.getElementById('btnViewActionsDropdown');
+                if (btn) btn.setAttribute('aria-expanded', 'false');
+              }
+            });
+          })();
+        </script>
 
         <button type="button" class="btn-tool btn-toggle-panel" id="btnToggleSidebar" title="Toggle Sidebar Panel">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -4676,13 +4743,23 @@ try {
               <!-- Center: Desktop Navigation Links -->
               <nav class="ef-nav-center">
                 <ul class="ef-nav-list" id="visualNavList">
-                  {initialNavItems.map((item: any) => (
-                    <li class="ef-nav-item">
-                      <a href={item.href || '#'} class:list={['ef-nav-link', { 'is-active': item.id === targetSlug || item.href === `/${targetSlug}` }]}>
-                        {item.name}
-                      </a>
-                    </li>
-                  ))}
+                  {initialNavItems.map((item: any) => {
+                    const rawHref = item.href || '/';
+                    const fullHref = tenantBaseUrl ? `${tenantBaseUrl}${rawHref}` : rawHref;
+                    const slugId = item.id || (rawHref === '/' ? 'home' : rawHref.replace(/^\/+/, ''));
+                    return (
+                      <li class="ef-nav-item">
+                        <a 
+                          href={fullHref} 
+                          data-raw-href={rawHref}
+                          data-slug={slugId}
+                          class:list={['ef-nav-link', { 'is-active': slugId === targetSlug || rawHref === `/${targetSlug}` }]}
+                        >
+                          {item.name}
+                        </a>
+                      </li>
+                    );
+                  })}
                 </ul>
               </nav>
 
@@ -4759,21 +4836,21 @@ try {
                 <div class="ef-footer-col">
                   <h4 class="ef-footer-heading">Collections</h4>
                   <ul class="ef-footer-links" id="visualFooterCollections">
-                    <li><a href="/products">Living Room</a></li>
-                    <li><a href="/products">Dining &amp; Kitchen</a></li>
-                    <li><a href="/products">Bedroom Sanctuary</a></li>
-                    <li><a href="/products">Lighting &amp; Fixtures</a></li>
-                    <li><a href="/products">Storage &amp; Shelving</a></li>
+                    <li><a href={tenantBaseUrl ? `${tenantBaseUrl}/products` : '/products'} data-raw-href="/products" data-slug="products">Living Room</a></li>
+                    <li><a href={tenantBaseUrl ? `${tenantBaseUrl}/products` : '/products'} data-raw-href="/products" data-slug="products">Dining &amp; Kitchen</a></li>
+                    <li><a href={tenantBaseUrl ? `${tenantBaseUrl}/products` : '/products'} data-raw-href="/products" data-slug="products">Bedroom Sanctuary</a></li>
+                    <li><a href={tenantBaseUrl ? `${tenantBaseUrl}/products` : '/products'} data-raw-href="/products" data-slug="products">Lighting &amp; Fixtures</a></li>
+                    <li><a href={tenantBaseUrl ? `${tenantBaseUrl}/products` : '/products'} data-raw-href="/products" data-slug="products">Storage &amp; Shelving</a></li>
                   </ul>
                 </div>
                 <!-- Col 3: Studio -->
                 <div class="ef-footer-col">
                   <h4 class="ef-footer-heading" id="visualFooterCol3Title">{initialBrandName}</h4>
                   <ul class="ef-footer-links" id="visualFooterCompanyLinks">
-                    <li><a href="/about">About Our Studio</a></li>
-                    <li><a href="/blog">Living Space Journal</a></li>
-                    <li><a href="/about#vision">Our Vision &amp; Mission</a></li>
-                    <li><a href="/contact">Showrooms &amp; Contact</a></li>
+                    <li><a href={tenantBaseUrl ? `${tenantBaseUrl}/about` : '/about'} data-raw-href="/about" data-slug="about">About Our Studio</a></li>
+                    <li><a href={tenantBaseUrl ? `${tenantBaseUrl}/blog` : '/blog'} data-raw-href="/blog" data-slug="blog">Living Space Journal</a></li>
+                    <li><a href={tenantBaseUrl ? `${tenantBaseUrl}/about#vision` : '/about#vision'} data-raw-href="/about" data-slug="about">Our Vision &amp; Mission</a></li>
+                    <li><a href={tenantBaseUrl ? `${tenantBaseUrl}/contact` : '/contact'} data-raw-href="/contact" data-slug="contact">Showrooms &amp; Contact</a></li>
                   </ul>
                 </div>
                 <!-- Col 4: Newsletter -->
@@ -4827,18 +4904,28 @@ try {
             </div>
 
             <ul class="emd-links-list" id="drawerLinksList">
-              {initialNavItems.map((item: any) => (
-                <li>
-                  <a href={item.href || '#'} class:list={['emd-drawer-link', { 'is-active': item.id === targetSlug || item.href === `/${targetSlug}` }]}>
-                    <span>{item.name}</span>
-                    <span>→</span>
-                  </a>
-                </li>
-              ))}
+              {initialNavItems.map((item: any) => {
+                const rawHref = item.href || '/';
+                const fullHref = tenantBaseUrl ? `${tenantBaseUrl}${rawHref}` : rawHref;
+                const slugId = item.id || (rawHref === '/' ? 'home' : rawHref.replace(/^\/+/, ''));
+                return (
+                  <li>
+                    <a 
+                      href={fullHref} 
+                      data-raw-href={rawHref}
+                      data-slug={slugId}
+                      class:list={['emd-drawer-link', { 'is-active': slugId === targetSlug || rawHref === `/${targetSlug}` }]}
+                    >
+                      <span>{item.name}</span>
+                      <span>→</span>
+                    </a>
+                  </li>
+                );
+              })}
             </ul>
 
             <div class="emd-footer">
-              <a href="#" class="fs-btn fs-btn-dark emd-cta-btn" id="drawerCtaButton" style="width: 100%; text-align: center;">
+              <a href={tenantBaseUrl ? `${tenantBaseUrl}${initialDrawerCtaUrl}` : initialDrawerCtaUrl} class="fs-btn fs-btn-dark emd-cta-btn" id="drawerCtaButton" style="width: 100%; text-align: center;">
                 {initialDrawerCtaText}
               </a>
               <div class="emd-edit-hint">
@@ -8168,61 +8255,72 @@ try {
       const saveBtnLabel = document.getElementById('saveBtnLabel');
 
       function updateLiveWebLink() {
-        if (!btnViewLiveWeb) return;
-        const urlParams = new URLSearchParams(window.location.search);
-        const currentTenant = urlParams.get('tenant');
-        const activeSlug = (typeof currentSlug !== 'undefined' && currentSlug) ? currentSlug : (urlParams.get('slug') || 'home');
-        const pagePath = activeSlug === 'home' ? '/' : (activeSlug === 'blog' ? '/blog' : `/${activeSlug}`);
-        if (currentTenant) {
-          const host = window.location.hostname.replace(/^(www\.|builder\.)/, '');
-          const proto = window.location.protocol;
-          const port = window.location.port ? `:${window.location.port}` : '';
-          btnViewLiveWeb.href = `${proto}//${currentTenant}.${host}${port}${pagePath}`;
-        } else {
-          btnViewLiveWeb.href = pagePath;
-        }
+        try {
+          const btn = document.getElementById('btnViewLiveWeb');
+          if (!btn) return;
+          const urlParams = new URLSearchParams(window.location.search);
+          const currentTenant = urlParams.get('tenant');
+          const activeSlug = (typeof currentSlug !== 'undefined' && currentSlug) ? currentSlug : (urlParams.get('slug') || 'home');
+          const pagePath = activeSlug === 'home' ? '/' : (activeSlug === 'blog' ? '/blog' : `/${activeSlug}`);
+          if (currentTenant) {
+            const host = window.location.hostname.replace(/^(www\.|builder\.)/, '');
+            const proto = window.location.protocol;
+            const port = window.location.port ? `:${window.location.port}` : '';
+            btn.href = `${proto}//${currentTenant}.${host}${port}${pagePath}`;
+          } else {
+            btn.href = pagePath;
+          }
+        } catch (_) {}
       }
+      window.updateLiveWebLink = updateLiveWebLink;
 
-      if (btnViewLiveWeb) {
-        btnViewLiveWeb.addEventListener('click', updateLiveWebLink);
-        btnViewLiveWeb.addEventListener('mouseenter', updateLiveWebLink);
+      if (document.getElementById('btnViewLiveWeb')) {
+        document.getElementById('btnViewLiveWeb').addEventListener('click', updateLiveWebLink);
+        document.getElementById('btnViewLiveWeb').addEventListener('mouseenter', updateLiveWebLink);
       }
 
       // Live Site, Preview & Code Dropdown
-      const viewActionsDropdown = document.getElementById('viewActionsDropdownWrap');
-      const btnViewActionsDropdown = document.getElementById('btnViewActionsDropdown');
-      const viewActionsMenu = document.getElementById('viewActionsDropdownMenu');
-
-      function toggleViewActionsDropdown() {
-        if (!viewActionsDropdown) return;
-        closePageActionsDropdown();
-        if (builderSwitcherMenu) builderSwitcherMenu.style.display = 'none';
+      function toggleViewActionsDropdown(e) {
+        if (e) {
+          if (typeof e.preventDefault === 'function') e.preventDefault();
+          if (typeof e.stopPropagation === 'function') e.stopPropagation();
+        }
+        const wrap = document.getElementById('viewActionsDropdownWrap');
+        if (!wrap) return;
+        const btn = document.getElementById('btnViewActionsDropdown');
+        if (typeof closePageActionsDropdown === 'function') closePageActionsDropdown();
+        const switcherMenu = document.getElementById('builderSwitcherMenu');
+        if (switcherMenu) switcherMenu.style.display = 'none';
         updateLiveWebLink();
-        const willOpen = !viewActionsDropdown.classList.contains('open');
+        const willOpen = !wrap.classList.contains('open');
+        document.querySelectorAll('.topbar-dropdown-wrap.open, .nav-dropdown.open').forEach(w => {
+          if (w !== wrap) w.classList.remove('open');
+        });
         if (willOpen) {
-          viewActionsDropdown.classList.add('open');
-          btnViewActionsDropdown?.setAttribute('aria-expanded', 'true');
+          wrap.classList.add('open');
+          btn?.setAttribute('aria-expanded', 'true');
         } else {
-          viewActionsDropdown.classList.remove('open');
-          btnViewActionsDropdown?.setAttribute('aria-expanded', 'false');
+          wrap.classList.remove('open');
+          btn?.setAttribute('aria-expanded', 'false');
         }
       }
+      window.toggleViewActionsDropdown = toggleViewActionsDropdown;
 
       function closeViewActionsDropdown() {
-        if (!viewActionsDropdown) return;
-        viewActionsDropdown.classList.remove('open');
-        btnViewActionsDropdown?.setAttribute('aria-expanded', 'false');
+        const wrap = document.getElementById('viewActionsDropdownWrap');
+        if (!wrap) return;
+        wrap.classList.remove('open');
+        document.getElementById('btnViewActionsDropdown')?.setAttribute('aria-expanded', 'false');
       }
+      window.closeViewActionsDropdown = closeViewActionsDropdown;
 
+      const btnViewActionsDropdown = document.getElementById('btnViewActionsDropdown');
       if (btnViewActionsDropdown) {
         btnViewActionsDropdown.addEventListener('mouseenter', updateLiveWebLink);
-        btnViewActionsDropdown.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          toggleViewActionsDropdown();
-        });
+        btnViewActionsDropdown.addEventListener('click', toggleViewActionsDropdown);
       }
 
+      const viewActionsMenu = document.getElementById('viewActionsDropdownMenu');
       if (viewActionsMenu) {
         viewActionsMenu.addEventListener('click', (e) => {
           if (e.target.closest('.dropdown-menu-item')) {
@@ -8232,7 +8330,8 @@ try {
       }
 
       document.addEventListener('click', (e) => {
-        if (viewActionsDropdown && !viewActionsDropdown.contains(e.target)) {
+        const wrap = document.getElementById('viewActionsDropdownWrap');
+        if (wrap && !wrap.contains(e.target)) {
           closeViewActionsDropdown();
         }
       });
@@ -8729,6 +8828,72 @@ try {
         return siteConfig || {};
       }
 
+      function initVisualNavClickInterceptors() {
+        const containers = [
+          document.getElementById('visualNavList'),
+          document.getElementById('drawerLinksList'),
+          document.getElementById('canvasFooterBar')
+        ];
+
+        containers.forEach(container => {
+          if (!container || container.dataset.navClickBound === 'true') return;
+          container.dataset.navClickBound = 'true';
+          container.addEventListener('click', (e) => {
+            const link = e.target.closest('a');
+            if (!link) return;
+
+            // Allow if user explicitly wants new tab (target="_blank", Ctrl+click, middle click)
+            if (link.target === '_blank' || e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) {
+              return;
+            }
+
+            // Exclude quick edit buttons or studio buttons
+            if (link.classList.contains('ef-quick-edit-pill') || link.classList.contains('esc-btn') || link.classList.contains('emd-quick-edit-link')) {
+              return;
+            }
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            let targetSlug = link.getAttribute('data-slug');
+            if (!targetSlug) {
+              const raw = link.getAttribute('data-raw-href') || link.getAttribute('href') || '';
+              try {
+                const u = new URL(link.href, window.location.href);
+                const p = u.pathname.replace(/^\/+|\/+$/g, '');
+                targetSlug = p.split('/')[0] || 'home';
+              } catch (_) {
+                targetSlug = raw.replace(/^https?:\/\/[^\/]+/, '').replace(/^\/+|\/+$/g, '').split('/')[0] || 'home';
+              }
+            }
+
+            if (!targetSlug || targetSlug === '#' || targetSlug === '/') targetSlug = 'home';
+            
+            // Close drawer if open
+            const drawerBackdrop = document.getElementById('editorDrawerBackdrop');
+            if (drawerBackdrop && drawerBackdrop.style.display !== 'none') {
+              const closeDrawer = document.getElementById('btnCloseEditorDrawer');
+              if (closeDrawer) closeDrawer.click();
+            }
+
+            if (typeof switchToPage === 'function') {
+              if (window.allPages && !window.allPages[targetSlug]) {
+                if (typeof showToast === 'function') {
+                  showToast(`Page "${targetSlug}" is not in local pages. Opening live link...`);
+                }
+                window.open(link.href, '_blank');
+              } else {
+                switchToPage(targetSlug);
+              }
+            } else {
+              window.open(link.href, '_blank');
+            }
+          });
+        });
+      }
+      window.initVisualNavClickInterceptors = initVisualNavClickInterceptors;
+      try { initVisualNavClickInterceptors(); } catch (_) {}
+
       function updateCanvasHeaderFooterBanners() {
         const activeCfg = getActiveThemeConfig();
         const isFurni = activeThemeName === 'furnisite';
@@ -8741,6 +8906,16 @@ try {
         const copyright = activeCfg.footer?.copyrightText || siteConfig.footer?.copyrightText || 'All Rights Reserved.';
         const footerDesc = activeCfg.footer?.description || siteConfig.footer?.description || (isFurni ? 'Thoughtful modern furniture crafted for elevated everyday spaces with enduring materials and timeless silhouettes.' : '');
 
+        const urlParams = new URLSearchParams(window.location.search);
+        const curTenant = urlParams.get('tenant');
+        let tenantOrigin = '';
+        if (curTenant) {
+          const h = window.location.hostname.replace(/^(www\.|builder\.)/, '');
+          const p = window.location.protocol;
+          const port = window.location.port ? `:${window.location.port}` : '';
+          tenantOrigin = `${p}//${curTenant}.${h}${port}`;
+        }
+
         // 1. Update visual navbar
         const visualNavBrand = document.getElementById('visualNavBrand');
         if (visualNavBrand) visualNavBrand.textContent = brandName;
@@ -8748,8 +8923,11 @@ try {
         const visualNavList = document.getElementById('visualNavList');
         if (visualNavList) {
           visualNavList.innerHTML = navItems.map(item => {
-            const isActive = (item.id === currentSlug || item.href === `/${currentSlug}` || (currentSlug === 'index' && (item.href === '/' || item.href === '/#')));
-            return `<li class="ef-nav-item"><a href="${escapeHtml(item.href || '#')}" class="ef-nav-link ${isActive ? 'is-active' : ''}">${escapeHtml(item.name || '')}</a></li>`;
+            const rawHref = item.href || '/';
+            const fullHref = tenantOrigin ? `${tenantOrigin}${rawHref}` : rawHref;
+            const slugId = item.id || (rawHref === '/' ? 'home' : rawHref.replace(/^\/+/, ''));
+            const isActive = (slugId === currentSlug || rawHref === `/${currentSlug}` || (currentSlug === 'home' && (rawHref === '/' || rawHref === '/#')));
+            return `<li class="ef-nav-item"><a href="${escapeHtml(fullHref)}" data-raw-href="${escapeHtml(rawHref)}" data-slug="${escapeHtml(slugId)}" class="ef-nav-link ${isActive ? 'is-active' : ''}">${escapeHtml(item.name || '')}</a></li>`;
           }).join('');
         }
 
@@ -8760,16 +8938,21 @@ try {
         const drawerLinksList = document.getElementById('drawerLinksList');
         if (drawerLinksList) {
           drawerLinksList.innerHTML = navItems.map(item => {
-            const isActive = (item.id === currentSlug || item.href === `/${currentSlug}` || (currentSlug === 'index' && (item.href === '/' || item.href === '/#')));
-            return `<li><a href="${escapeHtml(item.href || '#')}" class="emd-drawer-link ${isActive ? 'is-active' : ''}"><span>${escapeHtml(item.name || '')}</span><span>→</span></a></li>`;
+            const rawHref = item.href || '/';
+            const fullHref = tenantOrigin ? `${tenantOrigin}${rawHref}` : rawHref;
+            const slugId = item.id || (rawHref === '/' ? 'home' : rawHref.replace(/^\/+/, ''));
+            const isActive = (slugId === currentSlug || rawHref === `/${currentSlug}` || (currentSlug === 'home' && (rawHref === '/' || rawHref === '/#')));
+            return `<li><a href="${escapeHtml(fullHref)}" data-raw-href="${escapeHtml(rawHref)}" data-slug="${escapeHtml(slugId)}" class="emd-drawer-link ${isActive ? 'is-active' : ''}"><span>${escapeHtml(item.name || '')}</span><span>→</span></a></li>`;
           }).join('');
         }
 
         const drawerCtaBtn = document.getElementById('drawerCtaButton');
         if (drawerCtaBtn) {
           drawerCtaBtn.textContent = drawerCtaText;
-          drawerCtaBtn.href = drawerCtaUrl;
+          drawerCtaBtn.href = tenantOrigin ? `${tenantOrigin}${drawerCtaUrl}` : drawerCtaUrl;
         }
+
+        initVisualNavClickInterceptors();
 
         // 3. Update visual footer
         const visualFooterBrand = document.getElementById('visualFooterBrand');
@@ -11396,16 +11579,16 @@ try {
 
       function updateDevice(id, btnActive) {
         editor.setDevice(id);
-        [btnDesktop, btnTablet, btnMobile].forEach(b => b.classList.remove('active'));
-        btnActive.classList.add('active');
+        [btnDesktop, btnTablet, btnMobile].forEach(b => b?.classList.remove('active'));
+        btnActive?.classList.add('active');
       }
 
-      btnDesktop.addEventListener('click', () => updateDevice('desktop', btnDesktop));
-      btnTablet.addEventListener('click', () => updateDevice('tablet', btnTablet));
-      btnMobile.addEventListener('click', () => updateDevice('mobile', btnMobile));
+      btnDesktop?.addEventListener('click', () => updateDevice('desktop', btnDesktop));
+      btnTablet?.addEventListener('click', () => updateDevice('tablet', btnTablet));
+      btnMobile?.addEventListener('click', () => updateDevice('mobile', btnMobile));
 
       // Preview Toggle
-      document.getElementById('btnPreview').addEventListener('click', () => {
+      document.getElementById('btnPreview')?.addEventListener('click', () => {
         editor.runCommand('preview');
       });
 
@@ -11702,7 +11885,7 @@ try {
       });
 
       // View Code Modal
-      document.getElementById('btnViewCode').addEventListener('click', () => {
+      document.getElementById('btnViewCode')?.addEventListener('click', () => {
         editor.runCommand('export-template');
       });
 
