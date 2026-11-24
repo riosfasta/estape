@@ -1459,6 +1459,17 @@ func (s *Server) updateSettings(c *gin.Context) {
 	} else if req.ClearPayPalClientSecret {
 		unset["paypal_client_secret"] = ""
 	}
+	if accountID := strings.TrimSpace(req.CloudflareAccountID); accountID != "" {
+		set["cloudflare_account_id"] = accountID
+	}
+	if zoneID := strings.TrimSpace(req.CloudflareZoneID); zoneID != "" {
+		set["cloudflare_zone_id"] = zoneID
+	}
+	if secret := strings.TrimSpace(req.CloudflareAPIToken); secret != "" {
+		set["cloudflare_api_token"] = secret
+	} else if req.ClearCloudflareAPIToken {
+		unset["cloudflare_api_token"] = ""
+	}
 	update := bson.M{"$set": set}
 	if len(unset) > 0 {
 		update["$unset"] = unset

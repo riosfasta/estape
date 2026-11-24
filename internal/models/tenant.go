@@ -37,8 +37,10 @@ type Tenant struct {
 	CompanyName       string              `bson:"company_name" json:"company_name"`
 	ActiveTheme       string              `bson:"active_theme" json:"active_theme"`
 	Status            TenantStatus        `bson:"status" json:"status"`
-	CustomDomain      string              `bson:"custom_domain,omitempty" json:"custom_domain,omitempty"`
-	CloudflareProject string              `bson:"cloudflare_project,omitempty" json:"cloudflare_project,omitempty"`
+	CustomDomain           string              `bson:"custom_domain,omitempty" json:"custom_domain,omitempty"`
+	CustomDomainStatus     string              `bson:"custom_domain_status,omitempty" json:"custom_domain_status,omitempty"`
+	CustomDomainVerifiedAt *time.Time          `bson:"custom_domain_verified_at,omitempty" json:"custom_domain_verified_at,omitempty"`
+	CloudflareProject      string              `bson:"cloudflare_project,omitempty" json:"cloudflare_project,omitempty"`
 	CloudflareURL     string              `bson:"cloudflare_url,omitempty" json:"cloudflare_url,omitempty"`
 	PublishedAt       *time.Time          `bson:"published_at,omitempty" json:"published_at,omitempty"`
 	SMTP              TenantSMTPSettings  `bson:"smtp,omitempty" json:"smtp,omitempty"`

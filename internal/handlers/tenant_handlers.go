@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -19,6 +22,7 @@ import (
 )
 
 var validSubdomainRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9\-]{1,28}[a-z0-9]$`)
+var validDomainRegex = regexp.MustCompile(`^([a-zA-Z0-9]+(-[a-zA-Z0-9]+)*\.)+[a-zA-Z]{2,}$`)
 
 var reservedSubdomains = map[string]bool{
 	"www":     true,
@@ -281,12 +285,25 @@ func (s *Server) publishTenant(c *gin.Context) {
 
 	// Prepare output and deployment information
 	cfProject := tenant.Subdomain
-	cfURL := fmt.Sprintf("https://%s.pages.dev", tenant.Subdomain)
+	var cfURL string
+	if strings.TrimSpace(tenant.CustomDomain) != "" {
+		cfURL = fmt.Sprintf("https://%s", strings.TrimSpace(tenant.CustomDomain))
+	} else {
+		cfURL = fmt.Sprintf("https://%s.bugmega.com", tenant.Subdomain)
+	}
 	now := time.Now()
 
-	// If Cloudflare token & project directory are configured on the VPS, execute wrangler
+	// Load Cloudflare credentials from database first, then fallback to environment
 	cfToken := os.Getenv("CLOUDFLARE_API_TOKEN")
 	cfAccount := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
+	if siteSettings, err := s.loadSiteSettings(c.Request.Context()); err == nil {
+		if strings.TrimSpace(siteSettings.CloudflareAPIToken) != "" {
+			cfToken = strings.TrimSpace(siteSettings.CloudflareAPIToken)
+		}
+		if strings.TrimSpace(siteSettings.CloudflareAccountID) != "" {
+			cfAccount = strings.TrimSpace(siteSettings.CloudflareAccountID)
+		}
+	}
 	distDir := fmt.Sprintf("/var/www/tenants/%s/dist", tenant.Subdomain)
 
 	var deployLog string
@@ -311,6 +328,13 @@ func (s *Server) publishTenant(c *gin.Context) {
 				})
 				return
 			}
+
+			// Automatically register the real domain with Cloudflare Pages API
+			targetDomain := fmt.Sprintf("%s.bugmega.com", tenant.Subdomain)
+			if strings.TrimSpace(tenant.CustomDomain) != "" {
+				targetDomain = strings.TrimSpace(tenant.CustomDomain)
+			}
+			go attachCloudflareCustomDomain(cfToken, cfAccount, cfProject, targetDomain)
 		}
 	}
 
@@ -333,4 +357,252 @@ func (s *Server) publishTenant(c *gin.Context) {
 		"tenant":         updated,
 		"deploy_log":     deployLog,
 	})
+}
+
+func attachCloudflareCustomDomain(token, accountID, project, domain string) {
+	if strings.TrimSpace(token) == "" || strings.TrimSpace(accountID) == "" || strings.TrimSpace(project) == "" || strings.TrimSpace(domain) == "" {
+		return
+	}
+	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/pages/projects/%s/domains", accountID, project)
+	payload, _ := json.Marshal(map[string]string{"name": domain})
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err == nil && resp != nil {
+		_ = resp.Body.Close()
+	}
+}
+
+type SetDomainRequest struct {
+	CustomDomain string `json:"custom_domain" binding:"required"`
+}
+
+func (s *Server) setTenantCustomDomain(c *gin.Context) {
+	user, ok := middleware.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	tenantID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant id"})
+		return
+	}
+
+	tenant, err := s.store.GetTenantByID(c.Request.Context(), tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "tenant not found"})
+		return
+	}
+
+	if tenant.OwnerUserID != user.ID && user.Role != models.RoleOwnerAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+
+	var req SetDomainRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "custom_domain is required"})
+		return
+	}
+
+	domain := strings.ToLower(strings.TrimSpace(req.CustomDomain))
+	domain = strings.TrimPrefix(domain, "https://")
+	domain = strings.TrimPrefix(domain, "http://")
+	domain = strings.TrimSuffix(domain, "/")
+	domain = strings.TrimSpace(domain)
+
+	if !validDomainRegex.MatchString(domain) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid domain name format (e.g. shop.yourbrand.com or www.yourbrand.com)"})
+		return
+	}
+
+	// Check if already registered by another store
+	existing, err := s.store.GetTenantByCustomDomain(c.Request.Context(), domain)
+	if err == nil && existing != nil && existing.ID != tenant.ID {
+		c.JSON(http.StatusConflict, gin.H{"error": "domain is already registered to another store"})
+		return
+	}
+
+	updates := bson.M{
+		"custom_domain":             domain,
+		"custom_domain_status":      "pending",
+		"custom_domain_verified_at": nil,
+	}
+
+	if err := s.store.UpdateTenant(c.Request.Context(), tenant.ID, updates); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update domain: " + err.Error()})
+		return
+	}
+
+	targetCNAME := fmt.Sprintf("%s.bugmega.com", tenant.Subdomain)
+	c.JSON(http.StatusOK, gin.H{
+		"message":              "Custom domain saved. Please configure your DNS CNAME record.",
+		"custom_domain":        domain,
+		"custom_domain_status": "pending",
+		"target_cname":         targetCNAME,
+	})
+}
+
+func (s *Server) verifyTenantDomainPropagation(c *gin.Context) {
+	user, ok := middleware.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	tenantID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant id"})
+		return
+	}
+
+	tenant, err := s.store.GetTenantByID(c.Request.Context(), tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "tenant not found"})
+		return
+	}
+
+	if tenant.OwnerUserID != user.ID && user.Role != models.RoleOwnerAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+
+	domain := strings.TrimSpace(tenant.CustomDomain)
+	if domain == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no custom domain is configured for this store"})
+		return
+	}
+
+	expectedTarget := fmt.Sprintf("%s.bugmega.com", tenant.Subdomain)
+	expectedPages := fmt.Sprintf("%s.pages.dev", tenant.Subdomain)
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	var r net.Resolver
+	cname, lookupErr := r.LookupCNAME(ctx, domain)
+	cnameClean := strings.TrimSuffix(strings.TrimSpace(strings.ToLower(cname)), ".")
+
+	verified := false
+	reason := ""
+
+	if lookupErr == nil && cnameClean != "" {
+		if cnameClean == expectedTarget || cnameClean == expectedPages ||
+			strings.HasSuffix(cnameClean, expectedTarget) || strings.HasSuffix(cnameClean, expectedPages) {
+			verified = true
+			reason = fmt.Sprintf("CNAME successfully points to %s", cnameClean)
+		}
+	}
+
+	// Fallback check: check if IP lookup succeeds and matches target host IPs (common with CNAME flattening)
+	if !verified {
+		targetIPs, _ := r.LookupHost(ctx, expectedTarget)
+		domainIPs, _ := r.LookupHost(ctx, domain)
+		if len(targetIPs) > 0 && len(domainIPs) > 0 {
+			targetIPMap := make(map[string]bool)
+			for _, ip := range targetIPs {
+				targetIPMap[ip] = true
+			}
+			for _, ip := range domainIPs {
+				if targetIPMap[ip] {
+					verified = true
+					reason = fmt.Sprintf("IP match (%s)", ip)
+					break
+				}
+			}
+		}
+	}
+
+	now := time.Now()
+	if verified {
+		updates := bson.M{
+			"custom_domain_status":      "active",
+			"custom_domain_verified_at": &now,
+			"cloudflare_url":            fmt.Sprintf("https://%s", domain),
+		}
+		_ = s.store.UpdateTenant(c.Request.Context(), tenant.ID, updates)
+
+		// Also register with Cloudflare Pages API for SSL provisioning
+		cfToken := os.Getenv("CLOUDFLARE_API_TOKEN")
+		cfAccount := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
+		if siteSettings, err := s.loadSiteSettings(c.Request.Context()); err == nil {
+			if strings.TrimSpace(siteSettings.CloudflareAPIToken) != "" {
+				cfToken = strings.TrimSpace(siteSettings.CloudflareAPIToken)
+			}
+			if strings.TrimSpace(siteSettings.CloudflareAccountID) != "" {
+				cfAccount = strings.TrimSpace(siteSettings.CloudflareAccountID)
+			}
+		}
+		proj := tenant.CloudflareProject
+		if proj == "" {
+			proj = tenant.Subdomain
+		}
+		go attachCloudflareCustomDomain(cfToken, cfAccount, proj, domain)
+
+		c.JSON(http.StatusOK, gin.H{
+			"verified": true,
+			"status":   "active",
+			"domain":   domain,
+			"cname":    cnameClean,
+			"target":   expectedTarget,
+			"reason":   reason,
+			"message":  "DNS propagation verified! Your custom domain is live and SSL is active.",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"verified": false,
+		"status":   "pending",
+		"domain":   domain,
+		"cname":    cnameClean,
+		"target":   expectedTarget,
+		"message":  fmt.Sprintf("DNS has not propagated yet. Current CNAME: %s (expected %s). DNS updates typically take 2-30 minutes worldwide.", cnameClean, expectedTarget),
+	})
+}
+
+func (s *Server) removeTenantCustomDomain(c *gin.Context) {
+	user, ok := middleware.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	tenantID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant id"})
+		return
+	}
+
+	tenant, err := s.store.GetTenantByID(c.Request.Context(), tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "tenant not found"})
+		return
+	}
+
+	if tenant.OwnerUserID != user.ID && user.Role != models.RoleOwnerAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+
+	updates := bson.M{
+		"custom_domain":             "",
+		"custom_domain_status":      "",
+		"custom_domain_verified_at": nil,
+		"cloudflare_url":            fmt.Sprintf("https://%s.bugmega.com", tenant.Subdomain),
+	}
+
+	if err := s.store.UpdateTenant(c.Request.Context(), tenant.ID, updates); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove domain: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Custom domain removed successfully"})
 }

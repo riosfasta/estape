@@ -66,6 +66,10 @@ type siteSettingsUpdateRequest struct {
 	CustomHeadHTML           string              `json:"custom_head_html"`
 	CustomBodyStartHTML      string              `json:"custom_body_start_html"`
 	CustomBodyEndHTML        string              `json:"custom_body_end_html"`
+	CloudflareAPIToken       string              `json:"cloudflare_api_token"`
+	CloudflareAccountID      string              `json:"cloudflare_account_id"`
+	CloudflareZoneID         string              `json:"cloudflare_zone_id"`
+	ClearCloudflareAPIToken  bool                `json:"clear_cloudflare_api_token"`
 }
 
 func (s *Server) loadSiteSettings(ctx context.Context) (models.SiteSettings, error) {
@@ -273,6 +277,9 @@ func (s *Server) sanitizedSiteSettings(settings models.SiteSettings) gin.H {
 		"custom_head_html":          settings.CustomHeadHTML,
 		"custom_body_start_html":    settings.CustomBodyStartHTML,
 		"custom_body_end_html":      settings.CustomBodyEndHTML,
+		"cloudflare_account_id":      settings.CloudflareAccountID,
+		"cloudflare_zone_id":         settings.CloudflareZoneID,
+		"cloudflare_api_token_set":   secretSet(settings.CloudflareAPIToken),
 		"updated_at":                settings.UpdatedAt,
 	}
 	for key, value := range publicThemeSettings(settings) {

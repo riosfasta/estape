@@ -626,6 +626,10 @@ type SiteSettings struct {
 	CustomBodyStartHTML     string             `bson:"custom_body_start_html,omitempty" json:"custom_body_start_html,omitempty"`
 	CustomBodyEndHTML       string             `bson:"custom_body_end_html,omitempty" json:"custom_body_end_html,omitempty"`
 	CustomCodeInitialized   bool               `bson:"custom_code_initialized,omitempty" json:"-"`
+	CloudflareAPIToken      string             `bson:"cloudflare_api_token,omitempty" json:"-"`
+	CloudflareAccountID     string             `bson:"cloudflare_account_id,omitempty" json:"cloudflare_account_id,omitempty"`
+	CloudflareZoneID        string             `bson:"cloudflare_zone_id,omitempty" json:"cloudflare_zone_id,omitempty"`
+	CloudflareConfigured    bool               `bson:"-" json:"cloudflare_configured"`
 	UpdatedAt               time.Time          `bson:"updated_at" json:"updated_at"`
 }
 

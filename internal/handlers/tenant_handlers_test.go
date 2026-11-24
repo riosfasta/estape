@@ -91,3 +91,19 @@ func TestPublicCORSMiddleware(t *testing.T) {
 		t.Errorf("expected Access-Control-Allow-Origin to match origin, got %s", w.Header().Get("Access-Control-Allow-Origin"))
 	}
 }
+
+func TestDomainValidationRegex(t *testing.T) {
+	valid := []string{"shop.mybrand.com", "www.client.co.uk", "store123.agency.io", "my-store.brand.com"}
+	for _, d := range valid {
+		if !validDomainRegex.MatchString(d) {
+			t.Errorf("expected %s to be valid domain", d)
+		}
+	}
+
+	invalid := []string{"invalid domain", "http://domain.com", "test@test", "domain..com"}
+	for _, d := range invalid {
+		if validDomainRegex.MatchString(d) {
+			t.Errorf("expected %s to be invalid domain", d)
+		}
+	}
+}

@@ -13237,13 +13237,26 @@ async function renderStores() {
       </section>
     ` : `
       <div class="grid-3" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; margin-top: 20px;">
-        ${stores.map(store => `
+        ${stores.map(store => {
+          const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+          const baseDomain = window.location.hostname.replace(/^www\./, "");
+          const builderHref = isLocal
+            ? `http://localhost:4321/editor?tenant=${encodeURIComponent(store.subdomain)}`
+            : `${window.location.protocol}//builder.${baseDomain}/editor?tenant=${encodeURIComponent(store.subdomain)}`;
+          const liveUrl = store.custom_domain
+            ? `https://${store.custom_domain}`
+            : (store.cloudflare_url && !store.cloudflare_url.includes(".pages.dev")
+                ? store.cloudflare_url
+                : `https://${store.subdomain}.${baseDomain}`);
+          const domainStatus = store.custom_domain_status || (store.custom_domain ? 'pending' : 'none');
+
+          return `
           <article class="panel store-card" style="display:flex; flex-direction:column; justify-content:space-between; padding:20px; border-radius:12px; border:1px solid var(--border-color, #e2e8f0);">
             <div>
               <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
                 <div>
                   <h3 style="margin:0 0 4px 0; font-size:1.15rem;">${esc(store.company_name)}</h3>
-                  <code style="font-size:0.85rem; color:var(--text-muted, #64748b);">${esc(store.subdomain)}.bugmega.com</code>
+                  <code style="font-size:0.85rem; color:var(--text-muted, #64748b);">${esc(store.subdomain)}.${esc(baseDomain)}</code>
                 </div>
                 <span class="badge" style="padding:4px 8px; border-radius:999px; font-size:0.75rem; text-transform:uppercase; font-weight:600; background:${store.status === 'active' ? '#dcfce7; color:#15803d;' : '#f1f5f9; color:#475569;'}">
                   ${esc(store.status)}
@@ -13252,14 +13265,24 @@ async function renderStores() {
 
               <div style="margin-bottom:16px; font-size:0.9rem;">
                 <p style="margin:4px 0;"><strong>Theme:</strong> <span style="text-transform:capitalize;">${esc(store.active_theme || 'default')}</span></p>
-                ${store.custom_domain ? `<p style="margin:4px 0;"><strong>Custom Domain:</strong> <code>${esc(store.custom_domain)}</code></p>` : ''}
-                ${store.cloudflare_url ? `<p style="margin:4px 0;"><strong>Live URL:</strong> <a href="${esc(store.cloudflare_url)}" target="_blank" rel="noopener">${esc(store.cloudflare_url)} ↗</a></p>` : ''}
+                <div style="margin:6px 0; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                  <strong>Domain:</strong>
+                  ${store.custom_domain ? `
+                    <code>${esc(store.custom_domain)}</code>
+                    <span class="badge" style="padding:2px 6px; border-radius:999px; font-size:0.7rem; font-weight:600; ${domainStatus === 'active' ? 'background:#dcfce7; color:#15803d;' : 'background:#fef3c7; color:#b45309;'}">
+                      ${domainStatus === 'active' ? '✓ DNS Active' : '⏳ DNS Pending'}
+                    </span>
+                  ` : `
+                    <span class="muted" style="font-size:0.85rem;">None (${esc(store.subdomain)}.${esc(baseDomain)})</span>
+                  `}
+                </div>
+                <p style="margin:4px 0;"><strong>Live URL:</strong> <a href="${esc(liveUrl)}" target="_blank" rel="noopener">${esc(liveUrl)} ↗</a></p>
               </div>
             </div>
 
             <div style="border-top:1px solid var(--border-color, #f1f5f9); padding-top:16px; display:flex; flex-direction:column; gap:8px;">
               <div style="display:flex; gap:8px;">
-                <a class="btn primary" href="http://localhost:4321/editor?tenant=${encodeURIComponent(store.subdomain)}" target="_blank" rel="noopener" style="flex:1; text-align:center; text-decoration:none;">
+                <a class="btn primary" href="${esc(builderHref)}" target="_blank" rel="noopener" style="flex:1; text-align:center; text-decoration:none;">
                   ${icon("layout")} Open Builder
                 </a>
                 <button class="btn publish-store-btn" data-store-id="${esc(store.id)}" data-store-sub="${esc(store.subdomain)}" style="flex:1;">
@@ -13267,16 +13290,19 @@ async function renderStores() {
                 </button>
               </div>
               <div style="display:flex; gap:8px;">
-                <button class="btn quiet store-settings-btn" data-store-id="${esc(store.id)}" style="flex:1; font-size:0.85rem;">
-                  ${icon("settings")} SMTP & Settings
+                <button class="btn quiet connect-domain-btn" data-store-id="${esc(store.id)}" data-store-sub="${esc(store.subdomain)}" data-store-domain="${esc(store.custom_domain || '')}" data-store-status="${esc(domainStatus)}" style="flex:1; font-size:0.82rem; padding:6px 8px;">
+                  ${icon("globe")} ${store.custom_domain ? (domainStatus === 'active' ? 'Custom Domain' : 'Verify Domain') : 'Connect Domain'}
                 </button>
-                <button class="btn quiet store-leads-btn" data-store-id="${esc(store.id)}" style="flex:1; font-size:0.85rem;">
-                  ${icon("mail")} View Leads
+                <button class="btn quiet store-settings-btn" data-store-id="${esc(store.id)}" style="flex:1; font-size:0.82rem; padding:6px 8px;">
+                  ${icon("settings")} SMTP
+                </button>
+                <button class="btn quiet store-leads-btn" data-store-id="${esc(store.id)}" style="flex:1; font-size:0.82rem; padding:6px 8px;">
+                  ${icon("mail")} Leads
                 </button>
               </div>
             </div>
           </article>
-        `).join("")}
+        `;}).join("")}
       </div>
     `}
 
@@ -13343,7 +13369,7 @@ async function renderStores() {
         <div class="field" style="margin-bottom:12px;">
           <label>Custom Domain (Optional)</label>
           <input name="custom_domain" placeholder="e.g. www.clientbrand.com" style="width:100%; padding:8px 10px; border-radius:6px; border:1px solid #cbd5e1;">
-          <small class="muted">Point CNAME to client.pages.dev on Cloudflare.</small>
+          <small class="muted">You can also configure and verify live DNS propagation using the "Connect Domain" button on the store card.</small>
         </div>
 
         <h3 style="margin:16px 0 8px 0; font-size:1rem; border-bottom:1px solid #e2e8f0; padding-bottom:4px;">Client Custom SMTP (Optional)</h3>
@@ -13399,6 +13425,99 @@ async function renderStores() {
         <button class="btn" type="button" data-close-dialog="storeLeadsDialog">Close</button>
       </div>
     </dialog>
+
+    <!-- Connect Domain & DNS Propagation Dialog -->
+    <dialog id="connectDomainDialog" class="modal client-dialog" style="max-width:640px; width:95%; border-radius:12px; border:1px solid var(--border-color, #e2e8f0); padding:24px;">
+      <div class="modal-head" style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+        <div>
+          <h2 style="margin:0; font-size:1.25rem; display:flex; align-items:center; gap:8px;">
+            ${icon("globe")} Connect Custom Domain & DNS
+          </h2>
+          <p class="muted" style="margin:4px 0 0 0; font-size:0.9rem;">Point your custom brand domain to your store with automatic Edge SSL.</p>
+        </div>
+        <button class="btn icon quiet" type="button" data-close-dialog="connectDomainDialog">${icon("x")}</button>
+      </div>
+
+      <input type="hidden" id="domainStoreId">
+      <input type="hidden" id="domainStoreSub">
+
+      <!-- Step 1: Input Domain -->
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:16px; margin-bottom:18px;">
+        <label style="display:block; font-weight:600; margin-bottom:6px; font-size:0.9rem;">Store Custom Domain</label>
+        <div style="display:flex; gap:8px;">
+          <input id="customDomainInput" placeholder="e.g. shop.yourbrand.com or www.yourbrand.com" style="flex:1; padding:10px 12px; border-radius:6px; border:1px solid #cbd5e1; font-size:0.95rem;">
+          <button class="btn primary" id="saveCustomDomainBtn" style="white-space:nowrap;">
+            ${icon("save")} Save Domain
+          </button>
+        </div>
+        <small class="muted" style="display:block; margin-top:6px;">
+          Tip: Subdomains like <code>shop.domain.com</code> or <code>www.domain.com</code> are recommended for instant CNAME setup.
+        </small>
+      </div>
+
+      <!-- Step 2: DNS Instructions -->
+      <div id="dnsInstructionsCard" style="display:none; margin-bottom:18px;">
+        <h4 style="margin:0 0 8px 0; font-size:0.95rem;">Required DNS Record Configuration</h4>
+        <p class="muted" style="font-size:0.85rem; margin-bottom:10px;">
+          Log in to your DNS registrar (Cloudflare, GoDaddy, Namecheap, etc.) and add the following CNAME record:
+        </p>
+
+        <div style="overflow-x:auto; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:14px;">
+          <table style="width:100%; border-collapse:collapse; font-size:0.85rem; text-align:left;">
+            <thead>
+              <tr style="background:#f1f5f9; border-bottom:1px solid #e2e8f0;">
+                <th style="padding:8px 12px;">Type</th>
+                <th style="padding:8px 12px;">Name / Host</th>
+                <th style="padding:8px 12px;">Value / Points to</th>
+                <th style="padding:8px 12px;">TTL / Proxy</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="padding:10px 12px; font-weight:bold; color:#2563eb;">CNAME</td>
+                <td style="padding:10px 12px;"><code id="dnsHostName">shop</code></td>
+                <td style="padding:10px 12px;">
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <code id="dnsTargetCNAME" style="font-weight:bold; color:#0f172a;">engine.bugmega.com</code>
+                    <button class="btn icon quiet" id="copyTargetBtn" title="Copy Target" style="padding:2px 6px; font-size:0.75rem;">${icon("copy")}</button>
+                  </div>
+                </td>
+                <td style="padding:10px 12px; color:#64748b;">Auto / DNS Only</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Step 3: Propagation Verification Checker -->
+        <div style="background:#fff; border:1px solid #cbd5e1; border-radius:10px; padding:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <div>
+              <strong style="font-size:0.9rem;">DNS Propagation Status</strong>
+              <div id="dnsStatusBadge" style="margin-top:4px;">
+                <span class="badge" style="background:#fef3c7; color:#b45309; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">
+                  ⏳ DNS Pending
+                </span>
+              </div>
+            </div>
+            <button class="btn primary" id="verifyDnsBtn" style="padding:8px 16px;">
+              ${icon("refresh-cw")} Verify Propagation
+            </button>
+          </div>
+
+          <!-- Live feedback box -->
+          <div id="dnsVerificationResult" style="margin-top:12px; font-size:0.85rem;"></div>
+        </div>
+      </div>
+
+      <div class="toolbar" style="display:flex; justify-content:space-between; align-items:center; margin-top:20px; border-top:1px solid #e2e8f0; padding-top:16px;">
+        <button class="btn quiet text-danger" id="disconnectDomainBtn" style="color:#ef4444; display:none;">
+          ${icon("trash-2")} Remove Custom Domain
+        </button>
+        <div style="margin-left:auto;">
+          <button class="btn" type="button" data-close-dialog="connectDomainDialog">Close</button>
+        </div>
+      </div>
+    </dialog>
   `);
 
   // Wire event handlers
@@ -13447,7 +13566,9 @@ async function renderStores() {
 
       try {
         const res = await api(`/api/tenants/${storeId}/publish`, { method: "POST" });
-        alert(`✓ Store published successfully!\n\nLive URL: ${res.cloudflare_url || `https://${subdomain}.pages.dev`}`);
+        const baseDomain = window.location.hostname.replace(/^www\./, "");
+        const finalUrl = res.cloudflare_url || `https://${subdomain}.${baseDomain}`;
+        alert(`✓ Store published successfully!\n\nLive URL: ${finalUrl}`);
         await renderStores();
       } catch (err) {
         alert("Publish error: " + (err.message || err));
@@ -13572,6 +13693,166 @@ async function renderStores() {
         container.innerHTML = `<p style="color:#ef4444;">Failed to load leads: ${esc(err.message || err)}</p>`;
       }
     });
+  });
+
+  // Connect Custom Domain Modal & DNS Propagation
+  document.querySelectorAll(".connect-domain-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const storeId = btn.getAttribute("data-store-id");
+      const subdomain = btn.getAttribute("data-store-sub");
+      const domain = btn.getAttribute("data-store-domain") || "";
+      const status = btn.getAttribute("data-store-status") || "pending";
+
+      const dialog = document.getElementById("connectDomainDialog");
+      if (!dialog) return;
+
+      document.getElementById("domainStoreId").value = storeId;
+      document.getElementById("domainStoreSub").value = subdomain;
+      document.getElementById("customDomainInput").value = domain;
+
+      const baseDomain = window.location.hostname.replace(/^www\./, "");
+      const targetCname = `${subdomain}.${baseDomain}`;
+      document.getElementById("dnsTargetCNAME").textContent = targetCname;
+
+      // Extract host part (e.g. "shop" if shop.brand.com, "www" if www.brand.com, or "@")
+      let hostPart = "shop";
+      if (domain) {
+        const parts = domain.split(".");
+        if (parts.length >= 3) {
+          hostPart = parts[0];
+        } else {
+          hostPart = "@";
+        }
+      }
+      document.getElementById("dnsHostName").textContent = hostPart;
+
+      const dnsCard = document.getElementById("dnsInstructionsCard");
+      const removeBtn = document.getElementById("disconnectDomainBtn");
+      const resultBox = document.getElementById("dnsVerificationResult");
+      const badge = document.getElementById("dnsStatusBadge");
+
+      if (domain) {
+        dnsCard.style.display = "block";
+        removeBtn.style.display = "inline-flex";
+        if (status === "active") {
+          badge.innerHTML = `<span class="badge" style="background:#dcfce7; color:#15803d; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">✓ DNS Active & Edge SSL Provisioned</span>`;
+          resultBox.innerHTML = `<div style="background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; padding:10px; border-radius:6px;">✓ <strong>Verified!</strong> Your domain <code>${esc(domain)}</code> is actively resolving to <code>${esc(targetCname)}</code> and serving via Cloudflare edge.</div>`;
+        } else {
+          badge.innerHTML = `<span class="badge" style="background:#fef3c7; color:#b45309; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">⏳ DNS Pending Verification</span>`;
+          resultBox.innerHTML = `<div style="background:#f8fafc; border:1px solid #e2e8f0; color:#475569; padding:10px; border-radius:6px;">Click <strong>Verify Propagation</strong> to check if your DNS CNAME record is resolved worldwide.</div>`;
+        }
+      } else {
+        dnsCard.style.display = "none";
+        removeBtn.style.display = "none";
+        resultBox.innerHTML = "";
+      }
+
+      dialog.showModal();
+    });
+  });
+
+  // Save Custom Domain
+  document.getElementById("saveCustomDomainBtn")?.addEventListener("click", async () => {
+    const storeId = document.getElementById("domainStoreId").value;
+    const subdomain = document.getElementById("domainStoreSub").value;
+    const inputVal = document.getElementById("customDomainInput").value.trim();
+    if (!inputVal) {
+      alert("Please enter your custom domain (e.g. shop.yourbrand.com)");
+      return;
+    }
+
+    const saveBtn = document.getElementById("saveCustomDomainBtn");
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = `${icon("loader-2")} Saving...`;
+
+    try {
+      const res = await api(`/api/tenants/${storeId}/domain`, {
+        method: "POST",
+        body: JSON.stringify({ custom_domain: inputVal })
+      });
+      showToast("Custom domain saved!");
+
+      const dnsCard = document.getElementById("dnsInstructionsCard");
+      dnsCard.style.display = "block";
+      document.getElementById("disconnectDomainBtn").style.display = "inline-flex";
+
+      const parts = inputVal.split(".");
+      document.getElementById("dnsHostName").textContent = parts.length >= 3 ? parts[0] : "@";
+
+      const badge = document.getElementById("dnsStatusBadge");
+      badge.innerHTML = `<span class="badge" style="background:#fef3c7; color:#b45309; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">⏳ DNS Pending Verification</span>`;
+
+      const resultBox = document.getElementById("dnsVerificationResult");
+      resultBox.innerHTML = `<div style="background:#f0f9ff; border:1px solid #bae6fd; color:#0369a1; padding:10px; border-radius:6px;">Domain saved. Now add the CNAME record above in your DNS provider and click <strong>Verify Propagation</strong>.</div>`;
+    } catch (err) {
+      alert("Error saving domain: " + (err.message || err));
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = `${icon("save")} Save Domain`;
+    }
+  });
+
+  // Verify DNS Propagation
+  document.getElementById("verifyDnsBtn")?.addEventListener("click", async () => {
+    const storeId = document.getElementById("domainStoreId").value;
+    const verifyBtn = document.getElementById("verifyDnsBtn");
+    const resultBox = document.getElementById("dnsVerificationResult");
+    const badge = document.getElementById("dnsStatusBadge");
+
+    verifyBtn.disabled = true;
+    verifyBtn.innerHTML = `${icon("loader-2")} Checking DNS...`;
+    resultBox.innerHTML = `<div style="background:#f8fafc; border:1px solid #e2e8f0; color:#475569; padding:10px; border-radius:6px;">Querying global DNS nameservers for CNAME propagation... Please wait.</div>`;
+
+    try {
+      const res = await api(`/api/tenants/${storeId}/domain/verify`, {
+        method: "POST"
+      });
+
+      if (res.verified) {
+        badge.innerHTML = `<span class="badge" style="background:#dcfce7; color:#15803d; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">✓ DNS Active & Edge SSL Provisioned</span>`;
+        resultBox.innerHTML = `<div style="background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; padding:12px; border-radius:6px;">
+          <h4 style="margin:0 0 4px 0;">✓ Propagation Confirmed!</h4>
+          <p style="margin:0 0 6px 0;">${esc(res.message)}</p>
+          <code style="font-size:0.8rem;">CNAME: ${esc(res.cname || res.target)}</code>
+        </div>`;
+        showToast("Domain verified successfully!");
+        setTimeout(() => renderStores(), 2000);
+      } else {
+        badge.innerHTML = `<span class="badge" style="background:#fef3c7; color:#b45309; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">⏳ DNS Pending</span>`;
+        resultBox.innerHTML = `<div style="background:#fffbeb; border:1px solid #fde68a; color:#92400e; padding:12px; border-radius:6px;">
+          <h4 style="margin:0 0 4px 0;">⏳ Not Propagated Yet</h4>
+          <p style="margin:0 0 6px 0;">${esc(res.message)}</p>
+          <small>Detected DNS response: <code>${esc(res.cname || 'No CNAME detected yet')}</code></small>
+        </div>`;
+      }
+    } catch (err) {
+      resultBox.innerHTML = `<div style="background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; padding:10px; border-radius:6px;">Error verifying DNS: ${esc(err.message || err)}</div>`;
+    } finally {
+      verifyBtn.disabled = false;
+      verifyBtn.innerHTML = `${icon("refresh-cw")} Verify Propagation`;
+    }
+  });
+
+  // Copy CNAME target
+  document.getElementById("copyTargetBtn")?.addEventListener("click", () => {
+    const text = document.getElementById("dnsTargetCNAME").textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      showToast("Target copied to clipboard!");
+    });
+  });
+
+  // Disconnect domain
+  document.getElementById("disconnectDomainBtn")?.addEventListener("click", async () => {
+    if (!confirm("Are you sure you want to remove this custom domain? Your store will revert to its default subdomain.")) return;
+    const storeId = document.getElementById("domainStoreId").value;
+    try {
+      await api(`/api/tenants/${storeId}/domain`, { method: "DELETE" });
+      document.getElementById("connectDomainDialog")?.close();
+      showToast("Custom domain removed.");
+      await renderStores();
+    } catch (err) {
+      alert("Error removing domain: " + (err.message || err));
+    }
   });
 }
 
@@ -15004,6 +15285,7 @@ async function renderSettings() {
         <button type="button" data-settings-tab="payments">${icon("credit-card")}Payments</button>
         <button type="button" data-settings-tab="colors">${icon("palette")}Colors</button>
         <button type="button" data-settings-tab="custom-code">${icon("code-2")}Custom code</button>
+        <button type="button" data-settings-tab="cloudflare">${icon("zap")}Edge Deployment</button>
       </div>
       <form id="settingsForm" class="settings-tab-form">
         <section data-settings-panel="identity" class="settings-tab-section">
@@ -15139,6 +15421,26 @@ async function renderSettings() {
             <small class="muted">Inserted at the end of the page body. Recommended for widgets and scripts that can load after page content.</small>
           </div>
         </section>
+        <section data-settings-panel="cloudflare" class="settings-tab-section" hidden>
+          <div class="settings-provider">
+            <h2>Edge Deployment & Cloudflare API</h2>
+            <p class="muted">Configure platform credentials for automatic static site deployment and automatic SSL on subdomains. Regular users will never see these settings or know Cloudflare is used.</p>
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label>Cloudflare Account ID</label>
+              <input name="cloudflare_account_id" value="${esc(settings.cloudflare_account_id || "")}" placeholder="e.g. 849a6df24e...">
+              <small class="muted">Found in your Cloudflare dashboard URL or Workers & Pages sidebar.</small>
+            </div>
+            <div class="field">
+              <label>Cloudflare Zone ID (Optional)</label>
+              <input name="cloudflare_zone_id" value="${esc(settings.cloudflare_zone_id || "")}" placeholder="e.g. 52c92be120...">
+              <small class="muted">Zone ID for root domain bugmega.com (for automated DNS custom domains).</small>
+            </div>
+          </div>
+          ${secretField("Cloudflare API Token", "cloudflare_api_token", "cloudflare_api_token_set", "clear_cloudflare_api_token")}
+          <small class="muted" style="display:block; margin-top:8px;">Requires permissions: <code>Account: Cloudflare Pages (Edit)</code>, <code>Zone: DNS (Edit)</code>.</small>
+        </section>
         <div class="settings-save-row">
           <button class="btn primary" type="submit">${icon("save")}Save settings</button>
         </div>
@@ -15205,6 +15507,7 @@ async function renderSettings() {
       "clear_google_client_secret",
       "clear_smtp_password",
       "clear_paypal_client_secret",
+      "clear_cloudflare_api_token",
     ].forEach((key) => {
       body[key] = Boolean(form.elements[key]?.checked);
     });
