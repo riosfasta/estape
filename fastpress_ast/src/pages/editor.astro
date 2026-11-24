@@ -1059,6 +1059,117 @@ try {
         animation: fadeInDropdown 0.15s ease;
       }
 
+      /* TOPBAR DROPDOWNS */
+      .topbar-dropdown-wrap {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+      }
+      .topbar-dropdown-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: #1c212b;
+        border: 1px solid #2d3342;
+        border-radius: 6px;
+        color: #d1d5db;
+        padding: 5px 10px;
+        font-size: 0.76rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      .topbar-dropdown-btn:hover,
+      .topbar-dropdown-wrap.open .topbar-dropdown-btn {
+        background: #252b38;
+        border-color: #3b4354;
+        color: #ffffff;
+      }
+      .dropdown-chevron {
+        transition: transform 0.2s ease;
+      }
+      .topbar-dropdown-wrap.open .dropdown-chevron {
+        transform: rotate(180deg);
+      }
+      .topbar-dropdown-menu {
+        display: none;
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        min-width: 250px;
+        background: #141822;
+        border: 1px solid #283142;
+        border-radius: 8px;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05);
+        padding: 6px;
+        z-index: 9999;
+      }
+      .topbar-dropdown-wrap.menu-left .topbar-dropdown-menu {
+        left: 0;
+        right: auto;
+      }
+      .topbar-dropdown-wrap.open .topbar-dropdown-menu {
+        display: block;
+        animation: topbarDropdownFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      @keyframes topbarDropdownFadeIn {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .topbar-dropdown-item {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        background: transparent;
+        border: none;
+        border-radius: 6px;
+        color: #e5e7eb;
+        text-align: left;
+        text-decoration: none;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+        box-sizing: border-box;
+      }
+      .topbar-dropdown-item:hover {
+        background: #1f2636;
+        color: #ffffff;
+      }
+      .topbar-item-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .topbar-item-text {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        flex: 1;
+        min-width: 0;
+      }
+      .topbar-item-title {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #f3f4f6;
+        line-height: 1.2;
+      }
+      .topbar-item-desc {
+        font-size: 0.7rem;
+        color: #9ca3af;
+        line-height: 1.2;
+      }
+      .topbar-dropdown-divider {
+        height: 1px;
+        background: #232b3b;
+        margin: 4px 6px;
+      }
+
       @keyframes fadeInDropdown {
         from { opacity: 0; transform: translateY(-4px); }
         to { opacity: 1; transform: translateY(0); }
@@ -4435,16 +4546,16 @@ try {
       <div class="builder-actions">
         <!-- Live Site, Preview & Code Dropdown -->
         <div class="topbar-dropdown-wrap menu-right" id="viewActionsDropdownWrap">
-          <button type="button" class="topbar-dropdown-btn" id="btnViewActionsDropdown" title="Live Site, Preview & Code" onmouseenter="try{var btn=document.getElementById('btnViewLiveWeb');if(btn){var p=new URLSearchParams(window.location.search);var t=p.get('tenant');if(t){var h=window.location.hostname.replace(/^(www\.|builder\.)/,'');var s=(window.currentSlug||p.get('slug')||'home');var path=(s==='home'||!s)?'/':(s==='blog'?'/blog':'/'+s);btn.href=window.location.protocol+'//'+t+'.'+h+(window.location.port?':'+window.location.port:'')+path;}}}catch(_){}">
+          <button type="button" class="topbar-dropdown-btn" id="btnViewActionsDropdown" title="Live Site, Preview & Code" aria-haspopup="true" aria-expanded="false">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
               <circle cx="12" cy="12" r="3"></circle>
             </svg>
             <span>Preview & Code</span>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            <svg class="dropdown-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </button>
           <div class="topbar-dropdown-menu" id="viewActionsDropdownMenu">
-            <a href="/" target="_blank" class="topbar-dropdown-item" id="btnViewLiveWeb" title="Open Live Site in New Tab" onmouseenter="try{var p=new URLSearchParams(window.location.search);var t=p.get('tenant');if(t){var h=window.location.hostname.replace(/^(www\.|builder\.)/,'');var s=(window.currentSlug||p.get('slug')||'home');var path=(s==='home'||!s)?'/':(s==='blog'?'/blog':'/'+s);this.href=window.location.protocol+'//'+t+'.'+h+(window.location.port?':'+window.location.port:'')+path;}}catch(_){}" onclick="try{var p=new URLSearchParams(window.location.search);var t=p.get('tenant');if(t){var h=window.location.hostname.replace(/^(www\.|builder\.)/,'');var s=(window.currentSlug||p.get('slug')||'home');var path=(s==='home'||!s)?'/':(s==='blog'?'/blog':'/'+s);this.href=window.location.protocol+'//'+t+'.'+h+(window.location.port?':'+window.location.port:'')+path;}}catch(_){}">
+            <a href={liveSiteInitialUrl} target="_blank" class="topbar-dropdown-item" id="btnViewLiveWeb" title="Open Live Site in New Tab">
               <div class="topbar-item-icon" style="color: #60a5fa;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
@@ -4457,35 +4568,18 @@ try {
                 <span class="topbar-item-desc">Open live website in new tab</span>
               </div>
             </a>
-            <script is:inline>
-              (function() {
-                function refreshLiveSiteUrl() {
-                  var btn = document.getElementById('btnViewLiveWeb');
-                  if (!btn) return;
-                  var params = new URLSearchParams(window.location.search);
-                  var tenant = params.get('tenant');
-                  var slug = (window.currentSlug) ? window.currentSlug : (params.get('slug') || 'home');
-                  var path = (slug === 'home' || !slug) ? '/' : (slug === 'blog' ? '/blog' : '/' + slug);
-                  if (tenant) {
-                    var host = window.location.hostname.replace(/^(www\.|builder\.)/, '');
-                    var proto = window.location.protocol;
-                    var port = window.location.port ? ':' + window.location.port : '';
-                    btn.href = proto + '//' + tenant + '.' + host + port + path;
-                  } else {
-                    btn.href = path;
-                  }
-                }
-                refreshLiveSiteUrl();
-                document.addEventListener('DOMContentLoaded', refreshLiveSiteUrl);
-                document.addEventListener('mouseover', function(e) {
-                  if (e.target && e.target.closest('#btnViewLiveWeb, #viewActionsDropdownWrap')) {
-                    refreshLiveSiteUrl();
-                  }
-                });
-                window.refreshLiveSiteUrl = refreshLiveSiteUrl;
-              })();
-            </script>
             <button type="button" class="topbar-dropdown-item" id="btnPreview" title="Full Screen Preview">
+              <div class="topbar-item-icon" style="color: #34d399;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </div>
+              <div class="topbar-item-text">
+                <span class="topbar-item-title">Preview Canvas</span>
+                <span class="topbar-item-desc">Fullscreen canvas view</span>
+              </div>
+            </button>
               <div class="topbar-item-icon" style="color: #34d399;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
@@ -8030,19 +8124,81 @@ try {
       const btnViewLiveWeb = document.getElementById('btnViewLiveWeb');
       const saveBtnLabel = document.getElementById('saveBtnLabel');
 
+      function updateLiveWebLink() {
+        if (!btnViewLiveWeb) return;
+        const urlParams = new URLSearchParams(window.location.search);
+        const currentTenant = urlParams.get('tenant');
+        const activeSlug = (typeof currentSlug !== 'undefined' && currentSlug) ? currentSlug : (urlParams.get('slug') || 'home');
+        const pagePath = activeSlug === 'home' ? '/' : (activeSlug === 'blog' ? '/blog' : `/${activeSlug}`);
+        if (currentTenant) {
+          const host = window.location.hostname.replace(/^(www\.|builder\.)/, '');
+          const proto = window.location.protocol;
+          const port = window.location.port ? `:${window.location.port}` : '';
+          btnViewLiveWeb.href = `${proto}//${currentTenant}.${host}${port}${pagePath}`;
+        } else {
+          btnViewLiveWeb.href = pagePath;
+        }
+      }
+
       if (btnViewLiveWeb) {
-        btnViewLiveWeb.addEventListener('click', (e) => {
-          const urlParams = new URLSearchParams(window.location.search);
-          const currentTenant = urlParams.get('tenant');
-          if (currentTenant) {
-            const host = window.location.hostname.replace(/^(www\.|builder\.)/, '');
-            const proto = window.location.protocol;
-            const port = window.location.port ? `:${window.location.port}` : '';
-            const pagePath = currentSlug === 'home' ? '/' : (currentSlug === 'blog' ? '/blog' : `/${currentSlug}`);
-            btnViewLiveWeb.href = `${proto}//${currentTenant}.${host}${port}${pagePath}`;
+        btnViewLiveWeb.addEventListener('click', updateLiveWebLink);
+        btnViewLiveWeb.addEventListener('mouseenter', updateLiveWebLink);
+      }
+
+      // Topbar Dropdowns (.topbar-dropdown-wrap - Live Site, Preview & Code)
+      function initTopbarDropdowns() {
+        const wraps = document.querySelectorAll('.topbar-dropdown-wrap');
+        wraps.forEach((wrap) => {
+          const btn = wrap.querySelector('.topbar-dropdown-btn');
+          const menu = wrap.querySelector('.topbar-dropdown-menu');
+          if (!btn) return;
+
+          btn.addEventListener('mouseenter', updateLiveWebLink);
+
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closePageActionsDropdown();
+            updateLiveWebLink();
+            const isOpen = wrap.classList.contains('open');
+            wraps.forEach((w) => {
+              w.classList.remove('open');
+              w.querySelector('.topbar-dropdown-btn')?.setAttribute('aria-expanded', 'false');
+            });
+            if (!isOpen) {
+              wrap.classList.add('open');
+              btn.setAttribute('aria-expanded', 'true');
+            }
+          });
+
+          if (menu) {
+            menu.addEventListener('click', (e) => {
+              if (e.target.closest('.topbar-dropdown-item')) {
+                wrap.classList.remove('open');
+                btn.setAttribute('aria-expanded', 'false');
+              }
+            });
+          }
+        });
+
+        document.addEventListener('click', (e) => {
+          if (!e.target.closest('.topbar-dropdown-wrap')) {
+            wraps.forEach((w) => {
+              w.classList.remove('open');
+              w.querySelector('.topbar-dropdown-btn')?.setAttribute('aria-expanded', 'false');
+            });
+          }
+        });
+
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') {
+            wraps.forEach((w) => {
+              w.classList.remove('open');
+              w.querySelector('.topbar-dropdown-btn')?.setAttribute('aria-expanded', 'false');
+            });
           }
         });
       }
+      initTopbarDropdowns();
 
       // Actions Dropdown
       const pageActionsDropdown = document.getElementById('pageActionsDropdown');
@@ -8515,12 +8671,17 @@ try {
           const port = window.location.port ? `:${window.location.port}` : '';
           liveBase = `${proto}//${currentTenant}.${host}${port}`;
         }
-        const pagePath = currentSlug === 'home' ? '/' : (currentSlug === 'blog' ? '/blog' : `/${currentSlug}`);
-        btnViewLiveWeb.href = liveBase ? `${liveBase}${pagePath}` : pagePath;
-        if (window.refreshLiveSiteUrl) window.refreshLiveSiteUrl();
+        if (btnViewLiveWeb) {
+          btnViewLiveWeb.href = liveBase ? `${liveBase}${pagePath}` : pagePath;
+        }
         saveBtnLabel.textContent = 'Save';
         updateCanvasHeaderFooterBanners();
       }
+
+      // Initial call to populate badge and active page labels immediately
+      try {
+        updatePageDropdownUI();
+      } catch (_) {}
 
       function getActiveThemeConfig() {
         if (siteConfig && siteConfig.themeConfigs && siteConfig.themeConfigs[activeThemeName]) {
