@@ -12,6 +12,7 @@ const (
 	TenantStatusDraft     TenantStatus = "draft"
 	TenantStatusActive    TenantStatus = "active"
 	TenantStatusSuspended TenantStatus = "suspended"
+	TenantStatusDeleted   TenantStatus = "deleted"
 )
 
 type TenantSMTPSettings struct {
@@ -45,6 +46,10 @@ type Tenant struct {
 	PublishedAt       *time.Time          `bson:"published_at,omitempty" json:"published_at,omitempty"`
 	SMTP              TenantSMTPSettings  `bson:"smtp,omitempty" json:"smtp,omitempty"`
 	AutoResponder     TenantAutoResponder `bson:"auto_responder,omitempty" json:"auto_responder,omitempty"`
+	IsDeleted         bool                `bson:"is_deleted" json:"is_deleted"`
+	DeletedAt         *time.Time          `bson:"deleted_at,omitempty" json:"deleted_at,omitempty"`
+	PurgeAt           *time.Time          `bson:"purge_at,omitempty" json:"purge_at,omitempty"`
+	DeletedBy         *primitive.ObjectID `bson:"deleted_by,omitempty" json:"deleted_by,omitempty"`
 	CreatedAt         time.Time           `bson:"created_at" json:"created_at"`
 	UpdatedAt         time.Time           `bson:"updated_at" json:"updated_at"`
 }

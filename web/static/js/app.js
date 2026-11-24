@@ -13210,11 +13210,17 @@ function bindBoardDrag(list) {
   });
 }
 
-async function renderStores() {
+async function renderStores(activeTab = "active") {
   let stores = [];
+  let deletedStores = [];
+  let isPlatformOwner = state.me?.role === "owner_adm";
   try {
     const res = await api("/api/tenants");
     stores = res.tenants || [];
+    deletedStores = res.deleted_tenants || [];
+    if (res.is_platform_owner !== undefined) {
+      isPlatformOwner = res.is_platform_owner;
+    }
   } catch (err) {
     console.error("Failed to load stores:", err);
   }
@@ -13228,83 +13234,157 @@ async function renderStores() {
       <button class="btn primary" id="openCreateStoreBtn">${icon("plus")} Create New Store</button>
     </div>
 
-    ${stores.length === 0 ? `
-      <section class="panel empty-state">
-        <div class="empty-state-icon">${icon("store")}</div>
-        <h2>No stores created yet</h2>
-        <p class="muted">Create your first client storefront with an Astro theme and publish to Cloudflare Pages.</p>
-        <button class="btn primary" id="openCreateStoreEmptyBtn">${icon("plus")} Create Store</button>
-      </section>
-    ` : `
-      <div class="grid-3" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; margin-top: 20px;">
-        ${stores.map(store => {
-          const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-          const baseDomain = window.location.hostname.replace(/^www\./, "");
-          const builderHref = isLocal
-            ? `http://localhost:4321/editor?tenant=${encodeURIComponent(store.subdomain)}`
-            : `${window.location.protocol}//builder.${baseDomain}/editor?tenant=${encodeURIComponent(store.subdomain)}`;
-          const liveUrl = store.custom_domain
-            ? `https://${store.custom_domain}`
-            : (store.cloudflare_url && !store.cloudflare_url.includes(".pages.dev")
-                ? store.cloudflare_url
-                : `https://${store.subdomain}.${baseDomain}`);
-          const domainStatus = store.custom_domain_status || (store.custom_domain ? 'pending' : 'none');
+    <div style="display:flex; gap:8px; margin:16px 0 20px 0; border-bottom:1px solid var(--border-color, #e2e8f0); padding-bottom:12px;">
+      <button class="btn ${activeTab === 'active' ? 'primary' : 'quiet'}" id="tabActiveStores" style="display:inline-flex; align-items:center; gap:6px;">
+        ${icon("store")} Active Stores (${stores.length})
+      </button>
+      <button class="btn ${activeTab === 'trash' ? 'primary' : 'quiet'}" id="tabTrashStores" style="display:inline-flex; align-items:center; gap:6px;">
+        ${icon("trash-2")} Trash (${deletedStores.length})
+      </button>
+    </div>
 
-          return `
-          <article class="panel store-card" style="display:flex; flex-direction:column; justify-content:space-between; padding:20px; border-radius:12px; border:1px solid var(--border-color, #e2e8f0);">
-            <div>
-              <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
-                <div>
-                  <h3 style="margin:0 0 4px 0; font-size:1.15rem;">${esc(store.company_name)}</h3>
-                  <code style="font-size:0.85rem; color:var(--text-muted, #64748b);">${esc(store.subdomain)}.${esc(baseDomain)}</code>
+    ${activeTab === 'active' ? (
+      stores.length === 0 ? `
+        <section class="panel empty-state">
+          <div class="empty-state-icon">${icon("store")}</div>
+          <h2>No active stores</h2>
+          <p class="muted">Create your first client storefront with an Astro theme and publish to Cloudflare Pages.</p>
+          <button class="btn primary" id="openCreateStoreEmptyBtn">${icon("plus")} Create Store</button>
+        </section>
+      ` : `
+        <div class="grid-3" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; margin-top: 10px;">
+          ${stores.map(store => {
+            const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+            const baseDomain = window.location.hostname.replace(/^www\./, "");
+            const builderHref = isLocal
+              ? `http://localhost:4321/editor?tenant=${encodeURIComponent(store.subdomain)}`
+              : `${window.location.protocol}//builder.${baseDomain}/editor?tenant=${encodeURIComponent(store.subdomain)}`;
+            const liveUrl = store.custom_domain
+              ? `https://${store.custom_domain}`
+              : (store.cloudflare_url && !store.cloudflare_url.includes(".pages.dev")
+                  ? store.cloudflare_url
+                  : `https://${store.subdomain}.${baseDomain}`);
+            const domainStatus = store.custom_domain_status || (store.custom_domain ? 'pending' : 'none');
+
+            return `
+            <article class="panel store-card" style="display:flex; flex-direction:column; justify-content:space-between; padding:20px; border-radius:12px; border:1px solid var(--border-color, #e2e8f0);">
+              <div>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                  <div>
+                    <h3 style="margin:0 0 4px 0; font-size:1.15rem;">${esc(store.company_name)}</h3>
+                    <code style="font-size:0.85rem; color:var(--text-muted, #64748b);">${esc(store.subdomain)}.${esc(baseDomain)}</code>
+                  </div>
+                  <span class="badge" style="padding:4px 8px; border-radius:999px; font-size:0.75rem; text-transform:uppercase; font-weight:600; background:${store.status === 'active' ? '#dcfce7; color:#15803d;' : '#f1f5f9; color:#475569;'}">
+                    ${esc(store.status)}
+                  </span>
                 </div>
-                <span class="badge" style="padding:4px 8px; border-radius:999px; font-size:0.75rem; text-transform:uppercase; font-weight:600; background:${store.status === 'active' ? '#dcfce7; color:#15803d;' : '#f1f5f9; color:#475569;'}">
-                  ${esc(store.status)}
-                </span>
+
+                <div style="margin-bottom:16px; font-size:0.9rem;">
+                  <p style="margin:4px 0;"><strong>Theme:</strong> <span style="text-transform:capitalize;">${esc(store.active_theme || 'default')}</span></p>
+                  <div style="margin:6px 0; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                    <strong>Domain:</strong>
+                    ${store.custom_domain ? `
+                      <code>${esc(store.custom_domain)}</code>
+                      <span class="badge" style="padding:2px 6px; border-radius:999px; font-size:0.7rem; font-weight:600; ${domainStatus === 'active' ? 'background:#dcfce7; color:#15803d;' : 'background:#fef3c7; color:#b45309;'}">
+                        ${domainStatus === 'active' ? '✓ DNS Active' : '⏳ DNS Pending'}
+                      </span>
+                    ` : `
+                      <span class="muted" style="font-size:0.85rem;">None (${esc(store.subdomain)}.${esc(baseDomain)})</span>
+                    `}
+                  </div>
+                  <p style="margin:4px 0;"><strong>Live URL:</strong> <a href="${esc(liveUrl)}" target="_blank" rel="noopener">${esc(liveUrl)} ↗</a></p>
+                </div>
               </div>
 
-              <div style="margin-bottom:16px; font-size:0.9rem;">
-                <p style="margin:4px 0;"><strong>Theme:</strong> <span style="text-transform:capitalize;">${esc(store.active_theme || 'default')}</span></p>
-                <div style="margin:6px 0; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                  <strong>Domain:</strong>
-                  ${store.custom_domain ? `
-                    <code>${esc(store.custom_domain)}</code>
-                    <span class="badge" style="padding:2px 6px; border-radius:999px; font-size:0.7rem; font-weight:600; ${domainStatus === 'active' ? 'background:#dcfce7; color:#15803d;' : 'background:#fef3c7; color:#b45309;'}">
-                      ${domainStatus === 'active' ? '✓ DNS Active' : '⏳ DNS Pending'}
+              <div style="border-top:1px solid var(--border-color, #f1f5f9); padding-top:16px; display:flex; flex-direction:column; gap:8px;">
+                <div style="display:flex; gap:8px;">
+                  <a class="btn primary" href="${esc(builderHref)}" target="_blank" rel="noopener" style="flex:1; text-align:center; text-decoration:none;">
+                    ${icon("layout")} Open Builder
+                  </a>
+                  <button class="btn publish-store-btn" data-store-id="${esc(store.id)}" data-store-sub="${esc(store.subdomain)}" style="flex:1;">
+                    ${icon("zap")} Publish
+                  </button>
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <button class="btn quiet connect-domain-btn" data-store-id="${esc(store.id)}" data-store-sub="${esc(store.subdomain)}" data-store-domain="${esc(store.custom_domain || '')}" data-store-status="${esc(domainStatus)}" style="flex:1; font-size:0.82rem; padding:6px 8px;">
+                    ${icon("globe")} ${store.custom_domain ? (domainStatus === 'active' ? 'Custom Domain' : 'Verify Domain') : 'Connect Domain'}
+                  </button>
+                  <button class="btn quiet store-settings-btn" data-store-id="${esc(store.id)}" style="flex:1; font-size:0.82rem; padding:6px 8px;">
+                    ${icon("settings")} SMTP
+                  </button>
+                  <button class="btn quiet store-leads-btn" data-store-id="${esc(store.id)}" style="flex:1; font-size:0.82rem; padding:6px 8px;">
+                    ${icon("mail")} Leads
+                  </button>
+                </div>
+                <div style="border-top:1px dashed var(--border-color, #e2e8f0); padding-top:8px; margin-top:2px; display:flex; justify-content:space-between; align-items:center;">
+                  <button class="btn quiet text-danger delete-store-btn" data-store-id="${esc(store.id)}" data-store-name="${esc(store.company_name)}" data-store-sub="${esc(store.subdomain)}" style="font-size:0.8rem; color:#ef4444; padding:4px 8px; display:inline-flex; align-items:center; gap:4px;">
+                    ${icon("trash-2")} Delete Store
+                  </button>
+                  ${isPlatformOwner ? `
+                    <button class="btn quiet text-danger hard-delete-store-btn" data-store-id="${esc(store.id)}" data-store-name="${esc(store.company_name)}" data-store-sub="${esc(store.subdomain)}" style="font-size:0.75rem; color:#b91c1c; padding:3px 8px; background:#fee2e2; border-radius:6px; font-weight:600; display:inline-flex; align-items:center; gap:4px;" title="Platform Owner: Permanently wipe files & subdomain">
+                      ${icon("alert-triangle")} Wipe All
+                    </button>
+                  ` : ''}
+                </div>
+              </div>
+            </article>
+          `;}).join("")}
+        </div>
+      `
+    ) : (
+      deletedStores.length === 0 ? `
+        <section class="panel empty-state">
+          <div class="empty-state-icon">${icon("trash-2")}</div>
+          <h2>Trash is empty</h2>
+          <p class="muted">Stores moved to Trash are kept for 30 days before being permanently deleted. You can restore them anytime during this period.</p>
+        </section>
+      ` : `
+        <div class="grid-3" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; margin-top: 10px;">
+          ${deletedStores.map(store => {
+            const baseDomain = window.location.hostname.replace(/^www\./, "");
+            const purgeDate = store.purge_at ? new Date(store.purge_at) : new Date(new Date(store.deleted_at || Date.now()).getTime() + 30*24*3600*1000);
+            const daysLeft = Math.max(0, Math.ceil((purgeDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+
+            return `
+            <article class="panel store-card" style="display:flex; flex-direction:column; justify-content:space-between; padding:20px; border-radius:12px; border:1px solid #fecaca; background:#fffafb;">
+              <div>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                  <div>
+                    <h3 style="margin:0 0 4px 0; font-size:1.15rem; color:#991b1b;">${esc(store.company_name)}</h3>
+                    <code style="font-size:0.85rem; color:#b91c1c;">${esc(store.subdomain)}.${esc(baseDomain)}</code>
+                  </div>
+                  <span class="badge" style="padding:4px 8px; border-radius:999px; font-size:0.75rem; text-transform:uppercase; font-weight:600; background:#fee2e2; color:#991b1b;">
+                    Deleted
+                  </span>
+                </div>
+
+                <div style="margin-bottom:16px; font-size:0.9rem;">
+                  <p style="margin:4px 0;"><strong>Deleted On:</strong> ${store.deleted_at ? new Date(store.deleted_at).toLocaleDateString() : 'Recently'}</p>
+                  <p style="margin:4px 0;">
+                    <strong>Retention:</strong>
+                    <span class="badge" style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:999px; font-size:0.75rem; font-weight:600;">
+                      ⏳ Purges in ${daysLeft} days
                     </span>
-                  ` : `
-                    <span class="muted" style="font-size:0.85rem;">None (${esc(store.subdomain)}.${esc(baseDomain)})</span>
-                  `}
+                  </p>
+                  <small class="muted" style="display:block; margin-top:6px;">Can be restored to active service anytime within the 30-day window.</small>
                 </div>
-                <p style="margin:4px 0;"><strong>Live URL:</strong> <a href="${esc(liveUrl)}" target="_blank" rel="noopener">${esc(liveUrl)} ↗</a></p>
               </div>
-            </div>
 
-            <div style="border-top:1px solid var(--border-color, #f1f5f9); padding-top:16px; display:flex; flex-direction:column; gap:8px;">
-              <div style="display:flex; gap:8px;">
-                <a class="btn primary" href="${esc(builderHref)}" target="_blank" rel="noopener" style="flex:1; text-align:center; text-decoration:none;">
-                  ${icon("layout")} Open Builder
-                </a>
-                <button class="btn publish-store-btn" data-store-id="${esc(store.id)}" data-store-sub="${esc(store.subdomain)}" style="flex:1;">
-                  ${icon("zap")} Publish
+              <div style="border-top:1px solid #fee2e2; padding-top:14px; display:flex; flex-direction:column; gap:8px;">
+                <button class="btn primary restore-store-btn" data-store-id="${esc(store.id)}" data-store-name="${esc(store.company_name)}" style="background:#16a34a; border-color:#16a34a; display:inline-flex; justify-content:center; align-items:center; gap:6px;">
+                  ${icon("rotate-ccw")} Restore Store
                 </button>
+                ${isPlatformOwner ? `
+                  <button class="btn quiet text-danger hard-delete-store-btn" data-store-id="${esc(store.id)}" data-store-name="${esc(store.company_name)}" data-store-sub="${esc(store.subdomain)}" style="font-size:0.8rem; color:#b91c1c; padding:6px; background:#fee2e2; border-radius:6px; font-weight:600; display:inline-flex; justify-content:center; align-items:center; gap:4px;">
+                    ${icon("trash-2")} Wipe All Files & Subdomain Now
+                  </button>
+                ` : ''}
               </div>
-              <div style="display:flex; gap:8px;">
-                <button class="btn quiet connect-domain-btn" data-store-id="${esc(store.id)}" data-store-sub="${esc(store.subdomain)}" data-store-domain="${esc(store.custom_domain || '')}" data-store-status="${esc(domainStatus)}" style="flex:1; font-size:0.82rem; padding:6px 8px;">
-                  ${icon("globe")} ${store.custom_domain ? (domainStatus === 'active' ? 'Custom Domain' : 'Verify Domain') : 'Connect Domain'}
-                </button>
-                <button class="btn quiet store-settings-btn" data-store-id="${esc(store.id)}" style="flex:1; font-size:0.82rem; padding:6px 8px;">
-                  ${icon("settings")} SMTP
-                </button>
-                <button class="btn quiet store-leads-btn" data-store-id="${esc(store.id)}" style="flex:1; font-size:0.82rem; padding:6px 8px;">
-                  ${icon("mail")} Leads
-                </button>
-              </div>
-            </div>
-          </article>
-        `;}).join("")}
-      </div>
-    `}
+            </article>
+          `;}).join("")}
+        </div>
+      `
+    )}
 
     <!-- Create Store Dialog -->
     <dialog id="createStoreDialog" class="modal client-dialog" style="max-width:580px; width:95%; border-radius:12px; border:1px solid var(--border-color, #e2e8f0); padding:24px;">
@@ -13853,6 +13933,73 @@ async function renderStores() {
     } catch (err) {
       alert("Error removing domain: " + (err.message || err));
     }
+  });
+
+  // Store Tab Switching
+  document.getElementById("tabActiveStores")?.addEventListener("click", () => renderStores("active"));
+  document.getElementById("tabTrashStores")?.addEventListener("click", () => renderStores("trash"));
+
+  // Soft Delete Store
+  document.querySelectorAll(".delete-store-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const storeId = btn.getAttribute("data-store-id");
+      const name = btn.getAttribute("data-store-name") || "this store";
+      if (!confirm(`Move store "${name}" to Trash?\n\nIt will be preserved in Trash for 30 days and can be restored anytime before permanent deletion.`)) {
+        return;
+      }
+      try {
+        await api(`/api/tenants/${storeId}`, { method: "DELETE" });
+        showToast(`Store "${name}" moved to Trash.`);
+        await renderStores("active");
+      } catch (err) {
+        alert("Error deleting store: " + (err.message || err));
+      }
+    });
+  });
+
+  // Restore Store from Trash
+  document.querySelectorAll(".restore-store-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const storeId = btn.getAttribute("data-store-id");
+      const name = btn.getAttribute("data-store-name") || "this store";
+      try {
+        await api(`/api/tenants/${storeId}/restore`, { method: "POST" });
+        showToast(`Store "${name}" restored successfully!`);
+        await renderStores("active");
+      } catch (err) {
+        alert("Error restoring store: " + (err.message || err));
+      }
+    });
+  });
+
+  // Hard Delete / Permanent Wipe (Platform Owner only)
+  document.querySelectorAll(".hard-delete-store-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const storeId = btn.getAttribute("data-store-id");
+      const name = btn.getAttribute("data-store-name") || "this store";
+      const subdomain = btn.getAttribute("data-store-sub");
+      const promptVal = prompt(
+        `⚠️ DANGER: PERMANENT WIPE (Platform Owner Action)\n\nAre you sure you want to permanently delete "${name}"?\n\nThis will completely ERASE:\n• File directory: /var/www/tenants/${subdomain}\n• Cloudflare Pages project & subdomain settings\n• Contact submissions and store customers\n• Database records\n\nThis CANNOT be undone! Type "${subdomain}" to confirm:`
+      );
+      if (promptVal === null) return;
+      if (promptVal.trim().toLowerCase() !== subdomain.toLowerCase()) {
+        alert("Subdomain did not match. Permanent wipe canceled.");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = `${icon("loader-2")} Purging...`;
+
+      try {
+        const res = await api(`/api/tenants/${storeId}?hard=true`, { method: "DELETE" });
+        showToast(`Store "${name}" and all directory files wiped completely.`);
+        await renderStores(activeTab);
+      } catch (err) {
+        alert("Error purging store: " + (err.message || err));
+        btn.disabled = false;
+        btn.innerHTML = `${icon("alert-triangle")} Wipe All`;
+      }
+    });
   });
 }
 

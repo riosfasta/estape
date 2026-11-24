@@ -269,6 +269,9 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/tenants/:id/domain", s.setTenantCustomDomain)
 	authed.POST("/tenants/:id/domain/verify", s.verifyTenantDomainPropagation)
 	authed.DELETE("/tenants/:id/domain", s.removeTenantCustomDomain)
+	authed.DELETE("/tenants/:id", s.deleteTenant)
+	authed.POST("/tenants/:id/restore", s.restoreTenant)
+	authed.DELETE("/tenants/:id/permanent", s.permanentDeleteTenant)
 
 	authed.GET("/integrations", middleware.RequireRoles(models.RoleTeamAdmin), s.listIntegrations)
 	authed.POST("/integrations/:provider/connect", middleware.RequireRoles(models.RoleTeamAdmin), s.connectIntegration)

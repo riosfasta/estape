@@ -124,13 +124,39 @@ func (s *Server) listMyTenants(c *gin.Context) {
 		return
 	}
 
-	tenants, err := s.store.ListTenantsByOwner(c.Request.Context(), user.ID)
+	// Purge expired soft-deleted stores (>30 days) in background
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, _ = s.store.PurgeExpiredDeletedTenants(ctx)
+	}()
+
+	filter := bson.M{"owner_user_id": user.ID}
+	if user.Role == models.RoleOwnerAdmin && c.Query("all") == "true" {
+		filter = bson.M{}
+	}
+
+	allTenants, err := s.store.ListTenants(c.Request.Context(), filter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list stores: " + err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"tenants": tenants})
+	active := make([]models.Tenant, 0)
+	deleted := make([]models.Tenant, 0)
+	for _, t := range allTenants {
+		if t.IsDeleted || t.Status == models.TenantStatusDeleted {
+			deleted = append(deleted, t)
+		} else {
+			active = append(active, t)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"tenants":           active,
+		"deleted_tenants":   deleted,
+		"is_platform_owner": user.Role == models.RoleOwnerAdmin,
+	})
 }
 
 func (s *Server) getTenant(c *gin.Context) {
@@ -605,4 +631,215 @@ func (s *Server) removeTenantCustomDomain(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Custom domain removed successfully"})
+}
+
+func (s *Server) deleteTenant(c *gin.Context) {
+	user, ok := middleware.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	tenantID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant id"})
+		return
+	}
+
+	tenant, err := s.store.GetTenantByID(c.Request.Context(), tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "store not found"})
+		return
+	}
+
+	if tenant.OwnerUserID != user.ID && user.Role != models.RoleOwnerAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+
+	// Platform Owner can trigger immediate hard/permanent delete via ?hard=true or ?permanent=true
+	if c.Query("hard") == "true" || c.Query("permanent") == "true" {
+		if user.Role != models.RoleOwnerAdmin {
+			c.JSON(http.StatusForbidden, gin.H{"error": "only the platform owner can perform permanent deletion"})
+			return
+		}
+		s.performPermanentTenantDelete(c, tenant)
+		return
+	}
+
+	// Soft delete with 30-day (1 month) retention
+	now := time.Now()
+	purgeAt := now.Add(30 * 24 * time.Hour)
+	updates := bson.M{
+		"is_deleted": true,
+		"status":     models.TenantStatusDeleted,
+		"deleted_at": &now,
+		"purge_at":   &purgeAt,
+		"deleted_by": &user.ID,
+	}
+
+	if err := s.store.UpdateTenant(c.Request.Context(), tenant.ID, updates); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete store: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "Store moved to Trash. It can be restored within 30 days before permanent deletion.",
+		"deleted":  true,
+		"purge_at": purgeAt,
+	})
+}
+
+func (s *Server) restoreTenant(c *gin.Context) {
+	user, ok := middleware.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	tenantID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant id"})
+		return
+	}
+
+	tenant, err := s.store.GetTenantByID(c.Request.Context(), tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "store not found"})
+		return
+	}
+
+	if tenant.OwnerUserID != user.ID && user.Role != models.RoleOwnerAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+
+	restoreStatus := models.TenantStatusActive
+	if tenant.PublishedAt == nil {
+		restoreStatus = models.TenantStatusDraft
+	}
+
+	updates := bson.M{
+		"is_deleted": false,
+		"status":     restoreStatus,
+		"deleted_at": nil,
+		"purge_at":   nil,
+		"deleted_by": nil,
+	}
+
+	if err := s.store.UpdateTenant(c.Request.Context(), tenant.ID, updates); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to restore store: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Store restored successfully!",
+		"tenant":  tenant,
+	})
+}
+
+func (s *Server) permanentDeleteTenant(c *gin.Context) {
+	user, ok := middleware.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	if user.Role != models.RoleOwnerAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "only the platform owner can permanently wipe stores and directory files"})
+		return
+	}
+
+	tenantID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant id"})
+		return
+	}
+
+	tenant, err := s.store.GetTenantByID(c.Request.Context(), tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "store not found"})
+		return
+	}
+
+	s.performPermanentTenantDelete(c, tenant)
+}
+
+func (s *Server) performPermanentTenantDelete(c *gin.Context, tenant *models.Tenant) {
+	ctx := c.Request.Context()
+
+	// 1. Delete associated directories and files from disk
+	deletedDirs := make([]string, 0)
+	candidateDirs := []string{
+		fmt.Sprintf("/var/www/tenants/%s", tenant.Subdomain),
+		fmt.Sprintf("/var/www/%s", tenant.Subdomain),
+		fmt.Sprintf("/tmp/tenants/%s", tenant.Subdomain),
+		fmt.Sprintf("tenants/%s", tenant.Subdomain),
+	}
+	for _, dir := range candidateDirs {
+		if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
+			if err := os.RemoveAll(dir); err == nil {
+				deletedDirs = append(deletedDirs, dir)
+			}
+		}
+	}
+
+	// 2. Cloudflare API cleanup: delete custom domain and pages project
+	cfToken := os.Getenv("CLOUDFLARE_API_TOKEN")
+	cfAccount := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
+	if siteSettings, err := s.loadSiteSettings(ctx); err == nil {
+		if strings.TrimSpace(siteSettings.CloudflareAPIToken) != "" {
+			cfToken = strings.TrimSpace(siteSettings.CloudflareAPIToken)
+		}
+		if strings.TrimSpace(siteSettings.CloudflareAccountID) != "" {
+			cfAccount = strings.TrimSpace(siteSettings.CloudflareAccountID)
+		}
+	}
+	proj := tenant.CloudflareProject
+	if proj == "" {
+		proj = tenant.Subdomain
+	}
+	go deleteCloudflarePagesProject(cfToken, cfAccount, proj, tenant.CustomDomain)
+
+	// 3. Delete database records: form submissions, store customers, and tenant record
+	if err := s.store.PurgeTenantData(ctx, tenant.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to purge database records: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":      "Store and all associated directory files, database records, and subdomain settings permanently purged.",
+		"deleted_dirs": deletedDirs,
+		"subdomain":    tenant.Subdomain,
+		"purged":       true,
+	})
+}
+
+func deleteCloudflarePagesProject(token, accountID, project, customDomain string) {
+	if strings.TrimSpace(token) == "" || strings.TrimSpace(accountID) == "" || strings.TrimSpace(project) == "" {
+		return
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	// Detach custom domain first if present
+	if strings.TrimSpace(customDomain) != "" {
+		domainURL := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/pages/projects/%s/domains/%s", accountID, project, customDomain)
+		req, err := http.NewRequest(http.MethodDelete, domainURL, nil)
+		if err == nil {
+			req.Header.Set("Authorization", "Bearer "+token)
+			if resp, err := client.Do(req); err == nil && resp != nil {
+				_ = resp.Body.Close()
+			}
+		}
+	}
+
+	// Delete pages project to release subdomain
+	projURL := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/pages/projects/%s", accountID, project)
+	req, err := http.NewRequest(http.MethodDelete, projURL, nil)
+	if err == nil {
+		req.Header.Set("Authorization", "Bearer "+token)
+		if resp, err := client.Do(req); err == nil && resp != nil {
+			_ = resp.Body.Close()
+		}
+	}
 }

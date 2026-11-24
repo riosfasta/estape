@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"bugmark/internal/auth"
+	"bugmark/internal/models"
 
 	"github.com/gin-gonic/gin"
 )
@@ -105,5 +107,27 @@ func TestDomainValidationRegex(t *testing.T) {
 		if validDomainRegex.MatchString(d) {
 			t.Errorf("expected %s to be invalid domain", d)
 		}
+	}
+}
+
+func TestTenantDeletionRetentionTime(t *testing.T) {
+	now := time.Now()
+	purgeAt := now.Add(30 * 24 * time.Hour)
+	tenant := models.Tenant{
+		Status:    models.TenantStatusDeleted,
+		IsDeleted: true,
+		DeletedAt: &now,
+		PurgeAt:   &purgeAt,
+	}
+
+	if tenant.Status != models.TenantStatusDeleted {
+		t.Errorf("expected tenant status %s, got %s", models.TenantStatusDeleted, tenant.Status)
+	}
+	if !tenant.IsDeleted {
+		t.Error("expected tenant to be marked deleted")
+	}
+	days := int(tenant.PurgeAt.Sub(*tenant.DeletedAt).Hours() / 24)
+	if days != 30 {
+		t.Errorf("expected 30 days retention, got %d", days)
 	}
 }

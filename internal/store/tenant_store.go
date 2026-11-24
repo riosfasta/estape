@@ -55,8 +55,11 @@ func (s *Store) GetTenantByCustomDomain(ctx context.Context, domain string) (*mo
 	return &tenant, nil
 }
 
-func (s *Store) ListTenantsByOwner(ctx context.Context, ownerUserID primitive.ObjectID) ([]models.Tenant, error) {
-	cursor, err := s.C("tenants").Find(ctx, bson.M{"owner_user_id": ownerUserID}, mongomodels.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
+func (s *Store) ListTenants(ctx context.Context, filter bson.M) ([]models.Tenant, error) {
+	if filter == nil {
+		filter = bson.M{}
+	}
+	cursor, err := s.C("tenants").Find(ctx, filter, mongomodels.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
 	if err != nil {
 		return nil, err
 	}
@@ -67,6 +70,29 @@ func (s *Store) ListTenantsByOwner(ctx context.Context, ownerUserID primitive.Ob
 		return nil, err
 	}
 	return tenants, nil
+}
+
+func (s *Store) ListTenantsByOwner(ctx context.Context, ownerUserID primitive.ObjectID) ([]models.Tenant, error) {
+	return s.ListTenants(ctx, bson.M{"owner_user_id": ownerUserID})
+}
+
+func (s *Store) PurgeTenantData(ctx context.Context, tenantID primitive.ObjectID) error {
+	_, _ = s.C("tenant_form_submissions").DeleteMany(ctx, bson.M{"tenant_id": tenantID})
+	_, _ = s.C("store_customers").DeleteMany(ctx, bson.M{"tenant_id": tenantID})
+	_, err := s.C("tenants").DeleteOne(ctx, bson.M{"_id": tenantID})
+	return err
+}
+
+func (s *Store) PurgeExpiredDeletedTenants(ctx context.Context) (int64, error) {
+	now := time.Now()
+	res, err := s.C("tenants").DeleteMany(ctx, bson.M{
+		"is_deleted": true,
+		"purge_at":   bson.M{"$lte": now, "$ne": nil},
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
 }
 
 func (s *Store) UpdateTenant(ctx context.Context, id primitive.ObjectID, update bson.M) error {
