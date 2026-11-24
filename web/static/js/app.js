@@ -13282,11 +13282,15 @@ async function renderStores(activeTab = "active") {
                         <span class="badge" style="padding:2px 7px; border-radius:999px; font-size:0.7rem; font-weight:600; background:#fef3c7; color:#b45309; display:inline-flex; align-items:center; gap:3px;">
                           ${icon("shield-alert")} SSL Inactive
                         </span>
-                        <button class="btn compact quick-install-ssl-btn" data-store-id="${esc(store.id)}" data-store-domain="${esc(store.custom_domain || `${store.subdomain}.${baseDomain}`)}" style="font-size:0.72rem; padding:2px 8px; height:auto; line-height:1.2; display:inline-flex; align-items:center; gap:4px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:600; cursor:pointer;" title="Click to install / provision SSL certificate for ${esc(store.subdomain)}.${esc(baseDomain)}">
-                          ${icon("zap")} Install SSL
-                        </button>
                       `}
                     </div>
+                    ${store.ssl_status !== 'active' ? `
+                      <div style="margin-top:6px;">
+                        <button class="btn compact quick-install-ssl-btn" data-store-id="${esc(store.id)}" data-store-domain="${esc(store.custom_domain || `${store.subdomain}.${baseDomain}`)}" style="font-size:0.75rem; padding:3px 9px; height:auto; line-height:1.2; display:inline-flex; align-items:center; gap:4px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:600; cursor:pointer;" title="Click to install / provision SSL certificate for ${esc(store.subdomain)}.${esc(baseDomain)}">
+                          ${icon("zap")} Install SSL
+                        </button>
+                      </div>
+                    ` : ''}
                   </div>
                   <span class="badge" style="padding:4px 8px; border-radius:999px; font-size:0.75rem; text-transform:uppercase; font-weight:600; background:${store.status === 'active' ? '#dcfce7; color:#15803d;' : '#f1f5f9; color:#475569;'}">
                     ${esc(store.status)}
@@ -13306,19 +13310,7 @@ async function renderStores(activeTab = "active") {
                       <span class="muted" style="font-size:0.85rem;">None (${esc(store.subdomain)}.${esc(baseDomain)})</span>
                     `}
                   </div>
-                  <div style="margin:4px 0; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                    <strong>Live URL:</strong>
-                    <a href="${esc(liveUrl)}" target="_blank" rel="noopener">${esc(liveUrl)} ↗</a>
-                    ${store.ssl_status === 'active' ? `
-                      <span class="badge" style="padding:1px 6px; border-radius:999px; font-size:0.7rem; font-weight:600; background:#dcfce7; color:#15803d; display:inline-flex; align-items:center; gap:3px;">
-                        ${icon("shield-check")} SSL
-                      </span>
-                    ` : `
-                      <button class="btn compact quick-install-ssl-btn" data-store-id="${esc(store.id)}" data-store-domain="${esc(store.custom_domain || `${store.subdomain}.${baseDomain}`)}" style="font-size:0.72rem; padding:2px 7px; height:auto; line-height:1.2; display:inline-flex; align-items:center; gap:3px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:600; cursor:pointer;" title="Install SSL for ${esc(store.subdomain)}.${esc(baseDomain)}">
-                        ${icon("shield")} Install SSL
-                      </button>
-                    `}
-                  </div>
+                  <p style="margin:4px 0;"><strong>Live URL:</strong> <a href="${esc(liveUrl)}" target="_blank" rel="noopener">${esc(liveUrl)} ↗</a></p>
                 </div>
               </div>
 
