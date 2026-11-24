@@ -366,8 +366,19 @@ func (s *Server) Router() *gin.Engine {
 	owner.DELETE("/deleted-projects/:id/permanent", s.adminPermanentDeleteProject)
 
 	router.NoRoute(func(c *gin.Context) {
-		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+		p := strings.ToLower(c.Request.URL.Path)
+		if strings.HasPrefix(p, "/api/") {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		// Never serve SPA HTML page for image, script, style, font or favicon assets!
+		if strings.HasSuffix(p, ".svg") || strings.HasSuffix(p, ".ico") ||
+			strings.HasSuffix(p, ".png") || strings.HasSuffix(p, ".jpg") ||
+			strings.HasSuffix(p, ".jpeg") || strings.HasSuffix(p, ".webp") ||
+			strings.HasSuffix(p, ".js") || strings.HasSuffix(p, ".css") ||
+			strings.HasSuffix(p, ".map") || strings.HasSuffix(p, ".woff2") ||
+			strings.HasSuffix(p, ".woff") || strings.HasSuffix(p, ".ttf") {
+			c.Status(http.StatusNotFound)
 			return
 		}
 		s.appPage(c)

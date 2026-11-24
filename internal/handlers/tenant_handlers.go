@@ -1127,7 +1127,7 @@ func isAstroEditorAsset(path string) bool {
 		strings.HasPrefix(p, "/uploads/") ||
 		p == "/nav-menu.js" || p == "/nav-menu.css" ||
 		p == "/products-loop.js" || p == "/products-loop.css" ||
-		p == "/header.css" {
+		p == "/header.css" || p == "/favicon.svg" || p == "/favicon.ico" {
 		return true
 	}
 	return false

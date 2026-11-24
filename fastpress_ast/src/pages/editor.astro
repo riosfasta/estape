@@ -9009,17 +9009,22 @@ try {
       function switchToPage(slug) {
         if (!allPages[slug]) return;
         currentSlug = slug;
+        window.currentSlug = slug;
         updatePageDropdownUI();
 
-        // Update URL browser tanpa refresh
-        const themeParam = activeThemeName !== 'default' ? `theme=${encodeURIComponent(activeThemeName)}` : '';
-        let newUrl = '/editor';
-        if (slug === 'home') {
-          newUrl = themeParam ? `/editor?${themeParam}` : '/editor';
-        } else {
-          newUrl = themeParam ? `/editor?slug=${encodeURIComponent(slug)}&${themeParam}` : `/editor?slug=${encodeURIComponent(slug)}`;
-        }
-        window.history.pushState(null, '', newUrl);
+        // Update URL browser tanpa menghilangkan query param lain (seperti tenant)
+        try {
+          const curUrl = new URL(window.location.href);
+          if (slug === 'home') {
+            curUrl.searchParams.delete('slug');
+          } else {
+            curUrl.searchParams.set('slug', slug);
+          }
+          if (activeThemeName && activeThemeName !== 'default') {
+            curUrl.searchParams.set('theme', activeThemeName);
+          }
+          window.history.pushState(null, '', curUrl.pathname + curUrl.search);
+        } catch (_) {}
 
         loadCurrentPageIntoCanvas();
         updateCanvasHeaderFooterBanners();
