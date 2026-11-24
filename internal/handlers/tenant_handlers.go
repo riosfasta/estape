@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"bugmark/internal/middleware"
@@ -114,6 +115,8 @@ func (s *Server) createTenant(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create store: " + err.Error()})
 		return
 	}
+
+	go s.autoProvisionTenantStaticDist(tenant.Subdomain, tenant.ActiveTheme)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "store created successfully",
@@ -926,6 +929,9 @@ func (s *Server) serveTenantWebsite(c *gin.Context, tenant *models.Tenant) {
 		reqPath = "/"
 	}
 
+	// 0. Auto-provision static dist from fastpress_ast if not already created
+	s.autoProvisionTenantStaticDist(tenant.Subdomain, tenant.ActiveTheme)
+
 	// 1. Check if tenant static dist directory exists on disk
 	candidateDirs := []string{
 		fmt.Sprintf("/var/www/tenants/%s/dist", tenant.Subdomain),
@@ -951,7 +957,11 @@ func (s *Server) serveTenantWebsite(c *gin.Context, tenant *models.Tenant) {
 		}
 	}
 
-	// 2. If Astro SSR/dev server is running on port 4321, reverse proxy to Astro
+	// 2. Ensure Astro SSR server is running on port 4321
+	if !isPortOpen("127.0.0.1:4321") {
+		s.ensureAstroRunning()
+	}
+
 	astroURL := "http://127.0.0.1:4321"
 	if isPortOpen("127.0.0.1:4321") {
 		theme := tenant.ActiveTheme
@@ -1043,4 +1053,97 @@ func isPortOpen(addr string) bool {
 	}
 	_ = conn.Close()
 	return true
+}
+
+var (
+	astroProcessLock sync.Mutex
+	astroStarting    bool
+)
+
+func (s *Server) autoProvisionTenantStaticDist(subdomain, theme string) {
+	distDir := fmt.Sprintf("/var/www/tenants/%s/dist", subdomain)
+	if _, err := os.Stat(distDir); err == nil {
+		return
+	}
+
+	sourceCandidates := []string{
+		"/var/www/fastpress_ast/dist/client",
+		"/var/www/fastpress_ast/dist",
+		"../fastpress_ast/dist/client",
+		"../fastpress_ast/dist",
+		"./fastpress_ast/dist/client",
+		"./fastpress_ast/dist",
+	}
+
+	var sourceDir string
+	for _, sc := range sourceCandidates {
+		if fi, err := os.Stat(sc); err == nil && fi.IsDir() {
+			sourceDir = sc
+			break
+		}
+	}
+
+	if sourceDir == "" {
+		return
+	}
+
+	_ = os.MkdirAll(filepath.Dir(distDir), 0755)
+	_ = exec.Command("cp", "-r", sourceDir, distDir).Run()
+}
+
+func (s *Server) ensureAstroRunning() {
+	if isPortOpen("127.0.0.1:4321") {
+		return
+	}
+	astroProcessLock.Lock()
+	if isPortOpen("127.0.0.1:4321") || astroStarting {
+		astroProcessLock.Unlock()
+		return
+	}
+	astroStarting = true
+	astroProcessLock.Unlock()
+
+	defer func() {
+		astroProcessLock.Lock()
+		astroStarting = false
+		astroProcessLock.Unlock()
+	}()
+
+	candidateDirs := []string{
+		"/var/www/fastpress_ast",
+		"/var/www/html/fastpress_ast",
+		"../fastpress_ast",
+		"./fastpress_ast",
+	}
+
+	var astroDir string
+	for _, dir := range candidateDirs {
+		if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
+			astroDir = dir
+			break
+		}
+	}
+
+	if astroDir == "" {
+		return
+	}
+
+	entryMjs := filepath.Join(astroDir, "dist", "server", "entry.mjs")
+	var cmd *exec.Cmd
+	if _, err := os.Stat(entryMjs); err == nil {
+		cmd = exec.Command("node", entryMjs)
+	} else {
+		cmd = exec.Command("npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "4321")
+	}
+	cmd.Dir = astroDir
+	cmd.Env = append(os.Environ(), "PORT=4321", "HOST=127.0.0.1")
+	_ = cmd.Start()
+
+	// Wait up to 3 seconds for port 4321 to be available
+	for i := 0; i < 15; i++ {
+		time.Sleep(200 * time.Millisecond)
+		if isPortOpen("127.0.0.1:4321") {
+			break
+		}
+	}
 }
