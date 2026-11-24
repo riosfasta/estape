@@ -56,6 +56,7 @@ func (s *Server) Router() *gin.Engine {
 	router.Static("/uploads", s.cfg.UploadDir)
 	router.LoadHTMLGlob("web/templates/*.gohtml")
 	router.Use(s.securityHeaders())
+	router.Use(s.tenantHostMiddleware())
 
 	router.GET("/", s.homePage)
 	router.GET("/pricing", s.homePage)

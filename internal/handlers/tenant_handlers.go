@@ -5,10 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -842,4 +846,201 @@ func deleteCloudflarePagesProject(token, accountID, project, customDomain string
 			_ = resp.Body.Close()
 		}
 	}
+}
+
+func (s *Server) tenantHostMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		host := strings.ToLower(c.Request.Host)
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+
+		path := c.Request.URL.Path
+		// Skip internal API endpoints, websockets, static platform assets, and builder scripts
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/ws/") || strings.HasPrefix(path, "/static/") || path == "/widget.js" {
+			c.Next()
+			return
+		}
+
+		baseDomain := "bugmega.com"
+		if s.cfg.AppURL != "" {
+			clean := strings.TrimPrefix(s.cfg.AppURL, "https://")
+			clean = strings.TrimPrefix(clean, "http://")
+			clean = strings.TrimSuffix(clean, "/")
+			if h, _, err := net.SplitHostPort(clean); err == nil {
+				clean = h
+			}
+			if clean != "" {
+				baseDomain = strings.ToLower(clean)
+			}
+		}
+
+		// Exact matches for the main platform
+		if host == baseDomain || host == "www."+baseDomain || host == "localhost" || host == "127.0.0.1" {
+			c.Next()
+			return
+		}
+
+		// Builder subdomain
+		if host == "builder."+baseDomain {
+			s.proxyToAstro(c, "http://127.0.0.1:4321", path)
+			c.Abort()
+			return
+		}
+
+		// Check if it's a tenant subdomain: <slug>.<baseDomain>
+		var tenant *models.Tenant
+		if strings.HasSuffix(host, "."+baseDomain) {
+			subdomain := strings.TrimSuffix(host, "."+baseDomain)
+			if !reservedSubdomains[subdomain] {
+				t, err := s.store.GetTenantBySubdomain(c.Request.Context(), subdomain)
+				if err == nil && t != nil && !t.IsDeleted && t.Status != models.TenantStatusDeleted {
+					tenant = t
+				}
+			}
+		}
+
+		// Or check if it's a custom domain
+		if tenant == nil {
+			t, err := s.store.GetTenantByCustomDomain(c.Request.Context(), host)
+			if err == nil && t != nil && !t.IsDeleted && t.Status != models.TenantStatusDeleted {
+				tenant = t
+			}
+		}
+
+		if tenant == nil {
+			// Not a recognized tenant; continue to main platform router
+			c.Next()
+			return
+		}
+
+		// It is a tenant request! Serve the client store
+		s.serveTenantWebsite(c, tenant)
+		c.Abort()
+	}
+}
+
+func (s *Server) serveTenantWebsite(c *gin.Context, tenant *models.Tenant) {
+	reqPath := c.Request.URL.Path
+	if reqPath == "" {
+		reqPath = "/"
+	}
+
+	// 1. Check if tenant static dist directory exists on disk
+	candidateDirs := []string{
+		fmt.Sprintf("/var/www/tenants/%s/dist", tenant.Subdomain),
+		fmt.Sprintf("/var/www/tenants/%s", tenant.Subdomain),
+		fmt.Sprintf("tenants/%s/dist", tenant.Subdomain),
+	}
+
+	for _, distDir := range candidateDirs {
+		if fi, err := os.Stat(distDir); err == nil && fi.IsDir() {
+			cleanSubPath := strings.TrimPrefix(filepath.Clean(reqPath), "/")
+			if cleanSubPath != "" && cleanSubPath != "." {
+				targetFile := filepath.Join(distDir, cleanSubPath)
+				if info, err := os.Stat(targetFile); err == nil && !info.IsDir() {
+					c.File(targetFile)
+					return
+				}
+			}
+			indexFile := filepath.Join(distDir, "index.html")
+			if _, err := os.Stat(indexFile); err == nil {
+				c.File(indexFile)
+				return
+			}
+		}
+	}
+
+	// 2. If Astro SSR/dev server is running on port 4321, reverse proxy to Astro
+	astroURL := "http://127.0.0.1:4321"
+	if isPortOpen("127.0.0.1:4321") {
+		theme := tenant.ActiveTheme
+		if theme == "" {
+			theme = "furnisite"
+		}
+
+		astroPath := reqPath
+		if strings.HasPrefix(reqPath, "/_astro") || strings.HasPrefix(reqPath, "/images") || strings.HasPrefix(reqPath, "/css") || strings.HasPrefix(reqPath, "/js") || strings.HasPrefix(reqPath, "/favicon") {
+			astroPath = reqPath
+		} else if reqPath == "/" {
+			astroPath = fmt.Sprintf("/preview/%s", theme)
+		} else if !strings.HasPrefix(reqPath, "/preview") {
+			astroPath = fmt.Sprintf("/preview/%s%s", theme, reqPath)
+		}
+
+		s.proxyToAstro(c, astroURL, astroPath)
+		return
+	}
+
+	// 3. Fallback: render store landing with theme info
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	themeName := tenant.ActiveTheme
+	if themeName == "" {
+		themeName = "furnisite"
+	}
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>%s | Storefront</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 40px 20px; background: #f8fafc; color: #1e293b; text-align: center; }
+    .card { max-width: 640px; margin: 60px auto; background: white; padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; }
+    h1 { margin: 0 0 10px 0; color: #0f172a; font-size: 2rem; }
+    p { color: #64748b; font-size: 1.05rem; line-height: 1.6; margin: 8px 0; }
+    .badge { display: inline-block; background: #dbeafe; color: #1d4ed8; padding: 6px 14px; border-radius: 999px; font-size: 0.85rem; font-weight: 600; text-transform: uppercase; margin-bottom: 20px; }
+    .info-box { background: #f1f5f9; border-radius: 8px; padding: 16px; margin: 20px 0; text-align: left; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">Theme: %s</div>
+    <h1>%s</h1>
+    <p>Welcome to our storefront! The store is provisioned and ready.</p>
+    <div class="info-box">
+      <strong>Store Details:</strong><br>
+      • Subdomain: <code>%s.bugmega.com</code><br>
+      • Active Theme: <code>%s</code><br>
+      • Status: <code>%s</code>
+    </div>
+    <p><small style="color:#94a3b8;">Click "Publish" in the Website Builder or start the Astro service on port 4321 to render the live storefront.</small></p>
+  </div>
+</body>
+</html>`, template.HTMLEscapeString(tenant.CompanyName), template.HTMLEscapeString(themeName), template.HTMLEscapeString(tenant.CompanyName), template.HTMLEscapeString(tenant.Subdomain), template.HTMLEscapeString(themeName), template.HTMLEscapeString(string(tenant.Status)))
+
+	c.String(http.StatusOK, html)
+}
+
+func (s *Server) proxyToAstro(c *gin.Context, targetURL, rewritePath string) {
+	target, err := url.Parse(targetURL)
+	if err != nil {
+		c.String(http.StatusBadGateway, "invalid proxy target")
+		return
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	origDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		origDirector(req)
+		req.Host = target.Host
+		if rewritePath != "" {
+			req.URL.Path = rewritePath
+		}
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, err error) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("Astro store server is not running on port 4321. Please ensure the Astro service is started."))
+	}
+
+	proxy.ServeHTTP(c.Writer, c.Request)
+}
+
+func isPortOpen(addr string) bool {
+	conn, err := net.DialTimeout("tcp", addr, 300*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
 }
