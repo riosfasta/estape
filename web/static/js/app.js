@@ -13281,6 +13281,53 @@ async function renderStores(activeTab = "active") {
                           ${icon("shield-alert")} SSL Inactive
                         </span>
                       `}
+
+                      <div class="store-edit-dropdown-wrap" style="position:relative; display:inline-block;">
+                        <button class="btn compact store-edit-dropdown-btn" data-subdomain="${esc(store.subdomain)}" type="button" style="padding:2px 9px; border-radius:6px; font-size:0.72rem; font-weight:600; background:#f1f5f9; border:1px solid #cbd5e1; color:#1e293b; display:inline-flex; align-items:center; gap:4px; cursor:pointer;" title="Choose a page or builder to edit">
+                          ${icon("edit-3")} Edit Page ${icon("chevron-down")}
+                        </button>
+                        <div class="store-edit-menu-panel" style="display:none; position:absolute; top:calc(100% + 4px); left:0; min-width:215px; background:#ffffff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:0 10px 25px -5px rgba(0,0,0,0.15), 0 8px 10px -6px rgba(0,0,0,0.1); z-index:1050; padding:6px 0;">
+                          <div style="padding:4px 12px; font-size:0.68rem; font-weight:700; text-transform:uppercase; color:#64748b; letter-spacing:0.04em;">Site Pages</div>
+                          <a href="/editor?tenant=${esc(store.subdomain)}&slug=home" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                            ${icon("home")} <span>Home Page</span>
+                          </a>
+                          <a href="/editor?tenant=${esc(store.subdomain)}&slug=about" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                            ${icon("file-text")} <span>About Us</span>
+                          </a>
+                          <a href="/editor?tenant=${esc(store.subdomain)}&slug=products" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                            ${icon("shopping-bag")} <span>Products / Shop</span>
+                          </a>
+                          <a href="/editor?tenant=${esc(store.subdomain)}&slug=blog" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                            ${icon("book-open")} <span>Blog Page</span>
+                          </a>
+                          <a href="/editor?tenant=${esc(store.subdomain)}&slug=contact" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                            ${icon("mail")} <span>Contact Page</span>
+                          </a>
+                          <div style="border-top:1px solid #f1f5f9; margin:4px 0;"></div>
+                          <div style="padding:4px 12px; font-size:0.68rem; font-weight:700; text-transform:uppercase; color:#64748b; letter-spacing:0.04em;">Theme & Layouts</div>
+                          <a href="/header-builder?tenant=${esc(store.subdomain)}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                            ${icon("layout")} <span>Header Builder</span>
+                          </a>
+                          <a href="/footer-builder?tenant=${esc(store.subdomain)}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                            ${icon("layout")} <span>Footer Builder</span>
+                          </a>
+                          <a href="/menu-builder?tenant=${esc(store.subdomain)}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                            ${icon("menu")} <span>Navigation Menu</span>
+                          </a>
+                          <a href="/form-builder?tenant=${esc(store.subdomain)}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                            ${icon("check-square")} <span>Form Builder</span>
+                          </a>
+                          <a href="/popup-editor?tenant=${esc(store.subdomain)}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                            ${icon("message-square")} <span>Popup Builder</span>
+                          </a>
+                          <a href="/edit-product?tenant=${esc(store.subdomain)}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                            ${icon("package")} <span>Product Studio</span>
+                          </a>
+                          <a href="/edit-blog?tenant=${esc(store.subdomain)}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                            ${icon("file-text")} <span>Blog Editor</span>
+                          </a>
+                        </div>
+                      </div>
                     </div>
                     ${store.ssl_status !== 'active' ? `
                       <div style="margin-top:6px;">
@@ -14137,6 +14184,25 @@ async function renderStores(activeTab = "active") {
         btn.innerHTML = `${icon("alert-triangle")} Wipe All`;
       }
     });
+  });
+
+  // Store Edit Page Dropdown Toggle
+  document.querySelectorAll(".store-edit-dropdown-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const wrap = btn.closest(".store-edit-dropdown-wrap");
+      const menu = wrap ? wrap.querySelector(".store-edit-menu-panel") : null;
+      const wasOpen = menu && menu.style.display === "block";
+      document.querySelectorAll(".store-edit-menu-panel").forEach(p => p.style.display = "none");
+      if (menu && !wasOpen) {
+        menu.style.display = "block";
+      }
+    });
+  });
+
+  // Close dropdowns on click outside
+  document.addEventListener("click", () => {
+    document.querySelectorAll(".store-edit-menu-panel").forEach(p => p.style.display = "none");
   });
 
   icons();
