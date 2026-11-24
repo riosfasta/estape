@@ -1084,6 +1084,7 @@ func deleteCloudflarePagesProject(token, accountID, project, customDomain string
 }
 
 var astroEditorAPIPrefixes = []string{
+	"/api/forms",
 	"/api/pages",
 	"/api/site-config",
 	"/api/fonts",
@@ -1112,6 +1113,22 @@ func isAstroEditorAPI(path string) bool {
 		if strings.HasPrefix(p, prefix) {
 			return true
 		}
+	}
+	return false
+}
+
+func isAstroEditorAsset(path string) bool {
+	p := strings.ToLower(path)
+	if strings.HasPrefix(p, "/_astro/") ||
+		strings.HasPrefix(p, "/editor-") ||
+		strings.HasPrefix(p, "/public/editor-") ||
+		strings.HasPrefix(p, "/themes/") ||
+		strings.HasPrefix(p, "/fonts/") ||
+		strings.HasPrefix(p, "/uploads/") ||
+		p == "/nav-menu.js" || p == "/nav-menu.css" ||
+		p == "/products-loop.js" || p == "/products-loop.css" ||
+		p == "/header.css" {
+		return true
 	}
 	return false
 }
@@ -1211,8 +1228,7 @@ func (s *Server) tenantHostMiddleware() gin.HandlerFunc {
 			}
 
 			// 2. Editor static assets & editor API endpoints on bugmega.com: proxy to Astro
-			if strings.HasPrefix(path, "/editor-") || strings.HasPrefix(path, "/_astro/") ||
-				strings.HasPrefix(path, "/public/editor-") || isAstroEditorAPI(path) {
+			if isAstroEditorAsset(path) || isAstroEditorAPI(path) {
 				s.proxyToAstro(c, "http://127.0.0.1:4321", path)
 				c.Abort()
 				return
