@@ -1,0 +1,279 @@
+---
+import Layout from '../layouts/Layout.astro';
+import VisionMission from '../components/VisionMission.astro';
+import TeamSection from '../components/TeamSection.astro';
+
+interface Props {
+  title?: string;
+  description?: string;
+  isPreview?: boolean;
+  previewTheme?: string;
+  customData?: any;
+}
+
+const {
+  title = 'About Infurnish - Thoughtful Furniture for Modern Living',
+  description = 'Learn about our philosophy of quiet aesthetics, durable craftsmanship, and making lasting design accessible to everyone.',
+  isPreview = false,
+  previewTheme = 'furnisite',
+  customData = undefined,
+} = Astro.props;
+
+const isCustom = Boolean(customData?.isCustom && customData?.html);
+const cleanHtml = customData?.html || '';
+
+const prefix = isPreview ? `/preview/${previewTheme}` : '';
+
+const pillars = [
+  {
+    title: 'Solid Hardwood & Ethical Sourcing',
+    desc: 'Every oak, walnut, and ash timber is responsibly harvested from certified forests, celebrating the natural grain and knot variations.',
+    icon: '🪵',
+  },
+  {
+    title: 'Traditional Joinery, Modern Rigor',
+    desc: 'Mortise-and-tenon joints, dovetailed corners, and minimal hardware ensure each piece endures for generations.',
+    icon: '🔨',
+  },
+  {
+    title: 'Warm & Calming Palette',
+    desc: 'We curate tactile linens, hand-woven rattan, and brushed stone that reflect soft ambient light and create peaceful sanctuaries.',
+    icon: '🌿',
+  },
+  {
+    title: 'Direct-to-Customer Integrity',
+    desc: 'By eliminating distributor markups, we deliver museum-grade craftsmanship at honest, transparent prices.',
+    icon: '✨',
+  },
+];
+---
+
+<Layout
+  title={title}
+  description={description}
+  activePage="about"
+  isPreview={isPreview}
+  previewTheme={previewTheme}
+>
+  {isCustom ? (
+    <>
+      <div class="custom-builder-content" set:html={cleanHtml} />
+      {customData?.css && <style is:inline set:html={customData.css} />}
+    </>
+  ) : (
+    <>
+      <!-- About Hero -->
+      <section class="fs-about-hero">
+        <div class="fs-container">
+          <div class="fs-about-hero-inner">
+            <span class="fs-badge fs-badge-neutral">Our Philosophy</span>
+            <h1 class="fs-about-hero-title">
+              Furniture as an Extension<br />of Peaceful Living
+            </h1>
+            <p class="fs-about-hero-lead">
+              Founded with a devotion to quiet elegance and natural materials, Infurnish creates timeless architectural pieces that anchor your home in warmth and enduring calm.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Large Visual Banner -->
+      <section class="fs-about-banner-wrap">
+        <div class="fs-container">
+          <div class="fs-about-banner">
+            <img
+              src="https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?auto=format&fit=crop&w=1600&q=80"
+              alt="Infurnish Design Studio Workshop"
+              class="fs-about-banner-img"
+            />
+          </div>
+        </div>
+      </section>
+
+      <!-- Core Pillars -->
+      <section class="fs-pillars-section">
+        <div class="fs-container">
+          <div class="fs-pillars-grid">
+            {pillars.map((p) => (
+              <div class="fs-pillar-card">
+                <span class="fs-pillar-icon">{p.icon}</span>
+                <h3 class="fs-pillar-title">{p.title}</h3>
+                <p class="fs-pillar-desc">{p.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <!-- Vision & Mission from design screenshot -->
+      <VisionMission />
+
+      <!-- Team Section from design screenshot -->
+      <TeamSection />
+
+      <!-- CTA Box -->
+      <section class="fs-about-cta-section">
+        <div class="fs-container">
+          <div class="fs-about-cta-box">
+            <h2 class="fs-about-cta-title">Explore Our Curated Collections</h2>
+            <p class="fs-about-cta-desc">
+              Discover lounge chairs, solid wood tables, ceramic fixtures, and ambient lighting crafted for your living space.
+            </p>
+            <div class="fs-about-cta-actions">
+              <a href={prefix ? `${prefix}/products` : '/products'} class="fs-btn fs-btn-dark fs-btn-lg">
+                Shop Catalog
+              </a>
+              <a href={prefix ? `${prefix}/contact` : '/contact'} class="fs-btn fs-btn-outline fs-btn-lg">
+                Book Consultation
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </>
+  )}
+</Layout>
+
+<style>
+  .fs-about-hero {
+    padding-top: 72px;
+    padding-bottom: 56px;
+    background-color: #ffffff;
+    text-align: center;
+  }
+
+  .fs-about-hero-inner {
+    max-width: 780px;
+    margin: 0 auto;
+  }
+
+  .fs-about-hero-title {
+    font-family: var(--fs-font-heading);
+    font-size: 2.5rem;
+    font-weight: 800;
+    line-height: 1.2;
+    color: #18181b;
+    margin: 16px 0;
+    letter-spacing: -0.5px;
+  }
+
+  @media (min-width: 768px) {
+    .fs-about-hero-title {
+      font-size: 3.2rem;
+    }
+  }
+
+  .fs-about-hero-lead {
+    font-size: 1.1rem;
+    color: #52525b;
+    line-height: 1.7;
+    margin: 0;
+  }
+
+  .fs-about-banner-wrap {
+    margin-bottom: 72px;
+  }
+
+  .fs-about-banner {
+    border-radius: 8px;
+    overflow: hidden;
+    aspect-ratio: 21 / 9;
+    background-color: #f4f1ea;
+  }
+
+  .fs-about-banner-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .fs-pillars-section {
+    padding-bottom: 80px;
+    background-color: #ffffff;
+  }
+
+  .fs-pillars-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+
+  @media (min-width: 640px) {
+    .fs-pillars-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .fs-pillars-grid {
+      grid-template-columns: repeat(4, 1fr);
+      gap: 28px;
+    }
+  }
+
+  .fs-pillar-card {
+    background-color: #faf9f6;
+    padding: 32px 24px;
+    border-radius: 6px;
+    border: 1px solid #f0eee6;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .fs-pillar-icon {
+    font-size: 2rem;
+    display: inline-block;
+  }
+
+  .fs-pillar-title {
+    font-family: var(--fs-font-heading);
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #18181b;
+    margin: 0;
+    line-height: 1.35;
+  }
+
+  .fs-pillar-desc {
+    font-size: 0.88rem;
+    color: #71717a;
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  /* CTA */
+  .fs-about-cta-section {
+    padding-top: 80px;
+    padding-bottom: 100px;
+    background-color: #faf9f6;
+    text-align: center;
+  }
+
+  .fs-about-cta-box {
+    max-width: 680px;
+    margin: 0 auto;
+  }
+
+  .fs-about-cta-title {
+    font-family: var(--fs-font-heading);
+    font-size: 2.2rem;
+    font-weight: 800;
+    color: #18181b;
+    margin-bottom: 14px;
+  }
+
+  .fs-about-cta-desc {
+    font-size: 1.02rem;
+    color: #71717a;
+    margin-bottom: 32px;
+    line-height: 1.6;
+  }
+
+  .fs-about-cta-actions {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+</style>

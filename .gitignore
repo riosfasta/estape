@@ -9,4 +9,7 @@ dist/
 deploy/vps/deploy.env
 firebase-service-account*.json
 *-firebase-adminsdk-*.json
+fastpress_ast/node_modules/
+fastpress_ast/.astro/
+fastpress_ast/dist/
 mobile/

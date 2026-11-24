@@ -1,0 +1,332 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+interface Props {
+  title?: string;
+  description?: string;
+  isPreview?: boolean;
+  previewTheme?: string;
+  customData?: any;
+}
+
+const {
+  title = 'Contact Infurnish - Studio Showrooms & Inquiries',
+  description = 'Reach out to our interior consultants, visit our flagship furniture studios, or request a customized trade quote.',
+  isPreview = false,
+  previewTheme = 'furnisite',
+  customData = undefined,
+} = Astro.props;
+
+const prefix = isPreview ? `/preview/${previewTheme}` : '';
+const isCustom = Boolean(customData?.isCustom && customData?.html);
+const cleanHtml = customData?.html || '';
+---
+
+<Layout
+  title={title}
+  description={description}
+  activePage="contact"
+  isPreview={isPreview}
+  previewTheme={previewTheme}
+>
+  {isCustom ? (
+    <>
+      <div class="custom-builder-content" set:html={cleanHtml} />
+      {customData?.css && <style is:inline set:html={customData.css} />}
+    </>
+  ) : (
+    <>
+  <!-- Contact Hero -->
+  <section class="fs-contact-hero">
+    <div class="fs-container">
+      <div class="fs-contact-hero-inner">
+        <span class="fs-badge fs-badge-neutral">We Are Here For You</span>
+        <h1 class="fs-contact-hero-title">Connect With Our Studio</h1>
+        <p class="fs-contact-hero-lead">
+          Whether you need bespoke material consultations, showroom appointments, or order tracking, our furniture specialists are delighted to assist.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Contact Grid -->
+  <section class="fs-contact-main">
+    <div class="fs-container">
+      <div class="fs-contact-grid">
+        <!-- Left: Form -->
+        <div class="fs-contact-form-wrap">
+          <h2 class="fs-form-title">Send a Message</h2>
+          <p class="fs-form-desc">Fill out the inquiry form below and an interior consultant will reply within 24 hours.</p>
+
+          <form class="fs-contact-form contact-form" data-form-name="Furnisite Studio Inquiry">
+            <div class="fs-form-row">
+              <div class="fs-form-group">
+                <label for="fsName">Full Name *</label>
+                <input type="text" id="fsName" name="name" required placeholder="Elena Rostova" />
+              </div>
+              <div class="fs-form-group">
+                <label for="fsEmail">Email Address *</label>
+                <input type="email" id="fsEmail" name="email" required placeholder="elena@example.com" />
+              </div>
+            </div>
+
+            <div class="fs-form-row">
+              <div class="fs-form-group">
+                <label for="fsPhone">Phone Number</label>
+                <input type="tel" id="fsPhone" name="phone" placeholder="+1 (555) 019-2834" />
+              </div>
+              <div class="fs-form-group">
+                <label for="fsInterest">Inquiry Type</label>
+                <select id="fsInterest" name="inquiry_type">
+                  <option value="residential">Residential Living Space</option>
+                  <option value="custom">Custom Solid Wood Order</option>
+                  <option value="trade">Commercial / Trade Partner</option>
+                  <option value="order">Order &amp; Shipping Status</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="fs-form-group">
+              <label for="fsMessage">Message *</label>
+              <textarea id="fsMessage" name="message" rows="5" required placeholder="Tell us about your room layout, desired furniture pieces, or specific dimensions..."></textarea>
+            </div>
+
+            <button type="submit" class="fs-btn fs-btn-dark fs-btn-lg" style="width: 100%;">
+              Send Inquiry
+            </button>
+          </form>
+        </div>
+
+        <!-- Right: Studio Info & Hours -->
+        <div class="fs-contact-sidebar">
+          <div class="fs-info-card">
+            <h3 class="fs-info-card-title">Flagship Showroom</h3>
+            <p class="fs-info-line">480 Grand Avenue, Suite 100</p>
+            <p class="fs-info-line">Tribeca Design District, NY 10013</p>
+            <div class="fs-info-divider"></div>
+            <h4 class="fs-info-sub">Showroom Hours</h4>
+            <p class="fs-info-line">Monday – Friday: 10:00 AM – 7:00 PM</p>
+            <p class="fs-info-line">Saturday: 11:00 AM – 6:00 PM</p>
+            <p class="fs-info-line">Sunday: Closed (Private Bookings Only)</p>
+          </div>
+
+          <div class="fs-info-card">
+            <h3 class="fs-info-card-title">Direct Inquiries</h3>
+            <div class="fs-contact-channel">
+              <span class="fs-channel-label">Client Concierge:</span>
+              <a href="tel:+18004592810" class="fs-channel-val">+1 (800) 459-2810</a>
+            </div>
+            <div class="fs-contact-channel">
+              <span class="fs-channel-label">Studio Email:</span>
+              <a href="mailto:hello@infurnish.design" class="fs-channel-val">hello@infurnish.design</a>
+            </div>
+            <div class="fs-contact-channel">
+              <span class="fs-channel-label">Trade &amp; Architects:</span>
+              <a href="mailto:trade@infurnish.design" class="fs-channel-val">trade@infurnish.design</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+    </>
+  )}
+</Layout>
+
+<style>
+  .fs-contact-hero {
+    padding-top: 72px;
+    padding-bottom: 56px;
+    background-color: #faf9f6;
+    text-align: center;
+    border-bottom: 1px solid #f0eee6;
+  }
+
+  .fs-contact-hero-inner {
+    max-width: 680px;
+    margin: 0 auto;
+  }
+
+  .fs-contact-hero-title {
+    font-family: var(--fs-font-heading);
+    font-size: 2.5rem;
+    font-weight: 800;
+    color: #18181b;
+    margin: 14px 0;
+    letter-spacing: -0.5px;
+  }
+
+  @media (min-width: 768px) {
+    .fs-contact-hero-title {
+      font-size: 3.2rem;
+    }
+  }
+
+  .fs-contact-hero-lead {
+    font-size: 1.05rem;
+    color: #52525b;
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  .fs-contact-main {
+    padding-top: 72px;
+    padding-bottom: 96px;
+    background-color: #ffffff;
+  }
+
+  .fs-contact-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 48px;
+  }
+
+  @media (min-width: 992px) {
+    .fs-contact-grid {
+      grid-template-columns: 1.4fr 1fr;
+      gap: 64px;
+    }
+  }
+
+  /* Form */
+  .fs-contact-form-wrap {
+    background-color: #ffffff;
+    border-radius: 8px;
+  }
+
+  .fs-form-title {
+    font-family: var(--fs-font-heading);
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #18181b;
+    margin-bottom: 8px;
+  }
+
+  .fs-form-desc {
+    font-size: 0.92rem;
+    color: #71717a;
+    margin-bottom: 28px;
+  }
+
+  .fs-contact-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .fs-form-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  @media (min-width: 600px) {
+    .fs-form-row {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  .fs-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .fs-form-group label {
+    font-family: var(--fs-font-heading);
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #27272a;
+  }
+
+  .fs-form-group input,
+  .fs-form-group select,
+  .fs-form-group textarea {
+    padding: 12px 14px;
+    border: 1px solid #e4e4e7;
+    background-color: #faf9f6;
+    border-radius: 4px;
+    font-family: var(--fs-font-body);
+    font-size: 0.95rem;
+    color: #18181b;
+    outline: none;
+    transition: border-color 0.18s ease, background-color 0.18s ease;
+  }
+
+  .fs-form-group input:focus,
+  .fs-form-group select:focus,
+  .fs-form-group textarea:focus {
+    border-color: #18181b;
+    background-color: #ffffff;
+  }
+
+  /* Sidebar Cards */
+  .fs-contact-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .fs-info-card {
+    background-color: #faf9f6;
+    border: 1px solid #f0eee6;
+    border-radius: 6px;
+    padding: 32px;
+  }
+
+  .fs-info-card-title {
+    font-family: var(--fs-font-heading);
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #18181b;
+    margin-bottom: 12px;
+  }
+
+  .fs-info-sub {
+    font-family: var(--fs-font-heading);
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #27272a;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 14px;
+    margin-bottom: 8px;
+  }
+
+  .fs-info-line {
+    font-size: 0.92rem;
+    color: #52525b;
+    margin-bottom: 6px;
+    line-height: 1.5;
+  }
+
+  .fs-info-divider {
+    height: 1px;
+    background-color: #e7e5e0;
+    margin: 18px 0;
+  }
+
+  .fs-contact-channel {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 14px;
+  }
+
+  .fs-channel-label {
+    font-size: 0.82rem;
+    color: #71717a;
+    font-weight: 500;
+  }
+
+  .fs-channel-val {
+    font-family: var(--fs-font-heading);
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #18181b;
+  }
+
+  .fs-channel-val:hover {
+    text-decoration: underline;
+  }
+</style>

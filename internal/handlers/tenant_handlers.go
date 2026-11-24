@@ -1067,12 +1067,14 @@ func (s *Server) autoProvisionTenantStaticDist(subdomain, theme string) {
 	}
 
 	sourceCandidates := []string{
+		"./fastpress_ast/dist/client",
+		"./fastpress_ast/dist",
+		"fastpress_ast/dist/client",
+		"fastpress_ast/dist",
 		"/var/www/fastpress_ast/dist/client",
 		"/var/www/fastpress_ast/dist",
 		"../fastpress_ast/dist/client",
 		"../fastpress_ast/dist",
-		"./fastpress_ast/dist/client",
-		"./fastpress_ast/dist",
 	}
 
 	var sourceDir string
@@ -1110,10 +1112,11 @@ func (s *Server) ensureAstroRunning() {
 	}()
 
 	candidateDirs := []string{
+		"./fastpress_ast",
+		"fastpress_ast",
 		"/var/www/fastpress_ast",
 		"/var/www/html/fastpress_ast",
 		"../fastpress_ast",
-		"./fastpress_ast",
 	}
 
 	var astroDir string

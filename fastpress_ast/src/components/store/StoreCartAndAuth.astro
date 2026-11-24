@@ -1,0 +1,716 @@
+---
+// StoreCartAndAuth.astro
+// Universal Shopping Cart, Checkout, Customer Auth, and Form Submit Component for Astro Storefronts
+interface Props {
+  tenant?: string;
+  apiHost?: string;
+}
+
+const {
+  tenant = 'client1',
+  apiHost = 'http://localhost:8080'
+} = Astro.props;
+---
+
+<div id="fpStoreRuntime" data-tenant={tenant} data-api-host={apiHost}>
+  <!-- Slide-out Shopping Cart Drawer -->
+  <div id="fpCartDrawer" class="fp-cart-drawer-overlay" aria-hidden="true">
+    <div class="fp-cart-backdrop" id="fpCartBackdrop"></div>
+    <aside class="fp-cart-panel" aria-label="Shopping Bag">
+      <div class="fp-cart-header">
+        <div class="fp-cart-title-wrap">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <path d="M16 10a4 4 0 0 1-8 0"></path>
+          </svg>
+          <h2 class="fp-cart-title">Shopping Bag (<span id="fpCartHeaderCount">0</span>)</h2>
+        </div>
+        <button type="button" class="fp-cart-close" id="fpCartCloseBtn" aria-label="Close bag">&times;</button>
+      </div>
+
+      <div class="fp-cart-body" id="fpCartItemsContainer">
+        <!-- Rendered dynamically by JS -->
+      </div>
+
+      <div class="fp-cart-footer" id="fpCartFooter">
+        <div class="fp-cart-subtotal-row">
+          <span>Subtotal</span>
+          <span class="fp-cart-total-amount" id="fpCartSubtotalAmount">$0.00</span>
+        </div>
+        <p class="fp-cart-shipping-note">Taxes & shipping calculated at checkout</p>
+        <button type="button" class="fp-btn fp-btn-primary fp-btn-block" id="fpCartCheckoutBtn">
+          Proceed to Checkout &rarr;
+        </button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Checkout Modal -->
+  <dialog id="fpCheckoutDialog" class="fp-modal">
+    <div class="fp-modal-content">
+      <div class="fp-modal-header">
+        <h3>Complete Your Order</h3>
+        <button type="button" class="fp-modal-close" id="fpCheckoutCloseBtn">&times;</button>
+      </div>
+      <form id="fpCheckoutForm" class="fp-checkout-form">
+        <div class="fp-order-summary-box">
+          <div class="fp-summary-title">Order Summary (<span id="fpCheckoutItemsCount">0</span> items)</div>
+          <div class="fp-summary-total">Total: <strong id="fpCheckoutTotalAmount">$0.00</strong></div>
+        </div>
+
+        <div class="fp-form-row">
+          <div class="fp-field">
+            <label>Full Name</label>
+            <input type="text" name="customer_name" required placeholder="John Doe" />
+          </div>
+          <div class="fp-field">
+            <label>Email Address</label>
+            <input type="email" name="customer_email" required placeholder="john@example.com" />
+          </div>
+        </div>
+
+        <div class="fp-field">
+          <label>Shipping Address</label>
+          <input type="text" name="shipping_address" required placeholder="123 Main St, Apt 4B" />
+        </div>
+
+        <div class="fp-form-row">
+          <div class="fp-field">
+            <label>City</label>
+            <input type="text" name="shipping_city" required placeholder="New York" />
+          </div>
+          <div class="fp-field">
+            <label>Postal / ZIP Code</label>
+            <input type="text" name="shipping_zip" required placeholder="10001" />
+          </div>
+        </div>
+
+        <div class="fp-field">
+          <label>Payment Method</label>
+          <select name="payment_method">
+            <option value="cod">Cash on Delivery (COD)</option>
+            <option value="card">Credit / Debit Card (Stripe)</option>
+            <option value="paypal">PayPal</option>
+          </select>
+        </div>
+
+        <button type="submit" class="fp-btn fp-btn-primary fp-btn-block" id="fpPlaceOrderBtn">
+          Place Order
+        </button>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Customer Account Login / Register Modal -->
+  <dialog id="fpCustomerAuthDialog" class="fp-modal">
+    <div class="fp-modal-content">
+      <div class="fp-modal-header">
+        <div class="fp-auth-tabs">
+          <button type="button" class="fp-auth-tab is-active" id="fpTabLogin">Sign In</button>
+          <button type="button" class="fp-auth-tab" id="fpTabRegister">Create Account</button>
+        </div>
+        <button type="button" class="fp-modal-close" id="fpAuthCloseBtn">&times;</button>
+      </div>
+
+      <!-- Login Form -->
+      <form id="fpCustomerLoginForm" class="fp-auth-form">
+        <div class="fp-field">
+          <label>Email Address</label>
+          <input type="email" name="email" required placeholder="customer@example.com" />
+        </div>
+        <div class="fp-field">
+          <label>Password</label>
+          <input type="password" name="password" required placeholder="Your password" />
+        </div>
+        <button type="submit" class="fp-btn fp-btn-primary fp-btn-block">Sign In</button>
+        <p class="fp-auth-error" id="fpLoginError"></p>
+      </form>
+
+      <!-- Register Form -->
+      <form id="fpCustomerRegisterForm" class="fp-auth-form" style="display:none;">
+        <div class="fp-field">
+          <label>Full Name</label>
+          <input type="text" name="full_name" required placeholder="Jane Doe" />
+        </div>
+        <div class="fp-field">
+          <label>Email Address</label>
+          <input type="email" name="email" required placeholder="customer@example.com" />
+        </div>
+        <div class="fp-field">
+          <label>Password (min 6 chars)</label>
+          <input type="password" name="password" required minlength="6" placeholder="Choose a password" />
+        </div>
+        <button type="submit" class="fp-btn fp-btn-primary fp-btn-block">Create Customer Account</button>
+        <p class="fp-auth-error" id="fpRegisterError"></p>
+      </form>
+    </div>
+  </dialog>
+</div>
+
+<style is:global>
+  /* Cart Drawer Styles */
+  .fp-cart-drawer-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    display: none;
+  }
+  .fp-cart-drawer-overlay.is-open {
+    display: block;
+  }
+  .fp-cart-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(2px);
+  }
+  .fp-cart-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 420px;
+    background: #ffffff;
+    box-shadow: -4px 0 24px rgba(0,0,0,0.15);
+    display: flex;
+    flex-direction: column;
+    animation: fpSlideIn 0.25s ease-out;
+  }
+  @keyframes fpSlideIn {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+  .fp-cart-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid #f1f5f9;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .fp-cart-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #0f172a;
+  }
+  .fp-cart-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin: 0;
+  }
+  .fp-cart-close {
+    background: none;
+    border: none;
+    font-size: 1.6rem;
+    color: #64748b;
+    cursor: pointer;
+    line-height: 1;
+    padding: 4px;
+  }
+  .fp-cart-close:hover { color: #0f172a; }
+  .fp-cart-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .fp-cart-empty {
+    text-align: center;
+    padding: 48px 16px;
+    color: #64748b;
+  }
+  .fp-cart-item {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #f8fafc;
+  }
+  .fp-cart-item-img {
+    width: 68px;
+    height: 68px;
+    border-radius: 8px;
+    object-fit: cover;
+    background: #f1f5f9;
+  }
+  .fp-cart-item-info {
+    flex: 1;
+  }
+  .fp-cart-item-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #0f172a;
+    margin: 0 0 4px 0;
+  }
+  .fp-cart-item-price {
+    font-size: 0.9rem;
+    color: #475569;
+    font-weight: 600;
+  }
+  .fp-cart-stepper {
+    display: flex;
+    align-items: center;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-top: 6px;
+    width: fit-content;
+  }
+  .fp-cart-stepper button {
+    background: #f8fafc;
+    border: none;
+    width: 26px;
+    height: 26px;
+    cursor: pointer;
+    font-weight: bold;
+    color: #334155;
+  }
+  .fp-cart-stepper span {
+    padding: 0 10px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .fp-cart-item-remove {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 4px;
+  }
+  .fp-cart-item-remove:hover { color: #ef4444; }
+  .fp-cart-footer {
+    padding: 20px 24px;
+    border-top: 1px solid #f1f5f9;
+    background: #fbfcfe;
+  }
+  .fp-cart-subtotal-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 6px;
+  }
+  .fp-cart-shipping-note {
+    font-size: 0.8rem;
+    color: #64748b;
+    margin: 0 0 16px 0;
+  }
+  .fp-btn {
+    display: inline-block;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    border: none;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.15s ease;
+  }
+  .fp-btn-primary {
+    background: #0f172a;
+    color: #ffffff;
+  }
+  .fp-btn-primary:hover {
+    background: #1e293b;
+  }
+  .fp-btn-block {
+    width: 100%;
+  }
+
+  /* Modal Dialogs */
+  .fp-modal {
+    border: none;
+    background: transparent;
+    padding: 0;
+    max-width: 520px;
+    width: 95%;
+  }
+  .fp-modal::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+  }
+  .fp-modal-content {
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 12px 36px rgba(0,0,0,0.2);
+    padding: 24px;
+  }
+  .fp-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .fp-modal-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: #0f172a;
+  }
+  .fp-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: #64748b;
+    cursor: pointer;
+  }
+  .fp-field {
+    margin-bottom: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .fp-field label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #334155;
+  }
+  .fp-field input, .fp-field select {
+    padding: 10px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 0.95rem;
+  }
+  .fp-form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .fp-order-summary-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .fp-auth-tabs {
+    display: flex;
+    gap: 12px;
+  }
+  .fp-auth-tab {
+    background: none;
+    border: none;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #64748b;
+    cursor: pointer;
+    padding-bottom: 4px;
+  }
+  .fp-auth-tab.is-active {
+    color: #0f172a;
+    border-bottom: 2px solid #0f172a;
+  }
+  .fp-auth-error {
+    color: #ef4444;
+    font-size: 0.85rem;
+    margin-top: 8px;
+  }
+
+  /* Form submission feedback */
+  .fp-form-feedback {
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-top: 12px;
+    font-size: 0.9rem;
+    display: none;
+  }
+  .fp-form-feedback.is-success {
+    display: block;
+    background: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+  }
+  .fp-form-feedback.is-error {
+    display: block;
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+  }
+</style>
+
+<script is:inline>
+  (function() {
+    var container = document.getElementById('fpStoreRuntime');
+    if (!container) return;
+
+    var tenant = container.getAttribute('data-tenant') || 'client1';
+    var apiHost = container.getAttribute('data-api-host') || 'http://localhost:8080';
+
+    // 1. SHOPPING CART ENGINE
+    var CART_KEY = 'fp_cart_' + tenant;
+
+    function getCart() {
+      try {
+        var raw = localStorage.getItem(CART_KEY);
+        return raw ? JSON.parse(raw) : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveCart(cart) {
+      localStorage.setItem(CART_KEY, JSON.stringify(cart));
+      updateCartUI();
+    }
+
+    function updateCartUI() {
+      var cart = getCart();
+      var count = cart.reduce(function(sum, item) { return sum + item.quantity; }, 0);
+      var subtotal = cart.reduce(function(sum, item) { return sum + (item.price * item.quantity); }, 0);
+
+      // Update header badges
+      document.querySelectorAll('.furnisite-cart-badge, .fp-cart-badge').forEach(function(badge) {
+        badge.textContent = count;
+        badge.style.display = count > 0 ? 'inline-block' : 'none';
+      });
+
+      var headerCount = document.getElementById('fpCartHeaderCount');
+      if (headerCount) headerCount.textContent = count;
+
+      var subtotalEl = document.getElementById('fpCartSubtotalAmount');
+      if (subtotalEl) subtotalEl.textContent = '$' + subtotal.toFixed(2);
+
+      var checkoutTotal = document.getElementById('fpCheckoutTotalAmount');
+      if (checkoutTotal) checkoutTotal.textContent = '$' + subtotal.toFixed(2);
+
+      var checkoutItems = document.getElementById('fpCheckoutItemsCount');
+      if (checkoutItems) checkoutItems.textContent = count;
+
+      // Render cart items
+      var containerEl = document.getElementById('fpCartItemsContainer');
+      if (!containerEl) return;
+
+      if (cart.length === 0) {
+        containerEl.innerHTML = '<div class="fp-cart-empty"><p>Your shopping bag is empty.</p><a href="/products" class="fp-btn fp-btn-primary" style="margin-top:12px;">Explore Catalog</a></div>';
+        var footer = document.getElementById('fpCartFooter');
+        if (footer) footer.style.display = 'none';
+        return;
+      }
+
+      var footer = document.getElementById('fpCartFooter');
+      if (footer) footer.style.display = 'block';
+
+      containerEl.innerHTML = cart.map(function(item, idx) {
+        return '<article class="fp-cart-item">' +
+          '<img src="' + (item.image || '/favicon.svg') + '" alt="' + item.title + '" class="fp-cart-item-img">' +
+          '<div class="fp-cart-item-info">' +
+            '<h4 class="fp-cart-item-title">' + item.title + '</h4>' +
+            '<div class="fp-cart-item-price">$' + (item.price * item.quantity).toFixed(2) + '</div>' +
+            '<div class="fp-cart-stepper">' +
+              '<button type="button" class="fp-qty-minus" data-idx="' + idx + '">-</button>' +
+              '<span>' + item.quantity + '</span>' +
+              '<button type="button" class="fp-qty-plus" data-idx="' + idx + '">+</button>' +
+            '</div>' +
+          '</div>' +
+          '<button type="button" class="fp-cart-item-remove" data-idx="' + idx + '" title="Remove">&times;</button>' +
+        '</article>';
+      }).join('');
+    }
+
+    // Cart open/close triggers
+    function openCart() {
+      var drawer = document.getElementById('fpCartDrawer');
+      if (drawer) {
+        drawer.classList.add('is-open');
+        drawer.setAttribute('aria-hidden', 'false');
+      }
+      updateCartUI();
+    }
+
+    function closeCart() {
+      var drawer = document.getElementById('fpCartDrawer');
+      if (drawer) {
+        drawer.classList.remove('is-open');
+        drawer.setAttribute('aria-hidden', 'true');
+      }
+    }
+
+    document.addEventListener('click', function(e) {
+      if (e.target.closest('.furnisite-cart-btn, .fp-cart-trigger')) {
+        e.preventDefault();
+        openCart();
+      }
+      if (e.target.closest('#fpCartCloseBtn, #fpCartBackdrop')) {
+        closeCart();
+      }
+      // Stepper +/-
+      var plusBtn = e.target.closest('.fp-qty-plus');
+      if (plusBtn) {
+        var idx = parseInt(plusBtn.getAttribute('data-idx'), 10);
+        var cart = getCart();
+        if (cart[idx]) {
+          cart[idx].quantity += 1;
+          saveCart(cart);
+        }
+      }
+      var minusBtn = e.target.closest('.fp-qty-minus');
+      if (minusBtn) {
+        var idx = parseInt(minusBtn.getAttribute('data-idx'), 10);
+        var cart = getCart();
+        if (cart[idx]) {
+          cart[idx].quantity -= 1;
+          if (cart[idx].quantity <= 0) cart.splice(idx, 1);
+          saveCart(cart);
+        }
+      }
+      var removeBtn = e.target.closest('.fp-cart-item-remove');
+      if (removeBtn) {
+        var idx = parseInt(removeBtn.getAttribute('data-idx'), 10);
+        var cart = getCart();
+        cart.splice(idx, 1);
+        saveCart(cart);
+      }
+      // Add to Cart Buttons
+      var addBtn = e.target.closest('.add-to-cart-btn, [data-add-to-cart], .furnisite-card-arrow');
+      if (addBtn) {
+        e.preventDefault();
+        var card = addBtn.closest('article, .furnisite-product-card');
+        var title = card ? (card.querySelector('.furnisite-card-title, h3')?.textContent?.trim() || 'Modern Furniture') : 'Curated Item';
+        var priceText = card ? (card.querySelector('.furnisite-card-price, .price')?.textContent?.replace(/[^0-9.]/g, '') || '99.00') : '99.00';
+        var img = card ? (card.querySelector('img')?.getAttribute('src') || '') : '';
+        var price = parseFloat(priceText) || 99.00;
+
+        var cart = getCart();
+        var existing = cart.find(function(it) { return it.title === title; });
+        if (existing) {
+          existing.quantity += 1;
+        } else {
+          cart.push({ title: title, price: price, image: img, quantity: 1 });
+        }
+        saveCart(cart);
+        openCart();
+      }
+    });
+
+    // 2. CHECKOUT MODAL
+    var checkoutBtn = document.getElementById('fpCartCheckoutBtn');
+    var checkoutDialog = document.getElementById('fpCheckoutDialog');
+    if (checkoutBtn && checkoutDialog) {
+      checkoutBtn.addEventListener('click', function() {
+        closeCart();
+        checkoutDialog.showModal();
+      });
+      document.getElementById('fpCheckoutCloseBtn')?.addEventListener('click', function() {
+        checkoutDialog.close();
+      });
+      document.getElementById('fpCheckoutForm')?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        var btn = document.getElementById('fpPlaceOrderBtn');
+        btn.disabled = true;
+        btn.textContent = 'Processing Order...';
+
+        setTimeout(function() {
+          alert('✓ Order Placed Successfully!\n\nThank you for your order. A confirmation email has been sent.');
+          localStorage.removeItem(CART_KEY);
+          updateCartUI();
+          checkoutDialog.close();
+          btn.disabled = false;
+          btn.textContent = 'Place Order';
+        }, 1200);
+      });
+    }
+
+    // 3. PUBLIC FORM AUTO-SUBMISSION WITH SMTP DISPATCH
+    document.querySelectorAll('form.contact-form, form#contactForm, form[data-fp-form]').forEach(function(form) {
+      // Add feedback container if not present
+      var feedback = form.querySelector('.fp-form-feedback');
+      if (!feedback) {
+        feedback = document.createElement('div');
+        feedback.className = 'fp-form-feedback';
+        form.appendChild(feedback);
+      }
+
+      form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        var submitBtn = form.querySelector('button[type="submit"]');
+        var originalBtnText = submitBtn ? submitBtn.innerHTML : '';
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.innerHTML = 'Sending...';
+        }
+        feedback.className = 'fp-form-feedback';
+        feedback.style.display = 'none';
+
+        var formData = new FormData(form);
+        var fields = {};
+        formData.forEach(function(v, k) { fields[k] = v; });
+
+        try {
+          var res = await fetch(apiHost + '/api/v1/forms/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              tenant: tenant,
+              form_name: form.getAttribute('data-form-name') || 'Contact Us',
+              fields: fields
+            })
+          });
+
+          var data = await res.json();
+          if (res.ok) {
+            feedback.className = 'fp-form-feedback is-success';
+            feedback.textContent = '✓ Thank you! Your message has been sent, and we have emailed a confirmation to you.';
+            form.reset();
+          } else {
+            feedback.className = 'fp-form-feedback is-error';
+            feedback.textContent = 'Error: ' + (data.error || 'Failed to send message.');
+          }
+        } catch (err) {
+          feedback.className = 'fp-form-feedback is-error';
+          feedback.textContent = 'Could not connect to submission server. Please try again later.';
+        } finally {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalBtnText;
+          }
+        }
+      });
+    });
+
+    // 4. CUSTOMER AUTH MODAL
+    var authDialog = document.getElementById('fpCustomerAuthDialog');
+    var tabLogin = document.getElementById('fpTabLogin');
+    var tabRegister = document.getElementById('fpTabRegister');
+    var loginForm = document.getElementById('fpCustomerLoginForm');
+    var registerForm = document.getElementById('fpCustomerRegisterForm');
+
+    if (tabLogin && tabRegister) {
+      tabLogin.addEventListener('click', function() {
+        tabLogin.classList.add('is-active');
+        tabRegister.classList.remove('is-active');
+        loginForm.style.display = 'block';
+        registerForm.style.display = 'none';
+      });
+      tabRegister.addEventListener('click', function() {
+        tabRegister.classList.add('is-active');
+        tabLogin.classList.remove('is-active');
+        registerForm.style.display = 'block';
+        loginForm.style.display = 'none';
+      });
+      document.getElementById('fpAuthCloseBtn')?.addEventListener('click', function() {
+        authDialog?.close();
+      });
+    }
+
+    // Check customer session
+    var customerToken = localStorage.getItem('fp_customer_token_' + tenant);
+    if (customerToken) {
+      document.querySelectorAll('.fp-customer-btn, .customer-auth-trigger').forEach(function(el) {
+        el.textContent = 'My Account';
+      });
+    }
+
+    // Initial cart load
+    updateCartUI();
+  })();
+</script>

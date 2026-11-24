@@ -1,0 +1,892 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getProducts, getProductCategoriesArray, type Product } from '../../../data/products';
+import { getProductCategories } from '../../../data/product-categories';
+
+interface Props {
+  products?: Product[];
+  categories?: any[];
+  customProductsPage?: any;
+  isPreview?: boolean;
+  previewTheme?: string;
+}
+
+const {
+  products: initialProducts,
+  categories: initialCategories,
+  customProductsPage,
+  isPreview = false,
+  previewTheme = 'furnisite',
+} = Astro.props;
+
+const prefix = isPreview ? `/preview/${previewTheme}` : '';
+
+// Load products from props or database directly
+const allDbProducts = initialProducts || getProducts().filter((p) => p.status !== 'draft');
+
+// Prioritize furniture products (prod-furn-* or categories matching furniture collection)
+const furnitureKeywords = ['living room', 'dining', 'bedroom', 'lighting', 'storage', 'chairs', 'tables'];
+const furnisiteProducts = allDbProducts.filter((p) => {
+  if (p.id?.startsWith('prod-furn-')) return true;
+  const cats = getProductCategoriesArray(p).map((c) => c.toLowerCase());
+  return cats.some((c) => furnitureKeywords.some((k) => c.includes(k)));
+});
+
+const activeProducts = furnisiteProducts.length > 0 ? furnisiteProducts : allDbProducts;
+
+const combinedProducts = activeProducts.map((p) => {
+  const cats = getProductCategoriesArray(p);
+  const primaryCat = cats[0] || p.category || 'Living Room';
+  const categoriesLower = cats.map((c) => c.toLowerCase());
+  return {
+    id: p.id,
+    slug: p.slug,
+    title: p.title,
+    price: p.price,
+    compareAtPrice: p.compareAtPrice,
+    category: primaryCat,
+    categories: cats,
+    categoriesJson: JSON.stringify(categoriesLower),
+    searchTerms: `${p.title} ${p.subtitle || ''} ${p.description || ''} ${cats.join(' ')} ${(p.tags || []).join(' ')}`.toLowerCase(),
+    image: p.image,
+    description: p.description,
+  };
+});
+
+const categoryList = ['All', 'Living Room', 'Dining', 'Bedroom', 'Lighting', 'Storage', 'Chairs', 'Tables'];
+
+const isCustom = Boolean(customProductsPage?.isCustom && customProductsPage?.html);
+const cleanHtml = customProductsPage?.html || '';
+---
+
+<Layout
+  title="Furniture Collections - Infurnish"
+  description="Browse our complete catalogue of minimalist solid wood tables, woven seating, storage and ambient lighting."
+  activePage="products"
+  isPreview={isPreview}
+  previewTheme={previewTheme}
+>
+  {isCustom ? (
+    <>
+      <div class="custom-builder-content" set:html={cleanHtml} />
+      {customProductsPage?.css && <style is:inline set:html={customProductsPage.css} />}
+    </>
+  ) : (
+    <>
+  <!-- Catalog Header -->
+  <section class="fs-catalog-header">
+    <div class="fs-container">
+      <div class="fs-catalog-title-wrap">
+        <span class="fs-badge fs-badge-neutral">Living Space Catalog</span>
+        <h1 class="fs-catalog-title">Curated Furniture Collections</h1>
+        <p class="fs-catalog-subtitle">
+          Designed with quiet intentionality. Handcrafted from durable natural hardwoods, soft linens, and woven rattan.
+        </p>
+      </div>
+
+      <!-- Filter Controls -->
+      <div class="fs-filter-bar">
+        <div class="fs-category-tabs" id="fsCategoryTabs" role="tablist" aria-label="Filter by category">
+          {categoryList.map((cat, idx) => (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={idx === 0 ? "true" : "false"}
+              class:list={['fs-category-btn', { 'is-active': idx === 0 }]}
+              data-cat={cat.toLowerCase()}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        <form class="fs-search-form" id="fsSearchForm" role="search" onsubmit="event.preventDefault(); return false;">
+          <div class="fs-search-wrap">
+            <button type="submit" class="fs-search-submit-btn" id="fsSearchSubmit" aria-label="Search catalog" title="Search">
+              <svg class="fs-search-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </button>
+            <input
+              type="search"
+              id="fsCatalogSearch"
+              name="search"
+              placeholder="Search pieces..."
+              class="fs-search-input"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Search pieces"
+            />
+            <button type="button" id="fsSearchClear" class="fs-search-clear" aria-label="Clear search" title="Clear search" style="display: none;">&times;</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- Product Grid -->
+  <section class="fs-catalog-grid-section">
+    <div class="fs-container">
+      <div class="fs-catalog-meta-row">
+        <span id="fsProductCount" class="fs-product-count">Showing {combinedProducts.length} pieces</span>
+      </div>
+
+      <div class="fs-catalog-grid" id="fsCatalogGrid">
+        {combinedProducts.map((item) => (
+          <article
+            class="furnisite-product-card fs-catalog-card"
+            data-category={item.category.toLowerCase()}
+            data-categories={item.categoriesJson}
+            data-title={item.title.toLowerCase()}
+            data-search={item.searchTerms}
+            data-slug={item.slug}
+          >
+            <a href={`${prefix}/products/${item.slug}`} class="furnisite-card-image-link">
+              <div class="furnisite-card-image-wrap">
+                <img
+                  src={item.image}
+                  alt={item.title}
+                  class="furnisite-card-img"
+                  loading="lazy"
+                />
+                {item.compareAtPrice && item.compareAtPrice > item.price && (
+                  <span class="fs-sale-pill">Sale</span>
+                )}
+                <span class="furnisite-card-arrow" aria-hidden="true">↗</span>
+              </div>
+            </a>
+            <div class="furnisite-card-meta">
+              <span class="fs-card-category">{item.category}</span>
+              <h3 class="furnisite-card-title">
+                <a href={`${prefix}/products/${item.slug}`}>{item.title}</a>
+              </h3>
+              <div class="fs-card-price-wrap">
+                <span class="fs-card-price">${item.price}</span>
+                {item.compareAtPrice && item.compareAtPrice > item.price && (
+                  <span class="fs-card-compare">${item.compareAtPrice}</span>
+                )}
+              </div>
+            </div>
+          </article>
+        ))}
+
+        <!-- Empty State -->
+        <div id="fsEmptyState" class="fs-empty-state" style="display: none;">
+          <div class="fs-empty-icon">🪑</div>
+          <h3 class="fs-empty-title">No pieces found</h3>
+          <p class="fs-empty-desc">We couldn't find any furniture matching your current filter or search criteria.</p>
+          <button type="button" id="fsResetFiltersBtn" class="fs-btn-reset">Reset All Filters</button>
+        </div>
+      </div>
+    </div>
+  </section>
+    </>
+  )}
+
+  <script is:inline>
+    (function () {
+      function initFurnisiteCatalog() {
+        const root = document.querySelector('.furnisite-main-content') || document.body;
+        if (!root) return;
+
+        // 1. Category buttons
+        const catButtons = root.querySelectorAll(
+          '#fsCategoryTabs .fs-category-btn, .fs-category-tabs .fs-category-btn, .fs-category-btn'
+        );
+
+        // 2. Search elements
+        const searchForm = root.querySelector('#fsSearchForm, .fs-search-form');
+        const searchInput = root.querySelector(
+          '#fsCatalogSearch, .fs-search-input, input[placeholder*="Search"]'
+        );
+        const searchClearBtn = root.querySelector('#fsSearchClear, .fs-search-clear');
+        const searchSubmitBtn = root.querySelector('#fsSearchSubmit, .fs-search-submit-btn');
+
+        // 3. Product cards
+        const cards = root.querySelectorAll(
+          '#fsCatalogGrid .fs-catalog-card, #fsCatalogGrid .furnisite-product-card, .fs-catalog-grid .fs-catalog-card, .furnisite-product-card'
+        );
+
+        // 4. Grid container & Counter
+        const grid = root.querySelector('#fsCatalogGrid, .fs-catalog-grid');
+        let countEl = root.querySelector('#fsProductCount, .fs-product-count');
+        let emptyState = root.querySelector('#fsEmptyState, .fs-empty-state');
+
+        if (!cards || cards.length === 0) return;
+
+        // Ensure empty state exists
+        if (!emptyState && grid) {
+          emptyState = document.createElement('div');
+          emptyState.id = 'fsEmptyState';
+          emptyState.className = 'fs-empty-state';
+          emptyState.style.display = 'none';
+          emptyState.innerHTML = `
+            <div class="fs-empty-icon">🪑</div>
+            <h3 class="fs-empty-title">No pieces found</h3>
+            <p class="fs-empty-desc">We couldn't find any furniture matching your current filter or search criteria.</p>
+            <button type="button" class="fs-btn-reset" id="fsDynamicResetBtn">Reset All Filters</button>
+          `;
+          grid.appendChild(emptyState);
+        }
+
+        // Map of known furnisite slugs to comprehensive categories
+        const SLUG_CAT_MAP = {
+          'elowen-woven-lounge-chair': ['living room', 'living-room', 'chairs', 'lounge chair'],
+          'nova-wooden-coffee-table': ['living room', 'living-room', 'tables', 'coffee table'],
+          'sagewood-6-drawer-dresser': ['bedroom', 'storage', 'dresser'],
+          'juno-rattan-pendant-lamp': ['lighting', 'living room', 'living-room', 'pendant lamp'],
+          'vella-tufted-dining-bench': ['dining', 'chairs', 'bench', 'seating'],
+          'kairo-minimal-bookshelf': ['storage', 'living room', 'living-room', 'bookshelf'],
+        };
+
+        let activeCat = 'all';
+        let searchQuery = '';
+
+        function getCardCategories(card) {
+          const cats = new Set();
+          // A. From data-categories attribute
+          const dataCats = card.getAttribute('data-categories');
+          if (dataCats) {
+            try {
+              const arr = JSON.parse(dataCats);
+              if (Array.isArray(arr)) {
+                arr.forEach((c) => cats.add(String(c).toLowerCase().trim()));
+              }
+            } catch (e) {
+              dataCats.split(',').forEach((c) => cats.add(c.toLowerCase().trim()));
+            }
+          }
+          // B. From data-category attribute
+          const singleCat = card.getAttribute('data-category');
+          if (singleCat) {
+            cats.add(singleCat.toLowerCase().trim());
+          }
+          // C. From visible category badge
+          const badgeEl = card.querySelector('.fs-card-category');
+          if (badgeEl && badgeEl.textContent) {
+            cats.add(badgeEl.textContent.toLowerCase().trim());
+          }
+          // D. From link href or data-slug
+          const slug =
+            card.getAttribute('data-slug') ||
+            card.querySelector('a[href*="/products/"]')?.getAttribute('href')?.split('/products/')[1]?.replace(/\/$/, '');
+          if (slug && SLUG_CAT_MAP[slug]) {
+            SLUG_CAT_MAP[slug].forEach((c) => cats.add(c));
+          }
+          return Array.from(cats);
+        }
+
+        function getCardSearchText(card) {
+          const parts = [];
+          const dataSearch = card.getAttribute('data-search');
+          if (dataSearch) parts.push(dataSearch);
+          const dataTitle = card.getAttribute('data-title');
+          if (dataTitle) parts.push(dataTitle);
+          const titleEl = card.querySelector('.furnisite-card-title, h3');
+          if (titleEl) parts.push(titleEl.textContent);
+          const catEl = card.querySelector('.fs-card-category');
+          if (catEl) parts.push(catEl.textContent);
+          const priceEl = card.querySelector('.fs-card-price');
+          if (priceEl) parts.push(priceEl.textContent);
+          const descEl = card.querySelector('.furnisite-card-desc, p');
+          if (descEl) parts.push(descEl.textContent);
+          return parts.join(' ').toLowerCase();
+        }
+
+        function filterCards() {
+          let visibleCount = 0;
+          const normActive = activeCat.toLowerCase().replace(/[-_]/g, ' ').trim();
+          const rawTokens = searchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+
+          cards.forEach((card) => {
+            const cardCats = getCardCategories(card);
+            const matchesCat =
+              normActive === 'all' ||
+              normActive === '' ||
+              cardCats.some((c) => {
+                const normC = c.toLowerCase().replace(/[-_]/g, ' ').trim();
+                return normC === normActive || normC.includes(normActive) || normActive.includes(normC);
+              });
+
+            const searchTerms = getCardSearchText(card);
+            const matchesSearch =
+              rawTokens.length === 0 ||
+              rawTokens.every((token) => searchTerms.includes(token));
+
+            if (matchesCat && matchesSearch) {
+              card.style.display = '';
+              card.removeAttribute('hidden');
+              visibleCount++;
+            } else {
+              card.style.display = 'none';
+              card.setAttribute('hidden', '');
+            }
+          });
+
+          if (countEl) {
+            countEl.textContent = `Showing ${visibleCount} piece${visibleCount === 1 ? '' : 's'}`;
+          }
+          if (emptyState) {
+            emptyState.style.display = visibleCount === 0 ? 'block' : 'none';
+          }
+        }
+
+        // Handle category tab clicks
+        catButtons.forEach((btn) => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            catButtons.forEach((b) => {
+              b.classList.remove('is-active');
+              b.setAttribute('aria-selected', 'false');
+            });
+            btn.classList.add('is-active');
+            btn.setAttribute('aria-selected', 'true');
+
+            const rawCat = btn.getAttribute('data-cat') || btn.textContent || 'all';
+            activeCat = rawCat.trim().toLowerCase();
+            filterCards();
+          });
+        });
+
+        // Handle search form submission
+        if (searchForm) {
+          searchForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (searchInput) {
+              searchQuery = searchInput.value.toLowerCase().trim();
+              if (searchClearBtn) {
+                searchClearBtn.style.display = searchQuery ? 'flex' : 'none';
+              }
+            }
+            filterCards();
+          });
+        }
+
+        // Handle search submit button click
+        if (searchSubmitBtn && searchInput) {
+          searchSubmitBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            searchQuery = searchInput.value.toLowerCase().trim();
+            if (searchClearBtn) {
+              searchClearBtn.style.display = searchQuery ? 'flex' : 'none';
+            }
+            filterCards();
+          });
+        }
+
+        // Handle search input events (live filtering as user types)
+        if (searchInput) {
+          const updateSearch = () => {
+            searchQuery = searchInput.value.toLowerCase().trim();
+            if (searchClearBtn) {
+              searchClearBtn.style.display = searchQuery ? 'flex' : 'none';
+            }
+            filterCards();
+          };
+
+          searchInput.addEventListener('input', updateSearch);
+          searchInput.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              updateSearch();
+            } else if (e.key === 'Escape') {
+              searchInput.value = '';
+              searchQuery = '';
+              if (searchClearBtn) searchClearBtn.style.display = 'none';
+              filterCards();
+            }
+          });
+        }
+
+        // Handle search clear button
+        if (searchClearBtn && searchInput) {
+          searchClearBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            searchInput.value = '';
+            searchQuery = '';
+            searchClearBtn.style.display = 'none';
+            filterCards();
+            searchInput.focus();
+          });
+        }
+
+        // Handle reset filters click
+        root.addEventListener('click', (e) => {
+          const target = e.target;
+          if (
+            target &&
+            (target.id === 'fsResetFiltersBtn' ||
+              target.id === 'fsDynamicResetBtn' ||
+              target.closest('#fsResetFiltersBtn') ||
+              target.closest('#fsDynamicResetBtn'))
+          ) {
+            e.preventDefault();
+            activeCat = 'all';
+            searchQuery = '';
+            catButtons.forEach((b, idx) => {
+              const catVal = (b.getAttribute('data-cat') || b.textContent || '').trim().toLowerCase();
+              if (catVal === 'all' || idx === 0) {
+                b.classList.add('is-active');
+                b.setAttribute('aria-selected', 'true');
+              } else {
+                b.classList.remove('is-active');
+                b.setAttribute('aria-selected', 'false');
+              }
+            });
+            if (searchInput) {
+              searchInput.value = '';
+            }
+            if (searchClearBtn) {
+              searchClearBtn.style.display = 'none';
+            }
+            filterCards();
+          }
+        });
+
+        // Check URL search parameters
+        try {
+          const urlParams = new URLSearchParams(window.location.search);
+          const catParam = urlParams.get('category') || urlParams.get('cat');
+          const searchParam = urlParams.get('search') || urlParams.get('q');
+
+          if (catParam) {
+            const normParam = catParam.toLowerCase().trim();
+            catButtons.forEach((btn) => {
+              const btnCat = (btn.getAttribute('data-cat') || btn.textContent || '').trim().toLowerCase();
+              if (
+                btnCat === normParam ||
+                btnCat.replace(/\s+/g, '-') === normParam ||
+                btnCat === normParam.replace(/-/g, ' ')
+              ) {
+                catButtons.forEach((b) => {
+                  b.classList.remove('is-active');
+                  b.setAttribute('aria-selected', 'false');
+                });
+                btn.classList.add('is-active');
+                btn.setAttribute('aria-selected', 'true');
+                activeCat = btnCat;
+              }
+            });
+          }
+
+          if (searchParam && searchInput) {
+            searchInput.value = searchParam;
+            searchQuery = searchParam.toLowerCase().trim();
+            if (searchClearBtn) searchClearBtn.style.display = 'flex';
+          }
+
+          if (catParam || searchParam) {
+            filterCards();
+          }
+        } catch (err) {}
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initFurnisiteCatalog);
+      } else {
+        initFurnisiteCatalog();
+      }
+
+      // Astro view transitions support
+      document.addEventListener('astro:page-load', initFurnisiteCatalog);
+      document.addEventListener('astro:after-swap', initFurnisiteCatalog);
+    })();
+  </script>
+</Layout>
+
+<style>
+  .fs-catalog-header {
+    padding-top: 64px;
+    padding-bottom: 32px;
+    background-color: #faf9f6;
+    border-bottom: 1px solid #f0eee6;
+  }
+
+  .fs-catalog-title-wrap {
+    text-align: center;
+    max-width: 680px;
+    margin: 0 auto 40px auto;
+  }
+
+  .fs-catalog-title {
+    font-family: var(--fs-font-heading);
+    font-size: 2.5rem;
+    font-weight: 800;
+    color: #18181b;
+    margin: 12px 0;
+    letter-spacing: -0.5px;
+  }
+
+  @media (min-width: 768px) {
+    .fs-catalog-title {
+      font-size: 3.2rem;
+    }
+  }
+
+  .fs-catalog-subtitle {
+    font-size: 1.05rem;
+    color: #52525b;
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  .fs-filter-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 18px;
+    padding-top: 12px;
+  }
+
+  .fs-category-tabs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .fs-category-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    padding: 8px 16px;
+    border-radius: 9999px;
+    font-family: var(--fs-font-heading);
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: #52525b;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.18s ease;
+  }
+
+  .fs-category-btn:hover {
+    color: #18181b;
+    background-color: #f4f4f5;
+  }
+
+  .fs-category-btn.is-active {
+    background-color: #18181b;
+    color: #ffffff;
+    font-weight: 600;
+  }
+
+  .fs-search-form {
+    margin: 0;
+    padding: 0;
+    display: inline-block;
+  }
+
+  .fs-search-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    background-color: #ffffff;
+    border: 1.5px solid #e4e4e7;
+    border-radius: 9999px;
+    padding: 2px 10px 2px 12px;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  }
+
+  .fs-search-wrap:focus-within {
+    border-color: #18181b;
+    box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.08);
+  }
+
+  .fs-search-submit-btn {
+    background: transparent;
+    border: none;
+    padding: 4px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #71717a;
+    cursor: pointer;
+    border-radius: 50%;
+    transition: color 0.18s ease;
+    line-height: 1;
+  }
+
+  .fs-search-submit-btn:hover {
+    color: #18181b;
+  }
+
+  .fs-search-icon {
+    display: block;
+    width: 16px;
+    height: 16px;
+  }
+
+  .fs-search-input {
+    border: none;
+    background: transparent;
+    padding: 8px 8px;
+    font-size: 0.9rem;
+    font-family: inherit;
+    color: #18181b;
+    outline: none;
+    width: 200px;
+  }
+
+  @media (min-width: 640px) {
+    .fs-search-input {
+      width: 240px;
+    }
+  }
+
+  .fs-search-input::placeholder {
+    color: #a1a1aa;
+    opacity: 1;
+  }
+
+  .fs-search-input::-webkit-search-decoration,
+  .fs-search-input::-webkit-search-cancel-button,
+  .fs-search-input::-webkit-search-results-button,
+  .fs-search-input::-webkit-search-results-decoration {
+    display: none;
+  }
+
+  .fs-search-clear {
+    background: #f4f4f5;
+    border: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    color: #71717a;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0;
+    transition: all 0.18s ease;
+    flex-shrink: 0;
+  }
+
+  .fs-search-clear:hover {
+    background: #e4e4e7;
+    color: #18181b;
+  }
+
+  /* Catalog Grid */
+  .fs-catalog-grid-section {
+    padding-top: 56px;
+    padding-bottom: 96px;
+    background-color: #ffffff;
+  }
+
+  .fs-catalog-grid {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 36px;
+  }
+
+  @media (min-width: 540px) {
+    .fs-catalog-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 900px) {
+    .fs-catalog-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  @media (min-width: 1200px) {
+    .fs-catalog-grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+
+  /* Product Card */
+  .furnisite-product-card {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .furnisite-card-image-wrap {
+    position: relative;
+    background-color: #f7f6f2;
+    border-radius: 4px;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    margin-bottom: 14px;
+  }
+
+  .furnisite-card-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s ease;
+  }
+
+  .furnisite-product-card:hover .furnisite-card-img {
+    transform: scale(1.04);
+  }
+
+  .fs-sale-pill {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background-color: #18181b;
+    color: #ffffff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 2px;
+    letter-spacing: 0.5px;
+  }
+
+  .furnisite-card-arrow {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    font-size: 1rem;
+    color: #71717a;
+    opacity: 0;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+
+  .furnisite-product-card:hover .furnisite-card-arrow {
+    opacity: 1;
+    transform: translate(2px, -2px);
+  }
+
+  .fs-card-category {
+    font-size: 0.75rem;
+    color: #a1a1aa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+
+  .furnisite-card-title {
+    font-family: var(--fs-font-heading);
+    font-size: 1rem;
+    font-weight: 600;
+    color: #18181b;
+    margin: 4px 0 6px 0;
+    line-height: 1.35;
+  }
+
+  .furnisite-card-title a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .furnisite-card-title a:hover {
+    color: #71717a;
+  }
+
+  .fs-card-price-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .fs-card-price {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #18181b;
+  }
+
+  .fs-card-compare {
+    font-size: 0.88rem;
+    color: #a1a1aa;
+    text-decoration: line-through;
+  }
+
+  .fs-catalog-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    padding: 0 4px;
+  }
+
+  .fs-product-count {
+    font-size: 0.88rem;
+    color: #71717a;
+    font-weight: 500;
+  }
+
+  .fs-search-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .fs-search-clear {
+    position: absolute;
+    right: 12px;
+    background: transparent;
+    border: none;
+    color: #a1a1aa;
+    font-size: 1.15rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 4px;
+    display: none;
+  }
+
+  .fs-search-clear:hover {
+    color: #18181b;
+  }
+
+  .fs-empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 64px 20px;
+    background-color: #faf9f6;
+    border: 1px dashed #e4e4e7;
+    border-radius: 8px;
+    margin: 20px 0;
+  }
+
+  .fs-empty-icon {
+    font-size: 2.5rem;
+    margin-bottom: 12px;
+  }
+
+  .fs-empty-title {
+    font-family: var(--fs-font-heading);
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #18181b;
+    margin-bottom: 8px;
+  }
+
+  .fs-empty-desc {
+    font-size: 0.95rem;
+    color: #71717a;
+    max-width: 440px;
+    margin: 0 auto 20px auto;
+    line-height: 1.6;
+  }
+
+  .fs-btn-reset {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background-color: #18181b;
+    color: #ffffff;
+    padding: 10px 24px;
+    border-radius: 9999px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: background-color 0.18s ease;
+  }
+
+  .fs-btn-reset:hover {
+    background-color: #3f3f46;
+  }
+</style>

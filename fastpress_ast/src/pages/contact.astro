@@ -1,0 +1,17 @@
+---
+export const prerender = false;
+
+import { getActiveThemeName, getThemePages } from '../core/theme';
+import ContactPage from '../themes/default/pages/ContactPage.astro';
+import FurnisiteContactPage from '../themes/furnisite/pages/ContactPage.astro';
+
+const activeTheme = getActiveThemeName();
+const pages = getThemePages(activeTheme);
+const contactData = pages.contact || null;
+---
+
+{activeTheme === 'furnisite' ? (
+  <FurnisiteContactPage customData={contactData} />
+) : (
+  <ContactPage />
+)}

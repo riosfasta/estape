@@ -1,0 +1,289 @@
+{
+  "activeTheme": "furnisite",
+  "brandName": "INFURNISH",
+  "tagline": "Thoughtful Furniture for Modern Living",
+  "navIndicatorStyle": "underline",
+  "logoUrl": "",
+  "faviconUrl": "/favicon.svg",
+  "drawerCtaText": "Explore Catalog",
+  "drawerCtaUrl": "/products",
+  "navItems": [
+    {
+      "name": "Home",
+      "href": "/",
+      "id": "home"
+    },
+    {
+      "name": "About",
+      "href": "/about",
+      "id": "about"
+    },
+    {
+      "name": "Shop",
+      "href": "/products",
+      "id": "products"
+    },
+    {
+      "name": "Blog",
+      "href": "/blog",
+      "id": "blog"
+    },
+    {
+      "name": "Contact",
+      "href": "/contact",
+      "id": "contact"
+    }
+  ],
+  "footer": {
+    "companyName": "INFURNISH Studio",
+    "description": "Thoughtfully crafted furniture designed to transform modern living spaces with timeless simplicity, natural textures, and lasting comfort.",
+    "copyrightText": "All rights reserved. Built with FastPress.",
+    "showBackToTop": true,
+    "collections": [
+      {
+        "name": "Living Room",
+        "href": "/products"
+      },
+      {
+        "name": "Dining & Kitchen",
+        "href": "/products"
+      },
+      {
+        "name": "Bedroom Sanctuary",
+        "href": "/products"
+      },
+      {
+        "name": "Lighting & Fixtures",
+        "href": "/products"
+      },
+      {
+        "name": "Storage & Shelving",
+        "href": "/products"
+      }
+    ],
+    "companyLinks": [
+      {
+        "name": "About Our Studio",
+        "href": "/about"
+      },
+      {
+        "name": "Living Space Journal",
+        "href": "/blog"
+      },
+      {
+        "name": "Our Vision & Mission",
+        "href": "/about#vision"
+      },
+      {
+        "name": "Showrooms & Contact",
+        "href": "/contact"
+      }
+    ],
+    "socialLinks": [
+      {
+        "name": "Instagram",
+        "href": "https://instagram.com",
+        "enabled": true
+      },
+      {
+        "name": "Pinterest",
+        "href": "https://pinterest.com",
+        "enabled": true
+      },
+      {
+        "name": "Twitter",
+        "href": "https://twitter.com",
+        "enabled": true
+      },
+      {
+        "name": "Facebook",
+        "href": "https://facebook.com",
+        "enabled": false
+      },
+      {
+        "name": "LinkedIn",
+        "href": "https://linkedin.com",
+        "enabled": false
+      }
+    ]
+  },
+  "themeConfigs": {
+    "default": {
+      "brandName": "INFURNISH",
+      "tagline": "Thoughtful Furniture for Modern Living",
+      "logoUrl": "",
+      "navItems": [
+        {
+          "name": "Home",
+          "href": "/",
+          "id": "home"
+        },
+        {
+          "name": "About Us",
+          "href": "/about",
+          "id": "about"
+        },
+        {
+          "name": "Our Work",
+          "href": "/#work",
+          "id": "work"
+        },
+        {
+          "name": "Testimonials",
+          "href": "/#testimonials",
+          "id": "testimonials"
+        },
+        {
+          "name": "Our Service",
+          "href": "/#services",
+          "id": "services"
+        },
+        {
+          "name": "Products",
+          "href": "/products",
+          "id": "products"
+        },
+        {
+          "name": "Blog",
+          "href": "/blog",
+          "id": "blog"
+        },
+        {
+          "name": "Contact",
+          "href": "/contact",
+          "id": "contact"
+        }
+      ],
+      "footer": {
+        "companyName": "Better Corp Inc.",
+        "copyrightText": "All Rights Reserved.",
+        "showBackToTop": true,
+        "socialLinks": [
+          {
+            "name": "Facebook",
+            "href": "https://facebook.com",
+            "enabled": true
+          },
+          {
+            "name": "Twitter",
+            "href": "https://twitter.com",
+            "enabled": true
+          },
+          {
+            "name": "LinkedIn",
+            "href": "https://linkedin.com",
+            "enabled": true
+          },
+          {
+            "name": "Instagram",
+            "href": "https://instagram.com",
+            "enabled": true
+          },
+          {
+            "name": "Dribbble",
+            "href": "https://dribbble.com",
+            "enabled": true
+          }
+        ]
+      }
+    },
+    "furnisite": {
+      "brandName": "INFURNISH",
+      "tagline": "Thoughtful Furniture for Modern Living",
+      "logoUrl": "",
+      "drawerCtaText": "Explore Catalog",
+      "drawerCtaUrl": "/products",
+      "navItems": [
+        {
+          "name": "Home",
+          "href": "/",
+          "id": "home"
+        },
+        {
+          "name": "About",
+          "href": "/about",
+          "id": "about"
+        },
+        {
+          "name": "Shop",
+          "href": "/products",
+          "id": "products"
+        },
+        {
+          "name": "Blog",
+          "href": "/blog",
+          "id": "blog"
+        },
+        {
+          "name": "Contact",
+          "href": "/contact",
+          "id": "contact"
+        }
+      ],
+      "footer": {
+        "companyName": "INFURNISH Studio",
+        "description": "Thoughtfully crafted furniture designed to transform modern living spaces with timeless simplicity, natural textures, and lasting comfort.",
+        "copyrightText": "All rights reserved. Built with FastPress.",
+        "showBackToTop": true,
+        "collections": [
+          {
+            "name": "Living Room",
+            "href": "/products"
+          },
+          {
+            "name": "Dining & Kitchen",
+            "href": "/products"
+          },
+          {
+            "name": "Bedroom Sanctuary",
+            "href": "/products"
+          },
+          {
+            "name": "Lighting & Fixtures",
+            "href": "/products"
+          },
+          {
+            "name": "Storage & Shelving",
+            "href": "/products"
+          }
+        ],
+        "companyLinks": [
+          {
+            "name": "About Our Studio",
+            "href": "/about"
+          },
+          {
+            "name": "Living Space Journal",
+            "href": "/blog"
+          },
+          {
+            "name": "Our Vision & Mission",
+            "href": "/about#vision"
+          },
+          {
+            "name": "Showrooms & Contact",
+            "href": "/contact"
+          }
+        ],
+        "socialLinks": [
+          {
+            "name": "Instagram",
+            "href": "https://instagram.com",
+            "enabled": true
+          },
+          {
+            "name": "Pinterest",
+            "href": "https://pinterest.com",
+            "enabled": true
+          },
+          {
+            "name": "Twitter",
+            "href": "https://twitter.com",
+            "enabled": true
+          }
+        ]
+      },
+      "navIndicatorStyle": "underline"
+    }
+  }
+}

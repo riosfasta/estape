@@ -1,0 +1,29 @@
+[
+  {
+    "id": "uncategorized",
+    "name": "Uncategorized",
+    "slug": "uncategorized",
+    "description": "Default category for posts without specific category"
+  },
+  {
+    "id": "branding",
+    "name": "Branding",
+    "slug": "branding"
+  },
+  {
+    "id": "online-marketing",
+    "name": "Online Marketing",
+    "slug": "online-marketing"
+  },
+  {
+    "id": "graphic-design",
+    "name": "Graphic Design",
+    "slug": "graphic-design"
+  },
+  {
+    "id": "hunter",
+    "name": "Hunter",
+    "slug": "hunter",
+    "description": ""
+  }
+]

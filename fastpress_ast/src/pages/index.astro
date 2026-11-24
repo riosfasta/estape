@@ -1,0 +1,26 @@
+---
+export const prerender = false;
+
+import HomePage from '../themes/default/pages/HomePage.astro';
+import FurnisiteHomePage from '../themes/furnisite/pages/HomePage.astro';
+import { getActiveThemeName, getThemePages } from '../core/theme';
+import { syncGlobalTemplates } from '../data/templates';
+
+const activeTheme = getActiveThemeName();
+
+// Retrieve custom builder content if present from active theme
+const pages = getThemePages(activeTheme);
+let homeData: any = pages.home || { isCustom: false, html: '', css: '' };
+
+if (homeData.html) {
+  let cleanHtml = homeData.html.replace(/^<body[^>]*>/i, '').replace(/<\/body>$/i, '').trim();
+  cleanHtml = syncGlobalTemplates(cleanHtml);
+  homeData.html = cleanHtml;
+}
+---
+
+{activeTheme === 'furnisite' ? (
+  <FurnisiteHomePage customData={homeData} />
+) : (
+  <HomePage customData={homeData} />
+)}

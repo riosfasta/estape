@@ -1,0 +1,1516 @@
+---
+import DeviceSwitcher from '../components/admin/DeviceSwitcher.astro';
+import WorkspaceSwitcher from '../components/admin/WorkspaceSwitcher.astro';
+import { getActiveThemeName } from '../core/theme';
+export const prerender = false;
+
+const activeTheme = getActiveThemeName();
+import { getProductLayouts, type ProductLayout } from '../data/product-layouts';
+import { getProducts, getProductCategoriesArray } from '../data/products';
+import { getTemplates } from '../data/templates';
+
+const layouts = getProductLayouts();
+const productsList = getProducts();
+const templatesList = getTemplates();
+
+const urlId = Astro.url.searchParams.get('id');
+const activeLayout: ProductLayout =
+  (urlId ? layouts.find((l) => l.id === urlId) : undefined) ||
+  layouts.find((l) => l.isDefault) ||
+  layouts[0];
+
+const sampleProduct = productsList[0] || null;
+const defaultLayoutId = layouts.find((l) => l.isDefault)?.id || layouts[0]?.id;
+---
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Products Layout Builder - {activeLayout.name} | FastPress</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Montserrat:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- GrapesJS Core Studio Styling & Script -->
+    <link href="https://unpkg.com/grapesjs@0.23.9/dist/css/grapes.min.css" rel="stylesheet" />
+    <link href="/editor-container-layout.css" rel="stylesheet" />
+    <script src="https://unpkg.com/grapesjs@0.23.9/dist/grapes.min.js" is:inline></script>
+    <script src="/editor-container-layout.js" defer is:inline></script>
+    <script src="/editor-file-manager.js" defer is:inline></script>
+    <script src="/editor-custom-code.js" defer is:inline></script>
+
+    <style>
+      :root {
+        --bg-dark: #0f1115;
+        --bg-panel: #14161a;
+        --bg-surface: #1c1f24;
+        --bg-hover: #262b33;
+        --border-color: #2a2e39;
+        --text-primary: #f3f4f6;
+        --text-secondary: #9ca3af;
+        --text-muted: #6b7280;
+        --accent-color: #ff5e3a;
+        --accent-hover: #ff7a59;
+        --success-color: #10b981;
+        --danger-color: #ef4444;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: var(--bg-dark);
+        color: var(--text-primary);
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        overflow: hidden;
+      }
+
+      .studio-shell {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100vw;
+        overflow: hidden;
+      }
+
+      /* Topbar */
+      .editor-topbar {
+        min-height: 52px;
+        height: auto;
+        background: var(--bg-panel);
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        padding: 6px 12px;
+        gap: 8px;
+        flex-shrink: 0;
+        z-index: 40;
+      }
+
+      .topbar-group {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .brand-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-weight: 800;
+        font-size: 0.9rem;
+        color: #fff;
+        text-decoration: none;
+        padding: 5px 8px;
+        border-radius: 7px;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .brand-dot {
+        width: 24px;
+        height: 24px;
+        border-radius: 7px;
+        background: linear-gradient(135deg, #ff5e3a, #ff8a65);
+        display: inline-grid;
+        place-items: center;
+        font-size: 0.78rem;
+        font-weight: 800;
+        color: #fff;
+      }
+
+      /* Studio Switcher */
+      .studio-switcher {
+        position: relative;
+      }
+      .switcher-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        padding: 6px 10px;
+        border-radius: 7px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .switcher-btn:hover {
+        border-color: #4b5563;
+      }
+      .switcher-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        width: 220px;
+        max-height: calc(100vh - 70px);
+        overflow-y: auto;
+        overflow-x: hidden;
+        overscroll-behavior: contain;
+        scrollbar-width: thin;
+        scrollbar-color: #374151 #161922;
+        background: #161922;
+        border: 1px solid #2d3444;
+        border-radius: 10px;
+        padding: 6px;
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+        display: none;
+        flex-direction: column;
+        gap: 2px;
+        z-index: 999;
+      }
+      .switcher-menu.open {
+        display: flex;
+      }
+      .switcher-link {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 7px 10px;
+        border-radius: 6px;
+        color: #cbd5e1;
+        text-decoration: none;
+        font-size: 0.8rem;
+        font-weight: 500;
+      }
+      .switcher-link:hover {
+        background: #232836;
+        color: #fff;
+      }
+      .switcher-link.active {
+        background: rgba(255, 94, 58, 0.16);
+        color: #ff8a65;
+        font-weight: 700;
+      }
+      .switcher-divider {
+        height: 1px;
+        background: var(--border-color);
+        margin: 4px 6px;
+      }
+
+      .layout-select,
+      .sample-select {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        padding: 4px 10px;
+        height: 30px;
+        border-radius: 7px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        outline: none;
+        max-width: 195px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex-shrink: 0;
+      }
+      .layout-select:focus,
+      .sample-select:focus {
+        border-color: var(--accent-color);
+      }
+
+      .btn-tool {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        padding: 6px 10px;
+        border-radius: 7px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        transition: all 0.15s ease;
+        white-space: nowrap;
+      }
+      .btn-tool:hover {
+        background: var(--bg-hover);
+        border-color: #4b5563;
+      }
+      .btn-tool.primary {
+        background: var(--accent-color);
+        border-color: var(--accent-color);
+        color: #fff;
+      }
+      .btn-tool.primary:hover {
+        background: var(--accent-hover);
+      }
+      .btn-tool.success {
+        background: rgba(16, 185, 129, 0.14);
+        border-color: rgba(16, 185, 129, 0.35);
+        color: #6ee7b7;
+      }
+      .btn-tool.danger:hover {
+        border-color: var(--danger-color);
+        color: #fca5a5;
+      }
+
+      .device-pills {
+        display: inline-flex;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 2px;
+      }
+      .device-btn {
+        background: transparent;
+        border: none;
+        color: var(--text-secondary);
+        padding: 5px 9px;
+        border-radius: 6px;
+        font-size: 0.74rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .device-btn.active {
+        background: var(--accent-color);
+        color: #fff;
+      }
+
+      /* Main 3-Column Studio Body */
+      .studio-workspace {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .left-panel {
+        width: 286px;
+        background: var(--bg-panel);
+        border-right: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+        min-height: 0;
+      }
+
+      .right-panel {
+        width: 278px;
+        background: var(--bg-panel);
+        border-left: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+        min-height: 0;
+      }
+
+      .panel-tabs {
+        display: flex;
+        border-bottom: 1px solid var(--border-color);
+        background: #101218;
+      }
+      .panel-tab {
+        flex: 1;
+        background: transparent;
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: var(--text-secondary);
+        padding: 10px 8px;
+        font-size: 0.76rem;
+        font-weight: 700;
+        cursor: pointer;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .panel-tab.active {
+        color: #fff;
+        border-bottom-color: var(--accent-color);
+        background: var(--bg-panel);
+      }
+
+      .panel-search-box {
+        padding: 10px;
+        border-bottom: 1px solid var(--border-color);
+      }
+      .panel-search-input {
+        width: 100%;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        border-radius: 7px;
+        padding: 7px 10px;
+        font-size: 0.79rem;
+        outline: none;
+      }
+      .panel-search-input:focus {
+        border-color: var(--accent-color);
+      }
+
+      .panel-scroll-pane {
+        flex: 1;
+        overflow-y: auto;
+        min-height: 0;
+        padding: 10px;
+        content-visibility: auto;
+        contain-intrinsic-size: auto 360px;
+      }
+      @supports not (content-visibility: auto) {
+        .panel-scroll-pane {
+          contain: layout style paint;
+        }
+      }
+
+      .panel-section-hidden {
+        display: none !important;
+      }
+
+      .canvas-stage {
+        flex: 1;
+        min-width: 0;
+        min-height: 0;
+        background: #0a0c10;
+        position: relative;
+        overflow: hidden;
+      }
+      #gjs-canvas-host {
+        height: 100%;
+        width: 100%;
+      }
+
+      /* GrapesJS Dark overrides */
+      .gjs-one-bg {
+        background-color: var(--bg-panel);
+      }
+      .gjs-two-color {
+        color: var(--text-primary);
+      }
+      .gjs-three-bg {
+        background-color: var(--bg-surface);
+      }
+      .gjs-four-color,
+      .gjs-four-color-h:hover {
+        color: var(--accent-color);
+      }
+      .gjs-block {
+        width: calc(50% - 6px);
+        min-height: 76px;
+        margin: 3px;
+        padding: 8px 6px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-primary);
+        transition: border-color 0.15s, background 0.15s;
+      }
+      .gjs-block:hover {
+        border-color: var(--accent-color);
+        background: var(--bg-hover);
+      }
+      .gjs-block-label {
+        font-size: 0.72rem;
+        font-weight: 600;
+        line-height: 1.25;
+      }
+      .dynamic-pill-badge {
+        display: inline-block;
+        background: rgba(16, 185, 129, 0.16);
+        color: #34d399;
+        font-size: 0.58rem;
+        font-weight: 800;
+        padding: 1px 5px;
+        border-radius: 4px;
+        margin-bottom: 3px;
+        letter-spacing: 0.04em;
+      }
+      .gjs-category-title {
+        background: #101319;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 0.73rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        color: #cbd5e1;
+      }
+
+      /* Layout Info Form */
+      .form-group {
+        margin-bottom: 14px;
+      }
+      .form-label {
+        display: block;
+        font-size: 0.74rem;
+        font-weight: 700;
+        color: #9ca3af;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 6px;
+      }
+      .form-control {
+        width: 100%;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        padding: 8px 10px;
+        border-radius: 7px;
+        font-size: 0.82rem;
+        outline: none;
+      }
+      .form-control:focus {
+        border-color: var(--accent-color);
+      }
+
+      /* Native switch styling (modern-web-guidance: switch) */
+      .switch-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-radius: 9px;
+      }
+      .switch-row label {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #e5e7eb;
+        cursor: pointer;
+      }
+      input[type='checkbox'][switch] {
+        accent-color: var(--accent-color);
+        cursor: pointer;
+        width: 40px;
+        height: 22px;
+      }
+
+      .assigned-pill-chip {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 9999px;
+        background: rgba(255, 94, 58, 0.14);
+        border: 1px solid rgba(255, 94, 58, 0.28);
+        color: #ff9e85;
+        font-size: 0.72rem;
+        font-weight: 600;
+        margin: 2px;
+      }
+
+      /* Native <dialog closedby="any"> Modal Styling */
+      dialog.fp-dialog {
+        background: #141821;
+        color: #f3f4f6;
+        border: 1px solid #2c3446;
+        border-radius: 14px;
+        padding: 0;
+        width: min(580px, 92vw);
+        max-height: 86vh;
+        box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7);
+      }
+      dialog.fp-dialog.wide {
+        width: min(860px, 94vw);
+      }
+      dialog.fp-dialog::backdrop {
+        background: rgba(5, 7, 12, 0.75);
+        backdrop-filter: blur(5px);
+      }
+      .dialog-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 18px;
+        border-bottom: 1px solid #262e3d;
+      }
+      .dialog-header h3 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 700;
+      }
+      .dialog-close-btn {
+        background: transparent;
+        border: none;
+        color: #9ca3af;
+        font-size: 1.35rem;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .dialog-body {
+        padding: 18px;
+        overflow-y: auto;
+        max-height: 62vh;
+      }
+      .dialog-footer {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 12px 18px;
+        border-top: 1px solid #262e3d;
+        background: #10131b;
+      }
+
+      .apply-prod-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 9px 12px;
+        border-radius: 9px;
+        border: 1px solid #232a38;
+        background: #10131b;
+        margin-bottom: 8px;
+        cursor: pointer;
+      }
+      .apply-prod-item:hover {
+        border-color: #3a4459;
+      }
+      .apply-prod-meta {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+      .apply-prod-thumb {
+        width: 38px;
+        height: 44px;
+        border-radius: 6px;
+        object-fit: cover;
+        flex-shrink: 0;
+      }
+
+      .code-tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .code-textarea {
+        width: 100%;
+        min-height: 360px;
+        background: #0b0d13;
+        color: #e2e8f0;
+        border: 1px solid #262e3d;
+        border-radius: 8px;
+        padding: 12px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.82rem;
+        line-height: 1.5;
+      }
+
+      /* Toast Popover */
+      .toast-notification {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #141821;
+        border: 1px solid #10b981;
+        color: #ecfdf5;
+        padding: 11px 16px;
+        border-radius: 10px;
+        font-size: 0.84rem;
+        font-weight: 600;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+        z-index: 99999;
+        opacity: 0;
+        transform: translateY(8px);
+        pointer-events: none;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      .toast-notification.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .toast-notification.error {
+        border-color: #ef4444;
+        color: #fef2f2;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="studio-shell">
+      <!-- Top Studio Header -->
+      <header class="editor-topbar">
+        <div class="topbar-group">
+          <a href="/products" class="brand-badge" title="View Public Products Catalog">
+            <span class="brand-dot">P</span>
+            <span>Product Layouts</span>
+          </a>
+
+          <WorkspaceSwitcher activeApp="product-layouts" />
+
+          <!-- Active Theme Pill -->
+          <div class="active-theme-pill" title={`Active Theme: ${activeTheme}`} style="display: inline-flex; align-items: center; gap: 6px; background: #191f2c; border: 1px solid #313d54; border-radius: 9999px; padding: 4px 10px; font-size: 0.72rem; color: #94a3b8;">
+            <span style="width: 7px; height: 7px; border-radius: 50%; background-color: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);"></span>
+            <span style="text-transform: uppercase; font-weight: 600; font-size: 0.66rem; color: #64748b;">Theme:</span>
+            <strong style="color: #f1f5f9; font-weight: 700; text-transform: capitalize;">{activeTheme}</strong>
+          </div>
+
+          <select id="layoutSelector" class="layout-select" aria-label="Select Product Layout">
+            {layouts.map((l) => (
+              <option value={l.id} selected={l.id === activeLayout.id}>
+                {l.name} {l.isDefault ? '(Default)' : ''}
+              </option>
+            ))}
+          </select>
+
+          <button type="button" id="btnNewLayout" class="btn-tool">+ New Layout</button>
+          <button type="button" id="btnOpenApplyModal" class="btn-tool success">
+            Apply to Products (<span id="assignedCountBadge">{activeLayout.appliedProductSlugs?.length || 0}</span>)
+          </button>
+        </div>
+
+        <div class="topbar-group">
+          <DeviceSwitcher />
+        </div>
+
+        <div class="topbar-group">
+          <label for="sampleProductSelector" style="font-size: 0.74rem; color: #9ca3af;">Preview:</label>
+          <select id="sampleProductSelector" class="sample-select" aria-label="Preview Product Data">
+            {productsList.map((p) => (
+              <option value={p.slug}>{p.title}</option>
+            ))}
+          </select>
+          <button type="button" id="btnPreviewSample" class="btn-tool" title="Inject sample product data into dynamic placeholders">
+            Inject Sample
+          </button>
+          <a
+            id="btnViewSampleLive"
+            href={sampleProduct ? `/products/${sampleProduct.slug}` : '/products'}
+            target="_blank"
+            class="btn-tool"
+          >
+            Live &#8599;
+          </a>
+
+          <button type="button" id="btnUndo" class="btn-tool" title="Undo">&#8630;</button>
+          <button type="button" id="btnRedo" class="btn-tool" title="Redo">&#8631;</button>
+          <button type="button" data-open="media-library" class="btn-tool">Media</button>
+          <button type="button" id="btnOpenCodeModal" class="btn-tool">&lt;/&gt; Code</button>
+          <button type="button" id="btnCloneLayout" class="btn-tool">Clone</button>
+          <button type="button" id="btnDeleteLayout" class="btn-tool danger">Delete</button>
+          <button type="button" id="btnSaveLayout" class="btn-tool primary">Save Layout</button>
+        </div>
+      </header>
+
+      <!-- 3-Column Visual Layout Studio -->
+      <main class="studio-workspace">
+        <!-- Left Panel -->
+        <aside class="left-panel">
+          <div class="panel-tabs">
+            <button type="button" class="panel-tab active" data-left-tab="blocks">Blocks</button>
+            <button type="button" class="panel-tab" data-left-tab="layers">Layers</button>
+            <button type="button" class="panel-tab" data-left-tab="info">Layout Info</button>
+          </div>
+
+          <div id="leftBlocksPane" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+            <div class="panel-search-box">
+              <input type="search" id="blocksSearchInput" class="panel-search-input" placeholder="Search dynamic product blocks..." />
+            </div>
+            <div id="blocks-container" class="panel-scroll-pane"></div>
+          </div>
+
+          <div id="leftLayersPane" class="panel-scroll-pane panel-section-hidden">
+            <div id="layers-container"></div>
+          </div>
+
+          <div id="leftInfoPane" class="panel-scroll-pane panel-section-hidden">
+            <div class="form-group">
+              <label class="form-label" for="inputLayoutName">Layout Name</label>
+              <input type="text" id="inputLayoutName" class="form-control" value={activeLayout.name} />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="inputLayoutDescription">Description</label>
+              <textarea id="inputLayoutDescription" class="form-control" rows="3">{activeLayout.description}</textarea>
+            </div>
+
+            <div class="form-group">
+              <div class="switch-row">
+                <label for="toggleIsDefault">Set as Default Product Layout</label>
+                <input type="checkbox" switch id="toggleIsDefault" checked={activeLayout.isDefault} />
+              </div>
+              <p style="font-size: 0.74rem; color: #6b7280; margin-top: 6px; line-height: 1.4;">
+                Products set to "Standard Layout" without a custom assignment automatically inherit the Default Layout.
+              </p>
+            </div>
+
+            <div class="form-group">
+              <span class="form-label">Currently Assigned Slugs</span>
+              <div id="assignedSlugsPreview">
+                {(activeLayout.appliedProductSlugs || []).length === 0 ? (
+                  <span style="font-size: 0.78rem; color: #6b7280;">None explicitly pinned (inherits default if enabled).</span>
+                ) : (
+                  activeLayout.appliedProductSlugs.map((sl) => <span class="assigned-pill-chip">{sl}</span>)
+                )}
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Center Visual Canvas -->
+        <section class="canvas-stage" aria-label="Product Layout Visual Canvas">
+          <div id="gjs-canvas-host"></div>
+        </section>
+
+        <!-- Right Inspector Panel -->
+        <aside class="right-panel">
+          <div class="panel-tabs">
+            <button type="button" class="panel-tab active" data-right-tab="styles">Styles</button>
+            <button type="button" class="panel-tab" data-right-tab="traits">Traits</button>
+          </div>
+          <div id="styles-container" class="panel-scroll-pane"></div>
+          <div id="traits-container" class="panel-scroll-pane panel-section-hidden"></div>
+        </aside>
+      </main>
+    </div>
+
+    <!-- Apply Layout to Products Modal (<dialog closedby="any">) -->
+    <dialog id="applyProductsDialog" class="fp-dialog">
+      <div class="dialog-header">
+        <h3>Assign Layout to Products</h3>
+        <button type="button" class="dialog-close-btn" data-close-dialog="applyProductsDialog" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <div class="switch-row" style="margin-bottom: 14px;">
+          <label for="applyDefaultSwitch">Make "{activeLayout.name}" the Default Layout</label>
+          <input type="checkbox" switch id="applyDefaultSwitch" checked={activeLayout.isDefault} />
+        </div>
+
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+          <input type="search" id="applySearchInput" class="form-control" placeholder="Search products..." />
+          <button type="button" id="btnApplySelectAll" class="btn-tool">Select All</button>
+          <button type="button" id="btnApplyClearAll" class="btn-tool">Clear</button>
+        </div>
+
+        <div id="applyProductsList">
+          {productsList.map((prod) => {
+            const isAssigned =
+              (activeLayout.appliedProductSlugs && activeLayout.appliedProductSlugs.includes(prod.slug)) ||
+              prod.layoutId === activeLayout.id ||
+              (!prod.layoutId && activeLayout.id === defaultLayoutId);
+            return (
+              <label class="apply-prod-item" data-title={prod.title.toLowerCase()} data-slug={prod.slug}>
+                <div class="apply-prod-meta">
+                  <input
+                    type="checkbox"
+                    class="apply-prod-checkbox"
+                    value={prod.slug}
+                    checked={isAssigned}
+                  />
+                  <img src={prod.image} alt={prod.title} class="apply-prod-thumb" loading="lazy" />
+                  <div style="min-width: 0;">
+                    <div style="font-size: 0.84rem; font-weight: 600; color: #f3f4f6;">{prod.title}</div>
+                    <div style="font-size: 0.72rem; color: #9ca3af;">
+                      /{prod.slug} &bull; {getProductCategoriesArray(prod).join(', ')}
+                    </div>
+                  </div>
+                </div>
+                <span style="font-size: 0.76rem; color: #cbd5e1; font-weight: 700;">
+                  {prod.currency || '$'}{Number(prod.price || 0).toFixed(2)}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn-tool" data-close-dialog="applyProductsDialog">Cancel</button>
+        <button type="button" id="btnConfirmApplyProducts" class="btn-tool primary">Save Assignments</button>
+      </div>
+    </dialog>
+
+    <!-- New Product Layout Modal -->
+    <dialog id="newLayoutDialog" class="fp-dialog">
+      <div class="dialog-header">
+        <h3>Create New Product Layout</h3>
+        <button type="button" class="dialog-close-btn" data-close-dialog="newLayoutDialog" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <div class="form-group">
+          <label class="form-label" for="newLayoutNameInput">Layout Name</label>
+          <input type="text" id="newLayoutNameInput" class="form-control" placeholder="e.g., Luxury Apparel Showcase" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="newLayoutDescInput">Description</label>
+          <textarea id="newLayoutDescInput" class="form-control" rows="2" placeholder="Optional description of when to use this layout"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="newLayoutStarterSelect">Starter Blueprint</label>
+          <select id="newLayoutStarterSelect" class="form-control">
+            <option value="standard-product-default">Clone Standard E-Commerce Showcase</option>
+            <option value="minimal-editorial-showcase">Clone Minimal Editorial Lookbook</option>
+            <option value="blank">Blank Wireframe with Product Elements</option>
+          </select>
+        </div>
+        <div class="switch-row">
+          <label for="newLayoutDefaultSwitch">Set as Default Product Layout</label>
+          <input type="checkbox" switch id="newLayoutDefaultSwitch" />
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn-tool" data-close-dialog="newLayoutDialog">Cancel</button>
+        <button type="button" id="btnConfirmCreateLayout" class="btn-tool primary">Create Layout</button>
+      </div>
+    </dialog>
+
+    <!-- Code Editor Modal -->
+    <dialog id="codeEditorDialog" class="fp-dialog wide">
+      <div class="dialog-header">
+        <h3>Layout HTML &amp; CSS Code</h3>
+        <button type="button" class="dialog-close-btn" data-close-dialog="codeEditorDialog" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <div class="code-tabs">
+          <button type="button" class="btn-tool primary" id="btnCodeTabHtml">HTML Structure</button>
+          <button type="button" class="btn-tool" id="btnCodeTabCss">CSS Stylesheet</button>
+        </div>
+        <textarea id="codeEditorTextarea" class="code-textarea" spellcheck="false"></textarea>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn-tool" data-close-dialog="codeEditorDialog">Cancel</button>
+        <button type="button" id="btnApplyCodeChanges" class="btn-tool primary">Apply to Canvas</button>
+      </div>
+    </dialog>
+
+    <!-- Delete Confirmation Modal -->
+    <dialog id="deleteLayoutDialog" class="fp-dialog">
+      <div class="dialog-header">
+        <h3>Delete Product Layout?</h3>
+        <button type="button" class="dialog-close-btn" data-close-dialog="deleteLayoutDialog" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <p style="margin: 0; font-size: 0.9rem; color: #cbd5e1; line-height: 1.5;">
+          Are you sure you want to delete <strong id="deleteLayoutTitle">{activeLayout.name}</strong>? Any products pinned to this layout will fall back to the default product layout.
+        </p>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn-tool" data-close-dialog="deleteLayoutDialog">Cancel</button>
+        <button type="button" id="btnConfirmDeleteLayout" class="btn-tool primary" style="background: #ef4444; border-color: #ef4444;">Delete Layout</button>
+      </div>
+    </dialog>
+
+    <div id="toastNotification" class="toast-notification" role="status" aria-live="polite">
+      <span id="toastMessage">Saved!</span>
+    </div>
+
+    <script is:inline type="module">
+      if (!('switch' in HTMLInputElement.prototype)) {
+        import('https://esm.sh/input-switch-polyfill@1').catch(() => {});
+      }
+    </script>
+
+    <script is:inline define:vars={{ initialLayout: activeLayout, allProductsData: productsList, allTemplatesData: templatesList }}>
+      window.activeLayout = initialLayout;
+      window.allProducts = allProductsData || [];
+      window.allTemplates = allTemplatesData || [];
+
+      function showToast(msg, isError = false) {
+        const toast = document.getElementById('toastNotification');
+        const msgEl = document.getElementById('toastMessage');
+        if (!toast || !msgEl) return;
+        msgEl.textContent = msg;
+        toast.className = `toast-notification ${isError ? 'error' : ''} show`;
+        setTimeout(() => toast.classList.remove('show'), 3200);
+      }
+
+      // Light-dismiss fallback for <dialog closedby="any">
+      function wireDialogLightDismiss(dialogEl) {
+        if (!dialogEl) return;
+        if (!('closedBy' in HTMLDialogElement.prototype)) {
+          dialogEl.addEventListener('click', (e) => {
+            if (e.target === dialogEl) dialogEl.close();
+          });
+        }
+      }
+
+      function setupDialogs() {
+        document.querySelectorAll('dialog.fp-dialog').forEach(wireDialogLightDismiss);
+        document.querySelectorAll('[data-close-dialog]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-close-dialog');
+            const d = id ? document.getElementById(id) : null;
+            if (d && d.close) d.close();
+          });
+        });
+      }
+
+      document.addEventListener('DOMContentLoaded', () => {
+        setupDialogs();
+
+        // Studio switcher dropdown
+        const switcherBtn = document.getElementById('btnStudioSwitcher');
+        const switcherMenu = document.getElementById('studioSwitcherMenu');
+        if (switcherBtn && switcherMenu) {
+          switcherBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = switcherMenu.classList.toggle('open');
+            switcherBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+          });
+          document.addEventListener('click', () => {
+            switcherMenu.classList.remove('open');
+            switcherBtn.setAttribute('aria-expanded', 'false');
+          });
+        }
+
+        // Left & Right panel tabs
+        document.querySelectorAll('[data-left-tab]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const tab = btn.getAttribute('data-left-tab');
+            document.querySelectorAll('[data-left-tab]').forEach((b) => b.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('leftBlocksPane')?.classList.toggle('panel-section-hidden', tab !== 'blocks');
+            document.getElementById('leftLayersPane')?.classList.toggle('panel-section-hidden', tab !== 'layers');
+            document.getElementById('leftInfoPane')?.classList.toggle('panel-section-hidden', tab !== 'info');
+          });
+        });
+
+        document.querySelectorAll('[data-right-tab]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const tab = btn.getAttribute('data-right-tab');
+            document.querySelectorAll('[data-right-tab]').forEach((b) => b.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('styles-container')?.classList.toggle('panel-section-hidden', tab !== 'styles');
+            document.getElementById('traits-container')?.classList.toggle('panel-section-hidden', tab !== 'traits');
+          });
+        });
+
+        // Initialize GrapesJS
+        const editor = grapesjs.init({
+          container: '#gjs-canvas-host',
+          fromElement: false,
+          height: '100%',
+          width: 'auto',
+          avoidInlineStyle: false,
+          panels: { defaults: [] },
+          storageManager: false,
+          selectorManager: { componentFirst: true },
+          blockManager: { appendTo: '#blocks-container' },
+          styleManager: {
+            appendTo: '#styles-container',
+            sectors: [
+              {
+                name: 'Layout & Spacing',
+                open: true,
+                buildProps: ['display', 'flex-direction', 'justify-content', 'align-items', 'gap', 'width', 'max-width', 'padding', 'margin'],
+              },
+              {
+                name: 'Typography',
+                open: false,
+                buildProps: ['font-family', 'font-size', 'font-weight', 'line-height', 'color', 'text-align'],
+              },
+              {
+                name: 'Decorations',
+                open: false,
+                buildProps: ['background-color', 'border-radius', 'border', 'box-shadow', 'opacity'],
+              },
+            ],
+          },
+          traitManager: { appendTo: '#traits-container' },
+          layerManager: { appendTo: '#layers-container' },
+          deviceManager: {
+            devices: [
+              { id: 'desktop', name: 'Desktop', width: '' },
+              { id: 'tablet', name: 'Tablet', width: '768px', widthMedia: '992px' },
+              { id: 'mobile', name: 'Mobile', width: '375px', widthMedia: '480px' },
+            ],
+          },
+          canvas: {
+            styles: [
+              'https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap',
+            ],
+          },
+        });
+
+        window.editor = editor;
+        window.grapesEditor = editor;
+
+        function injectCanvasBaseline() {
+          const doc = editor.Canvas.getDocument();
+          if (!doc) return;
+          let style = doc.getElementById('fp-product-layout-canvas-base');
+          if (!style) {
+            style = doc.createElement('style');
+            style.id = 'fp-product-layout-canvas-base';
+            doc.head.appendChild(style);
+          }
+          style.textContent = `
+            *, *::before, *::after { box-sizing: border-box; }
+            body {
+              margin: 0;
+              background: #090a0f;
+              color: #e5e7eb;
+              font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            }
+            [data-product-element] {
+              outline: 1px dashed rgba(16, 185, 129, 0.35);
+              outline-offset: 2px;
+            }
+          `;
+        }
+
+        editor.on('load', () => {
+          injectCanvasBaseline();
+          if (window.activeLayout.projectData) {
+            editor.loadProjectData(window.activeLayout.projectData);
+          } else {
+            editor.setComponents(window.activeLayout.html || '<article class="single-product-article"></article>');
+            editor.setStyle(window.activeLayout.css || '');
+          }
+          setTimeout(injectCanvasBaseline, 150);
+        });
+        editor.on('canvas:frame:load', injectCanvasBaseline);
+
+        // Dynamic Product Elements & Structural Blocks
+        const bm = editor.BlockManager;
+        const CAT_DYNAMIC = '⚡ Dynamic Product Elements';
+        const CAT_LAYOUT = 'Structural & Basic';
+        const CAT_TPL = 'Saved Templates';
+
+        const dynamicBlocks = [
+          {
+            id: 'prod-breadcrumbs',
+            label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Breadcrumbs</div>',
+            content: '<div data-product-element="breadcrumbs" style="padding: 12px 0; color: #94a3b8; font-size: 0.85rem;">Home / Products / Category / Product Title</div>',
+          },
+          {
+            id: 'prod-categories',
+            label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Category Badges</div>',
+            content: '<div data-product-element="categories" style="display: flex; flex-wrap: wrap; gap: 8px;"><span class="product-category-badge">Category</span></div>',
+          },
+          {
+            id: 'prod-sku',
+            label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>SKU Label</div>',
+            content: '<span class="sku-text" data-product-element="sku">SKU: PROD-001</span>',
+          },
+          {
+            id: 'prod-stock-badge',
+            label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Stock Badge</div>',
+            content: '<div data-product-element="stock-badge"><span class="badge-stock-pill in-stock"><span class="stock-pulse"></span>In Stock</span></div>',
+          },
+          {
+            id: 'prod-title',
+            label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Product Title</div>',
+            content: '<h1 class="single-product-title" data-product-element="title">Dynamic Product Title</h1>',
+          },
+          {
+            id: 'prod-subtitle',
+            label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Subtitle</div>',
+            content: '<p class="single-product-subtitle" data-product-element="subtitle">Material highlight &amp; fit profile</p>',
+          },
+          {
+            id: 'prod-rating',
+            label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Rating &amp; Reviews</div>',
+            content: '<div class="rating-strip" data-product-element="rating"><div class="stars-gold">&#9733;&#9733;&#9733;&#9733;&#9733;</div><span>4.9 &bull; 120 Reviews</span></div>',
+          },
+          {
+            id: 'prod-price',
+            label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Price Block</div>',
+            content: '<div class="pricing-card" data-product-element="price"><div class="price-display"><span class="main-price">$49.00</span></div></div>',
+          },
+          {
+            id: 'prod-description',
+            label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Short Summary</div>',
+            content: '<p data-product-element="description" style="color: #cbd5e1; line-height: 1.65;">Short product description appears here automatically.</p>',
+          },
+          {
+            id: 'prod-gallery',
+            label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Interactive Gallery</div>',
+            content: '<div class="product-gallery-col" data-product-element="gallery"><div class="main-image-viewport"><img id="mainProductImg" src="https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=900&q=80" alt="Product" /></div></div>',
+          },
+          {
+            id: 'prod-image',
+            label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Featured Image</div>',
+            content: '<img data-product-element="image" src="https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=900&q=80" alt="Featured Product" style="width: 100%; aspect-ratio: 4/5; object-fit: cover; border-radius: 12px; display: block;" />',
+          },
+          {
+            id: 'prod-variants',
+            label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Variants &amp; Qty</div>',
+            content: '<div data-product-element="variants"><div class="variant-group"><div class="variant-label-row"><span class="variant-label">Size:</span><strong class="variant-selected-value">M</strong></div><div class="size-chips-list"><button type="button" class="size-chip-btn selected">M</button><button type="button" class="size-chip-btn">L</button></div></div></div>',
+          },
+          {
+            id: 'prod-buy-buttons',
+            label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Buy &amp; Inquiry CTA</div>',
+            content: '<div class="buy-action-box" data-product-element="buy-buttons"><a href="#" id="btnPrimaryBuy" class="btn-primary-buy">Order Product Now</a></div>',
+          },
+          {
+            id: 'prod-content',
+            label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Full Description</div>',
+            content: '<div data-product-element="content" class="rich-desc-content"><h3>Product Overview</h3><p>Rich product details &amp; fabrication notes appear here.</p></div>',
+          },
+          {
+            id: 'prod-tags',
+            label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Tags Row</div>',
+            content: '<div class="product-tags-row" data-product-element="tags"><span class="tag-pill">#essential</span><span class="tag-pill">#heavyweight</span></div>',
+          },
+          {
+            id: 'prod-related',
+            label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Related Products</div>',
+            content: '<div data-product-element="related" style="padding: 32px 0; text-align: center; color: #9ca3af;">[Related Products Grid Auto-Rendered Here]</div>',
+          },
+        ];
+
+        dynamicBlocks.forEach((b) => {
+          bm.add(b.id, {
+            label: b.label,
+            category: CAT_DYNAMIC,
+            content: b.content,
+            media: `<svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12h8"/></svg>`,
+          });
+        });
+
+        bm.add('layout-container-section', {
+          label: 'Container Section',
+          category: CAT_LAYOUT,
+          content: '<section class="layout-container" style="max-width: 1200px; margin: 0 auto; padding: 32px 20px;"></section>',
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/></svg>`,
+        });
+        bm.add('layout-2col-grid', {
+          label: '2-Column Grid',
+          category: CAT_LAYOUT,
+          content: '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 32px; padding: 16px 0;"><div style="padding: 12px; border: 1px dashed #2e3748; min-height: 120px;">Column 1</div><div style="padding: 12px; border: 1px dashed #2e3748; min-height: 120px;">Column 2</div></div>',
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="8" height="16" rx="1"/><rect x="13" y="4" width="8" height="16" rx="1"/></svg>`,
+        });
+        bm.add('layout-heading', {
+          label: 'Heading',
+          category: CAT_LAYOUT,
+          content: '<h2 style="font-family: Montserrat, sans-serif; color: #fff; margin: 12px 0;">Section Heading</h2>',
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4v16M18 4v16M6 12h12"/></svg>`,
+        });
+        bm.add('layout-text', {
+          label: 'Text Paragraph',
+          category: CAT_LAYOUT,
+          content: '<p style="color: #cbd5e1; line-height: 1.7;">Add supporting merchandising notes, shipping guarantees, or brand copy here.</p>',
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="14" y2="18"/></svg>`,
+        });
+
+        // Saved Templates
+        window.allTemplates.forEach((tpl) => {
+          bm.add(`tpl-${tpl.id}`, {
+            label: `${tpl.type === 'global' ? 'Global: ' : ''}${tpl.name}`,
+            category: CAT_TPL,
+            content: tpl.html || '<div>Template</div>',
+            media: `<svg viewBox="0 0 24 24" fill="none" stroke="#ff5e3a" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/></svg>`,
+          });
+        });
+
+        // Block search filter
+        const blocksSearchInput = document.getElementById('blocksSearchInput');
+        if (blocksSearchInput) {
+          blocksSearchInput.addEventListener('input', (e) => {
+            const q = String(e.target.value || '').toLowerCase().trim();
+            document.querySelectorAll('#blocks-container .gjs-block').forEach((el) => {
+              const text = (el.textContent || '').toLowerCase();
+              el.style.display = !q || text.includes(q) ? '' : 'none';
+            });
+          });
+        }
+
+        // Device buttons
+        document.querySelectorAll('.device-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const dev = btn.getAttribute('data-device');
+            document.querySelectorAll('.device-btn').forEach((b) => b.classList.remove('active'));
+            btn.classList.add('active');
+            if (dev === 'desktop') editor.setDevice('desktop');
+            if (dev === 'tablet') editor.setDevice('tablet');
+            if (dev === 'mobile') editor.setDevice('mobile');
+          });
+        });
+
+        // Undo / Redo
+        document.getElementById('btnUndo')?.addEventListener('click', () => editor.UndoManager.undo());
+        document.getElementById('btnRedo')?.addEventListener('click', () => editor.UndoManager.redo());
+
+        // Switch active layout
+        document.getElementById('layoutSelector')?.addEventListener('change', (e) => {
+          const id = e.target.value;
+          window.location.href = `/product-layout-editor?id=${encodeURIComponent(id)}`;
+        });
+
+        // Sample Product Preview Selector + Live Injection into dynamic placeholders
+        const sampleSelector = document.getElementById('sampleProductSelector');
+        const liveSampleLink = document.getElementById('btnViewSampleLive');
+        if (sampleSelector && liveSampleLink) {
+          sampleSelector.addEventListener('change', () => {
+            liveSampleLink.setAttribute('href', `/products/${encodeURIComponent(sampleSelector.value)}`);
+          });
+        }
+
+        document.getElementById('btnPreviewSample')?.addEventListener('click', () => {
+          const slug = sampleSelector?.value;
+          const prod = window.allProducts.find((p) => p.slug === slug);
+          if (!prod) return;
+          const wrapper = editor.getWrapper();
+          if (!wrapper) return;
+
+          const setElHtml = (selectorKey, html) => {
+            wrapper.find(`[data-product-element="${selectorKey}"]`).forEach((comp) => {
+              if (comp.get('tagName')?.toLowerCase() === 'img') {
+                comp.setAttributes({ ...comp.getAttributes(), src: prod.image, alt: prod.title });
+              } else {
+                comp.components(html);
+              }
+            });
+          };
+
+          const cats = Array.isArray(prod.categories) && prod.categories.length > 0 ? prod.categories : [prod.category || 'Apparel'];
+          setElHtml('title', prod.title);
+          setElHtml('subtitle', prod.subtitle || '');
+          setElHtml('description', prod.description || '');
+          setElHtml('sku', `SKU: <strong>${prod.sku || prod.id}</strong>`);
+          setElHtml('categories', cats.map((c) => `<span class="product-category-badge">${c}</span>`).join(''));
+          setElHtml(
+            'price',
+            `<div class="price-display"><span class="main-price">${prod.currency || '$'}${Number(prod.price || 0).toFixed(2)}</span></div>`
+          );
+          setElHtml(
+            'gallery',
+            `<div class="main-image-viewport"><img id="mainProductImg" src="${prod.image}" alt="${prod.title}" class="main-img" /></div>`
+          );
+          setElHtml('image', `<img src="${prod.image}" alt="${prod.title}" style="width:100%;height:100%;object-fit:cover;display:block;" />`);
+          setElHtml('content', prod.content || `<p>${prod.description || ''}</p>`);
+          showToast(`Previewing "${prod.title}" on canvas (dynamic data slots preserved).`);
+        });
+
+        // Code Editor Modal
+        let activeCodeTab = 'html';
+        const codeDialog = document.getElementById('codeEditorDialog');
+        const codeTextarea = document.getElementById('codeEditorTextarea');
+
+        function refreshCodeTextarea() {
+          if (!codeTextarea) return;
+          codeTextarea.value = activeCodeTab === 'html' ? editor.getHtml() : editor.getCss();
+        }
+
+        document.getElementById('btnOpenCodeModal')?.addEventListener('click', () => {
+          activeCodeTab = 'html';
+          document.getElementById('btnCodeTabHtml')?.classList.add('primary');
+          document.getElementById('btnCodeTabCss')?.classList.remove('primary');
+          refreshCodeTextarea();
+          codeDialog?.showModal();
+        });
+
+        document.getElementById('btnCodeTabHtml')?.addEventListener('click', () => {
+          activeCodeTab = 'html';
+          document.getElementById('btnCodeTabHtml')?.classList.add('primary');
+          document.getElementById('btnCodeTabCss')?.classList.remove('primary');
+          refreshCodeTextarea();
+        });
+        document.getElementById('btnCodeTabCss')?.addEventListener('click', () => {
+          activeCodeTab = 'css';
+          document.getElementById('btnCodeTabCss')?.classList.add('primary');
+          document.getElementById('btnCodeTabHtml')?.classList.remove('primary');
+          refreshCodeTextarea();
+        });
+        document.getElementById('btnApplyCodeChanges')?.addEventListener('click', () => {
+          if (!codeTextarea) return;
+          if (activeCodeTab === 'html') {
+            editor.setComponents(codeTextarea.value);
+          } else {
+            editor.setStyle(codeTextarea.value);
+          }
+          codeDialog?.close();
+          showToast('Canvas updated from code editor.');
+        });
+
+        // Save Layout
+        async function saveCurrentLayout() {
+          const btn = document.getElementById('btnSaveLayout');
+          const orig = btn ? btn.textContent : 'Save Layout';
+          if (btn) {
+            btn.textContent = 'Saving...';
+            btn.disabled = true;
+          }
+
+          try {
+            const nameVal = document.getElementById('inputLayoutName')?.value.trim() || window.activeLayout.name;
+            const descVal = document.getElementById('inputLayoutDescription')?.value.trim() || '';
+            const isDef = Boolean(document.getElementById('toggleIsDefault')?.checked);
+
+            const payload = {
+              action: 'save',
+              layout: {
+                id: window.activeLayout.id,
+                name: nameVal,
+                description: descVal,
+                isDefault: isDef,
+                appliedProductSlugs: window.activeLayout.appliedProductSlugs || [],
+                html: editor.getHtml(),
+                css: editor.getCss(),
+                projectData: editor.getProjectData(),
+              },
+            };
+
+            const res = await fetch('/api/product-layouts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+              throw new Error(data.error || 'Failed to save layout');
+            }
+            window.activeLayout = data.layout;
+            showToast('Product layout saved & applied!');
+          } catch (err) {
+            showToast(err.message || 'Save failed', true);
+          } finally {
+            if (btn) {
+              btn.textContent = orig;
+              btn.disabled = false;
+            }
+          }
+        }
+
+        document.getElementById('btnSaveLayout')?.addEventListener('click', saveCurrentLayout);
+        document.addEventListener('keydown', (e) => {
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+            e.preventDefault();
+            saveCurrentLayout();
+          }
+        });
+
+        // New Layout Modal
+        const newDialog = document.getElementById('newLayoutDialog');
+        document.getElementById('btnNewLayout')?.addEventListener('click', () => {
+          newDialog?.showModal();
+        });
+        document.getElementById('btnConfirmCreateLayout')?.addEventListener('click', async () => {
+          const name = document.getElementById('newLayoutNameInput')?.value.trim();
+          if (!name) {
+            showToast('Please enter a layout name.', true);
+            return;
+          }
+          const description = document.getElementById('newLayoutDescInput')?.value.trim() || '';
+          const templateId = document.getElementById('newLayoutStarterSelect')?.value || 'standard-product-default';
+          const isDefault = Boolean(document.getElementById('newLayoutDefaultSwitch')?.checked);
+
+          try {
+            const res = await fetch('/api/product-layouts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'create', name, description, templateId, isDefault }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Failed to create layout');
+            window.location.href = `/product-layout-editor?id=${encodeURIComponent(data.layout.id)}`;
+          } catch (err) {
+            showToast(err.message || 'Create failed', true);
+          }
+        });
+
+        // Clone Layout
+        document.getElementById('btnCloneLayout')?.addEventListener('click', async () => {
+          try {
+            const res = await fetch('/api/product-layouts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'duplicate', id: window.activeLayout.id }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Failed to clone');
+            window.location.href = `/product-layout-editor?id=${encodeURIComponent(data.layout.id)}`;
+          } catch (err) {
+            showToast(err.message || 'Clone failed', true);
+          }
+        });
+
+        // Delete Layout Modal
+        const deleteDialog = document.getElementById('deleteLayoutDialog');
+        document.getElementById('btnDeleteLayout')?.addEventListener('click', () => {
+          deleteDialog?.showModal();
+        });
+        document.getElementById('btnConfirmDeleteLayout')?.addEventListener('click', async () => {
+          try {
+            const res = await fetch('/api/product-layouts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'delete', id: window.activeLayout.id }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Delete failed');
+            window.location.href = '/product-layout-editor';
+          } catch (err) {
+            showToast(err.message || 'Delete failed', true);
+            deleteDialog?.close();
+          }
+        });
+
+        // Apply to Products Modal
+        const applyDialog = document.getElementById('applyProductsDialog');
+        document.getElementById('btnOpenApplyModal')?.addEventListener('click', () => {
+          applyDialog?.showModal();
+        });
+
+        document.getElementById('applySearchInput')?.addEventListener('input', (e) => {
+          const q = String(e.target.value || '').toLowerCase().trim();
+          document.querySelectorAll('.apply-prod-item').forEach((item) => {
+            const t = item.getAttribute('data-title') || '';
+            const s = item.getAttribute('data-slug') || '';
+            item.style.display = !q || t.includes(q) || s.includes(q) ? 'flex' : 'none';
+          });
+        });
+
+        document.getElementById('btnApplySelectAll')?.addEventListener('click', () => {
+          document.querySelectorAll('.apply-prod-checkbox').forEach((cb) => {
+            cb.checked = true;
+          });
+        });
+        document.getElementById('btnApplyClearAll')?.addEventListener('click', () => {
+          document.querySelectorAll('.apply-prod-checkbox').forEach((cb) => {
+            cb.checked = false;
+          });
+        });
+
+        document.getElementById('btnConfirmApplyProducts')?.addEventListener('click', async () => {
+          const checkedSlugs = Array.from(document.querySelectorAll('.apply-prod-checkbox:checked')).map((cb) => cb.value);
+          const isDefault = Boolean(document.getElementById('applyDefaultSwitch')?.checked);
+
+          try {
+            const res = await fetch('/api/product-layouts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'apply_products',
+                layoutId: window.activeLayout.id,
+                slugs: checkedSlugs,
+                isDefault,
+              }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Assignment failed');
+
+            window.activeLayout.appliedProductSlugs = checkedSlugs;
+            window.activeLayout.isDefault = isDefault;
+            const toggleInfoDef = document.getElementById('toggleIsDefault');
+            if (toggleInfoDef) toggleInfoDef.checked = isDefault;
+            const badge = document.getElementById('assignedCountBadge');
+            if (badge) badge.textContent = String(checkedSlugs.length);
+
+            const previewContainer = document.getElementById('assignedSlugsPreview');
+            if (previewContainer) {
+              previewContainer.innerHTML =
+                checkedSlugs.length === 0
+                  ? '<span style="font-size: 0.78rem; color: #6b7280;">None explicitly pinned (inherits default if enabled).</span>'
+                  : checkedSlugs.map((sl) => `<span class="assigned-pill-chip">${sl}</span>`).join('');
+            }
+
+            applyDialog?.close();
+            showToast(`Assigned layout to ${checkedSlugs.length} product(s)!`);
+          } catch (err) {
+            showToast(err.message || 'Assignment failed', true);
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

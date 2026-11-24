@@ -1,0 +1,63 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Hero from '../components/Hero.astro';
+import AboutUs from '../components/AboutUs.astro';
+import SplitFeature from '../components/SplitFeature.astro';
+import Services from '../components/Services.astro';
+import Testimonials from '../components/Testimonials.astro';
+import ClientsPortfolio from '../components/ClientsPortfolio.astro';
+import BlogSection from '../components/BlogSection.astro';
+import ContactSection from '../components/ContactSection.astro';
+
+interface Props {
+  customData?: {
+    isCustom?: boolean;
+    html?: string;
+    css?: string;
+    title?: string;
+    description?: string;
+    keywords?: string;
+    showHeader?: boolean;
+    showFooter?: boolean;
+    schema?: any;
+    customCode?: any;
+  };
+}
+
+const { customData } = Astro.props;
+
+const isCustom = customData?.isCustom && Boolean(customData?.html);
+const cleanHtml = customData?.html || '';
+const title = customData?.title || 'Better - We Make Your Business Better';
+const description = customData?.description || 'Better is a full-service creative digital agency specializing in branding, online marketing, and graphic design.';
+const keywords = customData?.keywords || '';
+---
+
+<Layout
+  title={title}
+  description={description}
+  keywords={keywords}
+  activePage="home"
+  showHeader={customData?.showHeader !== false}
+  showFooter={customData?.showFooter !== false}
+  schema={customData?.schema || ''}
+  pageCustomCode={customData?.customCode}
+>
+  {isCustom ? (
+    <>
+      <div class="custom-builder-content" set:html={cleanHtml} />
+      {customData?.css && <style is:inline set:html={customData.css} />}
+    </>
+  ) : (
+    <>
+      <Hero />
+      <AboutUs />
+      <SplitFeature />
+      <Services />
+      <Testimonials />
+      <ClientsPortfolio />
+      <BlogSection />
+      <ContactSection />
+    </>
+  )}
+</Layout>

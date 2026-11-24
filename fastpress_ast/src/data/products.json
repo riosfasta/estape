@@ -1,0 +1,1083 @@
+[
+  {
+    "id": "prod-furn-1",
+    "slug": "elowen-woven-lounge-chair",
+    "title": "Elowen Woven Lounge Chair",
+    "subtitle": "Natural Steam-Bent Teak · Hand-Woven Rattan · Belgian Linen",
+    "description": "Handcrafted with architectural curves from steam-bent solid teak and tightly woven natural rattan. Features an ultra-resilient high-density foam cushion wrapped in Belgian cream linen.",
+    "content": "<h3>Design & Craftsmanship</h3><p>The Elowen Lounge Chair unites Scandinavian functional minimalism with traditional Southeast Asian wicker joinery. Each frame is sculpted from sustainably harvested Indonesian plantation teak, hand-rubbed with natural organic oils to showcase the golden grain.</p><h4>Materials & Specifications</h4><ul><li><strong>Frame:</strong> Solid Grade-A Plantation Teak (Kiln-Dried)</li><li><strong>Weave:</strong> 100% Natural peeled cane rattan (double-rib weave)</li><li><strong>Cushion:</strong> Removable zippered cover in Belgian linen (dry clean or gentle cold wash)</li><li><strong>Dimensions:</strong> 29.5\" W x 32\" D x 30\" H (Seat Height: 16.5\")</li><li><strong>Weight Capacity:</strong> 350 lbs (158 kg)</li></ul>",
+    "price": 189,
+    "compareAtPrice": 220,
+    "currency": "$",
+    "sku": "INF-CH-089",
+    "stockStatus": "in_stock",
+    "rating": 4.9,
+    "reviewsCount": 68,
+    "category": "Living Room",
+    "categories": [
+      "Living Room",
+      "Chairs"
+    ],
+    "categorySlugs": [
+      "living-room",
+      "chairs"
+    ],
+    "tags": [
+      "Lounge Chair",
+      "Rattan",
+      "Teak",
+      "Living Room",
+      "Boho Minimalist"
+    ],
+    "sizes": [
+      "Standard"
+    ],
+    "colors": [
+      {
+        "name": "Natural Teak & Cream",
+        "hex": "#d4b996"
+      },
+      {
+        "name": "Weathered Ash & Charcoal",
+        "hex": "#4a4a4a"
+      }
+    ],
+    "image": "/uploads/1794733764491-copy-of-modify-pillar-page-des.png",
+    "gallery": [
+      "/uploads/1794733764491-copy-of-modify-pillar-page-des.png",
+      "https://images.unsplash.com/photo-1567538096630-e0c55bd6374c?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1598300042247-d088f8ab3a91?auto=format&fit=crop&w=900&q=80"
+    ],
+    "buyButton": {
+      "type": "custom_url",
+      "label": "Order Now — $189.00",
+      "whatsappNumber": "6281234567890",
+      "whatsappMessage": "",
+      "url": "https://shopee.com",
+      "buttonBg": "#ff5e3a",
+      "buttonColor": "#ffffff",
+      "target": "_blank"
+    },
+    "secondaryButton": {
+      "enabled": true,
+      "type": "whatsapp",
+      "label": "Order via WhatsApp 💬",
+      "whatsappNumber": "628123456789"
+    },
+    "layoutMode": "standard",
+    "status": "published",
+    "featured": true,
+    "createdAt": "2026-11-15T10:00:00.000Z",
+    "updatedAt": "2026-11-15T09:10:12.732Z",
+    "css": "",
+    "projectData": null,
+    "layoutId": "standard-product-default",
+    "keywords": "",
+    "schema": "",
+    "showRelated": true,
+    "relatedTagline": "COMPLETE THE LOOK",
+    "relatedTitle": "You May Also Like",
+    "relatedCategory": "auto",
+    "relatedOrderBy": "featured",
+    "relatedLimit": 4
+  },
+  {
+    "id": "prod-furn-2",
+    "slug": "nova-wooden-coffee-table",
+    "title": "Nova Wooden Coffee Table",
+    "subtitle": "Solid American Walnut · Sculpted Tripod Base · Satin Matte Finish",
+    "description": "A circular coffee table celebrating organic curvature and sculptural balance. Milled from sustainably harvested solid walnut with subtle beveled edge profiling.",
+    "content": "<h3>Design & Craftsmanship</h3><p>The Nova Coffee Table introduces tactile warmth and fluid silhouettes into your seating area. Built with master-crafted mortise-and-tenon joints connecting three curved solid walnut legs.</p><h4>Materials & Specifications</h4><ul><li><strong>Top & Legs:</strong> Solid American Black Walnut</li><li><strong>Finish:</strong> Zero-VOC natural matte protective oil</li><li><strong>Dimensions:</strong> 36\" Diameter x 17.5\" Height</li><li><strong>Weight:</strong> 42 lbs (19 kg)</li></ul>",
+    "price": 279,
+    "compareAtPrice": 320,
+    "currency": "$",
+    "sku": "INF-TB-027",
+    "stockStatus": "in_stock",
+    "rating": 4.8,
+    "reviewsCount": 45,
+    "category": "Living Room",
+    "categories": [
+      "Living Room",
+      "Tables"
+    ],
+    "categorySlugs": [
+      "living-room",
+      "tables"
+    ],
+    "tags": [
+      "Coffee Table",
+      "Solid Wood",
+      "Walnut",
+      "Round Table",
+      "Minimalist"
+    ],
+    "sizes": [
+      "36-inch Round"
+    ],
+    "colors": [
+      {
+        "name": "American Walnut",
+        "hex": "#5c4033"
+      },
+      {
+        "name": "Bleached Oak",
+        "hex": "#e5d3b3"
+      }
+    ],
+    "image": "https://images.unsplash.com/photo-1533090161767-e6ffed986c88?auto=format&fit=crop&w=900&q=80",
+    "gallery": [
+      "https://images.unsplash.com/photo-1533090161767-e6ffed986c88?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1532372320572-cda25653a26d?auto=format&fit=crop&w=900&q=80"
+    ],
+    "buyButton": {
+      "type": "custom_url",
+      "url": "https://shopee.com",
+      "label": "Order Now — $279.00",
+      "target": "_blank"
+    },
+    "secondaryButton": {
+      "enabled": true,
+      "type": "whatsapp",
+      "label": "Order via WhatsApp 💬",
+      "whatsappNumber": "628123456789",
+      "whatsappMessage": "Hi Infurnish! I would like to order the Nova Wooden Coffee Table ($279)."
+    },
+    "layoutMode": "standard",
+    "status": "published",
+    "featured": true,
+    "createdAt": "2026-11-15T10:00:00.000Z",
+    "updatedAt": "2026-11-15T12:00:00.000Z"
+  },
+  {
+    "id": "prod-furn-3",
+    "slug": "sagewood-6-drawer-dresser",
+    "title": "Sagewood 6-Drawer Dresser",
+    "subtitle": "White Oak Hardwood · Concealed Soft-Close Dovetail Drawers",
+    "description": "Architectural vertical storage with six spacious soft-closing drawers, continuous grain matching, and integrated minimalist finger-pull channels.",
+    "content": "<h3>Design & Craftsmanship</h3><p>The Sagewood 6-Drawer Tallboy Dresser provides expansive storage without overwhelming room volume. Constructed from solid white oak and quartersawn veneers.</p><h4>Materials & Specifications</h4><ul><li><strong>Body:</strong> Solid White Oak & Premium Quartersawn Oak Veneers</li><li><strong>Drawers:</strong> Solid Cedar interior drawer boxes with English dovetail corners</li><li><strong>Hardware:</strong> Heavy-duty Blum concealed soft-close undermount drawer slides</li><li><strong>Dimensions:</strong> 34\" W x 19\" D x 48\" H</li></ul>",
+    "price": 395,
+    "compareAtPrice": 450,
+    "currency": "$",
+    "sku": "INF-DR-039",
+    "stockStatus": "in_stock",
+    "rating": 5,
+    "reviewsCount": 32,
+    "category": "Bedroom",
+    "categories": [
+      "Bedroom",
+      "Storage"
+    ],
+    "categorySlugs": [
+      "bedroom",
+      "storage"
+    ],
+    "tags": [
+      "Dresser",
+      "White Oak",
+      "Storage",
+      "Bedroom Furniture",
+      "Tallboy"
+    ],
+    "sizes": [
+      "6-Drawer Tallboy"
+    ],
+    "colors": [
+      {
+        "name": "White Oak",
+        "hex": "#deb887"
+      }
+    ],
+    "image": "https://images.unsplash.com/photo-1595428774223-ef52624120d2?auto=format&fit=crop&w=900&q=80",
+    "gallery": [
+      "https://images.unsplash.com/photo-1595428774223-ef52624120d2?auto=format&fit=crop&w=900&q=80"
+    ],
+    "buyButton": {
+      "type": "custom_url",
+      "url": "https://shopee.com",
+      "label": "Order Now — $395.00",
+      "target": "_blank"
+    },
+    "secondaryButton": {
+      "enabled": true,
+      "type": "whatsapp",
+      "label": "Order via WhatsApp 💬",
+      "whatsappNumber": "628123456789",
+      "whatsappMessage": "Hi Infurnish! I would like to order the Sagewood 6-Drawer Dresser ($395)."
+    },
+    "layoutMode": "standard",
+    "status": "published",
+    "featured": true,
+    "createdAt": "2026-11-15T10:00:00.000Z",
+    "updatedAt": "2026-11-15T12:00:00.000Z"
+  },
+  {
+    "id": "prod-furn-4",
+    "slug": "juno-rattan-pendant-lamp",
+    "title": "Juno Rattan Pendant Lamp",
+    "subtitle": "Spherical Hand-Spun Cane · Brass Hardware · Warm Ambient Glow",
+    "description": "An organic spherical pendant fixture woven by master cane artisans. Casts subtle, grounding shadow geometry across walls and ceilings for evening sanctuary.",
+    "content": "<h3>Design & Craftsmanship</h3><p>Hand-woven using sustainable natural rattan vines, the Juno Pendant softens architectural spaces with warm diffused luminescence and meditative tactile shadows.</p><h4>Materials & Specifications</h4><ul><li><strong>Shade:</strong> 100% Unbleached natural rattan cane</li><li><strong>Canopy & Cable:</strong> Brushed antique brass canopy with 6-foot adjustable woven fabric cord</li><li><strong>Socket:</strong> Standard E26/E27 ceramic base (Max 60W or LED equivalent)</li><li><strong>Dimensions:</strong> 18\" Diameter x 18\" Height</li></ul>",
+    "price": 98,
+    "compareAtPrice": 120,
+    "currency": "$",
+    "sku": "INF-LP-098",
+    "stockStatus": "in_stock",
+    "rating": 4.9,
+    "reviewsCount": 89,
+    "category": "Lighting",
+    "categories": [
+      "Lighting",
+      "Living Room"
+    ],
+    "categorySlugs": [
+      "lighting",
+      "living-room"
+    ],
+    "tags": [
+      "Pendant Lamp",
+      "Rattan",
+      "Lighting",
+      "Boho",
+      "Warm Ambience"
+    ],
+    "sizes": [
+      "18-inch Sphere"
+    ],
+    "colors": [
+      {
+        "name": "Natural Honey Rattan",
+        "hex": "#c89d5c"
+      }
+    ],
+    "image": "https://images.unsplash.com/photo-1513506003901-1e6a229e2d15?auto=format&fit=crop&w=900&q=80",
+    "gallery": [
+      "https://images.unsplash.com/photo-1513506003901-1e6a229e2d15?auto=format&fit=crop&w=900&q=80"
+    ],
+    "buyButton": {
+      "type": "custom_url",
+      "url": "https://shopee.com",
+      "label": "Order Now — $98.00",
+      "target": "_blank"
+    },
+    "secondaryButton": {
+      "enabled": true,
+      "type": "whatsapp",
+      "label": "Order via WhatsApp 💬",
+      "whatsappNumber": "628123456789",
+      "whatsappMessage": "Hi Infurnish! I would like to order the Juno Rattan Pendant Lamp ($98)."
+    },
+    "layoutMode": "standard",
+    "status": "published",
+    "featured": true,
+    "createdAt": "2026-11-15T10:00:00.000Z",
+    "updatedAt": "2026-11-15T12:00:00.000Z"
+  },
+  {
+    "id": "prod-furn-5",
+    "slug": "vella-tufted-dining-bench",
+    "title": "Vella Tufted Dining Bench",
+    "subtitle": "Sage Green Textured Weave · Tapered Solid Beech Wood Legs",
+    "description": "Versatile upholstered bench featuring tailored grid tufting, high-resilience foam core, and tapered solid beech legs with brass ferrule accents.",
+    "content": "<h3>Design & Craftsmanship</h3><p>Whether placed along a communal dining table or in an entryway, the Vella Bench offers inviting cushioned comfort with structured mid-century proportion.</p><h4>Materials & Specifications</h4><ul><li><strong>Frame & Legs:</strong> Solid European Beechwood in natural oil finish</li><li><strong>Upholstery:</strong> High-performance woven poly-linen blend (stain-resistant)</li><li><strong>Cushion:</strong> High-density poly-foam with fiber wrap</li><li><strong>Dimensions:</strong> 48\" W x 18\" D x 19\" H</li></ul>",
+    "price": 145,
+    "compareAtPrice": 180,
+    "currency": "$",
+    "sku": "INF-BN-014",
+    "stockStatus": "in_stock",
+    "rating": 4.7,
+    "reviewsCount": 38,
+    "category": "Dining",
+    "categories": [
+      "Dining",
+      "Chairs"
+    ],
+    "categorySlugs": [
+      "dining",
+      "chairs"
+    ],
+    "tags": [
+      "Bench",
+      "Dining",
+      "Upholstered",
+      "Sage Green",
+      "Seating"
+    ],
+    "sizes": [
+      "48-inch"
+    ],
+    "colors": [
+      {
+        "name": "Sage Textured Weave",
+        "hex": "#7d8b76"
+      },
+      {
+        "name": "Oatmeal Beige",
+        "hex": "#e3ded6"
+      }
+    ],
+    "image": "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&w=900&q=80",
+    "gallery": [
+      "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&w=900&q=80"
+    ],
+    "buyButton": {
+      "type": "custom_url",
+      "url": "https://shopee.com",
+      "label": "Order Now — $145.00",
+      "target": "_blank"
+    },
+    "secondaryButton": {
+      "enabled": true,
+      "type": "whatsapp",
+      "label": "Order via WhatsApp 💬",
+      "whatsappNumber": "628123456789",
+      "whatsappMessage": "Hi Infurnish! I would like to order the Vella Tufted Dining Bench ($145)."
+    },
+    "layoutMode": "standard",
+    "status": "published",
+    "featured": true,
+    "createdAt": "2026-11-15T10:00:00.000Z",
+    "updatedAt": "2026-11-15T12:00:00.000Z"
+  },
+  {
+    "id": "prod-furn-6",
+    "slug": "kairo-minimal-bookshelf",
+    "title": "Kairo Minimal Bookshelf",
+    "subtitle": "Solid Natural Birch · Asymmetric Display Nooks · Wall-Anchored",
+    "description": "A geometric shelving unit featuring staggered vertical dividers designed to showcase ceramic objects, art monographs, and trailing house plants.",
+    "content": "<h3>Design & Craftsmanship</h3><p>An open-air architectural bookshelf inspired by Japanese shoji panel layouts. Staggered compartment proportions allow tall art books, ceramics, and vinyl records to coexist in calm harmony.</p><h4>Materials & Specifications</h4><ul><li><strong>Material:</strong> 100% Solid Baltic Birch multi-plywood</li><li><strong>Finish:</strong> Clear matte waterborne lacquer (scratch and UV resistant)</li><li><strong>Safety:</strong> Includes heavy-duty concealed anti-tip wall mounting hardware</li><li><strong>Dimensions:</strong> 32\" W x 12\" D x 68\" H</li></ul>",
+    "price": 225,
+    "compareAtPrice": 280,
+    "currency": "$",
+    "sku": "INF-SH-022",
+    "stockStatus": "in_stock",
+    "rating": 4.9,
+    "reviewsCount": 52,
+    "category": "Storage",
+    "categories": [
+      "Storage",
+      "Living Room"
+    ],
+    "categorySlugs": [
+      "storage",
+      "living-room"
+    ],
+    "tags": [
+      "Bookshelf",
+      "Birch",
+      "Shelving",
+      "Storage",
+      "Display Unit"
+    ],
+    "sizes": [
+      "5-Tier Staggered"
+    ],
+    "colors": [
+      {
+        "name": "Natural Birch",
+        "hex": "#f0e5cf"
+      }
+    ],
+    "image": "https://images.unsplash.com/photo-1594026112284-02bb6f3352fe?auto=format&fit=crop&w=900&q=80",
+    "gallery": [
+      "https://images.unsplash.com/photo-1594026112284-02bb6f3352fe?auto=format&fit=crop&w=900&q=80"
+    ],
+    "buyButton": {
+      "type": "custom_url",
+      "url": "https://shopee.com",
+      "label": "Order Now — $225.00",
+      "target": "_blank"
+    },
+    "secondaryButton": {
+      "enabled": true,
+      "type": "whatsapp",
+      "label": "Order via WhatsApp 💬",
+      "whatsappNumber": "628123456789",
+      "whatsappMessage": "Hi Infurnish! I would like to order the Kairo Minimal Bookshelf ($225)."
+    },
+    "layoutMode": "standard",
+    "status": "published",
+    "featured": true,
+    "createdAt": "2026-11-15T10:00:00.000Z",
+    "updatedAt": "2026-11-15T12:00:00.000Z"
+  },
+  {
+    "id": "prod-1",
+    "slug": "japanese-heavyweight-oversized-tee",
+    "title": "Japanese Heavyweight Oversized Tee",
+    "subtitle": "280 GSM Premium Combed Cotton · Boxy Streetwear Silhouette",
+    "description": "Crafted from ultra-dense 280 GSM combed Japanese cotton with drop-shoulders and reinforced double-needle collar.",
+    "content": "\n      <h3>Product Overview</h3>\n      <p>The definitive heavyweight tee built for everyday longevity and modern drape. Woven from 100% ring-spun combed long-staple cotton, this shirt maintains its structured silhouette wash after wash.</p>\n      \n      <h4>Features & Construction</h4>\n      <ul>\n        <li><strong>Fabric:</strong> 280 GSM (8.2 oz) 100% pre-shrunk combed cotton</li>\n        <li><strong>Fit:</strong> Relaxed boxy streetwear cut with dropped shoulder seams</li>\n        <li><strong>Collar:</strong> 1.25\" thick 1x1 ribbed collar that will not bacon or stretch</li>\n        <li><strong>Finish:</strong> Silicon washed for exceptional softness and minimal lint</li>\n      </ul>\n\n      <h4>Care Guide</h4>\n      <p>Machine wash cold with like colors inside out. Hang dry or tumble dry low. Do not bleach or dry clean.</p>\n    ",
+    "price": 34,
+    "compareAtPrice": 48,
+    "currency": "$",
+    "sku": "TEE-HVY-001",
+    "stockStatus": "in_stock",
+    "rating": 4.9,
+    "reviewsCount": 142,
+    "category": "T-Shirts",
+    "tags": [
+      "Streetwear",
+      "Oversized",
+      "Heavyweight",
+      "Unisex",
+      "Cotton"
+    ],
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "XL",
+      "XXL"
+    ],
+    "colors": [
+      {
+        "name": "Vintage Washed Black",
+        "hex": "#18181b"
+      },
+      {
+        "name": "Bone White",
+        "hex": "#f4f4f5"
+      },
+      {
+        "name": "Sage Green",
+        "hex": "#4d5d53"
+      },
+      {
+        "name": "Washed Charcoal",
+        "hex": "#3f3f46"
+      }
+    ],
+    "image": "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=900&q=80",
+    "gallery": [
+      "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?auto=format&fit=crop&w=900&q=80"
+    ],
+    "buyButton": {
+      "type": "custom_url",
+      "url": "https://shopee.com",
+      "label": "Buy Now — $34.00",
+      "target": "_blank"
+    },
+    "secondaryButton": {
+      "enabled": true,
+      "type": "whatsapp",
+      "label": "Order via WhatsApp 💬",
+      "whatsappNumber": "628123456789",
+      "whatsappMessage": "Hi! I would like to order the Japanese Heavyweight Oversized Tee ($34.00)."
+    },
+    "layoutMode": "standard",
+    "status": "published",
+    "featured": true,
+    "createdAt": "2026-11-01T10:00:00.000Z",
+    "updatedAt": "2026-11-10T12:00:00.000Z"
+  },
+  {
+    "id": "prod-2",
+    "slug": "vintage-washed-french-terry-hoodie",
+    "title": "Vintage Washed French Terry Hoodie",
+    "subtitle": "450 GSM Heavy French Terry · Garment Dyed & Sun Faded",
+    "description": "Ultra-plush heavyweight French terry hoodie with double-layer hood, hidden kangaroo stash pocket, and ribbed side gussets.",
+    "content": "\n      <h3>Product Overview</h3>\n      <p>An everyday luxury pullover engineered from 450 GSM custom-milled French terry. Each garment undergoes a specialized enzyme wash to create a subtly aged patina unique to every piece.</p>\n      \n      <h4>Features & Construction</h4>\n      <ul>\n        <li><strong>Fabric:</strong> 450 GSM 100% French Terry Cotton (unbrushed loops)</li>\n        <li><strong>Hood:</strong> Double-layered heavy structured hood without drawstrings</li>\n        <li><strong>Details:</strong> Ribbed side-panels for natural range of motion and stretch</li>\n        <li><strong>Cuffs:</strong> Heavy duty 2x2 elastane ribbing at waist and wrists</li>\n      </ul>\n    ",
+    "price": 68,
+    "compareAtPrice": 85,
+    "currency": "$",
+    "sku": "HD-TER-002",
+    "stockStatus": "in_stock",
+    "rating": 4.8,
+    "reviewsCount": 98,
+    "category": "Hoodies",
+    "tags": [
+      "Hoodie",
+      "French Terry",
+      "Vintage Wash",
+      "Streetwear"
+    ],
+    "sizes": [
+      "M",
+      "L",
+      "XL"
+    ],
+    "colors": [
+      {
+        "name": "Charcoal Wash",
+        "hex": "#27272a"
+      },
+      {
+        "name": "Sand Taupe",
+        "hex": "#d4d4d8"
+      },
+      {
+        "name": "Midnight Navy",
+        "hex": "#1e293b"
+      }
+    ],
+    "image": "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=900&q=80",
+    "gallery": [
+      "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1509967419530-da38b4704bc6?auto=format&fit=crop&w=900&q=80"
+    ],
+    "buyButton": {
+      "type": "whatsapp",
+      "url": "https://wa.me/628123456789?text=Hello%20I%20want%20to%20order%20the%20Vintage%20Washed%20French%20Terry%20Hoodie",
+      "label": "Order on WhatsApp 💬",
+      "target": "_blank",
+      "whatsappNumber": "628123456789",
+      "whatsappMessage": "Hello, I want to order the Vintage Washed French Terry Hoodie ($68.00)."
+    },
+    "secondaryButton": {
+      "enabled": true,
+      "type": "custom_url",
+      "label": "Shop on Tokopedia",
+      "url": "https://tokopedia.com"
+    },
+    "layoutMode": "standard",
+    "status": "published",
+    "featured": true,
+    "createdAt": "2026-11-02T10:00:00.000Z",
+    "updatedAt": "2026-11-10T12:00:00.000Z"
+  },
+  {
+    "id": "prod-3",
+    "slug": "selvedge-raw-denim-trucker-jacket",
+    "title": "Selvedge Raw Denim Trucker Jacket",
+    "subtitle": "14.5 oz Japanese Redline Selvedge Denim · Solid Brass Hardware",
+    "description": "Iconic Type-III silhouette cut from unwashed 14.5 oz red-line shuttle-loom selvedge denim designed to develop rich custom fades.",
+    "content": "\n      <h3>Product Overview</h3>\n      <p>Heritage construction meets contemporary tailoring. Sourced from Okayama shuttle looms, this denim starts stiff and molds intimately to your body over months of continuous wear.</p>\n      \n      <h4>Features & Construction</h4>\n      <ul>\n        <li><strong>Selvedge:</strong> Visible red-line selvedge on front interior placket</li>\n        <li><strong>Hardware:</strong> Custom embossed antique brass shank buttons</li>\n        <li><strong>Pockets:</strong> Two chest flap pockets plus twin deep interior welt pockets</li>\n        <li><strong>Stitching:</strong> Heavy-gauge dual-tone poly-core thread for lifelong durability</li>\n      </ul>\n    ",
+    "price": 129,
+    "compareAtPrice": 165,
+    "currency": "$",
+    "sku": "JKT-DEN-003",
+    "stockStatus": "in_stock",
+    "rating": 5,
+    "reviewsCount": 76,
+    "category": "Jackets",
+    "tags": [
+      "Denim",
+      "Selvedge",
+      "Heritage",
+      "Trucker Jacket"
+    ],
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "colors": [
+      {
+        "name": "Deep Indigo Raw",
+        "hex": "#1e3a5f"
+      }
+    ],
+    "image": "https://images.unsplash.com/photo-1576995853123-5a10305d93c0?auto=format&fit=crop&w=900&q=80",
+    "gallery": [
+      "https://images.unsplash.com/photo-1576995853123-5a10305d93c0?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1543076447-215ad9ba6923?auto=format&fit=crop&w=900&q=80"
+    ],
+    "buyButton": {
+      "type": "custom_url",
+      "url": "https://amazon.com",
+      "label": "Buy Now on Amazon",
+      "target": "_blank"
+    },
+    "secondaryButton": {
+      "enabled": true,
+      "type": "whatsapp",
+      "label": "Consult Size on WhatsApp",
+      "whatsappNumber": "628123456789",
+      "whatsappMessage": "Hi, I need sizing advice for the Selvedge Raw Denim Trucker Jacket."
+    },
+    "layoutMode": "standard",
+    "status": "published",
+    "featured": true,
+    "createdAt": "2026-11-03T10:00:00.000Z",
+    "updatedAt": "2026-11-10T12:00:00.000Z"
+  },
+  {
+    "id": "prod-4",
+    "slug": "relaxed-fit-tactical-cargo-pants",
+    "title": "Relaxed Fit Tactical Cargo Pants",
+    "subtitle": "Ripstop Cotton Blend · Modular Bellow Pockets & Cinch Ankle Ties",
+    "description": "Durable military-spec ripstop cargo pants with 8 ergonomic storage pockets, articulated knee darts, and adjustable drawstring cuffs.",
+    "content": "\n      <h3>Product Overview</h3>\n      <p>Utilitarian performance engineered for urban mobility. Built with high-tensile ripstop fabric that prevents tears and resists light moisture.</p>\n      \n      <h4>Features & Construction</h4>\n      <ul>\n        <li><strong>Fabric:</strong> 65% Cotton, 35% Polyester Ripstop weave</li>\n        <li><strong>Storage:</strong> 2 slant hand pockets, 2 rear pockets, 4 expandable accordion cargo compartments</li>\n        <li><strong>Ergonomics:</strong> Articulated knee darts for unrestricted bending and climbing</li>\n        <li><strong>Hem:</strong> Integrated bungee-toggle system to switch between wide and tapered fit</li>\n      </ul>\n    ",
+    "price": 59,
+    "compareAtPrice": 79,
+    "currency": "$",
+    "sku": "PNT-CRG-004",
+    "stockStatus": "in_stock",
+    "rating": 4.7,
+    "reviewsCount": 89,
+    "category": "Pants",
+    "tags": [
+      "Cargo",
+      "Tactical",
+      "Techwear",
+      "Streetwear"
+    ],
+    "sizes": [
+      "28",
+      "30",
+      "32",
+      "34",
+      "36"
+    ],
+    "colors": [
+      {
+        "name": "Olive Drab",
+        "hex": "#3f4e38"
+      },
+      {
+        "name": "Stealth Black",
+        "hex": "#18181b"
+      },
+      {
+        "name": "Desert Khaki",
+        "hex": "#d2b48c"
+      }
+    ],
+    "image": "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?auto=format&fit=crop&w=900&q=80",
+    "gallery": [
+      "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1517445312882-bc9910d016b7?auto=format&fit=crop&w=900&q=80"
+    ],
+    "buyButton": {
+      "type": "custom_url",
+      "url": "https://tokopedia.com",
+      "label": "Shop on Tokopedia — $59.00",
+      "target": "_blank"
+    },
+    "secondaryButton": {
+      "enabled": true,
+      "type": "whatsapp",
+      "label": "Order on WhatsApp",
+      "whatsappNumber": "628123456789",
+      "whatsappMessage": "Hi! I want to order the Relaxed Fit Tactical Cargo Pants."
+    },
+    "layoutMode": "standard",
+    "status": "published",
+    "featured": false,
+    "createdAt": "2026-11-04T10:00:00.000Z",
+    "updatedAt": "2026-11-10T12:00:00.000Z"
+  },
+  {
+    "id": "prod-5",
+    "slug": "minimalist-organic-linen-camp-shirt",
+    "title": "Minimalist Organic Linen Camp Collar Shirt",
+    "subtitle": "100% Normandy Flax Linen · Relaxed Resort Collar",
+    "description": "Airy, breathable summer staple woven from pure Normandy flax linen. Features a retro Cuban camp collar and genuine shell buttons.",
+    "content": "\n      <h3>Product Overview</h3>\n      <p>The ultimate warm-weather button-down. Highly breathable linen wicks moisture away and naturally regulates body heat, delivering breezy all-day comfort.</p>\n      \n      <h4>Features & Construction</h4>\n      <ul>\n        <li><strong>Fabric:</strong> 100% Certified Organic French/Normandy Linen</li>\n        <li><strong>Collar:</strong> Spread Cuban camp collar that rests flat against the collarbone</li>\n        <li><strong>Buttons:</strong> Genuine trocas mother-of-pearl buttons</li>\n        <li><strong>Cut:</strong> Straight square hem with subtle side vents for untucked styling</li>\n      </ul>\n    ",
+    "price": 48,
+    "compareAtPrice": 62,
+    "currency": "$",
+    "sku": "SHT-LIN-005",
+    "stockStatus": "in_stock",
+    "rating": 4.8,
+    "reviewsCount": 54,
+    "category": "Shirts",
+    "tags": [
+      "Linen",
+      "Summer",
+      "Camp Collar",
+      "Resort",
+      "Organic"
+    ],
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "colors": [
+      {
+        "name": "Natural Sand",
+        "hex": "#e4d5b7"
+      },
+      {
+        "name": "Crisp White",
+        "hex": "#ffffff"
+      },
+      {
+        "name": "Sky Blue",
+        "hex": "#93c5fd"
+      }
+    ],
+    "image": "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&w=900&q=80",
+    "gallery": [
+      "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=900&q=80"
+    ],
+    "buyButton": {
+      "type": "custom_url",
+      "url": "https://shopee.com",
+      "label": "Buy Now — $48.00",
+      "target": "_blank"
+    },
+    "secondaryButton": {
+      "enabled": true,
+      "type": "whatsapp",
+      "label": "Order on WhatsApp",
+      "whatsappNumber": "628123456789",
+      "whatsappMessage": "Hi! I would like to purchase the Minimalist Organic Linen Camp Shirt."
+    },
+    "layoutMode": "standard",
+    "status": "published",
+    "featured": true,
+    "createdAt": "2026-11-05T10:00:00.000Z",
+    "updatedAt": "2026-11-10T12:00:00.000Z"
+  },
+  {
+    "id": "prod-6",
+    "slug": "acid-wash-retro-graphic-crewneck",
+    "title": "Acid Wash Retro Graphic Crewneck",
+    "subtitle": "380 GSM Heavy Fleece · Vintage Mineral Wash Treatment",
+    "description": "Distressed vintage-look crewneck with nostalgic typographic front print and relaxed drop-shoulder drape.",
+    "content": "\n      <h3>Product Overview</h3>\n      <p>Every piece is uniquely acid-washed by hand. Brushed interior fleece provides cozy warmth, while raw vintage seam details deliver authentic 90s aesthetic.</p>\n    ",
+    "price": 54,
+    "compareAtPrice": 70,
+    "currency": "$",
+    "sku": "CRW-RET-006",
+    "stockStatus": "in_stock",
+    "rating": 4.6,
+    "reviewsCount": 42,
+    "category": "Sweatshirts",
+    "tags": [
+      "Sweatshirt",
+      "Graphic",
+      "Acid Wash",
+      "Retro"
+    ],
+    "sizes": [
+      "M",
+      "L",
+      "XL"
+    ],
+    "colors": [
+      {
+        "name": "Mineral Grey",
+        "hex": "#52525b"
+      },
+      {
+        "name": "Faded Black",
+        "hex": "#27272a"
+      }
+    ],
+    "image": "https://images.unsplash.com/photo-1509967419530-da38b4704bc6?auto=format&fit=crop&w=900&q=80",
+    "gallery": [
+      "https://images.unsplash.com/photo-1509967419530-da38b4704bc6?auto=format&fit=crop&w=900&q=80"
+    ],
+    "buyButton": {
+      "type": "whatsapp",
+      "url": "https://wa.me/628123456789?text=Hello%20I%20want%20to%20order%20the%20Acid%20Wash%20Retro%20Graphic%20Crewneck",
+      "label": "Order on WhatsApp 💬",
+      "target": "_blank"
+    },
+    "layoutMode": "standard",
+    "status": "published",
+    "featured": false,
+    "createdAt": "2026-11-06T10:00:00.000Z",
+    "updatedAt": "2026-11-10T12:00:00.000Z"
+  },
+  {
+    "id": "prod-7",
+    "slug": "waterproof-technical-windbreaker",
+    "title": "Waterproof Technical Windbreaker Jacket",
+    "subtitle": "3-Layer DWR Coated Shell · Aquaguard YKK Zippers",
+    "description": "Ultralight waterproof windbreaker with fully taped seams, breathable pit zips, and packable stowaway pocket.",
+    "content": "\n      <h3>Product Overview</h3>\n      <p>Engineered for unpredictable weather and city commuting. Breathable membrane keeps you completely dry without causing overheating.</p>\n    ",
+    "price": 95,
+    "compareAtPrice": 120,
+    "currency": "$",
+    "sku": "JKT-WND-007",
+    "stockStatus": "in_stock",
+    "rating": 4.9,
+    "reviewsCount": 61,
+    "category": "Outerwear",
+    "tags": [
+      "Waterproof",
+      "Windbreaker",
+      "Techwear",
+      "Jacket"
+    ],
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "colors": [
+      {
+        "name": "Matte Obsidian",
+        "hex": "#0f172a"
+      },
+      {
+        "name": "Glacier Silver",
+        "hex": "#cbd5e1"
+      }
+    ],
+    "image": "https://images.unsplash.com/photo-1544441893-675973e31985?auto=format&fit=crop&w=900&q=80",
+    "gallery": [
+      "https://images.unsplash.com/photo-1544441893-675973e31985?auto=format&fit=crop&w=900&q=80"
+    ],
+    "buyButton": {
+      "type": "custom_url",
+      "url": "https://shopee.com",
+      "label": "Buy Now — $95.00",
+      "target": "_blank"
+    },
+    "secondaryButton": {
+      "enabled": true,
+      "type": "whatsapp",
+      "label": "Ask Questions via WhatsApp",
+      "whatsappNumber": "628123456789"
+    },
+    "layoutMode": "standard",
+    "status": "published",
+    "featured": true,
+    "createdAt": "2026-11-07T10:00:00.000Z",
+    "updatedAt": "2026-11-10T12:00:00.000Z"
+  },
+  {
+    "id": "prod-8",
+    "slug": "pleated-wide-leg-tailored-trousers",
+    "title": "Pleated Wide-Leg Tailored Trousers",
+    "subtitle": "Wool-Viscose Blend · Double Front Pleats & Relaxed Fluid Drape",
+    "description": "Modern sartorial trousers combining refined formal tailoring with a fluid, wide-leg contemporary cut.",
+    "content": "\n      <h3>Product Overview</h3>\n      <p>Elevate your everyday rotation with wide tailored pleats that provide elegant movement and effortless drape.</p>\n    ",
+    "price": 64,
+    "compareAtPrice": 89,
+    "currency": "$",
+    "sku": "PNT-TRS-008",
+    "stockStatus": "in_stock",
+    "rating": 4.7,
+    "reviewsCount": 38,
+    "category": "Pants",
+    "tags": [
+      "Trousers",
+      "Pleated",
+      "Tailored",
+      "Smart Casual"
+    ],
+    "sizes": [
+      "30",
+      "32",
+      "34",
+      "36"
+    ],
+    "colors": [
+      {
+        "name": "Mocha Brown",
+        "hex": "#45322e"
+      },
+      {
+        "name": "Slate Grey",
+        "hex": "#64748b"
+      }
+    ],
+    "image": "https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?auto=format&fit=crop&w=900&q=80",
+    "gallery": [
+      "https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?auto=format&fit=crop&w=900&q=80"
+    ],
+    "buyButton": {
+      "type": "custom_url",
+      "url": "https://tokopedia.com",
+      "label": "Buy on Tokopedia",
+      "target": "_blank"
+    },
+    "layoutMode": "standard",
+    "status": "published",
+    "featured": false,
+    "createdAt": "2026-11-08T10:00:00.000Z",
+    "updatedAt": "2026-11-10T12:00:00.000Z"
+  },
+  {
+    "id": "prod-9",
+    "slug": "heavy-knit-ribbed-beanie-scarf-set",
+    "title": "Heavy Knit Ribbed Beanie & Scarf Set",
+    "subtitle": "100% Extra-Fine Merino Wool Blend · Thermal Ribbed Stitch",
+    "description": "Winter-ready pairing of an unstructured fisherman beanie and matching fringeless chunky knit scarf.",
+    "content": "\n      <h3>Product Overview</h3>\n      <p>Ultra-warm, itch-free merino wool accessory combo. Classic 2x2 rib stitch stretches to conform comfortably to any head shape.</p>\n    ",
+    "price": 29,
+    "compareAtPrice": 39,
+    "currency": "$",
+    "sku": "ACC-SET-009",
+    "stockStatus": "in_stock",
+    "rating": 4.9,
+    "reviewsCount": 114,
+    "category": "Accessories",
+    "tags": [
+      "Beanie",
+      "Scarf",
+      "Merino Wool",
+      "Winter",
+      "Knitwear"
+    ],
+    "sizes": [
+      "One Size Fits All"
+    ],
+    "colors": [
+      {
+        "name": "Oatmeal Heather",
+        "hex": "#d6d3d1"
+      },
+      {
+        "name": "Forest Evergreen",
+        "hex": "#14532d"
+      },
+      {
+        "name": "Pitch Black",
+        "hex": "#0a0a0a"
+      }
+    ],
+    "image": "https://images.unsplash.com/photo-1576871337622-98d48d1cf531?auto=format&fit=crop&w=900&q=80",
+    "gallery": [
+      "https://images.unsplash.com/photo-1576871337622-98d48d1cf531?auto=format&fit=crop&w=900&q=80"
+    ],
+    "buyButton": {
+      "type": "whatsapp",
+      "url": "https://wa.me/628123456789?text=Hello%20I%20want%20to%20order%20the%20Heavy%20Knit%20Ribbed%20Beanie%20Set",
+      "label": "Order on WhatsApp ($29.00) 💬",
+      "target": "_blank"
+    },
+    "layoutMode": "standard",
+    "status": "published",
+    "featured": false,
+    "createdAt": "2026-11-09T10:00:00.000Z",
+    "updatedAt": "2026-11-10T12:00:00.000Z"
+  },
+  {
+    "id": "prod-10",
+    "slug": "everyday-corduroy-overshirt",
+    "title": "Everyday Corduroy Overshirt",
+    "subtitle": "8-Wale Chunky Cotton Corduroy · Tortoise Resin Buttons",
+    "description": "Substantial chunky wale corduroy jacket shirt designed to be layered over tees and hoodies as lightweight outerwear.",
+    "content": "\n      <h3>Product Overview</h3>\n      <p>A tactile wardrobe essential. Dense 8-wale corduroy provides subtle insulation while lending distinctive texture to any outfit.</p>\n    ",
+    "price": 52,
+    "compareAtPrice": 68,
+    "currency": "$",
+    "sku": "SHT-CRD-010",
+    "stockStatus": "in_stock",
+    "rating": 4.8,
+    "reviewsCount": 77,
+    "category": "Shirts",
+    "tags": [
+      "Corduroy",
+      "Overshirt",
+      "Layering",
+      "Autumn"
+    ],
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "XL"
+    ],
+    "colors": [
+      {
+        "name": "Caramel Brown",
+        "hex": "#92400e"
+      },
+      {
+        "name": "Olive Green",
+        "hex": "#365314"
+      },
+      {
+        "name": "Ink Navy",
+        "hex": "#172554"
+      }
+    ],
+    "image": "https://images.unsplash.com/photo-1603252109303-2751441dd157?auto=format&fit=crop&w=900&q=80",
+    "gallery": [
+      "https://images.unsplash.com/photo-1603252109303-2751441dd157?auto=format&fit=crop&w=900&q=80"
+    ],
+    "buyButton": {
+      "type": "custom_url",
+      "url": "https://shopee.com",
+      "label": "Buy Now — $52.00",
+      "target": "_blank"
+    },
+    "secondaryButton": {
+      "enabled": true,
+      "type": "whatsapp",
+      "label": "WhatsApp Quick Order",
+      "whatsappNumber": "628123456789"
+    },
+    "layoutMode": "standard",
+    "status": "published",
+    "featured": true,
+    "createdAt": "2026-11-10T10:00:00.000Z",
+    "updatedAt": "2026-11-10T12:00:00.000Z"
+  },
+  {
+    "id": "prod-1794331458616",
+    "slug": "japanese-heavyweight-oversized-tee-copy-8616",
+    "title": "Japanese Heavyweight Oversized Tee (Copy)",
+    "subtitle": "280 GSM Premium Combed Cotton · Boxy Streetwear Silhouette",
+    "description": "Crafted from ultra-dense 280 GSM combed Japanese cotton with drop-shoulders and reinforced double-needle collar.",
+    "content": "\n      <h3>Product Overview</h3>\n      <p>The definitive heavyweight tee built for everyday longevity and modern drape. Woven from 100% ring-spun combed long-staple cotton, this shirt maintains its structured silhouette wash after wash.</p>\n      \n      <h4>Features & Construction</h4>\n      <ul>\n        <li><strong>Fabric:</strong> 280 GSM (8.2 oz) 100% pre-shrunk combed cotton</li>\n        <li><strong>Fit:</strong> Relaxed boxy streetwear cut with dropped shoulder seams</li>\n        <li><strong>Collar:</strong> 1.25\" thick 1x1 ribbed collar that will not bacon or stretch</li>\n        <li><strong>Finish:</strong> Silicon washed for exceptional softness and minimal lint</li>\n      </ul>\n\n      <h4>Care Guide</h4>\n      <p>Machine wash cold with like colors inside out. Hang dry or tumble dry low. Do not bleach or dry clean.</p>\n    ",
+    "price": 34,
+    "compareAtPrice": 48,
+    "currency": "$",
+    "sku": "TEE-HVY-001",
+    "stockStatus": "in_stock",
+    "rating": 4.9,
+    "reviewsCount": 142,
+    "category": "T-Shirts",
+    "tags": [
+      "Streetwear",
+      "Oversized",
+      "Heavyweight",
+      "Unisex",
+      "Cotton"
+    ],
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "XL",
+      "XXL"
+    ],
+    "colors": [
+      {
+        "name": "Vintage Washed Black",
+        "hex": "#18181b"
+      },
+      {
+        "name": "Bone White",
+        "hex": "#f4f4f5"
+      },
+      {
+        "name": "Sage Green",
+        "hex": "#4d5d53"
+      },
+      {
+        "name": "Washed Charcoal",
+        "hex": "#3f3f46"
+      }
+    ],
+    "image": "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=900&q=80",
+    "gallery": [
+      "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?auto=format&fit=crop&w=900&q=80"
+    ],
+    "buyButton": {
+      "type": "custom_url",
+      "url": "https://shopee.com",
+      "label": "Buy Now — $34.00",
+      "target": "_blank"
+    },
+    "secondaryButton": {
+      "enabled": true,
+      "type": "whatsapp",
+      "label": "Order via WhatsApp 💬",
+      "whatsappNumber": "628123456789",
+      "whatsappMessage": "Hi! I would like to order the Japanese Heavyweight Oversized Tee ($34.00)."
+    },
+    "layoutMode": "standard",
+    "status": "published",
+    "featured": true,
+    "createdAt": "2026-11-10T17:24:18.616Z",
+    "updatedAt": "2026-11-10T17:24:18.616Z"
+  }
+]

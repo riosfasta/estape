@@ -1,0 +1,563 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = 'About Us - Better Digital Agency',
+  description = 'Learn more about Better Digital Agency, our vision, mission, creative team, and core values.',
+} = Astro.props;
+
+const stats = [
+  { value: '500+', label: 'Projects Completed' },
+  { value: '98%', label: 'Happy Clients' },
+  { value: '12+', label: 'Years Experience' },
+  { value: '25+', label: 'Design Awards' },
+];
+
+const values = [
+  {
+    title: 'Customer-Centric',
+    description: 'We place our clients and their end users at the center of every architectural and design decision.',
+    icon: `<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>`,
+  },
+  {
+    title: 'Relentless Quality',
+    description: 'We build high-performance web products that load instantly, scale flawlessly, and convert effectively.',
+    icon: `<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>`,
+  },
+  {
+    title: 'Continuous Innovation',
+    description: 'Embracing modern web capabilities, automated workflows, and fresh aesthetics to keep you ahead.',
+    icon: `<line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>`,
+  },
+  {
+    title: 'Integrity & Transparency',
+    description: 'Clear communication, fair pricing, and predictable timelines with zero hidden surprises.',
+    icon: `<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>`,
+  },
+];
+
+const team = [
+  {
+    name: 'Alexander Wright',
+    role: 'Founder & Creative Director',
+    image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+    bio: '15+ years architecting brand identities and modern digital web platforms for Fortune 500s and ambitious startups.',
+  },
+  {
+    name: 'Sophia Chen',
+    role: 'Lead UI/UX Architect',
+    image: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=400&q=80',
+    bio: 'Passionate about human-centered interaction design, micro-animations, and building accessible component systems.',
+  },
+  {
+    name: 'Marcus Vance',
+    role: 'Head of Engineering',
+    image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+    bio: 'Performance fanatic optimizing serverless architectures, content pipelines, and lightning-fast web delivery.',
+  },
+];
+---
+
+<Layout
+  title={title}
+  description={description}
+  activePage="about"
+>
+  <!-- Page Header Hero -->
+  <section class="about-hero">
+    <div class="container text-center">
+      <span class="badge-tag">WHO WE ARE</span>
+      <h1 class="page-title">We Make Your Business <span class="highlight">Better</span></h1>
+      <p class="hero-subtext">
+        Better is an elite creative studio combining brand strategy, elegant aesthetics, and next-generation web technologies to transform ambitious visions into reality.
+      </p>
+    </div>
+  </section>
+
+  <!-- Stats Strip -->
+  <section class="stats-section">
+    <div class="container">
+      <div class="stats-grid">
+        {stats.map((s) => (
+          <div class="stat-card">
+            <span class="stat-value">{s.value}</span>
+            <span class="stat-label">{s.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- Narrative Story Section -->
+  <section class="story-section py-section">
+    <div class="container">
+      <div class="story-grid">
+        <div class="story-content">
+          <span class="section-tagline">OUR JOURNEY</span>
+          <h2 class="section-title">Built with Passion for High-Impact Digital Experiences</h2>
+          <p class="story-p">
+            Founded with a vision to redefine digital agency standards, Better bridges the gap between sophisticated creative direction and cutting-edge engineering. We discard obsolete conventions in favor of responsive, ultra-fast web foundations.
+          </p>
+          <p class="story-p">
+            From emerging tech pioneers to global enterprises, we help brands stand out in crowded markets through cohesive visual identities, high-converting product pages, and editorial storytelling.
+          </p>
+          <div class="story-checklist">
+            <div class="check-item">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <span>Custom bespoke design systems tailored to your unique voice</span>
+            </div>
+            <div class="check-item">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <span>Built on Astro for unmatched speed and Core Web Vitals perfection</span>
+            </div>
+            <div class="check-item">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <span>Dedicated long-term engineering and continuous evolution</span>
+            </div>
+          </div>
+        </div>
+        <div class="story-visual">
+          <div class="visual-card">
+            <img
+              src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=800&q=80"
+              alt="Better Creative Team Collaboration"
+              class="story-img"
+              loading="lazy"
+            />
+            <div class="visual-badge">
+              <span class="badge-num">100%</span>
+              <span class="badge-txt">Dedicated to Excellence</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Core Values -->
+  <section class="values-section py-section">
+    <div class="container">
+      <div class="section-header text-center">
+        <span class="section-tagline">PRINCIPLES</span>
+        <h2 class="section-title">Values That Guide Everything We Build</h2>
+      </div>
+
+      <div class="values-grid">
+        {values.map((v) => (
+          <div class="value-card">
+            <div class="value-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={v.icon} />
+            </div>
+            <h3 class="value-title">{v.title}</h3>
+            <p class="value-desc">{v.description}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- Team Section -->
+  <section class="team-section py-section">
+    <div class="container">
+      <div class="section-header text-center">
+        <span class="section-tagline">LEADERSHIP</span>
+        <h2 class="section-title">Meet The Minds Behind Better</h2>
+        <p class="section-subtitle">A collective of passionate designers, strategists, and technologists.</p>
+      </div>
+
+      <div class="team-grid">
+        {team.map((member) => (
+          <div class="team-card">
+            <div class="team-img-wrap">
+              <img src={member.image} alt={member.name} class="team-img" loading="lazy" />
+            </div>
+            <div class="team-body">
+              <h3 class="team-name">{member.name}</h3>
+              <span class="team-role">{member.role}</span>
+              <p class="team-bio">{member.bio}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- Call To Action -->
+  <section class="about-cta">
+    <div class="container text-center">
+      <h2 class="cta-title">Ready to Elevate Your Brand?</h2>
+      <p class="cta-subtitle">Let’s discuss your vision and build a high-performance digital presence that drives real growth.</p>
+      <div class="cta-buttons">
+        <a href="/contact" class="btn btn-primary">Get In Touch</a>
+        <a href="/products" class="btn btn-outline">Explore Products</a>
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<style>
+  .about-hero {
+    padding: 90px 20px 60px;
+    background: radial-gradient(circle at 50% 10%, rgba(255, 94, 58, 0.12) 0%, transparent 60%), #0c0e14;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .text-center {
+    text-align: center;
+  }
+
+  .badge-tag {
+    display: inline-block;
+    padding: 6px 14px;
+    background: rgba(255, 94, 58, 0.15);
+    color: var(--color-primary);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-radius: 9999px;
+    margin-bottom: 18px;
+    border: 1px solid rgba(255, 94, 58, 0.25);
+  }
+
+  .page-title {
+    font-size: clamp(2.4rem, 5vw, 3.6rem);
+    font-weight: 800;
+    color: #ffffff;
+    line-height: 1.15;
+    margin-bottom: 16px;
+    letter-spacing: -0.02em;
+  }
+
+  .highlight {
+    color: var(--color-primary);
+  }
+
+  .hero-subtext {
+    max-width: 680px;
+    margin: 0 auto;
+    font-size: 1.12rem;
+    line-height: 1.65;
+    color: #9ca3af;
+  }
+
+  .stats-section {
+    background: #11141c;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 36px 0;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 24px;
+    text-align: center;
+  }
+
+  .stat-card {
+    padding: 12px;
+  }
+
+  .stat-value {
+    display: block;
+    font-size: 2.6rem;
+    font-weight: 800;
+    color: var(--color-primary);
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+
+  .stat-label {
+    font-size: 0.88rem;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+  }
+
+  .story-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 56px;
+    align-items: center;
+  }
+
+  .section-tagline {
+    display: inline-block;
+    color: var(--color-primary);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .section-title {
+    font-size: clamp(1.8rem, 3.5vw, 2.5rem);
+    font-weight: 800;
+    color: #ffffff;
+    line-height: 1.2;
+    margin-bottom: 20px;
+  }
+
+  .story-p {
+    color: #9ca3af;
+    line-height: 1.7;
+    margin-bottom: 18px;
+    font-size: 1rem;
+  }
+
+  .story-checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 24px;
+  }
+
+  .check-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #e5e7eb;
+    font-size: 0.95rem;
+    font-weight: 500;
+  }
+
+  .visual-card {
+    position: relative;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  }
+
+  .story-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.4s ease;
+  }
+
+  .visual-card:hover .story-img {
+    transform: scale(1.03);
+  }
+
+  .visual-badge {
+    position: absolute;
+    bottom: 24px;
+    right: 24px;
+    background: rgba(17, 20, 28, 0.9);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 94, 58, 0.4);
+    padding: 14px 20px;
+    border-radius: 12px;
+    text-align: center;
+  }
+
+  .badge-num {
+    display: block;
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: var(--color-primary);
+  }
+
+  .badge-txt {
+    font-size: 0.75rem;
+    color: #d1d5db;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+  }
+
+  .values-section {
+    background: #0f121a;
+  }
+
+  .values-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 24px;
+    margin-top: 40px;
+  }
+
+  .value-card {
+    background: #141722;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 14px;
+    padding: 28px;
+    transition: transform 0.2s ease, border-color 0.2s ease;
+  }
+
+  .value-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(255, 94, 58, 0.4);
+  }
+
+  .value-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    background: rgba(255, 94, 58, 0.12);
+    color: var(--color-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 18px;
+  }
+
+  .value-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 10px;
+  }
+
+  .value-desc {
+    color: #9ca3af;
+    font-size: 0.92rem;
+    line-height: 1.6;
+  }
+
+  .team-section {
+    background: #0c0e14;
+  }
+
+  .section-subtitle {
+    color: #9ca3af;
+    max-width: 580px;
+    margin: 10px auto 0;
+    font-size: 1rem;
+  }
+
+  .team-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 28px;
+    margin-top: 44px;
+  }
+
+  .team-card {
+    background: #141722;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    overflow: hidden;
+    transition: transform 0.25s ease;
+  }
+
+  .team-card:hover {
+    transform: translateY(-4px);
+  }
+
+  .team-img-wrap {
+    height: 280px;
+    overflow: hidden;
+  }
+
+  .team-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+  }
+
+  .team-card:hover .team-img {
+    transform: scale(1.05);
+  }
+
+  .team-body {
+    padding: 22px;
+  }
+
+  .team-name {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 4px;
+  }
+
+  .team-role {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--color-primary);
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+
+  .team-bio {
+    color: #9ca3af;
+    font-size: 0.9rem;
+    line-height: 1.55;
+  }
+
+  .about-cta {
+    background: linear-gradient(180deg, #11141c 0%, #0c0e14 100%);
+    padding: 80px 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .cta-title {
+    font-size: clamp(2rem, 4vw, 2.8rem);
+    font-weight: 800;
+    color: #ffffff;
+    margin-bottom: 14px;
+  }
+
+  .cta-subtitle {
+    color: #9ca3af;
+    max-width: 580px;
+    margin: 0 auto 28px;
+    font-size: 1.05rem;
+    line-height: 1.6;
+  }
+
+  .cta-buttons {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 12px 28px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    text-decoration: none;
+    transition: all 0.2s ease;
+  }
+
+  .btn-primary {
+    background: var(--color-primary);
+    color: #ffffff;
+  }
+
+  .btn-primary:hover {
+    filter: brightness(1.1);
+  }
+
+  .btn-outline {
+    background: transparent;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .btn-outline:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.4);
+  }
+
+  @media (max-width: 868px) {
+    .story-grid {
+      grid-template-columns: 1fr;
+      gap: 36px;
+    }
+  }
+</style>

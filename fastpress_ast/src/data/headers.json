@@ -1,0 +1,818 @@
+{
+  "activeHeaderId": "header-furnisite",
+  "headers": [
+    {
+      "id": "header-furnisite",
+      "name": "Furnisite Luxury Navbar ★ (Active Theme)",
+      "description": "Minimalist luxury Scandinavian furniture header with brand typography, clean navigation, search, shopping bag, and mobile hamburger drawer.",
+      "isDefault": false,
+      "source": "theme",
+      "useTemplate": true,
+      "selectedTemplateId": "tpl-global-furnisite-navbar",
+      "theme": "furnisite",
+      "layout": {
+        "logoPosition": "left",
+        "containerType": "wide",
+        "height": 76,
+        "shrunkHeight": 62,
+        "paddingX": 32
+      },
+      "behavior": {
+        "sticky": true,
+        "shrinkOnScroll": true,
+        "shrinkOffset": 30,
+        "glassmorphism": true,
+        "blurStrength": 12,
+        "scrollShadow": "subtle",
+        "hideOnScrollDown": false
+      },
+      "styling": {
+        "bgColor": "#ffffff",
+        "scrolledBgColor": "rgba(255, 255, 255, 0.95)",
+        "textColor": "#111827",
+        "accentColor": "#111827",
+        "borderColor": "#e5e7eb",
+        "fontFamily": "Plus Jakarta Sans",
+        "fontSize": "0.9rem",
+        "textTransform": "none",
+        "navIndicatorStyle": "underline"
+      },
+      "logo": {
+        "type": "text",
+        "text": "INFURNISH",
+        "tagline": "Modern Living Studio",
+        "linkUrl": "/",
+        "scaleOnShrink": false
+      },
+      "menu": [
+        { "id": "fnav-home", "label": "Home", "url": "/", "type": "link", "target": "_self" },
+        { "id": "fnav-about", "label": "About", "url": "/about", "type": "link", "target": "_self" },
+        { "id": "fnav-shop", "label": "Shop", "url": "/products", "type": "link", "target": "_self" },
+        { "id": "fnav-blog", "label": "Blog", "url": "/blog", "type": "link", "target": "_self" },
+        { "id": "fnav-contact", "label": "Contact", "url": "/contact", "type": "link", "target": "_self" }
+      ],
+      "actions": [
+        {
+          "id": "btn-drawer-cta",
+          "label": "Explore Catalog",
+          "url": "/products",
+          "variant": "primary",
+          "size": "sm",
+          "pill": true
+        }
+      ]
+    },
+    {
+      "id": "sample-saas-sticky-mega",
+      "name": "SaaS Pro (Sticky + Shrink + Mega Menu)",
+      "description": "Modern high-converting SaaS header with left logo, shrink on scroll, rich 3-column mega menu, dropdowns, and dual action buttons.",
+      "isDefault": true,
+      "source": "preset",
+      "layout": {
+        "logoPosition": "left",
+        "containerType": "boxed",
+        "height": 80,
+        "shrunkHeight": 58,
+        "paddingX": 28
+      },
+      "behavior": {
+        "sticky": true,
+        "shrinkOnScroll": true,
+        "shrinkOffset": 45,
+        "glassmorphism": true,
+        "blurStrength": 16,
+        "scrollShadow": "medium",
+        "hideOnScrollDown": false
+      },
+      "styling": {
+        "bgColor": "rgba(21, 24, 30, 0.94)",
+        "scrolledBgColor": "rgba(15, 18, 24, 0.98)",
+        "textColor": "#f3f4f6",
+        "accentColor": "#ff5e3a",
+        "borderColor": "rgba(255, 255, 255, 0.08)",
+        "fontFamily": "Plus Jakarta Sans",
+        "fontSize": "0.86rem",
+        "textTransform": "none"
+      },
+      "logo": {
+        "type": "text",
+        "text": "Better SaaS",
+        "tagline": "Modern Platform",
+        "linkUrl": "/",
+        "scaleOnShrink": true
+      },
+      "menu": [
+        {
+          "id": "nav-home",
+          "label": "Home",
+          "url": "/",
+          "type": "link",
+          "target": "_self"
+        },
+        {
+          "id": "nav-solutions",
+          "label": "Solutions",
+          "url": "#solutions",
+          "type": "megamenu",
+          "badge": "New",
+          "badgeColor": "#ff5e3a",
+          "megaMenu": {
+            "columns": [
+              {
+                "title": "Product Features",
+                "items": [
+                  {
+                    "label": "Visual Page Builder",
+                    "url": "/editor",
+                    "description": "Drag & drop blocks to craft pixel-perfect landing pages.",
+                    "badge": "v2.4",
+                    "icon": "⚡"
+                  },
+                  {
+                    "label": "Popup System",
+                    "url": "/popup-editor",
+                    "description": "Trigger targeted popups and convert site visitors.",
+                    "icon": "🎯"
+                  },
+                  {
+                    "label": "Blog Layout Engine",
+                    "url": "/blog-layout-editor",
+                    "description": "Custom magazine and editorial layouts for your posts.",
+                    "icon": "📰"
+                  }
+                ]
+              },
+              {
+                "title": "Insights & Strategy",
+                "items": [
+                  {
+                    "label": "Branding & Identity Guide",
+                    "url": "/blog/branding-identity-modern-age",
+                    "description": "Membangun identitas visual abadi di era digital.",
+                    "badge": "Popular",
+                    "icon": "💎"
+                  },
+                  {
+                    "label": "Online Marketing Growth",
+                    "url": "/blog/online-marketing-strategies-growth",
+                    "description": "Strategi pertumbuhan terukur untuk bisnis modern.",
+                    "icon": "📈"
+                  },
+                  {
+                    "label": "Graphic Design Hierarchy",
+                    "url": "/blog/graphic-design-principles-conversion",
+                    "description": "Prinsip tata letak visual yang mendongkrak konversi.",
+                    "icon": "🎨"
+                  }
+                ]
+              }
+            ],
+            "featuredCard": {
+              "title": "Explore FastPress CMS",
+              "description": "Discover how modern agencies scale web production 10x faster with Astro.",
+              "buttonText": "Read All Articles",
+              "buttonUrl": "/blog",
+              "imageUrl": "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80",
+              "badge": "Featured"
+            }
+          }
+        },
+        {
+          "id": "nav-company",
+          "label": "Company",
+          "url": "#company",
+          "type": "dropdown",
+          "dropdownItems": [
+            {
+              "id": "drop-about",
+              "label": "About Better",
+              "url": "/tentang-kami",
+              "description": "Our mission, team, and story.",
+              "icon": "🏢"
+            },
+            {
+              "id": "drop-blog",
+              "label": "Blog & Articles",
+              "url": "/blog",
+              "description": "Latest news, engineering, and design updates.",
+              "badge": "5 Posts",
+              "icon": "✍️"
+            },
+            {
+              "id": "drop-portfolio",
+              "label": "Our Work & Portfolio",
+              "url": "/#work",
+              "description": "Recent client showcases and success stories.",
+              "icon": "🏆"
+            },
+            {
+              "id": "drop-services",
+              "label": "Services & Pricing",
+              "url": "/#services",
+              "description": "Custom web development and marketing tiers.",
+              "icon": "🛠️"
+            }
+          ]
+        },
+        {
+          "id": "nav-pricing",
+          "label": "Services",
+          "url": "/#services",
+          "type": "link",
+          "target": "_self"
+        },
+        {
+          "id": "nav-contact",
+          "label": "Contact",
+          "url": "/#contact",
+          "type": "link",
+          "target": "_self"
+        }
+      ],
+      "actions": {
+        "showSearch": true,
+        "searchActionUrl": "/blog",
+        "buttons": [
+          {
+            "id": "btn-login",
+            "label": "Sign In",
+            "url": "/editor",
+            "variant": "ghost",
+            "target": "_self",
+            "size": "sm",
+            "pill": false
+          },
+          {
+            "id": "btn-cta",
+            "label": "Get Started",
+            "url": "/editor",
+            "variant": "primary",
+            "icon": "arrow",
+            "target": "_self",
+            "size": "sm",
+            "pill": true
+          }
+        ]
+      },
+      "updatedAt": "2026-11-10T07:20:03.441Z",
+      "builderType": "visual",
+      "customCode": {
+        "enabled": false,
+        "desktopHtml": "",
+        "tabletHtml": "",
+        "mobileHtml": "",
+        "customCss": "",
+        "customJs": ""
+      }
+    },
+    {
+      "id": "sample-centered-luxury",
+      "name": "Centered Brand (Luxury Centered Logo + Dropdowns)",
+      "description": "Symmetrical, balanced luxury layout with centered logo typography, balanced navigation items on both sides, and elegant pill action button.",
+      "isDefault": false,
+      "source": "preset",
+      "layout": {
+        "logoPosition": "center",
+        "containerType": "wide",
+        "height": 76,
+        "shrunkHeight": 62,
+        "paddingX": 32
+      },
+      "behavior": {
+        "sticky": true,
+        "shrinkOnScroll": true,
+        "shrinkOffset": 50,
+        "glassmorphism": true,
+        "blurStrength": 14,
+        "scrollShadow": "subtle",
+        "hideOnScrollDown": false
+      },
+      "styling": {
+        "bgColor": "#11141a",
+        "scrolledBgColor": "rgba(17, 20, 26, 0.98)",
+        "textColor": "#ffffff",
+        "accentColor": "#e5a93c",
+        "borderColor": "rgba(229, 169, 60, 0.2)",
+        "fontFamily": "Montserrat",
+        "fontSize": "0.82rem",
+        "textTransform": "uppercase"
+      },
+      "logo": {
+        "type": "text",
+        "text": "ATELIER BETTER",
+        "tagline": "HAUTE DESIGN & DIGITAL",
+        "linkUrl": "/",
+        "scaleOnShrink": true
+      },
+      "menu": [
+        {
+          "id": "cen-home",
+          "label": "Home",
+          "url": "/",
+          "type": "link",
+          "target": "_self"
+        },
+        {
+          "id": "cen-about",
+          "label": "Tentang Kami",
+          "url": "/tentang-kami",
+          "type": "link",
+          "target": "_self"
+        },
+        {
+          "id": "cen-collections",
+          "label": "Editorial",
+          "url": "/blog",
+          "type": "dropdown",
+          "badge": "New",
+          "dropdownItems": [
+            {
+              "id": "drop-ed-all",
+              "label": "All Articles",
+              "url": "/blog",
+              "description": "Read all insights and publications."
+            },
+            {
+              "id": "drop-ed-1",
+              "label": "Branding & Identitas",
+              "url": "/blog/branding-identity-modern-age",
+              "description": "Membangun identitas visual abadi."
+            },
+            {
+              "id": "drop-ed-2",
+              "label": "Graphic Design Hierarchy",
+              "url": "/blog/graphic-design-principles-conversion",
+              "description": "Prinsip tata letak & konversi."
+            }
+          ]
+        },
+        {
+          "id": "cen-work",
+          "label": "Portfolio",
+          "url": "/#work",
+          "type": "link",
+          "target": "_self"
+        },
+        {
+          "id": "cen-contact",
+          "label": "Contact",
+          "url": "/#contact",
+          "type": "link",
+          "target": "_self"
+        }
+      ],
+      "actions": {
+        "showSearch": true,
+        "searchActionUrl": "/blog",
+        "buttons": [
+          {
+            "id": "btn-cen-book",
+            "label": "Book Consultation",
+            "url": "/#contact",
+            "variant": "outline",
+            "icon": "sparkle",
+            "target": "_self",
+            "size": "sm",
+            "pill": true
+          }
+        ]
+      },
+      "builderType": "visual",
+      "customCode": {
+        "enabled": false,
+        "desktopHtml": "",
+        "tabletHtml": "",
+        "mobileHtml": "",
+        "customCss": "",
+        "customJs": ""
+      }
+    },
+    {
+      "id": "sample-right-logo-enterprise",
+      "name": "Right Logo & Split Nav (Creative Right Branding)",
+      "description": "Bold creative header with logo anchored on the right, multi-button combo on the left, and standard/dropdown menu positioned intuitively.",
+      "isDefault": false,
+      "source": "preset",
+      "layout": {
+        "logoPosition": "right",
+        "containerType": "boxed",
+        "height": 84,
+        "shrunkHeight": 60,
+        "paddingX": 24
+      },
+      "behavior": {
+        "sticky": true,
+        "shrinkOnScroll": true,
+        "shrinkOffset": 40,
+        "glassmorphism": true,
+        "blurStrength": 18,
+        "scrollShadow": "prominent",
+        "hideOnScrollDown": false
+      },
+      "styling": {
+        "bgColor": "#161922",
+        "scrolledBgColor": "rgba(15, 17, 23, 0.98)",
+        "textColor": "#e5e7eb",
+        "accentColor": "#3b82f6",
+        "borderColor": "rgba(255, 255, 255, 0.1)",
+        "fontFamily": "Plus Jakarta Sans",
+        "fontSize": "0.88rem",
+        "textTransform": "none"
+      },
+      "logo": {
+        "type": "text",
+        "text": "Enterprise Core",
+        "tagline": "Better Cloud Systems",
+        "linkUrl": "/",
+        "scaleOnShrink": true
+      },
+      "menu": [
+        {
+          "id": "rt-home",
+          "label": "Home",
+          "url": "/",
+          "type": "link"
+        },
+        {
+          "id": "rt-resources",
+          "label": "Knowledge Hub",
+          "url": "/blog",
+          "type": "dropdown",
+          "badge": "Live",
+          "dropdownItems": [
+            {
+              "id": "rt-blog",
+              "label": "Engineering Blog",
+              "url": "/blog",
+              "description": "Case studies, architecture, and marketing."
+            },
+            {
+              "id": "rt-post-growth",
+              "label": "Growth Strategies",
+              "url": "/blog/online-marketing-strategies-growth",
+              "description": "Scale business with measurable analytics."
+            },
+            {
+              "id": "rt-about",
+              "label": "About Company",
+              "url": "/tentang-kami",
+              "description": "Learn about our corporate values."
+            }
+          ]
+        },
+        {
+          "id": "rt-tools",
+          "label": "App Studio",
+          "url": "/editor",
+          "type": "link"
+        },
+        {
+          "id": "rt-contact",
+          "label": "Support",
+          "url": "/#contact",
+          "type": "link"
+        }
+      ],
+      "actions": {
+        "showSearch": true,
+        "searchActionUrl": "/blog",
+        "buttons": [
+          {
+            "id": "btn-rt-portal",
+            "label": "Client Portal",
+            "url": "/editor",
+            "variant": "outline",
+            "size": "sm",
+            "pill": false
+          },
+          {
+            "id": "btn-rt-demo",
+            "label": "Request Demo",
+            "url": "/#contact",
+            "variant": "primary",
+            "icon": "arrow",
+            "size": "sm",
+            "pill": false
+          }
+        ]
+      },
+      "builderType": "visual",
+      "customCode": {
+        "enabled": false,
+        "desktopHtml": "",
+        "tabletHtml": "",
+        "mobileHtml": "",
+        "customCss": "",
+        "customJs": ""
+      }
+    },
+    {
+      "id": "sample-ecommerce-mega",
+      "name": "Modern E-Commerce (Mega Menu + Promo Banner)",
+      "description": "Feature-packed retail & marketplace header with categorized mega menu, promotional product card, and action button combo.",
+      "isDefault": false,
+      "source": "preset",
+      "layout": {
+        "logoPosition": "left",
+        "containerType": "wide",
+        "height": 82,
+        "shrunkHeight": 58,
+        "paddingX": 28
+      },
+      "behavior": {
+        "sticky": true,
+        "shrinkOnScroll": true,
+        "shrinkOffset": 35,
+        "glassmorphism": true,
+        "blurStrength": 20,
+        "scrollShadow": "medium"
+      },
+      "styling": {
+        "bgColor": "#10141e",
+        "scrolledBgColor": "rgba(16, 20, 30, 0.98)",
+        "textColor": "#f9fafb",
+        "accentColor": "#10b981",
+        "borderColor": "rgba(16, 185, 129, 0.15)",
+        "fontFamily": "Montserrat",
+        "fontSize": "0.85rem",
+        "textTransform": "none"
+      },
+      "logo": {
+        "type": "text",
+        "text": "Better Store",
+        "tagline": "Digital Goods & Templates",
+        "linkUrl": "/",
+        "scaleOnShrink": true
+      },
+      "menu": [
+        {
+          "id": "ecom-home",
+          "label": "Home",
+          "url": "/",
+          "type": "link"
+        },
+        {
+          "id": "ecom-catalog",
+          "label": "Browse Catalog",
+          "url": "#shop",
+          "type": "megamenu",
+          "badge": "Sale 20%",
+          "megaMenu": {
+            "columns": [
+              {
+                "title": "Design Templates",
+                "items": [
+                  {
+                    "label": "FastPress Website Kits",
+                    "url": "/editor",
+                    "description": "Turnkey ready responsive web templates.",
+                    "badge": "Hot",
+                    "icon": "⚡"
+                  },
+                  {
+                    "label": "Editorial Magazine Kits",
+                    "url": "/blog-layout-editor",
+                    "description": "Stunning magazine layouts for blogs.",
+                    "icon": "📑"
+                  },
+                  {
+                    "label": "High-Converting Popups",
+                    "url": "/popup-editor",
+                    "description": "Lead generation and newsletter modals.",
+                    "icon": "🎁"
+                  }
+                ]
+              },
+              {
+                "title": "Articles & Guides",
+                "items": [
+                  {
+                    "label": "Visual Identity Guide",
+                    "url": "/blog/branding-identity-modern-age",
+                    "description": "Learn modern brand positioning.",
+                    "icon": "📖"
+                  },
+                  {
+                    "label": "Conversion Graphic Design",
+                    "url": "/blog/graphic-design-principles-conversion",
+                    "description": "Layouts that maximize purchases.",
+                    "icon": "🛍️"
+                  }
+                ]
+              }
+            ],
+            "featuredCard": {
+              "title": "Holiday Design Bundle",
+              "description": "Get all layout packs, templates, and popup kits for one low price.",
+              "buttonText": "Shop All Bundles",
+              "buttonUrl": "/blog",
+              "imageUrl": "https://images.unsplash.com/photo-1556742049-0a67c5574f73?auto=format&fit=crop&w=600&q=80",
+              "badge": "Limited Deal"
+            }
+          }
+        },
+        {
+          "id": "ecom-about",
+          "label": "About Store",
+          "url": "/tentang-kami",
+          "type": "link"
+        },
+        {
+          "id": "ecom-blog",
+          "label": "Blog",
+          "url": "/blog",
+          "type": "link"
+        }
+      ],
+      "actions": {
+        "showSearch": true,
+        "searchActionUrl": "/blog",
+        "buttons": [
+          {
+            "id": "btn-ecom-help",
+            "label": "Customer Care",
+            "url": "/#contact",
+            "variant": "ghost",
+            "size": "sm",
+            "pill": false
+          },
+          {
+            "id": "btn-ecom-shop",
+            "label": "Explore Catalog",
+            "url": "/blog",
+            "variant": "primary",
+            "icon": "cart",
+            "size": "sm",
+            "pill": true
+          }
+        ]
+      },
+      "builderType": "visual",
+      "customCode": {
+        "enabled": false,
+        "desktopHtml": "",
+        "tabletHtml": "",
+        "mobileHtml": "",
+        "customCss": "",
+        "customJs": ""
+      }
+    },
+    {
+      "id": "sample-minimal-clean",
+      "name": "Minimalist Clean (Standard Menu + Smooth Border)",
+      "description": "Clean, distraction-free aesthetic with left logo, standard links, simple dropdown, and single accent CTA button.",
+      "isDefault": false,
+      "source": "preset",
+      "layout": {
+        "logoPosition": "left",
+        "containerType": "boxed",
+        "height": 72,
+        "shrunkHeight": 56,
+        "paddingX": 20
+      },
+      "behavior": {
+        "sticky": true,
+        "shrinkOnScroll": true,
+        "shrinkOffset": 30,
+        "glassmorphism": true,
+        "blurStrength": 12,
+        "scrollShadow": "subtle"
+      },
+      "styling": {
+        "bgColor": "#0d1117",
+        "scrolledBgColor": "rgba(13, 17, 23, 0.96)",
+        "textColor": "#d1d5db",
+        "accentColor": "#6366f1",
+        "borderColor": "rgba(255, 255, 255, 0.08)",
+        "fontFamily": "Plus Jakarta Sans",
+        "fontSize": "0.88rem",
+        "textTransform": "none"
+      },
+      "logo": {
+        "type": "text",
+        "text": "Better Studio",
+        "tagline": "Simple. Fast. Modern.",
+        "linkUrl": "/",
+        "scaleOnShrink": false
+      },
+      "menu": [
+        {
+          "id": "min-home",
+          "label": "Home",
+          "url": "/",
+          "type": "link"
+        },
+        {
+          "id": "min-about",
+          "label": "About",
+          "url": "/tentang-kami",
+          "type": "link"
+        },
+        {
+          "id": "min-blog",
+          "label": "Blog",
+          "url": "/blog",
+          "type": "dropdown",
+          "dropdownItems": [
+            {
+              "id": "min-drop-all",
+              "label": "All Posts",
+              "url": "/blog",
+              "description": "Explore full article feed"
+            },
+            {
+              "id": "min-drop-branding",
+              "label": "Branding Guide",
+              "url": "/blog/branding-identity-modern-age",
+              "description": "Visual identity fundamentals"
+            }
+          ]
+        },
+        {
+          "id": "min-contact",
+          "label": "Contact",
+          "url": "/#contact",
+          "type": "link"
+        }
+      ],
+      "actions": {
+        "showSearch": false,
+        "searchActionUrl": "",
+        "buttons": [
+          {
+            "id": "btn-min-talk",
+            "label": "Let's Talk",
+            "url": "/#contact",
+            "variant": "primary",
+            "icon": "arrow",
+            "size": "sm",
+            "pill": true
+          }
+        ]
+      },
+      "builderType": "visual",
+      "customCode": {
+        "enabled": false,
+        "desktopHtml": "",
+        "tabletHtml": "",
+        "mobileHtml": "",
+        "customCss": "",
+        "customJs": ""
+      }
+    },
+    {
+      "id": "sample-custom-code-multidevice",
+      "name": "Custom HTML/CSS/JS (Multi-Device)",
+      "description": "Fully custom navbar with dedicated Desktop, Tablet, and Mobile HTML layouts, scoped CSS, and interactive JavaScript.",
+      "isDefault": false,
+      "source": "preset",
+      "builderType": "custom-code",
+      "customCode": {
+        "enabled": true,
+        "desktopHtml": "<nav class=\"custom-nav-desktop\">\n  <div class=\"custom-nav-container\">\n    <a href=\"/\" class=\"custom-nav-brand\">\n      <span class=\"custom-brand-dot\"></span>\n      <span class=\"custom-brand-title\">Better Custom</span>\n      <span class=\"custom-badge-tag\">Desktop</span>\n    </a>\n    <ul class=\"custom-desktop-links\">\n      <li><a href=\"/\" class=\"custom-link is-active\">Home</a></li>\n      <li class=\"custom-has-dropdown\">\n        <a href=\"/#services\" class=\"custom-link\">Products ▾</a>\n        <div class=\"custom-dropdown-menu\">\n          <a href=\"/tentang-kami\">Company Overview</a>\n          <a href=\"/blog\">Latest Articles</a>\n          <a href=\"/editor\">Page Builder CMS</a>\n        </div>\n      </li>\n      <li><a href=\"/tentang-kami\" class=\"custom-link\">About</a></li>\n      <li><a href=\"/blog\" class=\"custom-link\">Blog</a></li>\n      <li><a href=\"/#contact\" class=\"custom-link\">Contact</a></li>\n    </ul>\n    <div class=\"custom-desktop-actions\">\n      <a href=\"/blog\" class=\"custom-btn-outline\">Search</a>\n      <a href=\"/editor\" class=\"custom-btn-gradient\">Get Started →</a>\n    </div>\n  </div>\n</nav>",
+        "tabletHtml": "<nav class=\"custom-nav-tablet\">\n  <div class=\"custom-nav-container\">\n    <a href=\"/\" class=\"custom-nav-brand\">\n      <span class=\"custom-brand-dot\"></span>\n      <span class=\"custom-brand-title\">Better Custom</span>\n      <span class=\"custom-badge-tag\">Tablet</span>\n    </a>\n    <div class=\"custom-tablet-actions\">\n      <a href=\"/editor\" class=\"custom-btn-gradient\" style=\"padding: 6px 14px; font-size: 0.8rem;\">Launch App</a>\n      <button type=\"button\" class=\"custom-drawer-trigger\" id=\"tabletNavToggle\" aria-label=\"Toggle Tablet Menu\">\n        <span></span><span></span><span></span>\n      </button>\n    </div>\n  </div>\n  <div class=\"custom-tablet-drawer\" id=\"tabletNavDrawer\">\n    <a href=\"/\">🏠 Home</a>\n    <a href=\"/tentang-kami\">🏢 About Us</a>\n    <a href=\"/blog\">📰 Blog & Insights</a>\n    <a href=\"/#services\">⚡ Products & Services</a>\n    <a href=\"/#contact\">📞 Contact Team</a>\n  </div>\n</nav>",
+        "mobileHtml": "<nav class=\"custom-nav-mobile\">\n  <div class=\"custom-nav-container\">\n    <a href=\"/\" class=\"custom-nav-brand\">\n      <span class=\"custom-brand-dot\"></span>\n      <span class=\"custom-brand-title\">Better</span>\n      <span class=\"custom-badge-tag\">Mobile</span>\n    </a>\n    <div class=\"custom-mobile-quick-actions\">\n      <a href=\"/blog\" class=\"custom-icon-btn\" aria-label=\"Search\">🔍</a>\n      <button type=\"button\" class=\"custom-drawer-trigger\" id=\"mobileNavToggle\" aria-label=\"Toggle Mobile Menu\">\n        <span></span><span></span><span></span>\n      </button>\n    </div>\n  </div>\n  <div class=\"custom-mobile-drawer\" id=\"mobileNavDrawer\">\n    <div class=\"custom-mobile-links\">\n      <a href=\"/\" class=\"custom-mobile-link\"><span>Home</span><span>→</span></a>\n      <a href=\"/tentang-kami\" class=\"custom-mobile-link\"><span>About Us</span><span>→</span></a>\n      <a href=\"/blog\" class=\"custom-mobile-link\"><span>Articles & News</span><span>→</span></a>\n      <a href=\"/#services\" class=\"custom-mobile-link\"><span>Services & Solutions</span><span>→</span></a>\n      <a href=\"/#contact\" class=\"custom-mobile-link\"><span>Get in Touch</span><span>→</span></a>\n    </div>\n    <div class=\"custom-mobile-footer-action\">\n      <a href=\"/editor\" class=\"custom-btn-gradient\" style=\"display: block; text-align: center; width: 100%;\">Open Studio Editor</a>\n    </div>\n  </div>\n</nav>",
+        "customCss": "/* Custom Multi-Device Header CSS */\n.custom-nav-desktop, .custom-nav-tablet, .custom-nav-mobile {\n  width: 100%;\n  background: rgba(15, 18, 25, 0.95);\n  backdrop-filter: blur(16px);\n  border-bottom: 1px solid rgba(255, 255, 255, 0.08);\n  font-family: inherit;\n  color: #fff;\n}\n.custom-nav-container {\n  max-width: 1200px;\n  margin: 0 auto;\n  height: 72px;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 0 20px;\n}\n.custom-nav-brand {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  text-decoration: none;\n  color: #fff;\n  font-weight: 700;\n  font-size: 1.1rem;\n}\n.custom-brand-dot {\n  width: 10px;\n  height: 10px;\n  border-radius: 50%;\n  background: #ff5e3a;\n  box-shadow: 0 0 10px #ff5e3a;\n}\n.custom-badge-tag {\n  font-size: 0.65rem;\n  background: rgba(255, 94, 58, 0.15);\n  color: #ff5e3a;\n  border: 1px solid rgba(255, 94, 58, 0.3);\n  padding: 2px 6px;\n  border-radius: 9999px;\n  font-weight: 700;\n  letter-spacing: 0.5px;\n}\n.custom-desktop-links {\n  display: flex;\n  align-items: center;\n  gap: 24px;\n  list-style: none;\n  margin: 0;\n  padding: 0;\n}\n.custom-link {\n  color: rgba(255, 255, 255, 0.8);\n  text-decoration: none;\n  font-size: 0.88rem;\n  font-weight: 500;\n  transition: color 0.15s;\n}\n.custom-link:hover, .custom-link.is-active {\n  color: #ff5e3a;\n}\n.custom-has-dropdown {\n  position: relative;\n}\n.custom-dropdown-menu {\n  display: none;\n  position: absolute;\n  top: 100%;\n  left: 0;\n  min-width: 180px;\n  background: #141720;\n  border: 1px solid rgba(255, 255, 255, 0.1);\n  border-radius: 8px;\n  padding: 8px;\n  box-shadow: 0 10px 25px rgba(0,0,0,0.5);\n}\n.custom-has-dropdown:hover .custom-dropdown-menu {\n  display: flex;\n  flex-direction: column;\n}\n.custom-dropdown-menu a {\n  padding: 8px 12px;\n  color: #d1d5db;\n  text-decoration: none;\n  font-size: 0.82rem;\n  border-radius: 4px;\n}\n.custom-dropdown-menu a:hover {\n  background: rgba(255, 255, 255, 0.05);\n  color: #fff;\n}\n.custom-desktop-actions, .custom-tablet-actions, .custom-mobile-quick-actions {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n}\n.custom-btn-outline {\n  padding: 7px 14px;\n  border-radius: 6px;\n  border: 1px solid rgba(255, 255, 255, 0.15);\n  color: #fff;\n  text-decoration: none;\n  font-size: 0.82rem;\n  font-weight: 600;\n}\n.custom-btn-gradient {\n  padding: 7px 16px;\n  border-radius: 6px;\n  background: linear-gradient(135deg, #ff5e3a, #ff9068);\n  color: #fff;\n  text-decoration: none;\n  font-size: 0.82rem;\n  font-weight: 600;\n  box-shadow: 0 4px 12px rgba(255, 94, 58, 0.3);\n}\n.custom-drawer-trigger {\n  width: 38px;\n  height: 38px;\n  border-radius: 6px;\n  background: rgba(255, 255, 255, 0.08);\n  border: 1px solid rgba(255, 255, 255, 0.1);\n  cursor: pointer;\n  display: flex;\n  flex-direction: column;\n  justify-content: center;\n  align-items: center;\n  gap: 4px;\n  padding: 0;\n}\n.custom-drawer-trigger span {\n  display: block;\n  width: 18px;\n  height: 2px;\n  background: #fff;\n  border-radius: 1px;\n}\n.custom-icon-btn {\n  width: 36px;\n  height: 36px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  border-radius: 50%;\n  background: rgba(255, 255, 255, 0.06);\n  text-decoration: none;\n  font-size: 0.9rem;\n}\n.custom-tablet-drawer, .custom-mobile-drawer {\n  display: none;\n  background: #11141b;\n  border-bottom: 1px solid rgba(255, 255, 255, 0.1);\n  padding: 16px 20px;\n}\n.custom-tablet-drawer.is-open, .custom-mobile-drawer.is-open {\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n.custom-tablet-drawer a, .custom-mobile-link {\n  color: #e5e7eb;\n  text-decoration: none;\n  padding: 6px 0;\n  font-size: 0.9rem;\n  font-weight: 500;\n  display: flex;\n  justify-content: space-between;\n}\n.custom-mobile-footer-action {\n  margin-top: 14px;\n  padding-top: 12px;\n  border-top: 1px solid rgba(255, 255, 255, 0.08);\n}",
+        "customJs": "// Custom Interactive JavaScript\n(function() {\n  const tBtn = document.getElementById(\"tabletNavToggle\");\n  const tDrawer = document.getElementById(\"tabletNavDrawer\");\n  if (tBtn && tDrawer) {\n    tBtn.onclick = function(e) {\n      e.stopPropagation();\n      tDrawer.classList.toggle(\"is-open\");\n    };\n  }\n\n  const mBtn = document.getElementById(\"mobileNavToggle\");\n  const mDrawer = document.getElementById(\"mobileNavDrawer\");\n  if (mBtn && mDrawer) {\n    mBtn.onclick = function(e) {\n      e.stopPropagation();\n      mDrawer.classList.toggle(\"is-open\");\n    };\n  }\n})();"
+      },
+      "layout": {
+        "logoPosition": "left",
+        "containerType": "wide",
+        "height": 72,
+        "shrunkHeight": 56,
+        "paddingX": 20
+      },
+      "behavior": {
+        "sticky": true,
+        "shrinkOnScroll": false,
+        "shrinkOffset": 40,
+        "glassmorphism": true,
+        "blurStrength": 16,
+        "scrollShadow": "medium"
+      },
+      "styling": {
+        "bgColor": "rgba(15, 18, 25, 0.95)",
+        "scrolledBgColor": "rgba(12, 15, 22, 0.98)",
+        "textColor": "#ffffff",
+        "accentColor": "#ff5e3a",
+        "borderColor": "rgba(255, 255, 255, 0.08)",
+        "fontFamily": "Plus Jakarta Sans",
+        "fontSize": "0.86rem",
+        "textTransform": "none"
+      },
+      "logo": {
+        "type": "text",
+        "text": "Better Custom",
+        "tagline": "Multi-Device",
+        "linkUrl": "/",
+        "scaleOnShrink": false
+      },
+      "menu": [],
+      "actions": {
+        "showSearch": false,
+        "searchActionUrl": "",
+        "buttons": []
+      }
+    }
+  ]
+}

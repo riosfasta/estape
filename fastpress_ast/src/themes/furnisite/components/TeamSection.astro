@@ -1,0 +1,127 @@
+---
+const teamMembers = [
+  {
+    name: 'Julian Vance',
+    role: 'Head of Furniture Design',
+    image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=500&q=80',
+  },
+  {
+    name: 'Marcus Chen',
+    role: 'Lead Material Architect',
+    image: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=500&q=80',
+  },
+  {
+    name: 'Henrik Lindqvist',
+    role: 'Master Craftsman & Joinery',
+    image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=500&q=80',
+  },
+  {
+    name: 'Lucas Dupont',
+    role: 'Creative Director',
+    image: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=500&q=80',
+  },
+];
+---
+
+<section class="furnisite-team-section">
+  <div class="fs-container">
+    <div class="furnisite-team-header">
+      <h2 class="furnisite-team-title">Meet the People Behind Infurnish</h2>
+    </div>
+
+    <div class="furnisite-team-grid">
+      {teamMembers.map((member) => (
+        <div class="furnisite-team-card">
+          <div class="furnisite-team-avatar-wrap">
+            <img
+              src={member.image}
+              alt={member.name}
+              class="furnisite-team-img"
+              loading="lazy"
+            />
+          </div>
+          <div class="furnisite-team-info">
+            <h3 class="furnisite-member-name">{member.name}</h3>
+            <p class="furnisite-member-role">{member.role}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .furnisite-team-section {
+    padding-top: 80px;
+    padding-bottom: 90px;
+    background-color: #ffffff;
+  }
+
+  .furnisite-team-header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  .furnisite-team-title {
+    font-family: var(--fs-font-heading);
+    font-size: 2.1rem;
+    font-weight: 700;
+    color: #18181b;
+    margin: 0;
+    letter-spacing: -0.5px;
+  }
+
+  .furnisite-team-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+  }
+
+  @media (min-width: 768px) {
+    .furnisite-team-grid {
+      grid-template-columns: repeat(4, 1fr);
+      gap: 28px;
+    }
+  }
+
+  .furnisite-team-card {
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .furnisite-team-avatar-wrap {
+    width: 100%;
+    aspect-ratio: 1 / 1.15;
+    background-color: #f4f4f5;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 14px;
+  }
+
+  .furnisite-team-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center top;
+    transition: transform 0.3s ease;
+  }
+
+  .furnisite-team-card:hover .furnisite-team-img {
+    transform: scale(1.03);
+  }
+
+  .furnisite-member-name {
+    font-family: var(--fs-font-heading);
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #18181b;
+    margin: 0 0 4px 0;
+  }
+
+  .furnisite-member-role {
+    font-size: 0.85rem;
+    color: #71717a;
+    margin: 0;
+  }
+</style>

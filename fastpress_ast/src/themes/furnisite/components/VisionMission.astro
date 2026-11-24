@@ -1,0 +1,127 @@
+---
+---
+
+<section class="furnisite-vision-section" id="vision">
+  <div class="fs-container">
+    <div class="furnisite-vision-grid">
+      <!-- Left Block: Our Vision -->
+      <div class="furnisite-vm-card">
+        <div class="furnisite-vm-header">
+          <h2 class="furnisite-vm-title">Our Vision</h2>
+          <p class="furnisite-vm-text">
+            To become the most trusted name in modern home furnishing by making beautiful, lasting furniture accessible to everyone.
+          </p>
+        </div>
+        <div class="furnisite-vm-image-wrap">
+          <img
+            src="https://images.unsplash.com/photo-1586023492125-27b2c045efd7?auto=format&fit=crop&w=1000&q=80"
+            alt="Infurnish Vision - Modern Living Room"
+            class="furnisite-vm-img"
+            loading="lazy"
+          />
+        </div>
+      </div>
+
+      <!-- Right Block: Our Mission -->
+      <div class="furnisite-vm-card furnisite-vm-card-reverse">
+        <div class="furnisite-vm-image-wrap">
+          <img
+            src="https://images.unsplash.com/photo-1595428774223-ef52624120d2?auto=format&fit=crop&w=1000&q=80"
+            alt="Infurnish Mission - Wooden Sideboard Craftsmanship"
+            class="furnisite-vm-img"
+            loading="lazy"
+          />
+        </div>
+        <div class="furnisite-vm-header">
+          <h2 class="furnisite-vm-title">Our Mision</h2>
+          <p class="furnisite-vm-text">
+            To enrich everyday life through thoughtful design, ethical craftsmanship, and exceptional customer experience.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .furnisite-vision-section {
+    padding-top: 80px;
+    padding-bottom: 90px;
+    background-color: #faf9f6;
+  }
+
+  .furnisite-vision-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 60px;
+  }
+
+  @media (min-width: 900px) {
+    .furnisite-vision-grid {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 48px;
+    }
+  }
+
+  .furnisite-vm-card {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .furnisite-vm-header {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .furnisite-vm-title {
+    font-family: var(--fs-font-heading);
+    font-size: 2rem;
+    font-weight: 700;
+    color: #18181b;
+    margin: 0;
+    letter-spacing: -0.5px;
+  }
+
+  .furnisite-vm-text {
+    font-size: 0.95rem;
+    color: #52525b;
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  .furnisite-vm-image-wrap {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    border-radius: 6px;
+    background-color: #f0eee6;
+  }
+
+  .furnisite-vm-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    transition: transform 0.4s ease;
+  }
+
+  .furnisite-vm-card:hover .furnisite-vm-img {
+    transform: scale(1.02);
+  }
+
+  /* Responsive reverse order if needed */
+  @media (max-width: 899px) {
+    .furnisite-vm-card-reverse {
+      display: flex;
+      flex-direction: column;
+    }
+    .furnisite-vm-card-reverse .furnisite-vm-header {
+      order: 1;
+    }
+    .furnisite-vm-card-reverse .furnisite-vm-image-wrap {
+      order: 2;
+    }
+  }
+</style>

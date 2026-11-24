@@ -1,0 +1,1442 @@
+---
+import '../styles/global.css';
+import Navbar from '../components/Navbar.astro';
+import Footer from '../components/Footer.astro';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
+interface Props {
+  title?: string;
+  description?: string;
+  keywords?: string;
+  activePage?: 'home' | 'about' | 'work' | 'testimonials' | 'services' | 'contact' | string;
+  showHeader?: boolean;
+  showFooter?: boolean;
+  schema?: string | object | (string | object)[];
+  pageCustomCode?: {
+    headScripts?: string;
+    bodyStartScripts?: string;
+    customCss?: string;
+    bodyEndScripts?: string;
+    bodyScripts?: string;
+  };
+}
+
+const {
+  title = 'Better - We Make Your Business Better',
+  description = 'Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium.',
+  keywords = '',
+  activePage = 'home',
+  showHeader = true,
+  showFooter = true,
+  schema = '',
+  pageCustomCode = undefined,
+} = Astro.props;
+
+let schemaScripts: string[] = [];
+if (typeof schema === 'string' && schema.trim()) {
+  const trimmed = schema.trim().replace(/<\/?script[^>]*>/gi, '').trim();
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      schemaScripts = parsed.map(item => JSON.stringify(item, null, 2));
+    } else if (typeof parsed === 'object' && parsed !== null) {
+      schemaScripts = [JSON.stringify(parsed, null, 2)];
+    } else {
+      schemaScripts = [trimmed];
+    }
+  } catch {
+    schemaScripts = [trimmed];
+  }
+} else if (Array.isArray(schema)) {
+  schemaScripts = schema
+    .map(item => typeof item === 'string' ? item.trim().replace(/<\/?script[^>]*>/gi, '').trim() : JSON.stringify(item, null, 2))
+    .filter(Boolean);
+} else if (typeof schema === 'object' && schema !== null && Object.keys(schema).length > 0) {
+  schemaScripts = [JSON.stringify(schema, null, 2)];
+}
+
+let customFonts: any[] = [];
+try {
+  const fontsFile = path.join(process.cwd(), 'src', 'data', 'fonts.json');
+  const raw = await fs.readFile(fontsFile, 'utf-8');
+  customFonts = JSON.parse(raw);
+} catch {}
+
+// ==========================================
+// FASTPRESS GLOBAL CUSTOM CODE (<head> & <body>)
+// ==========================================
+let siteConfig: any = null;
+try {
+  const configFile = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
+  const rawConfig = await fs.readFile(configFile, 'utf-8');
+  siteConfig = JSON.parse(rawConfig);
+} catch {}
+
+const siteFavicon = siteConfig?.faviconUrl || '/favicon.svg';
+const isSvgFavicon = siteFavicon.toLowerCase().endsWith('.svg');
+const isIcoFavicon = siteFavicon.toLowerCase().endsWith('.ico');
+const isPngFavicon = siteFavicon.toLowerCase().endsWith('.png');
+
+let customCode: {
+  headScripts?: string;
+  bodyStartScripts?: string;
+  bodyEndScripts?: string;
+  bodyScripts?: string;
+  customCss?: string;
+} = {
+  headScripts: '',
+  bodyStartScripts: '',
+  bodyEndScripts: '',
+  bodyScripts: '',
+  customCss: '',
+};
+try {
+  const codeFile = path.join(process.cwd(), 'src', 'data', 'customCode.json');
+  const codeRaw = await fs.readFile(codeFile, 'utf-8');
+  customCode = JSON.parse(codeRaw);
+} catch {}
+
+let cleanCustomCss = (customCode?.customCss || '').trim();
+if (cleanCustomCss) {
+  cleanCustomCss = cleanCustomCss.replace(/^<style[^>]*>/i, '').replace(/<\/style>$/i, '').trim();
+}
+
+// ==========================================
+// FASTPRESS PAGE-SPECIFIC CUSTOM CODE (ACTIVE PAGE / POST ONLY)
+// ==========================================
+let resolvedPageCode: {
+  headScripts?: string;
+  bodyStartScripts?: string;
+  bodyEndScripts?: string;
+  bodyScripts?: string;
+  customCss?: string;
+} = pageCustomCode || {};
+
+if (!pageCustomCode || Object.keys(pageCustomCode).length === 0) {
+  const currentPathForCode = Astro.url.pathname.replace(/\/$/, '') || '/';
+  const isPostForCode = currentPathForCode.startsWith('/blog/') && currentPathForCode !== '/blog';
+  const isHomeForCode = currentPathForCode === '/';
+  const currentSlugForCode = isHomeForCode ? 'home' : (isPostForCode ? currentPathForCode.replace('/blog/', '') : currentPathForCode.replace('/', ''));
+
+  if (isPostForCode) {
+    try {
+      const postsFile = path.join(process.cwd(), 'src', 'data', 'posts.json');
+      const postsRaw = await fs.readFile(postsFile, 'utf-8');
+      const posts = JSON.parse(postsRaw);
+      const foundPost = posts.find((p: any) => p.slug === currentSlugForCode);
+      if (foundPost?.customCode) {
+        resolvedPageCode = foundPost.customCode;
+      }
+    } catch {}
+  } else {
+    try {
+      const pagesFile = path.join(process.cwd(), 'src', 'data', 'pages.json');
+      const pagesRaw = await fs.readFile(pagesFile, 'utf-8');
+      const pages = JSON.parse(pagesRaw);
+      const foundPage = pages[currentSlugForCode];
+      if (foundPage?.customCode) {
+        resolvedPageCode = foundPage.customCode;
+      }
+    } catch {}
+  }
+}
+
+let cleanPageCustomCss = (resolvedPageCode?.customCss || '').trim();
+if (cleanPageCustomCss) {
+  cleanPageCustomCss = cleanPageCustomCss.replace(/^<style[^>]*>/i, '').replace(/<\/style>$/i, '').trim();
+}
+
+// ==========================================
+// FASTPRESS POPUP BUILDER RUNTIME LOADER
+// ==========================================
+let matchedPopups: any[] = [];
+try {
+  const popupsFile = path.join(process.cwd(), 'src', 'data', 'popups.json');
+  const popupsRaw = await fs.readFile(popupsFile, 'utf-8');
+  const allPopups = JSON.parse(popupsRaw);
+
+  const currentPath = Astro.url.pathname.replace(/\/$/, '') || '/';
+  const isPost = currentPath.startsWith('/blog/') && currentPath !== '/blog';
+  const isBlogIndex = currentPath === '/blog';
+  const isHome = currentPath === '/';
+  const currentSlug = isHome ? 'home' : (isPost ? currentPath.replace('/blog/', '') : currentPath.replace('/', ''));
+
+  let postCategories: string[] = [];
+  if (isPost) {
+    try {
+      const postsFile = path.join(process.cwd(), 'src', 'data', 'posts.json');
+      const postsRaw = await fs.readFile(postsFile, 'utf-8');
+      const posts = JSON.parse(postsRaw);
+      const post = posts.find((p: any) => p.slug === currentSlug);
+      if (post) {
+        if (Array.isArray(post.categories)) {
+          postCategories = post.categories.map((c: string) => c.toLowerCase());
+        }
+        if (post.category) {
+          postCategories.push(...post.category.split(',').map((c: string) => c.trim().toLowerCase()));
+        }
+      }
+    } catch {}
+  }
+
+  matchedPopups = allPopups.filter((p: any) => {
+    if (p.status !== 'published') return false;
+    const tg = p.targeting || {};
+
+    if (isPost) {
+      const targetPosts = tg.targetPosts || 'all';
+      if (targetPosts === 'none') return false;
+      if (targetPosts === 'specific') {
+        const specPosts = tg.specificPosts || [];
+        if (!specPosts.includes(currentSlug)) return false;
+      }
+
+      const targetCats = tg.targetCategories || 'all';
+      if (targetCats === 'specific') {
+        const specCats = (tg.specificCategories || []).map((c: string) => c.toLowerCase());
+        const hasMatchingCat = postCategories.some(cat => 
+          specCats.includes(cat) || specCats.some(sc => sc.replace(/[^a-z0-9]/g, '') === cat.replace(/[^a-z0-9]/g, ''))
+        );
+        if (!hasMatchingCat) return false;
+      }
+      return true;
+    } else {
+      const targetPages = tg.targetPages || 'all';
+      if (targetPages === 'none') return false;
+      if (targetPages === 'specific') {
+        const specPages = tg.specificPages || [];
+        if (!specPages.includes(currentSlug)) return false;
+      }
+      return true;
+    }
+  });
+} catch {}
+
+function normalizePopupHtml(html: string): string {
+  if (!html) return '';
+  return html
+    .replace(/<body([^>]*)>/gi, '<div class="fastpress-popup-canvas-body"$1>')
+    .replace(/<\/body>/gi, '</div>');
+}
+
+function normalizePopupCss(css: string): string {
+  if (!css) return '';
+  let resultBase = '';
+  let mediaOverrides = '';
+  
+  let i = 0;
+  while (i < css.length) {
+    if (css.startsWith('@media', i)) {
+      const braceOpen = css.indexOf('{', i);
+      if (braceOpen === -1) break;
+      const mediaHeader = css.slice(i, braceOpen).trim();
+      
+      let depth = 1;
+      let j = braceOpen + 1;
+      while (j < css.length && depth > 0) {
+        if (css[j] === '{') depth++;
+        else if (css[j] === '}') depth--;
+        j++;
+      }
+      const mediaBody = css.slice(braceOpen + 1, j - 1).trim();
+      
+      const match = mediaHeader.match(/max-width:\s*(\d+)px/);
+      if (match) {
+        // Modal widths in GrapesJS (440px, 540px, 680px) are modal styling dimensions
+        // Unpack them into base rules so they apply to the modal regardless of visitor screen size
+        resultBase += '\n/* Modal styles from ' + mediaHeader + ' */\n' + mediaBody + '\n';
+      } else {
+        mediaOverrides += '\n' + mediaHeader + ' { ' + mediaBody + ' }\n';
+      }
+      i = j;
+    } else {
+      const nextMedia = css.indexOf('@media', i);
+      if (nextMedia === -1) {
+        resultBase += css.slice(i);
+        break;
+      } else {
+        resultBase += css.slice(i, nextMedia);
+        i = nextMedia;
+      }
+    }
+  }
+  
+  let combined = resultBase + '\n' + mediaOverrides;
+  // Map body selector to .fastpress-popup-canvas-body
+  combined = combined.replace(/(^|[\s,;{}])body([\s,:{])/g, '$1.fastpress-popup-canvas-body$2');
+  return combined;
+}
+
+function sanitizePopupCssValue(val: unknown, fallback = '0px'): string {
+  if (val === undefined || val === null) return fallback;
+  const s = String(val).trim();
+  if (!s) return fallback;
+  if (/^-?\d+(\.\d+)?$/.test(s)) return `${s}px`;
+  return s.replace(/[;{}<>]/g, '');
+}
+
+const POPUP_POSITION_MAP: Record<string, { canonical: string; v: 'top' | 'center' | 'bottom'; h: 'left' | 'center' | 'right'; isSticky: boolean }> = {
+  'center':        { canonical: 'center',        v: 'center', h: 'center', isSticky: false },
+  'top-left':      { canonical: 'top-left',      v: 'top',    h: 'left',   isSticky: true },
+  'top-center':    { canonical: 'top-center',    v: 'top',    h: 'center', isSticky: true },
+  'top-right':     { canonical: 'top-right',     v: 'top',    h: 'right',  isSticky: true },
+  'bottom-left':   { canonical: 'bottom-left',   v: 'bottom', h: 'left',   isSticky: true },
+  'bottom-center': { canonical: 'bottom-center', v: 'bottom', h: 'center', isSticky: true },
+  'bottom-right':  { canonical: 'bottom-right',  v: 'bottom', h: 'right',  isSticky: true },
+  // Legacy layout compatibility aliases
+  'sticky-top':    { canonical: 'top-center',    v: 'top',    h: 'center', isSticky: true },
+  'top-bar':       { canonical: 'top-center',    v: 'top',    h: 'center', isSticky: true },
+  'sticky-bottom': { canonical: 'bottom-center', v: 'bottom', h: 'center', isSticky: true },
+  'slide-right':   { canonical: 'bottom-right',  v: 'bottom', h: 'right',  isSticky: true },
+};
+
+const POPUP_FLEX_ALIGN = {
+  top: 'flex-start',
+  bottom: 'flex-end',
+  left: 'flex-start',
+  right: 'flex-end',
+  center: 'center',
+} as const;
+
+function getPopupRenderConfig(popup: any) {
+  const layoutMode = popup.layout || 'center';
+  const posCfg = POPUP_POSITION_MAP[layoutMode] || POPUP_POSITION_MAP['center'];
+  const isSticky = posCfg.isSticky;
+  const showBackdrop = typeof popup.showBackdrop === 'boolean' ? popup.showBackdrop : !isSticky;
+
+  const popupWidth = sanitizePopupCssValue(popup.width, '540px');
+  const isFullWidth = popupWidth === '100%' || popupWidth === '100vw';
+  const popupHeight = sanitizePopupCssValue(popup.height, 'auto');
+  const hasCustomHeight = Boolean(popupHeight && popupHeight !== 'auto');
+  const popupRadius = sanitizePopupCssValue(popup.borderRadius || popup.styles?.borderRadius, '16px');
+
+  const rawMargin = popup.margin;
+  const hasCustomMargin = Boolean(
+    rawMargin &&
+    (typeof rawMargin === 'object'
+      ? (rawMargin.top || rawMargin.right || rawMargin.bottom || rawMargin.left)
+      : String(rawMargin).trim())
+  );
+  const mTop = typeof rawMargin === 'object' ? sanitizePopupCssValue(rawMargin?.top, '0px') : sanitizePopupCssValue(rawMargin, '0px');
+  const mRight = typeof rawMargin === 'object' ? sanitizePopupCssValue(rawMargin?.right, '0px') : sanitizePopupCssValue(rawMargin, '0px');
+  const mBottom = typeof rawMargin === 'object' ? sanitizePopupCssValue(rawMargin?.bottom, '0px') : sanitizePopupCssValue(rawMargin, '0px');
+  const mLeft = typeof rawMargin === 'object' ? sanitizePopupCssValue(rawMargin?.left, '0px') : sanitizePopupCssValue(rawMargin, '0px');
+
+  const canCalcH = mLeft !== 'auto' && mRight !== 'auto';
+  const canCalcV = mTop !== 'auto' && mBottom !== 'auto';
+  const hasNonZeroMargin = mTop !== '0px' || mRight !== '0px' || mBottom !== '0px' || mLeft !== '0px';
+  const overlayPadding = (isSticky || isFullWidth || hasNonZeroMargin) ? '0px' : '20px';
+  const boxWidthCss = canCalcH ? `calc(100% - (${mLeft} + ${mRight}))` : '100%';
+  const boxMaxWidthCss = isFullWidth ? boxWidthCss : popupWidth;
+  const boxMarginCss = `${mTop} ${mRight} ${mBottom} ${mLeft}`;
+  const boxMaxHeightCss = hasCustomHeight
+    ? `max-height: ${canCalcV ? `calc(100vh - (${mTop} + ${mBottom}))` : '100vh'};`
+    : '';
+
+  const legacyClasses = [
+    posCfg.v === 'top' ? 'pos-top-bar pos-sticky-top' : '',
+    posCfg.v === 'bottom' ? 'pos-sticky-bottom' : '',
+    posCfg.canonical === 'bottom-right' ? 'pos-slide-right' : '',
+  ].filter(Boolean).join(' ');
+  const overlayClass = `fastpress-popup-overlay pos-${posCfg.canonical}${legacyClasses ? ` ${legacyClasses}` : ''}`;
+  const overlayBg = showBackdrop ? (popup.styles?.overlayColor || 'rgba(0,0,0,0.75)') : 'transparent';
+  const overlayBlur = showBackdrop ? `blur(${popup.styles?.overlayBlur || '6px'})` : 'none';
+  const overlayStyle = `
+    position: fixed;
+    inset: 0;
+    background: ${overlayBg};
+    backdrop-filter: ${overlayBlur};
+    -webkit-backdrop-filter: ${overlayBlur};
+    display: none;
+    flex-direction: column;
+    justify-content: ${POPUP_FLEX_ALIGN[posCfg.v]};
+    align-items: ${POPUP_FLEX_ALIGN[posCfg.h]};
+    z-index: 999999;
+    padding: ${overlayPadding};
+    pointer-events: ${showBackdrop ? 'auto' : 'none'};
+    overflow-y: auto;
+    transition: opacity 0.25s ease;
+  `;
+
+  const scopedCss =
+    `#fastpress-popup-${popup.id} .fastpress-popup-card-shell, #fastpress-popup-${popup.id} .fastpress-popup-card, #fastpress-popup-${popup.id} .fastpress-popup-block-render .popup-box { border-radius: ${popupRadius} !important; }` +
+    (hasCustomHeight
+      ? ` #fastpress-popup-${popup.id} .fastpress-popup-block-render, #fastpress-popup-${popup.id} .fastpress-popup-block-render > .fastpress-popup-canvas-body, #fastpress-popup-${popup.id} .fastpress-popup-block-render .popup-box { min-height: 100%; }`
+      : '');
+
+  const cardSharedDimensions = `
+    width: ${boxWidthCss};
+    max-width: ${boxMaxWidthCss};
+    margin: ${boxMarginCss};
+    ${hasCustomHeight ? `height: ${popupHeight};` : ''}
+    ${boxMaxHeightCss}
+    pointer-events: auto;
+    flex-shrink: 0;
+    ${hasCustomHeight ? 'overflow-y: auto; overflow-x: hidden;' : 'overflow: hidden;'}
+  `;
+
+  return {
+    showBackdrop,
+    overlayClass,
+    overlayStyle,
+    scopedCss,
+    popupRadius,
+    cardSharedDimensions,
+  };
+}
+
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    {siteFavicon ? (
+      <>
+        {isSvgFavicon && <link rel="icon" type="image/svg+xml" href={siteFavicon} />}
+        {isIcoFavicon && <link rel="icon" type="image/x-icon" href={siteFavicon} />}
+        {isPngFavicon && <link rel="icon" type="image/png" href={siteFavicon} />}
+        {!isSvgFavicon && !isIcoFavicon && !isPngFavicon && <link rel="icon" href={siteFavicon} />}
+      </>
+    ) : (
+      <>
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <link rel="icon" href="/favicon.ico" />
+      </>
+    )}
+    <link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="description" content={description} />
+    {keywords && <meta name="keywords" content={keywords} />}
+    <title>{title}</title>
+    {schemaScripts.map((s) => (
+      <script type="application/ld+json" is:inline set:html={s} />
+    ))}
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Inter:wght@400;500;600;700&family=Poppins:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" />
+    {customFonts.map(font => {
+      if (font.type === 'google' && font.url) {
+        return <link rel="stylesheet" href={font.url} />;
+      } else if (font.type === 'upload' && font.url) {
+        return (
+          <style is:inline set:html={`@font-face { font-family: '${font.family}'; src: url('${font.url}') format('${font.format || 'woff2'}'); font-weight: ${font.weight || 'normal'}; font-style: ${font.style || 'normal'}; font-display: swap; }`} />
+        );
+      }
+      return null;
+    })}
+
+    <!-- Nav Menu & Products Loop Widget Stylesheets -->
+    <link rel="stylesheet" href="/nav-menu.css" />
+    <link rel="stylesheet" href="/products-loop.css" />
+
+    <!-- Global Custom CSS (All pages & posts) -->
+    {cleanCustomCss && (
+      <style is:global set:html={cleanCustomCss} />
+    )}
+
+    <!-- Page-Specific Custom CSS (This page only) -->
+    {cleanPageCustomCss && (
+      <style is:global set:html={cleanPageCustomCss} />
+    )}
+
+    <!-- Global Head Code & Scripts (All pages & posts) -->
+    {customCode?.headScripts && (
+      <Fragment set:html={customCode.headScripts} />
+    )}
+
+    <!-- Page-Specific Head Code & Scripts (This page only) -->
+    {resolvedPageCode?.headScripts && (
+      <Fragment set:html={resolvedPageCode.headScripts} />
+    )}
+  </head>
+  <body>
+    <!-- Global Body Start Code (Immediately after <body> e.g. Google Tag Manager noscript) -->
+    {customCode?.bodyStartScripts && (
+      <Fragment set:html={customCode.bodyStartScripts} />
+    )}
+
+    <!-- Page-Specific Body Start Code (Immediately after <body>) -->
+    {resolvedPageCode?.bodyStartScripts && (
+      <Fragment set:html={resolvedPageCode.bodyStartScripts} />
+    )}
+
+    {showHeader && <Navbar activePage={activePage} />}
+    
+    <main id="mainContent">
+      <slot />
+    </main>
+
+    {showFooter && <Footer />}
+
+    <script is:inline>
+      function initAllSliders() {
+        document.querySelectorAll('.slider-section').forEach(slider => {
+          if (slider.dataset.sliderReady) return;
+          slider.dataset.sliderReady = 'true';
+
+          const track = slider.querySelector('.slider-track');
+          const dots = slider.querySelectorAll('.slider-dot');
+          const slides = slider.querySelectorAll('.slider-slide');
+          if (!track || slides.length === 0) return;
+
+          const totalSlides = slides.length;
+          const isLight = slider.classList.contains('testimonials-slider');
+
+          const updateDots = () => {
+            const slideWidth = track.offsetWidth || 1;
+            const activeIndex = Math.min(totalSlides - 1, Math.max(0, Math.round(track.scrollLeft / slideWidth)));
+            dots.forEach((dot, idx) => {
+              if (idx === activeIndex) {
+                dot.style.width = isLight ? '24px' : '26px';
+                dot.style.backgroundColor = '#ff5e3a';
+              } else {
+                dot.style.width = isLight ? '10px' : '10px';
+                dot.style.backgroundColor = isLight ? '#d1d5db' : 'rgba(255,255,255,0.4)';
+              }
+            });
+          };
+
+          track.addEventListener('scroll', updateDots, { passive: true });
+
+          let autoTimer = null;
+          const startAuto = () => {
+            stopAuto();
+            autoTimer = setInterval(() => {
+              const slideWidth = track.offsetWidth || 1;
+              const currentIndex = Math.round(track.scrollLeft / slideWidth);
+              const nextIndex = (currentIndex + 1) % totalSlides;
+              track.scrollTo({ left: nextIndex * slideWidth, behavior: 'smooth' });
+            }, 6000);
+          };
+
+          const stopAuto = () => {
+            if (autoTimer) {
+              clearInterval(autoTimer);
+              autoTimer = null;
+            }
+          };
+
+          slider.addEventListener('mouseenter', stopAuto);
+          slider.addEventListener('mouseleave', startAuto);
+          startAuto();
+        });
+      }
+
+      function initAllAccordions() {
+        document.querySelectorAll('.accordion-container').forEach(container => {
+          if (container.dataset.accordionReady) return;
+          container.dataset.accordionReady = 'true';
+
+          const items = container.querySelectorAll('.accordion-item');
+          items.forEach(item => {
+            const content = item.querySelector('.accordion-content');
+            const icon = item.querySelector('.accordion-icon svg') || item.querySelector('.accordion-icon');
+
+            // Cek apakah item terbuka secara default
+            const shouldOpen = item.getAttribute('data-open') === 'true' || (item.classList.contains('is-open') && !item.hasAttribute('data-open'));
+            if (shouldOpen) {
+              item.classList.add('is-open');
+              item.setAttribute('data-open', 'true');
+              if (content) {
+                content.style.maxHeight = (content.scrollHeight + 80) + 'px';
+                content.style.paddingTop = '18px';
+                content.style.paddingBottom = '22px';
+              }
+              if (icon) icon.style.transform = 'rotate(180deg)';
+            } else {
+              item.classList.remove('is-open');
+              item.setAttribute('data-open', 'false');
+              if (content) {
+                content.style.maxHeight = '0px';
+                content.style.paddingTop = '0px';
+                content.style.paddingBottom = '0px';
+              }
+              if (icon) icon.style.transform = 'rotate(0deg)';
+            }
+          });
+        });
+
+        // Global delegated click listener for all accordion headers
+        if (!window._fastpressAccordionDelegated) {
+          window._fastpressAccordionDelegated = true;
+          document.addEventListener('click', function(e) {
+            const header = e.target.closest('.accordion-header');
+            if (!header) return;
+            const item = header.closest('.accordion-item');
+            if (!item) return;
+
+            const content = item.querySelector('.accordion-content');
+            const icon = item.querySelector('.accordion-icon svg') || item.querySelector('.accordion-icon');
+
+            const isOpen = item.classList.contains('is-open');
+            if (isOpen) {
+              item.classList.remove('is-open');
+              item.setAttribute('data-open', 'false');
+              if (content) {
+                content.style.maxHeight = '0px';
+                content.style.paddingTop = '0px';
+                content.style.paddingBottom = '0px';
+              }
+              if (icon) icon.style.transform = 'rotate(0deg)';
+            } else {
+              item.classList.add('is-open');
+              item.setAttribute('data-open', 'true');
+              if (content) {
+                content.style.maxHeight = (content.scrollHeight + 60) + 'px';
+                content.style.paddingTop = '18px';
+                content.style.paddingBottom = '22px';
+              }
+              if (icon) icon.style.transform = 'rotate(180deg)';
+            }
+          });
+        }
+      }
+
+      // Generate Google FAQPage Schema (JSON-LD) secara otomatis untuk Accordion dengan data-faq-schema="true"
+      function generateFaqSchema() {
+        const containers = document.querySelectorAll('.accordion-container[data-faq-schema="true"], .accordion-container[data-faq-schema="1"]');
+        if (containers.length === 0) return;
+
+        const mainEntity = [];
+        containers.forEach(container => {
+          const items = container.querySelectorAll('.accordion-item');
+          items.forEach(item => {
+            const qEl = item.querySelector('.accordion-title');
+            const aEl = item.querySelector('.accordion-body') || item.querySelector('.accordion-content');
+            const qText = qEl ? qEl.innerText.trim() : '';
+            const aText = aEl ? aEl.innerText.trim() : '';
+            if (qText && aText) {
+              mainEntity.push({
+                "@type": "Question",
+                "name": qText,
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": aText
+                }
+              });
+            }
+          });
+        });
+
+        if (mainEntity.length > 0) {
+          let scriptEl = document.getElementById('faq-jsonld-schema');
+          if (!scriptEl) {
+            scriptEl = document.createElement('script');
+            scriptEl.id = 'faq-jsonld-schema';
+            scriptEl.type = 'application/ld+json';
+            document.head.appendChild(scriptEl);
+          }
+          scriptEl.textContent = JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            "mainEntity": mainEntity
+          }, null, 2);
+        }
+      }
+
+      // Inisialisasi Filter Kategori & Sorting Blog otomatis jika ada filter bar & post cards
+      function initAllBlogFilters() {
+        const filterBars = document.querySelectorAll('.filter-sort-section, #blog-filter-section');
+        if (filterBars.length === 0) return;
+
+        filterBars.forEach(bar => {
+          if (bar.dataset.filterReady === 'true') return;
+          bar.dataset.filterReady = 'true';
+
+          const pills = bar.querySelectorAll('.filter-pill');
+          const sortSelect = bar.querySelector('.sort-select, #sortSelect');
+
+          function applyFilterAndSort() {
+            let activeCategory = 'all';
+            const activePill = bar.querySelector('.filter-pill.active');
+            if (activePill) {
+              const rawCat = activePill.dataset.category || activePill.textContent || '';
+              activeCategory = rawCat.trim().replace(/\s*\(\d+\)$/, '').toLowerCase();
+            }
+
+            const sortVal = sortSelect ? sortSelect.value : 'date-desc';
+            const allCards = Array.from(document.querySelectorAll('.post-card'));
+            if (allCards.length === 0) return;
+
+            let visibleCount = 0;
+            allCards.forEach(card => {
+              const cat = (card.dataset.category || '').toLowerCase().trim();
+              let categories = [];
+              try {
+                const parsed = JSON.parse(card.dataset.categories || '[]');
+                if (Array.isArray(parsed)) {
+                  categories = parsed.map(c => String(c).toLowerCase().trim());
+                }
+              } catch {
+                if (cat) categories = [cat];
+              }
+              if (cat && !categories.includes(cat)) categories.push(cat);
+
+              const isMatch = activeCategory === 'all' || activeCategory === '' || categories.includes(activeCategory);
+              if (isMatch) {
+                card.style.display = '';
+                visibleCount++;
+              } else {
+                card.style.display = 'none';
+              }
+            });
+
+            // Tampilkan / sembunyikan empty state jika tersedia
+            const emptyStates = document.querySelectorAll('#emptyState, .empty-state');
+            emptyStates.forEach(es => {
+              es.style.display = visibleCount === 0 ? 'block' : 'none';
+            });
+
+            // Lakukan pengurutan kartu (Sorting)
+            const parentContainers = new Set();
+            allCards.forEach(c => {
+              if (c.parentElement) parentContainers.add(c.parentElement);
+            });
+
+            parentContainers.forEach(container => {
+              const containerCards = Array.from(container.querySelectorAll(':scope > .post-card'));
+              if (containerCards.length <= 1) return;
+
+              containerCards.sort((a, b) => {
+                const dateA = a.dataset.date || '';
+                const dateB = b.dataset.date || '';
+                const titleA = (a.dataset.title || a.querySelector('h2, h3, a')?.textContent || '').toLowerCase().trim();
+                const titleB = (b.dataset.title || b.querySelector('h2, h3, a')?.textContent || '').toLowerCase().trim();
+
+                switch (sortVal) {
+                  case 'date-desc':
+                    return dateB.localeCompare(dateA);
+                  case 'date-asc':
+                    return dateA.localeCompare(dateB);
+                  case 'title-asc':
+                    return titleA.localeCompare(titleB);
+                  case 'title-desc':
+                    return titleB.localeCompare(titleA);
+                  default:
+                    return 0;
+                }
+              });
+
+              containerCards.forEach(card => container.appendChild(card));
+            });
+          }
+
+          pills.forEach(pill => {
+            pill.addEventListener('click', () => {
+              pills.forEach(p => {
+                p.classList.remove('active');
+                p.setAttribute('aria-selected', 'false');
+                p.style.backgroundColor = '#f3f4f6';
+                p.style.color = '#374151';
+                p.style.borderColor = '#e5e7eb';
+              });
+              pill.classList.add('active');
+              pill.setAttribute('aria-selected', 'true');
+              pill.style.backgroundColor = '#ff5e3a';
+              pill.style.color = '#ffffff';
+              pill.style.borderColor = '#ff5e3a';
+              applyFilterAndSort();
+            });
+          });
+
+          if (sortSelect) {
+            sortSelect.addEventListener('change', applyFilterAndSort);
+          }
+        });
+      }
+
+      function initInteractiveComponents() {
+        initAllSliders();
+        initAllAccordions();
+        generateFaqSchema();
+        initAllBlogFilters();
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initInteractiveComponents);
+      } else {
+        initInteractiveComponents();
+      }
+      document.addEventListener('astro:page-load', initInteractiveComponents);
+    </script>
+  
+    <!-- ========================================== -->
+    <!-- FASTPRESS DYNAMIC POPUP MODALS & RUNTIME   -->
+    <!-- ========================================== -->
+    <style is:global>
+      /* Hide all Builder Dropzone Placeholder controls on live site */
+      .empty-workspace-dropzone .dropzone-buttons-row,
+      .empty-workspace-dropzone .dropzone-hint,
+      .empty-workspace-dropzone .dropzone-text,
+      #btnDropzoneAddBlock,
+      #btnDropzoneAddTemplate,
+      .dropzone-buttons-row,
+      .dropzone-hint,
+      .dropzone-text {
+        display: none !important;
+      }
+      .empty-workspace-dropzone {
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        min-height: 0 !important;
+        background: transparent !important;
+      }
+      .empty-workspace-dropzone:empty {
+        display: none !important;
+      }
+
+      /* FastPress Popups Close Button & Positioning */
+      .fastpress-popup-overlay .popup-close-trigger:not(.popup-dismiss-link),
+      .fastpress-popup-overlay .fastpress-popup-close-btn {
+        position: absolute;
+        top: 14px;
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.45);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        color: #ffffff;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        line-height: 0 !important;
+        box-sizing: border-box !important;
+        cursor: pointer;
+        z-index: 50;
+        transition: all 0.2s ease;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+      .fastpress-popup-overlay .popup-close-trigger:not(.popup-dismiss-link) svg,
+      .fastpress-popup-overlay .fastpress-popup-close-btn svg {
+        display: block !important;
+        margin: auto !important;
+        pointer-events: none !important;
+      }
+      .fastpress-popup-overlay .popup-close-trigger:not(.popup-dismiss-link) > span,
+      .fastpress-popup-overlay .fastpress-popup-close-btn > span {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 0;
+        transform: translateY(-1px);
+      }
+      .fastpress-popup-overlay .popup-close-trigger:not(.popup-dismiss-link):hover,
+      .fastpress-popup-overlay .fastpress-popup-close-btn:hover {
+        background: rgba(255, 94, 58, 0.85);
+        border-color: #ff5e3a;
+        transform: scale(1.08);
+      }
+
+      /* Specific position classes */
+      .fastpress-popup-overlay .popup-close-trigger:not(.popup-dismiss-link).pos-left,
+      .fastpress-popup-overlay .fastpress-popup-close-btn.pos-left,
+      .fastpress-popup-overlay[data-close-pos="left"] .popup-close-trigger:not(.popup-dismiss-link),
+      .fastpress-popup-overlay[data-close-pos="left"] .fastpress-popup-close-btn {
+        left: 14px !important;
+        right: auto !important;
+        transform: none !important;
+      }
+
+      .fastpress-popup-overlay .popup-close-trigger:not(.popup-dismiss-link).pos-center,
+      .fastpress-popup-overlay .fastpress-popup-close-btn.pos-center,
+      .fastpress-popup-overlay[data-close-pos="center"] .popup-close-trigger:not(.popup-dismiss-link),
+      .fastpress-popup-overlay[data-close-pos="center"] .fastpress-popup-close-btn {
+        left: 50% !important;
+        right: auto !important;
+        transform: translateX(-50%) !important;
+      }
+
+      .fastpress-popup-overlay .popup-close-trigger:not(.popup-dismiss-link).pos-right,
+      .fastpress-popup-overlay .fastpress-popup-close-btn.pos-right,
+      .fastpress-popup-overlay[data-close-pos="right"] .popup-close-trigger:not(.popup-dismiss-link),
+      .fastpress-popup-overlay[data-close-pos="right"] .fastpress-popup-close-btn {
+        right: 14px !important;
+        left: auto !important;
+        transform: none !important;
+      }
+
+      .fastpress-popup-overlay[data-show-close="false"] .popup-close-trigger:not(.popup-dismiss-link),
+      .fastpress-popup-overlay[data-show-close="false"] .fastpress-popup-close-btn {
+        display: none !important;
+      }
+
+      /* In-body Dismiss Text Link (e.g. "No thanks, I'll pass on this opportunity") */
+      .fastpress-popup-overlay .popup-dismiss-link {
+        display: inline-block !important;
+        position: static !important;
+        background: transparent !important;
+        border: none !important;
+        color: #9ca3af !important;
+        font-size: 0.76rem !important;
+        text-decoration: underline !important;
+        margin: 10px auto 0 auto !important;
+        cursor: pointer !important;
+        width: auto !important;
+        height: auto !important;
+        border-radius: 0 !important;
+        padding: 4px 8px !important;
+        box-shadow: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        line-height: normal !important;
+        transform: none !important;
+        transition: color 0.15s ease !important;
+      }
+      .fastpress-popup-overlay .popup-dismiss-link:hover {
+        color: #ffffff !important;
+        background: transparent !important;
+        transform: none !important;
+      }
+
+      /* FastPress Popup Block Canvas & Typography Resets */
+      .fastpress-popup-card-shell {
+        box-sizing: border-box;
+      }
+      .fastpress-popup-block-render {
+        position: relative;
+        width: 100%;
+        box-sizing: border-box;
+        font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+        color: #ffffff;
+      }
+      .fastpress-popup-canvas-body {
+        position: relative;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .fastpress-popup-block-render img {
+        max-width: 100%;
+        height: auto;
+        display: block;
+      }
+      .fastpress-popup-block-render * {
+        box-sizing: border-box;
+      }
+    </style>
+
+    {matchedPopups.map((popup: any) => ({ popup, cfg: getPopupRenderConfig(popup) })).map(({ popup, cfg }) => (
+      <div
+        id={`fastpress-popup-${popup.id}`}
+        class={cfg.overlayClass}
+        style={cfg.overlayStyle}
+        data-popup-id={popup.id}
+        data-close-pos={popup.closePosition || 'right'}
+        data-show-close={popup.showCloseButton !== false ? 'true' : 'false'}
+        data-show-backdrop={cfg.showBackdrop ? 'true' : 'false'}
+        data-time-enabled={popup.triggers?.timeEnabled ? 'true' : 'false'}
+        data-time-delay={popup.triggers?.timeDelay || 5}
+        data-scroll-enabled={popup.triggers?.scrollEnabled ? 'true' : 'false'}
+        data-scroll-percent={popup.triggers?.scrollPercent || 50}
+        data-frequency={popup.frequency || 'session'}
+      >
+        {popup.css && <style is:inline set:html={normalizePopupCss(popup.css)} />}
+        <style is:inline set:html={cfg.scopedCss} />
+        {popup.html ? (
+          <div
+            class="fastpress-popup-card-shell"
+            style={`
+              ${cfg.cardSharedDimensions}
+              border-radius: ${cfg.popupRadius};
+              background: ${
+                popup.background?.type === 'color' && popup.background?.color
+                  ? popup.background.color
+                  : (popup.background?.type === 'image' && popup.background?.imageUrl
+                    ? `url("${popup.background.imageUrl}")`
+                    : '#11141c')
+              };
+              ${popup.background?.type === 'image' ? `background-size: ${popup.background.size || 'cover'}; background-position: ${popup.background.position || 'center center'}; background-repeat: ${popup.background.size === 'repeat' ? 'repeat' : 'no-repeat'};` : ''}
+              ${popup.background?.blur && popup.background.blur !== '0' ? `backdrop-filter: blur(${popup.background.blur}); -webkit-backdrop-filter: blur(${popup.background.blur});` : ''}
+              border: 1px solid rgba(255, 255, 255, 0.12);
+              box-shadow: 0 25px 60px rgba(0, 0, 0, 0.85);
+              position: relative;
+            `}
+          >
+            {popup.background?.type === 'video' && popup.background?.videoUrl && (
+              <div class="popup-video-bg-wrap" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; z-index: 0;">
+                <video autoplay loop muted playsinline style="position: absolute; top: 50%; left: 50%; min-width: 100%; min-height: 100%; width: auto; height: auto; transform: translate(-50%, -50%); object-fit: cover;">
+                  <source src={popup.background.videoUrl} type="video/mp4" />
+                </video>
+                <div class="popup-video-overlay" style={`position: absolute; inset: 0; background: rgba(0, 0, 0, ${((popup.background.overlayOpacity ?? 60) / 100).toFixed(2)});`}></div>
+              </div>
+            )}
+            {popup.background?.type === 'image' && (
+              <div class="popup-image-overlay" style={`position: absolute; inset: 0; background: rgba(0, 0, 0, ${((popup.background.overlayOpacity ?? 50) / 100).toFixed(2)}); pointer-events: none; z-index: 0;`}></div>
+            )}
+            {popup.showCloseButton !== false && !popup.html?.includes('popup-close-trigger') && !popup.html?.includes('fastpress-popup-close-btn') && (
+              <button
+                type="button"
+                class={`popup-close-trigger pos-${popup.closePosition || 'right'}`}
+                data-close-popup="true"
+                aria-label="Close popup"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display: block; margin: auto; pointer-events: none;">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            )}
+            <div class="fastpress-popup-block-render" style="position: relative; z-index: 1;" set:html={normalizePopupHtml(popup.html)} />
+          </div>
+        ) : (
+          <div
+            class="fastpress-popup-card"
+            style={`
+              ${cfg.cardSharedDimensions}
+              background: ${popup.styles?.bgColor || '#11141c'};
+              color: ${popup.styles?.textColor || '#ffffff'};
+              border-radius: ${cfg.popupRadius};
+              border: 1px solid rgba(255, 255, 255, 0.12);
+              position: relative;
+              box-shadow: 0 25px 60px rgba(0,0,0,0.8);
+            `}
+          >
+            <button
+              type="button"
+              class="fastpress-popup-close-btn"
+              data-close-id={popup.id}
+              style="
+                position: absolute;
+                top: 14px;
+                right: 14px;
+                width: 32px;
+                height: 32px;
+                background: rgba(255, 255, 255, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                color: #ffffff;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 1.2rem;
+                cursor: pointer;
+                z-index: 10;
+                line-height: 1;
+              "
+              aria-label="Close popup"
+            >&times;</button>
+
+            {popup.showImage && popup.imageUrl && (
+              <div style="width: 100%; height: 180px; overflow: hidden;">
+                <img src={popup.imageUrl} alt={popup.headline || 'Popup'} style="width: 100%; height: 100%; object-fit: cover;" />
+              </div>
+            )}
+
+            <div style="padding: 26px 28px; text-align: center;">
+              {popup.badge && (
+                <span style={`
+                  display: inline-block;
+                  background: ${popup.styles?.accentColor || '#ff5e3a'}26;
+                  color: ${popup.styles?.accentColor || '#ff5e3a'};
+                  font-size: 0.68rem;
+                  font-weight: 700;
+                  letter-spacing: 0.08em;
+                  text-transform: uppercase;
+                  padding: 3px 10px;
+                  border-radius: 20px;
+                  margin-bottom: 12px;
+                `}>{popup.badge}</span>
+              )}
+
+              <h3 style={`
+                margin: 0 0 10px 0;
+                font-family: 'Montserrat', sans-serif;
+                font-weight: 700;
+                font-size: 1.35rem;
+                line-height: 1.3;
+                color: ${popup.styles?.textColor || '#ffffff'};
+              `}>{popup.headline}</h3>
+
+              {popup.description && (
+                <p style="margin: 0 0 20px 0; font-size: 0.85rem; color: #9ca3af; line-height: 1.55;">
+                  {popup.description}
+                </p>
+              )}
+
+              {popup.formType === 'email' ? (
+                <form class="fastpress-popup-form" data-form-id={popup.id} style="display: flex; gap: 8px; margin-bottom: 12px;">
+                  <input
+                    type="email"
+                    required
+                    class="fastpress-popup-input"
+                    placeholder={popup.emailPlaceholder || 'Enter your email...'}
+                    style="
+                      flex: 1;
+                      background: #0a0d13;
+                      border: 1px solid #28303f;
+                      border-radius: 8px;
+                      padding: 10px 14px;
+                      color: #ffffff;
+                      font-size: 0.84rem;
+                      outline: none;
+                    "
+                  />
+                  <button
+                    type="submit"
+                    class="fastpress-popup-btn"
+                    style={`
+                      background: ${popup.styles?.accentColor || '#ff5e3a'};
+                      color: #ffffff;
+                      border: none;
+                      border-radius: 8px;
+                      padding: 10px 20px;
+                      font-weight: 700;
+                      font-size: 0.84rem;
+                      cursor: pointer;
+                      white-space: nowrap;
+                    `}
+                  >{popup.buttonText || 'Subscribe'}</button>
+                </form>
+              ) : (
+                <div style="margin-bottom: 12px;">
+                  <a
+                    href={popup.buttonLink || '#'}
+                    class="fastpress-popup-btn"
+                    style={`
+                      display: inline-block;
+                      background: ${popup.styles?.accentColor || '#ff5e3a'};
+                      color: #ffffff;
+                      text-decoration: none;
+                      border-radius: 8px;
+                      padding: 11px 24px;
+                      font-weight: 700;
+                      font-size: 0.85rem;
+                    `}
+                  >{popup.buttonText || 'Learn More'}</a>
+                </div>
+              )}
+
+              {popup.note && (
+                <p style="font-size: 0.72rem; color: #6b7280; margin: 0;">{popup.note}</p>
+              )}
+
+              <div class="fastpress-popup-success" style="display: none; padding: 12px; background: rgba(16,185,129,0.15); border: 1px solid #10b981; border-radius: 8px; color: #10b981; font-weight: 600; font-size: 0.82rem; margin-top: 10px;">
+                {popup.successMessage || '🎉 Thank you! Check your inbox.'}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    ))}
+
+    <script is:inline>
+      function initFastPressPopups() {
+        const overlays = document.querySelectorAll('.fastpress-popup-overlay');
+        overlays.forEach(overlay => {
+          const id = overlay.dataset.popupId;
+          const timeEnabled = overlay.dataset.timeEnabled === 'true';
+          const timeDelay = parseInt(overlay.dataset.timeDelay, 10) || 5;
+          const scrollEnabled = overlay.dataset.scrollEnabled === 'true';
+          const scrollPercent = parseInt(overlay.dataset.scrollPercent, 10) || 50;
+          const frequency = overlay.dataset.frequency || 'session';
+
+          // Frequency checks
+          if (frequency === 'session' && sessionStorage.getItem('fp_popup_dismissed_' + id)) {
+            return;
+          }
+          if (frequency === 'once_7d') {
+            const last = localStorage.getItem('fp_popup_shown_' + id);
+            if (last && (Date.now() - parseInt(last, 10)) < 7 * 24 * 60 * 60 * 1000) {
+              return;
+            }
+          }
+
+          let isTriggered = false;
+
+          function openPopup() {
+            if (isTriggered) return;
+            isTriggered = true;
+            overlay.style.display = 'flex';
+            overlay.style.opacity = '0';
+            requestAnimationFrame(() => {
+              overlay.style.opacity = '1';
+            });
+            localStorage.setItem('fp_popup_shown_' + id, Date.now().toString());
+          }
+
+          function closePopup() {
+            overlay.style.opacity = '0';
+            setTimeout(() => {
+              overlay.style.display = 'none';
+            }, 250);
+            sessionStorage.setItem('fp_popup_dismissed_' + id, '1');
+          }
+
+          // Universal Close Button Listeners
+          overlay.querySelectorAll('[data-close-popup="true"], [data-close-id], .popup-close-trigger, .fastpress-popup-close-btn')
+            .forEach(btn => btn.addEventListener('click', closePopup));
+
+          // Backdrop click (only when backdrop overlay is enabled)
+          overlay.addEventListener('click', (e) => {
+            if (e.target === overlay && overlay.dataset.showBackdrop !== 'false') closePopup();
+          });
+
+          // Escape key
+          window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && overlay.style.display === 'flex') {
+              closePopup();
+            }
+          });
+
+          // Universal Form submit handler
+          overlay.querySelectorAll('form, .fastpress-popup-form').forEach(form => {
+            form.addEventListener('submit', (e) => {
+              e.preventDefault();
+              const btn = form.querySelector('button[type="submit"]') || form.querySelector('button');
+              if (btn) btn.textContent = '✓ Subscribed!';
+              const successEl = overlay.querySelector('.fastpress-popup-success');
+              if (successEl) successEl.style.display = 'block';
+              setTimeout(closePopup, 1600);
+            });
+          });
+
+          if (window.location.search.includes('previewPopup') || window.location.search.includes('popupPreview')) {
+            setTimeout(openPopup, 50);
+          }
+
+          if (timeEnabled) {
+            setTimeout(openPopup, timeDelay * 1000);
+          }
+
+          if (scrollEnabled) {
+            function checkScroll() {
+              if (isTriggered) {
+                window.removeEventListener('scroll', checkScroll);
+                return;
+              }
+              const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+              if (scrollable <= 0) return;
+              const currentPct = (window.scrollY / scrollable) * 100;
+              if (currentPct >= scrollPercent) {
+                openPopup();
+                window.removeEventListener('scroll', checkScroll);
+              }
+            }
+            window.addEventListener('scroll', checkScroll, { passive: true });
+          }
+        });
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initFastPressPopups);
+      } else {
+        initFastPressPopups();
+      }
+      document.addEventListener('astro:page-load', initFastPressPopups);
+    </script>
+
+    <!-- FastPress Gravity Forms Client Runtime (Anti-Spam & Conditional Logic) -->
+    <script is:inline>
+      function initFastPressForms() {
+        const forms = document.querySelectorAll('.fp-ajax-form');
+        forms.forEach(form => {
+          if (form.getAttribute('data-fp-initialized') === 'true') return;
+          form.setAttribute('data-fp-initialized', 'true');
+
+          // Initialize render timestamp token for Method 2 bot detection
+          const tsInput = form.querySelector('._fp_form_ts');
+          if (tsInput) {
+            tsInput.value = Date.now().toString();
+          }
+
+          // Conditional logic handler
+          const conditionalWrappers = form.querySelectorAll('[data-conditional]');
+          function evaluateConditionalLogic() {
+            conditionalWrappers.forEach(wrap => {
+              try {
+                const condData = JSON.parse(wrap.getAttribute('data-conditional') || '{}');
+                if (!condData || !condData.enabled || !Array.isArray(condData.rules) || condData.rules.length === 0) {
+                  wrap.style.display = '';
+                  return;
+                }
+
+                const action = condData.action || 'show';
+                const logicType = condData.logicType || 'all';
+                let passedCount = 0;
+
+                condData.rules.forEach(rule => {
+                  let fieldVal = '';
+                  const matchingInputs = form.querySelectorAll(`[name="${rule.fieldId}"], [name="${rule.fieldId}[]"]`);
+                  if (matchingInputs.length > 0) {
+                    const first = matchingInputs[0];
+                    if (first.type === 'radio') {
+                      const checked = form.querySelector(`[name="${rule.fieldId}"]:checked`);
+                      fieldVal = checked ? checked.value : '';
+                    } else if (first.type === 'checkbox') {
+                      const checkedBoxes = Array.from(form.querySelectorAll(`[name="${rule.fieldId}[]"]:checked`)).map(cb => cb.value);
+                      fieldVal = checkedBoxes.join(',');
+                    } else {
+                      fieldVal = first.value || '';
+                    }
+                  }
+
+                  const targetVal = (rule.value || '').trim().toLowerCase();
+                  const currentVal = (fieldVal || '').trim().toLowerCase();
+
+                  let ruleMet = false;
+                  switch (rule.operator) {
+                    case 'is':
+                      ruleMet = currentVal === targetVal;
+                      break;
+                    case 'is_not':
+                      ruleMet = currentVal !== targetVal;
+                      break;
+                    case 'contains':
+                      ruleMet = currentVal.includes(targetVal);
+                      break;
+                    case 'not_contains':
+                      ruleMet = !currentVal.includes(targetVal);
+                      break;
+                    case 'greater_than':
+                      ruleMet = parseFloat(currentVal) > parseFloat(targetVal);
+                      break;
+                    case 'less_than':
+                      ruleMet = parseFloat(currentVal) < parseFloat(targetVal);
+                      break;
+                    case 'is_empty':
+                      ruleMet = currentVal === '';
+                      break;
+                    case 'is_not_empty':
+                      ruleMet = currentVal !== '';
+                      break;
+                    default:
+                      ruleMet = currentVal === targetVal;
+                  }
+
+                  if (ruleMet) passedCount++;
+                });
+
+                const rulesMatch = logicType === 'all'
+                  ? (passedCount === condData.rules.length)
+                  : (passedCount > 0);
+
+                const shouldShow = action === 'show' ? rulesMatch : !rulesMatch;
+                wrap.style.display = shouldShow ? '' : 'none';
+
+                // Prevent hidden inputs from triggering native HTML5 required validation
+                wrap.querySelectorAll('input, select, textarea').forEach(inp => {
+                  if (!shouldShow) {
+                    if (inp.hasAttribute('required')) {
+                      inp.setAttribute('data-was-required', 'true');
+                      inp.removeAttribute('required');
+                    }
+                  } else {
+                    if (inp.getAttribute('data-was-required') === 'true') {
+                      inp.setAttribute('required', 'required');
+                      inp.removeAttribute('data-was-required');
+                    }
+                  }
+                });
+              } catch (e) {
+                console.error('FastPress Forms conditional error:', e);
+              }
+            });
+          }
+
+          // Run evaluations initially and on any input change
+          evaluateConditionalLogic();
+          form.addEventListener('input', evaluateConditionalLogic);
+          form.addEventListener('change', evaluateConditionalLogic);
+
+          // Handle form submission via AJAX to /api/forms/submit
+          form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const submitBtn = form.querySelector('.fp-submit-btn');
+            const btnText = submitBtn?.querySelector('.fp-btn-text');
+            const btnSpinner = submitBtn?.querySelector('.fp-btn-spinner');
+            const alertBox = form.querySelector('.fp-form-alert');
+
+            // Reset alert
+            if (alertBox) {
+              alertBox.style.display = 'none';
+              alertBox.className = 'fp-form-alert';
+            }
+
+            if (submitBtn) submitBtn.disabled = true;
+            if (btnText) btnText.style.display = 'none';
+            if (btnSpinner) btnSpinner.style.display = 'inline';
+
+            try {
+              const formData = new FormData(form);
+              const resp = await fetch(form.action || '/api/forms/submit', {
+                method: 'POST',
+                body: formData
+              });
+
+              const result = await resp.json();
+
+              if (!resp.ok || result.error) {
+                throw new Error(result.error || 'Submission failed');
+              }
+
+              // Success display
+              if (alertBox) {
+                alertBox.style.display = 'block';
+                alertBox.style.background = '#064e3b';
+                alertBox.style.color = '#a7f3d0';
+                alertBox.style.border = '1px solid #059669';
+                alertBox.innerHTML = result.message || '🎉 Thank you! Your message has been sent successfully.';
+              }
+
+              // Optional redirect
+              if (result.redirectUrl) {
+                setTimeout(() => {
+                  window.location.href = result.redirectUrl;
+                }, 1200);
+              } else {
+                form.reset();
+                evaluateConditionalLogic();
+              }
+            } catch (err) {
+              if (alertBox) {
+                alertBox.style.display = 'block';
+                alertBox.style.background = '#7f1d1d';
+                alertBox.style.color = '#fecaca';
+                alertBox.style.border = '1px solid #dc2626';
+                alertBox.innerHTML = '⚠️ ' + (err.message || 'An error occurred while submitting.');
+              }
+            } finally {
+              if (submitBtn) submitBtn.disabled = false;
+              if (btnText) btnText.style.display = 'inline';
+              if (btnSpinner) btnSpinner.style.display = 'none';
+            }
+          });
+        });
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initFastPressForms);
+      } else {
+        initFastPressForms();
+      }
+      document.addEventListener('astro:page-load', initFastPressForms);
+    </script>
+
+    <!-- Global Body End Scripts (All pages & posts) -->
+    {(customCode?.bodyEndScripts || customCode?.bodyScripts) && (
+      <Fragment set:html={customCode.bodyEndScripts || customCode.bodyScripts} />
+    )}
+
+    <!-- Page-Specific Body End Scripts (This page only) -->
+    {(resolvedPageCode?.bodyEndScripts || resolvedPageCode?.bodyScripts) && (
+      <Fragment set:html={resolvedPageCode.bodyEndScripts || resolvedPageCode.bodyScripts} />
+    )}
+
+    <!-- Nav Menu & Products Loop Interactive Runtimes -->
+    <script src="/nav-menu.js" is:inline></script>
+    <script src="/products-loop.js" is:inline></script>
+  </body>
+</html>
+
+<style>
+  #mainContent {
+    flex: 1 0 auto;
+    width: 100%;
+  }
+</style>

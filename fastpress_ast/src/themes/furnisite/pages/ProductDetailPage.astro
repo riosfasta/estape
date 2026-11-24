@@ -1,0 +1,396 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getProducts, type Product } from '../../../data/products';
+
+interface Props {
+  product?: any;
+  allProducts?: Product[];
+  isPreview?: boolean;
+  previewTheme?: string;
+}
+
+const {
+  product: propProduct,
+  allProducts = getProducts(),
+  isPreview = false,
+  previewTheme = 'furnisite',
+} = Astro.props;
+
+const prefix = isPreview ? `/preview/${previewTheme}` : '';
+
+// Fallback product if not found or direct preview
+const product = propProduct || {
+  id: 'furn-1',
+  slug: 'elowen-woven-lounge-chair',
+  title: 'Elowen Woven Lounge Chair',
+  price: 189,
+  compareAtPrice: 220,
+  category: 'Living Room',
+  image: 'https://images.unsplash.com/photo-1580481077198-c8270df7b045?auto=format&fit=crop&w=1000&q=80',
+  description: 'Handcrafted with architectural curves from steam-bent solid teak and tightly woven natural rattan. Features an ultra-resilient high-density foam cushion wrapped in Belgian cream linen.',
+  sku: 'INF-CH-089',
+};
+
+// Filter related products
+const relatedProducts = allProducts
+  .filter((p) => p.slug !== product.slug)
+  .slice(0, 3);
+---
+
+<Layout
+  title={`${product.title} - Infurnish`}
+  description={product.description || `Discover the ${product.title} at Infurnish.`}
+  activePage="products"
+  isPreview={isPreview}
+  previewTheme={previewTheme}
+>
+  <div class="fs-container">
+    <!-- Breadcrumbs -->
+    <nav class="fs-breadcrumbs" aria-label="Breadcrumb">
+      <a href={prefix ? `${prefix}/` : '/'}>Home</a>
+      <span>/</span>
+      <a href={prefix ? `${prefix}/products` : '/products'}>Products</a>
+      <span>/</span>
+      <span class="fs-crumb-current">{product.title}</span>
+    </nav>
+
+    <!-- Product Split Section -->
+    <section class="fs-pdp-layout">
+      <!-- Left: Imagery -->
+      <div class="fs-pdp-gallery">
+        <div class="fs-pdp-main-img-wrap">
+          <img src={product.image} alt={product.title} class="fs-pdp-main-img" />
+        </div>
+      </div>
+
+      <!-- Right: Details -->
+      <div class="fs-pdp-info">
+        <span class="fs-pdp-category">{product.category || 'Living Space'}</span>
+        <h1 class="fs-pdp-title">{product.title}</h1>
+
+        <div class="fs-pdp-price-wrap">
+          <span class="fs-pdp-price">${product.price}</span>
+          {product.compareAtPrice && product.compareAtPrice > product.price && (
+            <span class="fs-pdp-compare">${product.compareAtPrice}</span>
+          )}
+          <span class="fs-stock-badge">In Stock &amp; Ready to Ship</span>
+        </div>
+
+        <p class="fs-pdp-desc">
+          {product.description || 'Crafted with precision joinery and natural materials designed to withstand decades of daily use.'}
+        </p>
+
+        <!-- Product Actions -->
+        <div class="fs-pdp-actions">
+          <div class="fs-qty-picker">
+            <button type="button" class="fs-qty-btn" onclick="const input = this.nextElementSibling; if(input.value > 1) input.value--;">-</button>
+            <input type="number" value="1" min="1" class="fs-qty-input" />
+            <button type="button" class="fs-qty-btn" onclick="const input = this.previousElementSibling; input.value++;">+</button>
+          </div>
+          <button
+            type="button"
+            class="fs-btn fs-btn-dark fs-btn-lg fs-add-cart-btn"
+            onclick="alert('Added to shopping bag!');"
+          >
+            Add to Bag
+          </button>
+        </div>
+
+        <!-- Specs & Perks -->
+        <div class="fs-pdp-perks">
+          <div class="fs-perk-item">
+            <span class="fs-perk-icon">📦</span>
+            <div>
+              <strong>White Glove Delivery</strong>
+              <p>In-room delivery, unpacking, and packaging removal included.</p>
+            </div>
+          </div>
+          <div class="fs-perk-item">
+            <span class="fs-perk-icon">🛡️</span>
+            <div>
+              <strong>10-Year Framework Warranty</strong>
+              <p>Guaranteed structural durability against defect or joint failure.</p>
+            </div>
+          </div>
+          <div class="fs-perk-item">
+            <span class="fs-perk-icon">🔄</span>
+            <div>
+              <strong>30-Day Home Trial</strong>
+              <p>Experience the piece in your natural light with easy returns.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Related Products -->
+    {relatedProducts && relatedProducts.length > 0 && (
+      <section class="fs-related-section">
+        <h2 class="fs-related-title">Complementary Pieces</h2>
+        <div class="fs-related-grid">
+          {relatedProducts.map((item) => (
+            <article class="furnisite-product-card">
+              <a href={`${prefix}/products/${item.slug}`} class="furnisite-card-image-link">
+                <div class="furnisite-card-image-wrap">
+                  <img src={item.image} alt={item.title} class="furnisite-card-img" loading="lazy" />
+                  <span class="furnisite-card-arrow" aria-hidden="true">↗</span>
+                </div>
+              </a>
+              <div class="furnisite-card-meta">
+                <h3 class="furnisite-card-title">
+                  <a href={`${prefix}/products/${item.slug}`}>{item.title}</a>
+                </h3>
+                <div class="furnisite-card-price">${item.price}</div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    )}
+  </div>
+</Layout>
+
+<style>
+  .fs-breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 24px;
+    padding-bottom: 24px;
+    font-size: 0.85rem;
+    color: #71717a;
+  }
+
+  .fs-breadcrumbs a {
+    color: #71717a;
+    transition: color 0.15s ease;
+  }
+
+  .fs-breadcrumbs a:hover {
+    color: #18181b;
+  }
+
+  .fs-crumb-current {
+    color: #18181b;
+    font-weight: 500;
+  }
+
+  /* PDP Layout */
+  .fs-pdp-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 48px;
+    padding-bottom: 80px;
+    align-items: start;
+  }
+
+  @media (min-width: 900px) {
+    .fs-pdp-layout {
+      grid-template-columns: 1.15fr 1fr;
+      gap: 64px;
+    }
+  }
+
+  .fs-pdp-main-img-wrap {
+    background-color: #f7f6f2;
+    border-radius: 6px;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+  }
+
+  .fs-pdp-main-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .fs-pdp-info {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .fs-pdp-category {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #a1a1aa;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .fs-pdp-title {
+    font-family: var(--fs-font-heading);
+    font-size: 2.2rem;
+    font-weight: 800;
+    line-height: 1.2;
+    color: #18181b;
+    margin: 0 0 16px 0;
+  }
+
+  .fs-pdp-price-wrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .fs-pdp-price {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #18181b;
+  }
+
+  .fs-pdp-compare {
+    font-size: 1.1rem;
+    color: #a1a1aa;
+    text-decoration: line-through;
+  }
+
+  .fs-stock-badge {
+    background-color: #ecfdf5;
+    color: #059669;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 9999px;
+  }
+
+  .fs-pdp-desc {
+    font-size: 1rem;
+    line-height: 1.7;
+    color: #52525b;
+    margin-bottom: 32px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid #f0eee6;
+  }
+
+  /* Actions */
+  .fs-pdp-actions {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 36px;
+  }
+
+  .fs-qty-picker {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid #e4e4e7;
+    border-radius: 4px;
+    background-color: #faf9f6;
+  }
+
+  .fs-qty-btn {
+    background: none;
+    border: none;
+    padding: 10px 14px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    color: #27272a;
+  }
+
+  .fs-qty-input {
+    width: 44px;
+    text-align: center;
+    border: none;
+    background: transparent;
+    font-size: 0.95rem;
+    font-weight: 600;
+    outline: none;
+  }
+
+  .fs-add-cart-btn {
+    flex: 1;
+  }
+
+  /* Perks */
+  .fs-pdp-perks {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #f0eee6;
+  }
+
+  .fs-perk-item {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+
+  .fs-perk-icon {
+    font-size: 1.4rem;
+  }
+
+  .fs-perk-item strong {
+    font-size: 0.9rem;
+    color: #18181b;
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  .fs-perk-item p {
+    font-size: 0.82rem;
+    color: #71717a;
+    margin: 0;
+  }
+
+  /* Related */
+  .fs-related-section {
+    padding-top: 56px;
+    padding-bottom: 96px;
+    border-top: 1px solid #f0eee6;
+  }
+
+  .fs-related-title {
+    font-family: var(--fs-font-heading);
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #18181b;
+    margin-bottom: 32px;
+  }
+
+  .fs-related-grid {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 32px;
+  }
+
+  @media (min-width: 640px) {
+    .fs-related-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  .furnisite-card-image-wrap {
+    position: relative;
+    background-color: #f7f6f2;
+    border-radius: 4px;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+
+  .furnisite-card-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+  }
+
+  .furnisite-product-card:hover .furnisite-card-img {
+    transform: scale(1.04);
+  }
+
+  .furnisite-card-title {
+    font-family: var(--fs-font-heading);
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #18181b;
+    margin: 0 0 4px 0;
+  }
+
+  .furnisite-card-price {
+    font-size: 0.88rem;
+    color: #71717a;
+  }
+</style>

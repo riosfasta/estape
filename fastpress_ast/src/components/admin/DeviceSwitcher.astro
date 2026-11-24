@@ -1,0 +1,416 @@
+---
+// src/components/admin/DeviceSwitcher.astro
+// Standardized Viewport Device Switcher (Desktop / Tablet / Mobile) matching /editor
+
+interface Props {
+  initialDevice?: 'desktop' | 'tablet' | 'mobile';
+  class?: string;
+  style?: string;
+}
+
+const { initialDevice = 'desktop', class: className = '', style = '' } = Astro.props;
+
+const devices = [
+  {
+    id: 'desktop',
+    title: 'Desktop',
+    desc: 'Full 100% viewport',
+    iconSvg: `<rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line>`,
+  },
+  {
+    id: 'tablet',
+    title: 'Tablet',
+    desc: '768px - 992px tablet breakpoint',
+    iconSvg: `<rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line>`,
+  },
+  {
+    id: 'mobile',
+    title: 'Mobile',
+    desc: '375px mobile breakpoint',
+    iconSvg: `<rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line>`,
+  },
+];
+
+const currentDevice = devices.find((d) => d.id === initialDevice) || devices[0];
+---
+
+<div
+  class={`topbar-dropdown-wrap device-switcher-component ${className}`}
+  id="deviceDropdownWrap"
+  style={`position: relative; display: inline-flex; align-items: center; ${style}`}
+>
+  <button
+    type="button"
+    class="topbar-dropdown-btn"
+    id="btnDeviceDropdown"
+    title="Switch Viewport Device"
+    aria-haspopup="true"
+    aria-expanded="false"
+  >
+    <span
+      class="topbar-item-icon"
+      style="width: 20px; height: 20px; background: transparent; display: inline-flex; align-items: center; justify-content: center;"
+      id="deviceActiveIcon"
+    >
+      <svg
+        width="15"
+        height="15"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        set:html={currentDevice.iconSvg}
+      />
+    </span>
+    <span id="deviceActiveLabel">{currentDevice.title}</span>
+    <svg
+      class="device-chevron"
+      width="10"
+      height="10"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.5"
+    >
+      <polyline points="6 9 12 15 18 9"></polyline>
+    </svg>
+  </button>
+
+  <div class="topbar-dropdown-menu" id="deviceDropdownMenu" role="menu">
+    {
+      devices.map((dev) => {
+        const isActive = dev.id === initialDevice;
+        return (
+          <button
+            type="button"
+            class={`topbar-dropdown-item ${isActive ? 'active' : ''}`}
+            id={`btn${dev.title}`}
+            data-device={dev.id}
+            role="menuitem"
+          >
+            <div class="topbar-item-icon">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                set:html={dev.iconSvg}
+              />
+            </div>
+            <div class="topbar-item-text">
+              <span class="topbar-item-title">{dev.title}</span>
+              <span class="topbar-item-desc">{dev.desc}</span>
+            </div>
+          </button>
+        );
+      })
+    }
+  </div>
+</div>
+
+<style>
+  .topbar-dropdown-wrap.device-switcher-component {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    z-index: 9998;
+  }
+
+  .topbar-dropdown-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: #151922;
+    border: 1px solid #282f3d;
+    border-radius: 6px;
+    color: #e5e7eb;
+    font-size: 0.74rem;
+    font-weight: 600;
+    padding: 5px 10px;
+    height: 32px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: inherit;
+    user-select: none;
+    white-space: nowrap;
+  }
+
+  .topbar-dropdown-btn:hover {
+    background: #1c222e;
+    border-color: #3b4556;
+    color: #ffffff;
+  }
+
+  .topbar-dropdown-btn.active,
+  .topbar-dropdown-wrap.open .topbar-dropdown-btn {
+    background: #202636;
+    border-color: #3b82f6;
+    color: #ffffff;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  }
+
+  .device-chevron {
+    transition: transform 0.2s ease;
+    color: #9ca3af;
+  }
+
+  .topbar-dropdown-wrap.open .device-chevron {
+    transform: rotate(180deg);
+  }
+
+  .topbar-dropdown-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    min-width: 220px;
+    background: #141720;
+    border: 1px solid #2a3242;
+    border-radius: 8px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    padding: 6px;
+    z-index: 10000;
+  }
+
+  .topbar-dropdown-wrap.open .topbar-dropdown-menu {
+    display: block;
+    animation: topbarDropdownFadeIn 0.15s ease;
+  }
+
+  @keyframes topbarDropdownFadeIn {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -4px);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+  }
+
+  .topbar-dropdown-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 10px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: #d1d5db;
+    text-align: left;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.74rem;
+    transition: all 0.12s ease;
+    text-decoration: none;
+    box-sizing: border-box;
+  }
+
+  .topbar-dropdown-item:hover {
+    background: #1f2533;
+    color: #ffffff;
+  }
+
+  .topbar-dropdown-item.active {
+    background: rgba(37, 99, 235, 0.18);
+    color: #60a5fa;
+    font-weight: 700;
+  }
+
+  .topbar-dropdown-item.active .topbar-item-icon {
+    color: #60a5fa;
+    background: rgba(37, 99, 235, 0.25);
+  }
+
+  .topbar-item-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: #1a202c;
+    color: #94a3b8;
+    flex-shrink: 0;
+  }
+
+  .topbar-dropdown-item:hover .topbar-item-icon {
+    background: #252e3e;
+    color: #ffffff;
+  }
+
+  .topbar-item-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    line-height: 1.25;
+  }
+
+  .topbar-item-title {
+    font-weight: 600;
+    color: inherit;
+    font-size: 0.75rem;
+  }
+
+  .topbar-item-desc {
+    font-size: 0.65rem;
+    color: #64748b;
+    font-weight: 400;
+  }
+</style>
+
+<script is:inline>
+  (() => {
+    function initDeviceSwitchers() {
+      const devWrap = document.getElementById('deviceDropdownWrap');
+      const devBtn = document.getElementById('btnDeviceDropdown');
+      const devMenu = document.getElementById('deviceDropdownMenu');
+      const devIcon = document.getElementById('deviceActiveIcon');
+      const devLabel = document.getElementById('deviceActiveLabel');
+
+      if (!devWrap || !devBtn || !devMenu) return;
+      if (devWrap.dataset.devInitialized === 'true') return;
+      devWrap.dataset.devInitialized = 'true';
+
+      devBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = devWrap.classList.contains('open');
+        document.querySelectorAll('.topbar-dropdown-wrap.open').forEach((w) => {
+          if (w !== devWrap) w.classList.remove('open');
+        });
+        devWrap.classList.toggle('open', !isOpen);
+        devBtn.setAttribute('aria-expanded', !isOpen ? 'true' : 'false');
+      });
+
+      devMenu.querySelectorAll('.topbar-dropdown-item').forEach((item) => {
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const dev = item.dataset.device || 'desktop';
+
+          // 1. Update UI highlight, label & icon
+          devMenu.querySelectorAll('.topbar-dropdown-item').forEach((it) => it.classList.remove('active'));
+          item.classList.add('active');
+
+          const titleEl = item.querySelector('.topbar-item-title') || item;
+          if (titleEl && devLabel) {
+            devLabel.textContent = titleEl.textContent.trim();
+          }
+          const iconEl = item.querySelector('.topbar-item-icon svg');
+          if (iconEl && devIcon) {
+            devIcon.innerHTML = iconEl.outerHTML;
+          }
+
+          devWrap.classList.remove('open');
+          devBtn.setAttribute('aria-expanded', 'false');
+
+          // 2. Dispatch custom event for any listeners
+          window.dispatchEvent(
+            new CustomEvent('editor:device-changed', {
+              detail: { device: dev },
+            })
+          );
+
+          // 3. GrapesJS editor integration
+          if (window.editor && typeof window.editor.setDevice === 'function') {
+            try {
+              window.editor.setDevice(dev);
+            } catch (err) {}
+          }
+          if (window.blankEditor && typeof window.blankEditor.setDevice === 'function') {
+            try {
+              window.blankEditor.setDevice(
+                dev === 'tablet' ? 'Tablet' : dev === 'mobile' ? 'Mobile portrait' : 'Desktop'
+              );
+            } catch (err) {}
+          }
+
+          // 4. Click / trigger legacy buttons if any
+          const legacyBtns = document.querySelectorAll(
+            `.viewport-btn[data-mode="${dev}"], .viewport-btn[data-vp="${dev}"], .device-btn[data-device="${dev}"]`
+          );
+          legacyBtns.forEach((btn) => {
+            if (btn !== item) {
+              try {
+                btn.click();
+              } catch (err) {}
+            }
+          });
+
+          // 5. Header builder frame support
+          const previewDeviceFrame =
+            document.getElementById('previewDeviceFrame') || document.querySelector('.preview-device-frame');
+          if (previewDeviceFrame) {
+            previewDeviceFrame.className = 'preview-device-frame mode-' + dev;
+          }
+
+          // 6. Footer builder frame support
+          const canvasViewportFrame = document.getElementById('canvasViewportFrame');
+          const dimLabel = document.getElementById('canvasViewportDimensions');
+          if (canvasViewportFrame) {
+            canvasViewportFrame.className =
+              'canvas-viewport-frame' + (dev === 'tablet' ? ' is-tablet' : dev === 'mobile' ? ' is-mobile' : '');
+            if (dimLabel) {
+              dimLabel.textContent =
+                dev === 'tablet'
+                  ? 'Tablet View (768px)'
+                  : dev === 'mobile'
+                  ? 'Mobile View (375px)'
+                  : 'Desktop View (100% fluid)';
+            }
+            if (typeof window.renderLivePreview === 'function') {
+              try {
+                window.renderLivePreview();
+              } catch (err) {}
+            }
+          }
+
+          // 7. Form builder frame support
+          const formDeviceFrame = document.getElementById('deviceFrame') || document.querySelector('.canvas-device-frame');
+          if (formDeviceFrame) {
+            formDeviceFrame.className = 'canvas-device-frame ' + (dev !== 'desktop' ? dev : '');
+            if (typeof window.renderCanvas === 'function') {
+              try {
+                window.renderCanvas();
+              } catch (err) {}
+            }
+          }
+
+          // 8. Product editor previewShell support
+          const previewShell = document.getElementById('previewShell') || document.querySelector('.preview-shell');
+          if (previewShell) {
+            previewShell.style.width = dev === 'tablet' ? '768px' : dev === 'mobile' ? '390px' : '100%';
+          }
+        });
+      });
+
+      // Dismiss on click outside
+      document.addEventListener('click', (e) => {
+        if (!devWrap.contains(e.target)) {
+          devWrap.classList.remove('open');
+          devBtn.setAttribute('aria-expanded', 'false');
+        }
+      });
+
+      // Dismiss on Escape key
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          devWrap.classList.remove('open');
+          devBtn.setAttribute('aria-expanded', 'false');
+        }
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initDeviceSwitchers);
+    } else {
+      initDeviceSwitchers();
+    }
+    document.addEventListener('astro:page-load', initDeviceSwitchers);
+  })();
+</script>

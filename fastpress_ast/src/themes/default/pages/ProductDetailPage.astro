@@ -1,0 +1,462 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { type Product, getProductCategoriesArray, getProducts } from '../../../data/products';
+import {
+  getProductLayoutForProduct,
+  renderProductLayout,
+  buildPrimaryBuyUrl,
+  buildSecondaryInquiryUrl,
+} from '../../../data/product-layouts';
+import { syncGlobalTemplates, cleanLiveContent } from '../../../data/templates';
+
+interface Props {
+  product?: Product;
+  allProducts?: Product[];
+}
+
+const { product, allProducts = getProducts() } = Astro.props;
+
+const isBlankMode = product?.layoutMode === 'blank';
+const hasCustomBlankCanvas = Boolean(
+  isBlankMode &&
+    product &&
+    (product.css?.trim() ||
+      product.projectData ||
+      (product.content && /data-gjs-|class=["']|data-global-template-id/.test(product.content)))
+);
+
+const activeLayout = product && !isBlankMode ? getProductLayoutForProduct(product) : null;
+const renderedStandard =
+  product && activeLayout ? renderProductLayout(activeLayout, product, allProducts) : null;
+
+const blankCanvasHtml =
+  product && hasCustomBlankCanvas
+    ? cleanLiveContent(syncGlobalTemplates(product.content || ''))
+    : '';
+const blankCanvasCss = product && hasCustomBlankCanvas ? String(product.css || '') : '';
+
+const defaultProductSchema = product
+  ? JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'Product',
+      name: product.title,
+      image: Array.from(new Set([product.image, ...(product.gallery || [])].filter(Boolean))),
+      description: product.description || product.subtitle || product.title,
+      sku: product.sku || product.id,
+      category: getProductCategoriesArray(product).join(', '),
+      offers: {
+        '@type': 'Offer',
+        priceCurrency: (product.currency || 'USD').replace(/[^a-zA-Z]/g, '') || 'USD',
+        price: product.price,
+        availability:
+          product.stockStatus === 'out-of-stock'
+            ? 'https://schema.org/OutOfStock'
+            : 'https://schema.org/InStock',
+      },
+    })
+  : '';
+
+const categories = product ? getProductCategoriesArray(product) : [];
+const hasDiscount = Number(product?.compareAtPrice || 0) > Number(product?.price || 0);
+const discountPercent = hasDiscount && product
+  ? Math.round(((Number(product.compareAtPrice) - Number(product.price)) / Number(product.compareAtPrice)) * 100)
+  : 0;
+
+const primaryBuyUrl = product ? buildPrimaryBuyUrl(product) : '#';
+const secondaryInquiryUrl = product ? buildSecondaryInquiryUrl(product) : '#';
+---
+
+{product ? (
+  <Layout
+    title={product.metaTitle || `${product.title} | Official Catalog`}
+    description={product.metaDescription || product.description || product.subtitle}
+    keywords={product.metaKeywords || `${product.title}, ${categories.join(', ')}`}
+    schema={product.schema || defaultProductSchema}
+    pageCustomCode={product.customCode}
+    activePage="products"
+  >
+    <main
+      class="product-detail-runtime"
+      id="productRuntimeRoot"
+      data-buy-type={product.buyButton?.type || 'whatsapp'}
+      data-wa-num={String(product.buyButton?.whatsappNumber || '6281234567890').replace(/[^0-9]/g, '')}
+      data-product-title={product.title}
+      data-product-price={Number(product.price || 0).toFixed(2)}
+      data-product-currency={product.currency || '$'}
+      data-sku={product.sku || product.id}
+    >
+      {renderedStandard ? (
+        <div class="standard-layout-wrapper">
+          <Fragment set:html={renderedStandard.html} />
+          {renderedStandard.css && <style is:global set:html={renderedStandard.css} />}
+        </div>
+      ) : isBlankMode && hasCustomBlankCanvas ? (
+        <div class="blank-canvas-wrapper">
+          {blankCanvasCss && <style is:global set:html={blankCanvasCss} />}
+          <div class="product-blank-canvas" set:html={blankCanvasHtml} />
+        </div>
+      ) : (
+        <section class="default-product-view py-section">
+          <div class="container">
+            <nav class="breadcrumb-nav" aria-label="Breadcrumb">
+              <ol class="breadcrumb-list">
+                <li><a href="/">Home</a></li>
+                <li aria-hidden="true">/</li>
+                <li><a href="/products">Products</a></li>
+                <li aria-hidden="true">/</li>
+                <li class="breadcrumb-current">{product.title}</li>
+              </ol>
+            </nav>
+
+            <div class="product-detail-grid">
+              <!-- Gallery Column -->
+              <div class="product-gallery-box">
+                <div class="main-image-wrap">
+                  <img id="mainProductImg" src={product.image} alt={product.title} class="main-img" fetchpriority="high" />
+                  {hasDiscount && <span class="badge-discount-top">-{discountPercent}% OFF</span>}
+                </div>
+                {product.gallery && product.gallery.length > 1 && (
+                  <div class="thumbnails-row">
+                    {product.gallery.map((img, idx) => (
+                      <button type="button" class={`thumb-btn ${idx === 0 ? 'active' : ''}`} data-src={img}>
+                        <img src={img} alt={`Thumbnail ${idx + 1}`} />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <!-- Product Info Column -->
+              <div class="product-info-box">
+                <div class="category-chips">
+                  {categories.map((c) => (
+                    <span class="cat-chip">{c}</span>
+                  ))}
+                </div>
+
+                <h1 class="product-title-h1">{product.title}</h1>
+                {product.subtitle && <p class="product-subtitle-p">{product.subtitle}</p>}
+
+                <div class="pricing-row">
+                  <span class="price-val">{product.currency || '$'}{Number(product.price || 0).toFixed(2)}</span>
+                  {hasDiscount && (
+                    <span class="compare-val">{product.currency || '$'}{Number(product.compareAtPrice || 0).toFixed(2)}</span>
+                  )}
+                  <span class="stock-badge in-stock">
+                    {product.stockStatus === 'out-of-stock' ? 'Out of Stock' : 'In Stock & Ready to Ship'}
+                  </span>
+                </div>
+
+                <div class="desc-box">
+                  <p>{product.description}</p>
+                </div>
+
+                {product.sizes && product.sizes.length > 0 && (
+                  <div class="option-group">
+                    <label class="option-label">Select Size:</label>
+                    <div class="sizes-options">
+                      {product.sizes.map((sz, idx) => (
+                        <button type="button" class={`size-btn ${idx === 0 ? 'selected' : ''}`}>{sz}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div class="actions-group">
+                  <a href={primaryBuyUrl} class="btn-buy-primary" target="_blank" rel="noopener">
+                    <span>{product.buyButton?.label || 'Buy Now / Order'}</span>
+                  </a>
+                  {secondaryInquiryUrl && (
+                    <a href={secondaryInquiryUrl} class="btn-inquire-secondary" target="_blank" rel="noopener">
+                      <span>{product.inquiryButton?.label || 'Inquire via WhatsApp'}</span>
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+    </main>
+  </Layout>
+) : (
+  <Layout title="Product Not Found - 404" activePage="products">
+    <div class="container" style="padding: 100px 20px; text-align: center;">
+      <h1 style="font-size: 2.5rem; color: #fff; margin-bottom: 16px;">404 - Product Not Found</h1>
+      <p style="color: #9ca3af; margin-bottom: 24px;">The product you are looking for does not exist or has been removed.</p>
+      <a href="/products" style="display: inline-block; padding: 10px 24px; background: var(--color-primary); color: #fff; border-radius: 8px; text-decoration: none; font-weight: 600;">Browse All Products</a>
+    </div>
+  </Layout>
+)}
+
+<style>
+  .product-detail-runtime {
+    background: #0c0e14;
+    min-height: 80vh;
+  }
+
+  .default-product-view {
+    padding: 40px 0 80px;
+  }
+
+  .breadcrumb-nav {
+    margin-bottom: 28px;
+  }
+
+  .breadcrumb-list {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: #9ca3af;
+  }
+
+  .breadcrumb-list a:hover {
+    color: var(--color-primary);
+  }
+
+  .breadcrumb-current {
+    color: #ffffff;
+    font-weight: 600;
+  }
+
+  .product-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 52px;
+  }
+
+  .main-image-wrap {
+    position: relative;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #141722;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    aspect-ratio: 1;
+  }
+
+  .main-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .badge-discount-top {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    background: #ef4444;
+    color: #ffffff;
+    font-size: 0.82rem;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 8px;
+  }
+
+  .thumbnails-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+    overflow-x: auto;
+  }
+
+  .thumb-btn {
+    width: 72px;
+    height: 72px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 2px solid transparent;
+    background: #141722;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .thumb-btn.active {
+    border-color: var(--color-primary);
+  }
+
+  .thumb-btn img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .category-chips {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .cat-chip {
+    background: rgba(255, 94, 58, 0.15);
+    color: var(--color-primary);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 6px;
+  }
+
+  .product-title-h1 {
+    font-size: clamp(2rem, 3.5vw, 2.8rem);
+    font-weight: 800;
+    color: #ffffff;
+    line-height: 1.2;
+    margin-bottom: 8px;
+  }
+
+  .product-subtitle-p {
+    font-size: 1.05rem;
+    color: #9ca3af;
+    line-height: 1.5;
+    margin-bottom: 20px;
+  }
+
+  .pricing-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 24px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .price-val {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #ffffff;
+  }
+
+  .compare-val {
+    font-size: 1.2rem;
+    color: #6b7280;
+    text-decoration: line-through;
+  }
+
+  .stock-badge {
+    margin-left: auto;
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 9999px;
+  }
+
+  .stock-badge.in-stock {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+  }
+
+  .desc-box {
+    color: #d1d5db;
+    font-size: 1rem;
+    line-height: 1.65;
+    margin-bottom: 28px;
+  }
+
+  .option-group {
+    margin-bottom: 28px;
+  }
+
+  .option-label {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #ffffff;
+    margin-bottom: 10px;
+  }
+
+  .sizes-options {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .size-btn {
+    background: #141722;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .size-btn.selected, .size-btn:hover {
+    border-color: var(--color-primary);
+    background: rgba(255, 94, 58, 0.15);
+    color: var(--color-primary);
+  }
+
+  .actions-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 32px;
+  }
+
+  .btn-buy-primary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-primary);
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 1.05rem;
+    padding: 16px 28px;
+    border-radius: 10px;
+    text-decoration: none;
+    transition: filter 0.2s;
+  }
+
+  .btn-buy-primary:hover {
+    filter: brightness(1.1);
+  }
+
+  .btn-inquire-secondary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #141722;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 0.95rem;
+    padding: 14px 24px;
+    border-radius: 10px;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+
+  .btn-inquire-secondary:hover {
+    border-color: rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  @media (max-width: 868px) {
+    .product-detail-grid {
+      grid-template-columns: 1fr;
+      gap: 32px;
+    }
+  }
+</style>
+
+<script is:inline>
+  document.querySelectorAll('.thumb-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.thumb-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const src = btn.getAttribute('data-src');
+      const mainImg = document.getElementById('mainProductImg');
+      if (mainImg && src) mainImg.setAttribute('src', src);
+    });
+  });
+
+  document.querySelectorAll('.size-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.size-btn').forEach((b) => b.classList.remove('selected'));
+      btn.classList.add('selected');
+    });
+  });
+</script>

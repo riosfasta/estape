@@ -1,0 +1,7 @@
+{
+  "headScripts": "<!-- Google Tag Manager -->\n<script id=\"gtm-head-script\">(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':\nnew Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],\nj=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=\n'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);\n})(window,document,'script','dataLayer','GTM-FASTPRESS1');</script>\n<!-- End Google Tag Manager -->",
+  "bodyStartScripts": "<!-- Google Tag Manager (noscript) -->\n<noscript id=\"gtm-noscript-wrap\"><iframe src=\"https://www.googletagmanager.com/ns.html?id=GTM-FASTPRESS1\"\nheight=\"0\" width=\"0\" style=\"display:none;visibility:hidden\" id=\"gtm-noscript-frame\"></iframe></noscript>\n<!-- End Google Tag Manager (noscript) -->",
+  "bodyEndScripts": "<!-- Footer Test -->\n<script id=\"footer-chat-script\">console.log(\"Chat ready\");</script>",
+  "bodyScripts": "<!-- Footer Test -->\n<script id=\"footer-chat-script\">console.log(\"Chat ready\");</script>",
+  "customCss": "/* Custom Global Style */\n:root { --fp-gtm-active: 1; }"
+}

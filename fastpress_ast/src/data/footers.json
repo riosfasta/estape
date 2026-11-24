@@ -1,0 +1,602 @@
+{
+  "activeFooterId": "footer-furnisite",
+  "footers": [
+    {
+      "id": "footer-furnisite",
+      "name": "Furnisite 4-Column Luxury Footer ★ (Active Theme)",
+      "isActive": true,
+      "builderType": "visual",
+      "useTemplate": true,
+      "selectedTemplateId": "tpl-global-furnisite-footer",
+      "theme": "furnisite",
+      "layout": {
+        "type": "columns-with-newsletter",
+        "containerType": "wide",
+        "columnsCount": 4,
+        "paddingTop": 70,
+        "paddingBottom": 30,
+        "showBackToTop": true
+      },
+      "styling": {
+        "bgColor": "#ffffff",
+        "textColor": "#111827",
+        "headingColor": "#111827",
+        "mutedColor": "#6b7280",
+        "accentColor": "#111827",
+        "borderColor": "#e5e7eb",
+        "fontFamily": "Plus Jakarta Sans",
+        "fontSize": "0.9rem"
+      },
+      "logo": {
+        "source": "text",
+        "brandName": "INFURNISH",
+        "tagline": "Modern Living Studio",
+        "linkUrl": "/"
+      },
+      "about": {
+        "enabled": true,
+        "description": "Thoughtfully crafted furniture designed to transform modern living spaces with timeless simplicity, natural textures, and lasting comfort.",
+        "email": "hello@infurnish.studio",
+        "phone": "+1 (555) 019-2834",
+        "address": "450 Scandinavian Way, Design District"
+      },
+      "columns": [
+        {
+          "id": "col-collections",
+          "title": "Collections",
+          "links": [
+            { "id": "fl1", "label": "Living Room", "url": "/products" },
+            { "id": "fl2", "label": "Dining & Kitchen", "url": "/products" },
+            { "id": "fl3", "label": "Bedroom Sanctuary", "url": "/products" },
+            { "id": "fl4", "label": "Lighting & Fixtures", "url": "/products" },
+            { "id": "fl5", "label": "Storage & Shelving", "url": "/products" }
+          ]
+        },
+        {
+          "id": "col-studio",
+          "title": "INFURNISH",
+          "links": [
+            { "id": "fl6", "label": "About Our Studio", "url": "/about" },
+            { "id": "fl7", "label": "Living Space Journal", "url": "/blog" },
+            { "id": "fl8", "label": "Our Vision & Mission", "url": "/about#vision" },
+            { "id": "fl9", "label": "Showrooms & Contact", "url": "/contact" }
+          ]
+        }
+      ],
+      "newsletter": {
+        "enabled": true,
+        "title": "The Newsletter",
+        "description": "Receive design insights, private lookbook access, and 10% off your initial order.",
+        "placeholder": "Your email address",
+        "buttonText": "Subscribe"
+      },
+      "copyright": {
+        "text": "All rights reserved. Built with FastPress.",
+        "companyName": "INFURNISH Studio"
+      }
+    },
+    {
+      "id": "footer-saas-pro",
+      "name": "SaaS Pro (Multi-Column + Newsletter)",
+      "isActive": false,
+      "builderType": "visual",
+      "layout": {
+        "type": "columns-with-newsletter",
+        "containerType": "boxed",
+        "columnsCount": 3,
+        "paddingTop": 72,
+        "paddingBottom": 36,
+        "showBackToTop": true
+      },
+      "styling": {
+        "bgColor": "#0f1219",
+        "textColor": "#94a3b8",
+        "headingColor": "#f8fafc",
+        "mutedColor": "#64748b",
+        "accentColor": "#ff5e3a",
+        "borderColor": "rgba(255, 255, 255, 0.08)",
+        "fontFamily": "Plus Jakarta Sans",
+        "fontSize": "0.88rem"
+      },
+      "logo": {
+        "source": "custom",
+        "imageUrl": "/uploads/1793954693097-brian-land-hunter-head-shot-20.webp",
+        "brandName": "Better SaaS",
+        "tagline": "Modern Web Platform",
+        "linkUrl": "/"
+      },
+      "about": {
+        "enabled": true,
+        "description": "The modern visual website builder and CMS for high-performance Astro web applications.",
+        "email": "hello@bettercorp.com",
+        "phone": "+1 (555) 234-5678",
+        "address": "742 Evergreen Terrace, Tech District"
+      },
+      "columns": [
+        {
+          "id": "col-prod",
+          "title": "Platform",
+          "links": [
+            {
+              "id": "l1",
+              "label": "Visual Builder",
+              "url": "/editor"
+            },
+            {
+              "id": "l2",
+              "label": "Header Builder",
+              "url": "/header-builder"
+            },
+            {
+              "id": "l3",
+              "label": "Footer Builder",
+              "url": "/footer-builder"
+            },
+            {
+              "id": "l4",
+              "label": "Blog Engine",
+              "url": "/blog"
+            }
+          ]
+        },
+        {
+          "id": "col-res",
+          "title": "Resources",
+          "links": [
+            {
+              "id": "l5",
+              "label": "Documentation",
+              "url": "/blog"
+            },
+            {
+              "id": "l6",
+              "label": "Changelog",
+              "url": "/blog"
+            },
+            {
+              "id": "l7",
+              "label": "Tutorials",
+              "url": "/blog"
+            },
+            {
+              "id": "l8",
+              "label": "Community",
+              "url": "/#"
+            }
+          ]
+        },
+        {
+          "id": "col-comp",
+          "title": "Company",
+          "links": [
+            {
+              "id": "l9",
+              "label": "About Us",
+              "url": "/tentang-kami"
+            },
+            {
+              "id": "l10",
+              "label": "Our Work",
+              "url": "/#work"
+            },
+            {
+              "id": "l11",
+              "label": "Services",
+              "url": "/#services"
+            },
+            {
+              "id": "l12",
+              "label": "Contact",
+              "url": "/#contact"
+            }
+          ]
+        }
+      ],
+      "newsletter": {
+        "enabled": true,
+        "title": "Stay in the Loop",
+        "description": "Subscribe for the latest news, product updates, and design insights.",
+        "buttonText": "Subscribe",
+        "placeholder": "Enter your email address...",
+        "actionUrl": "#"
+      },
+      "social": {
+        "enabled": true,
+        "links": [
+          {
+            "name": "Facebook",
+            "href": "https://facebook.com",
+            "enabled": true
+          },
+          {
+            "name": "Twitter",
+            "href": "https://twitter.com",
+            "enabled": true
+          },
+          {
+            "name": "LinkedIn",
+            "href": "https://linkedin.com",
+            "enabled": true
+          },
+          {
+            "name": "Instagram",
+            "href": "https://instagram.com",
+            "enabled": true
+          },
+          {
+            "name": "GitHub",
+            "href": "https://github.com",
+            "enabled": true
+          }
+        ]
+      },
+      "bottomBar": {
+        "enabled": true,
+        "companyName": "Better Corp Inc.",
+        "copyrightText": "All Rights Reserved.",
+        "showYear": true,
+        "links": [
+          {
+            "id": "bl1",
+            "label": "Privacy Policy",
+            "url": "/#"
+          },
+          {
+            "id": "bl2",
+            "label": "Terms of Service",
+            "url": "/#"
+          },
+          {
+            "id": "bl3",
+            "label": "Security",
+            "url": "/#"
+          }
+        ]
+      },
+      "customCode": {
+        "enabled": false,
+        "desktopHtml": "",
+        "tabletHtml": "",
+        "mobileHtml": "",
+        "customCss": "",
+        "customJs": ""
+      }
+    },
+    {
+      "id": "footer-minimal-clean",
+      "name": "Minimal Clean (Single-Line Bar)",
+      "isActive": false,
+      "builderType": "visual",
+      "layout": {
+        "type": "simple-inline",
+        "containerType": "boxed",
+        "columnsCount": 0,
+        "paddingTop": 36,
+        "paddingBottom": 36,
+        "showBackToTop": true
+      },
+      "styling": {
+        "bgColor": "#11141a",
+        "textColor": "#94a3b8",
+        "headingColor": "#f1f5f9",
+        "mutedColor": "#64748b",
+        "accentColor": "#ff5e3a",
+        "borderColor": "rgba(255, 255, 255, 0.06)",
+        "fontFamily": "Plus Jakarta Sans",
+        "fontSize": "0.86rem"
+      },
+      "logo": {
+        "source": "default",
+        "imageUrl": "",
+        "brandName": "Better SaaS",
+        "tagline": "",
+        "linkUrl": "/"
+      },
+      "about": {
+        "enabled": false,
+        "description": ""
+      },
+      "columns": [],
+      "newsletter": {
+        "enabled": false,
+        "title": "",
+        "description": "",
+        "buttonText": "",
+        "placeholder": ""
+      },
+      "social": {
+        "enabled": true,
+        "links": [
+          {
+            "name": "Facebook",
+            "href": "https://facebook.com",
+            "enabled": true
+          },
+          {
+            "name": "Twitter",
+            "href": "https://twitter.com",
+            "enabled": true
+          },
+          {
+            "name": "LinkedIn",
+            "href": "https://linkedin.com",
+            "enabled": true
+          },
+          {
+            "name": "Instagram",
+            "href": "https://instagram.com",
+            "enabled": true
+          }
+        ]
+      },
+      "bottomBar": {
+        "enabled": true,
+        "companyName": "Better Corp Inc.",
+        "copyrightText": "All Rights Reserved.",
+        "showYear": true,
+        "links": [
+          {
+            "id": "b1",
+            "label": "Home",
+            "url": "/"
+          },
+          {
+            "id": "b2",
+            "label": "About",
+            "url": "/tentang-kami"
+          },
+          {
+            "id": "b3",
+            "label": "Blog",
+            "url": "/blog"
+          },
+          {
+            "id": "b4",
+            "label": "Contact",
+            "url": "/#contact"
+          }
+        ]
+      },
+      "customCode": {
+        "enabled": false,
+        "desktopHtml": "",
+        "tabletHtml": "",
+        "mobileHtml": "",
+        "customCss": "",
+        "customJs": ""
+      }
+    },
+    {
+      "id": "footer-corporate-4col",
+      "name": "Corporate 4-Column Grid",
+      "isActive": false,
+      "builderType": "visual",
+      "layout": {
+        "type": "multi-column",
+        "containerType": "boxed",
+        "columnsCount": 4,
+        "paddingTop": 64,
+        "paddingBottom": 32,
+        "showBackToTop": true
+      },
+      "styling": {
+        "bgColor": "#0b0e14",
+        "textColor": "#a1a1aa",
+        "headingColor": "#ffffff",
+        "mutedColor": "#71717a",
+        "accentColor": "#3b82f6",
+        "borderColor": "rgba(255, 255, 255, 0.08)",
+        "fontFamily": "Montserrat",
+        "fontSize": "0.88rem"
+      },
+      "logo": {
+        "source": "default",
+        "imageUrl": "",
+        "brandName": "Better SaaS",
+        "tagline": "Enterprise Cloud Solutions",
+        "linkUrl": "/"
+      },
+      "about": {
+        "enabled": true,
+        "description": "Leading global provider of cloud platform infrastructure and modern digital experiences.",
+        "email": "enterprise@bettercorp.com",
+        "phone": "+1 (800) 555-0199"
+      },
+      "columns": [
+        {
+          "id": "col-sol",
+          "title": "Solutions",
+          "links": [
+            {
+              "id": "c1",
+              "label": "Cloud Hosting",
+              "url": "/#"
+            },
+            {
+              "id": "c2",
+              "label": "Data Security",
+              "url": "/#"
+            },
+            {
+              "id": "c3",
+              "label": "CI/CD Automation",
+              "url": "/#"
+            },
+            {
+              "id": "c4",
+              "label": "AI Optimization",
+              "url": "/#"
+            }
+          ]
+        },
+        {
+          "id": "col-dev",
+          "title": "Developers",
+          "links": [
+            {
+              "id": "c5",
+              "label": "API Reference",
+              "url": "/#"
+            },
+            {
+              "id": "c6",
+              "label": "GitHub SDKs",
+              "url": "/#"
+            },
+            {
+              "id": "c7",
+              "label": "Integrations",
+              "url": "/#"
+            },
+            {
+              "id": "c8",
+              "label": "Status Page",
+              "url": "/#"
+            }
+          ]
+        },
+        {
+          "id": "col-leg",
+          "title": "Legal & Trust",
+          "links": [
+            {
+              "id": "c9",
+              "label": "GDPR Compliance",
+              "url": "/#"
+            },
+            {
+              "id": "c10",
+              "label": "Privacy Policy",
+              "url": "/#"
+            },
+            {
+              "id": "c11",
+              "label": "Terms of Use",
+              "url": "/#"
+            },
+            {
+              "id": "c12",
+              "label": "Cookie Settings",
+              "url": "/#"
+            }
+          ]
+        }
+      ],
+      "newsletter": {
+        "enabled": false,
+        "title": "",
+        "description": "",
+        "buttonText": "",
+        "placeholder": ""
+      },
+      "social": {
+        "enabled": true,
+        "links": [
+          {
+            "name": "Twitter",
+            "href": "https://twitter.com",
+            "enabled": true
+          },
+          {
+            "name": "LinkedIn",
+            "href": "https://linkedin.com",
+            "enabled": true
+          },
+          {
+            "name": "GitHub",
+            "href": "https://github.com",
+            "enabled": true
+          }
+        ]
+      },
+      "bottomBar": {
+        "enabled": true,
+        "companyName": "Better Corp Inc.",
+        "copyrightText": "All Rights Reserved. Registered Trademark.",
+        "showYear": true,
+        "links": [
+          {
+            "id": "l1",
+            "label": "Security Whitepaper",
+            "url": "/#"
+          },
+          {
+            "id": "l2",
+            "label": "Compliance Reports",
+            "url": "/#"
+          }
+        ]
+      },
+      "customCode": {
+        "enabled": false,
+        "desktopHtml": "",
+        "tabletHtml": "",
+        "mobileHtml": "",
+        "customCss": "",
+        "customJs": ""
+      }
+    },
+    {
+      "id": "footer-custom-script",
+      "name": "Custom HTML / CSS / JS Footer (Device Responsive)",
+      "isActive": false,
+      "builderType": "custom-code",
+      "layout": {
+        "type": "multi-column",
+        "containerType": "boxed",
+        "columnsCount": 3,
+        "paddingTop": 60,
+        "paddingBottom": 30,
+        "showBackToTop": true
+      },
+      "styling": {
+        "bgColor": "#0f172a",
+        "textColor": "#94a3b8",
+        "headingColor": "#f8fafc",
+        "mutedColor": "#64748b",
+        "accentColor": "#38bdf8",
+        "borderColor": "rgba(255, 255, 255, 0.08)",
+        "fontFamily": "Plus Jakarta Sans",
+        "fontSize": "0.88rem"
+      },
+      "logo": {
+        "source": "default",
+        "imageUrl": "",
+        "brandName": "Better SaaS",
+        "tagline": "Custom Layout",
+        "linkUrl": "/"
+      },
+      "about": {
+        "enabled": false,
+        "description": ""
+      },
+      "columns": [],
+      "newsletter": {
+        "enabled": false,
+        "title": "",
+        "description": "",
+        "buttonText": "",
+        "placeholder": ""
+      },
+      "social": {
+        "enabled": false,
+        "links": []
+      },
+      "bottomBar": {
+        "enabled": false,
+        "companyName": "Better Corp Inc.",
+        "copyrightText": "",
+        "showYear": true,
+        "links": []
+      },
+      "customCode": {
+        "enabled": true,
+        "desktopHtml": "<div class=\"custom-footer-inner\" style=\"display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto; padding: 40px 20px;\">\n  <div>\n    <h3 style=\"margin: 0 0 6px 0; color: #fff; font-size: 1.25rem;\">Better SaaS Platform</h3>\n    <p style=\"margin: 0; color: #94a3b8; font-size: 0.88rem;\">Engineered for high performance, accessibility and speed.</p>\n  </div>\n  <div style=\"display: flex; gap: 20px;\">\n    <a href=\"/\" style=\"color: #38bdf8; text-decoration: none;\">Home</a>\n    <a href=\"/blog\" style=\"color: #38bdf8; text-decoration: none;\">Blog</a>\n    <a href=\"/editor\" style=\"color: #38bdf8; text-decoration: none;\">Page Builder</a>\n    <a href=\"/header-builder\" style=\"color: #38bdf8; text-decoration: none;\">Header</a>\n    <a href=\"/footer-builder\" style=\"color: #38bdf8; text-decoration: none;\">Footer</a>\n  </div>\n</div>",
+        "tabletHtml": "<div class=\"custom-footer-inner\" style=\"display: flex; flex-direction: column; gap: 20px; align-items: center; text-align: center; max-width: 768px; margin: 0 auto; padding: 30px 20px;\">\n  <div>\n    <h3 style=\"margin: 0 0 6px 0; color: #fff; font-size: 1.15rem;\">Better SaaS Platform</h3>\n    <p style=\"margin: 0; color: #94a3b8; font-size: 0.84rem;\">Engineered for high performance, accessibility and speed.</p>\n  </div>\n  <div style=\"display: flex; flex-wrap: wrap; justify-content: center; gap: 16px;\">\n    <a href=\"/\" style=\"color: #38bdf8; text-decoration: none;\">Home</a>\n    <a href=\"/blog\" style=\"color: #38bdf8; text-decoration: none;\">Blog</a>\n    <a href=\"/editor\" style=\"color: #38bdf8; text-decoration: none;\">Page Builder</a>\n  </div>\n</div>",
+        "mobileHtml": "<div class=\"custom-footer-inner\" style=\"display: flex; flex-direction: column; gap: 18px; align-items: center; text-align: center; padding: 24px 16px;\">\n  <h3 style=\"margin: 0; color: #fff; font-size: 1.1rem;\">Better SaaS</h3>\n  <div style=\"display: flex; flex-direction: column; gap: 10px;\">\n    <a href=\"/\" style=\"color: #38bdf8; text-decoration: none;\">Home</a>\n    <a href=\"/blog\" style=\"color: #38bdf8; text-decoration: none;\">Blog</a>\n    <a href=\"/editor\" style=\"color: #38bdf8; text-decoration: none;\">Builder</a>\n  </div>\n  <p style=\"margin: 10px 0 0 0; color: #64748b; font-size: 0.75rem;\">&copy; 2026 Better Corp Inc.</p>\n</div>",
+        "customCss": "/* Custom responsive styling */\n.custom-footer-inner a:hover {\n  text-decoration: underline !important;\n  color: #ff5e3a !important;\n}",
+        "customJs": "console.log(\"Custom footer script initialized\");"
+      }
+    }
+  ]
+}

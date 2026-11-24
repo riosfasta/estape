@@ -1,0 +1,22 @@
+---
+export const prerender = false;
+
+import { getActiveThemeName, getThemePages } from '../../core/theme';
+import ProductsPage from '../../themes/default/pages/ProductsPage.astro';
+import FurnisiteProductsPage from '../../themes/furnisite/pages/ProductsPage.astro';
+import { getProducts } from '../../data/products';
+import { getProductCategories } from '../../data/product-categories';
+
+const activeTheme = getActiveThemeName();
+const pages = getThemePages(activeTheme);
+const customProductsPage = pages.products || null;
+
+const products = getProducts().filter((p) => p.status !== 'draft');
+const categories = getProductCategories();
+---
+
+{activeTheme === 'furnisite' ? (
+  <FurnisiteProductsPage products={products} categories={categories} customProductsPage={customProductsPage} />
+) : (
+  <ProductsPage products={products} categories={categories} customProductsPage={customProductsPage} />
+)}

@@ -1,0 +1,352 @@
+---
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
+interface Props {
+  isPreview?: boolean;
+  previewTheme?: string;
+}
+
+const { isPreview = false, previewTheme = 'furnisite' } = Astro.props;
+
+let siteConfig: any = null;
+try {
+  const configFile = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
+  const raw = await fs.readFile(configFile, 'utf-8');
+  siteConfig = JSON.parse(raw);
+} catch {}
+
+const furniConfig = siteConfig?.themeConfigs?.furnisite || siteConfig;
+
+const brandName = furniConfig?.brandName || (siteConfig?.brandName && siteConfig.brandName !== 'Better SaaS' ? siteConfig.brandName : 'INFURNISH');
+const footerData = furniConfig?.footer || siteConfig?.footer || {};
+const description = footerData.description || 'Thoughtfully crafted furniture designed to transform modern living spaces with timeless simplicity, natural textures, and lasting comfort.';
+const copyrightNotice = footerData.copyrightText || 'All rights reserved. Built with FastPress.';
+const prefix = isPreview ? `/preview/${previewTheme}` : '';
+const currentYear = new Date().getFullYear();
+
+const collections = Array.isArray(footerData.collections) && footerData.collections.length > 0
+  ? footerData.collections
+  : [
+      { name: 'Living Room', href: '/products' },
+      { name: 'Dining & Kitchen', href: '/products' },
+      { name: 'Bedroom Sanctuary', href: '/products' },
+      { name: 'Lighting & Fixtures', href: '/products' },
+      { name: 'Storage & Shelving', href: '/products' },
+    ];
+
+const companyLinks = Array.isArray(footerData.companyLinks) && footerData.companyLinks.length > 0
+  ? footerData.companyLinks
+  : [
+      { name: 'About Our Studio', href: '/about' },
+      { name: 'Living Space Journal', href: '/blog' },
+      { name: 'Our Vision & Mission', href: '/about#vision' },
+      { name: 'Showrooms & Contact', href: '/contact' },
+    ];
+
+// Check if active footer in footers.json uses template mode
+let customFooterHtml = '';
+let customFooterCss = '';
+try {
+  let activeFooterConfig: any = null;
+  try {
+    const footersFile = path.join(process.cwd(), 'src', 'data', 'footers.json');
+    const footersRaw = await fs.readFile(footersFile, 'utf-8');
+    const footersStore = JSON.parse(footersRaw);
+    activeFooterConfig = footersStore.footers.find((f: any) => f.id === footersStore.activeFooterId) || footersStore.footers[0];
+  } catch {}
+
+  const tplFile = path.join(process.cwd(), 'src', 'data', 'templates.json');
+  const tplRaw = await fs.readFile(tplFile, 'utf-8');
+  const templates = JSON.parse(tplRaw);
+
+  if (activeFooterConfig && activeFooterConfig.useTemplate !== undefined) {
+    if (activeFooterConfig.useTemplate) {
+      const targetTplId = activeFooterConfig.selectedTemplateId || 'tpl-global-furnisite-footer';
+      const chosenTpl = templates.find((t: any) => t.id === targetTplId);
+      if (chosenTpl && chosenTpl.html) {
+        customFooterHtml = chosenTpl.html;
+        customFooterCss = chosenTpl.css || '';
+      }
+    }
+  } else {
+    // Fallback: check tpl-global-furnisite-footer
+    const customTpl = templates.find((t: any) => t.id === 'tpl-global-furnisite-footer');
+    if (customTpl && customTpl.isCustomized && customTpl.html) {
+      customFooterHtml = customTpl.html;
+      customFooterCss = customTpl.css || '';
+    }
+  }
+} catch {}
+---
+
+{customFooterHtml ? (
+  <div class="furnisite-custom-footer-wrapper">
+    {customFooterCss && <style is:inline set:html={customFooterCss} />}
+    <Fragment set:html={customFooterHtml} />
+  </div>
+) : (
+<footer class="furnisite-footer">
+  <div class="fs-container">
+    <div class="furnisite-footer-grid">
+      <!-- Col 1: Brand & Slogan -->
+      <div class="furnisite-footer-col furnisite-footer-brand">
+        <a href={prefix ? `${prefix}/` : '/'} class="furnisite-footer-logo">{brandName}</a>
+        <p class="furnisite-footer-desc">
+          {description}
+        </p>
+        <div class="furnisite-social-links">
+          <a href="#" aria-label="Instagram" class="furnisite-social-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+              <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+              <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
+            </svg>
+          </a>
+          <a href="#" aria-label="Pinterest" class="furnisite-social-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+          </a>
+          <a href="#" aria-label="Twitter" class="furnisite-social-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"></path>
+            </svg>
+          </a>
+        </div>
+      </div>
+
+      <!-- Col 2: Shop Links -->
+      <div class="furnisite-footer-col">
+        <h4 class="furnisite-footer-heading">Collections</h4>
+        <ul class="furnisite-footer-links">
+          {collections.map((item: any) => (
+            <li><a href={prefix ? `${prefix}${item.href}` : item.href}>{item.name}</a></li>
+          ))}
+        </ul>
+      </div>
+
+      <!-- Col 3: Company & Journal -->
+      <div class="furnisite-footer-col">
+        <h4 class="furnisite-footer-heading">{brandName}</h4>
+        <ul class="furnisite-footer-links">
+          {companyLinks.map((item: any) => (
+            <li><a href={prefix ? `${prefix}${item.href}` : item.href}>{item.name}</a></li>
+          ))}
+        </ul>
+      </div>
+
+      <!-- Col 4: Newsletter -->
+      <div class="furnisite-footer-col furnisite-footer-newsletter">
+        <h4 class="furnisite-footer-heading">The Newsletter</h4>
+        <p class="furnisite-newsletter-text">
+          Receive design insights, private lookbook access, and 10% off your initial order.
+        </p>
+        <form class="furnisite-newsletter-form" onsubmit="event.preventDefault(); alert('Thank you for subscribing to Infurnish Journal.');">
+          <input type="email" placeholder="Your email address" required class="furnisite-newsletter-input" />
+          <button type="submit" class="furnisite-newsletter-btn">Subscribe</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Bottom Bar -->
+    <div class="furnisite-footer-bottom">
+      <p class="furnisite-copyright">
+        &copy; {currentYear} {brandName}. {copyrightNotice}
+      </p>
+      <div class="furnisite-legal-links">
+        <a href="#">Privacy Policy</a>
+        <span>·</span>
+        <a href="#">Terms of Service</a>
+        <span>·</span>
+        <a href="#">Shipping Policy</a>
+      </div>
+    </div>
+  </div>
+</footer>
+)}
+
+<style>
+  .furnisite-footer {
+    background-color: #faf9f6;
+    border-top: 1px solid #e7e5e0;
+    padding-top: 72px;
+    padding-bottom: 36px;
+    color: #3f3f46;
+  }
+
+  .furnisite-footer-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 40px;
+    margin-bottom: 60px;
+  }
+
+  @media (min-width: 640px) {
+    .furnisite-footer-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .furnisite-footer-grid {
+      grid-template-columns: 1.5fr 1fr 1fr 1.3fr;
+      gap: 48px;
+    }
+  }
+
+  .furnisite-footer-logo {
+    font-family: var(--fs-font-heading);
+    font-size: 1.25rem;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    color: #18181b;
+    text-transform: uppercase;
+    display: inline-block;
+    margin-bottom: 14px;
+  }
+
+  .furnisite-footer-desc {
+    font-size: 0.9rem;
+    color: #71717a;
+    line-height: 1.6;
+    margin-bottom: 20px;
+    max-width: 320px;
+  }
+
+  .furnisite-social-links {
+    display: flex;
+    gap: 12px;
+  }
+
+  .furnisite-social-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: #ffffff;
+    border: 1px solid #e4e4e7;
+    color: #52525b;
+    transition: all 0.2s ease;
+  }
+
+  .furnisite-social-icon:hover {
+    background-color: #18181b;
+    color: #ffffff;
+    border-color: #18181b;
+  }
+
+  .furnisite-footer-heading {
+    font-family: var(--fs-font-heading);
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #18181b;
+    margin-bottom: 18px;
+  }
+
+  .furnisite-footer-links {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .furnisite-footer-links a {
+    font-size: 0.9rem;
+    color: #71717a;
+    transition: color 0.15s ease;
+  }
+
+  .furnisite-footer-links a:hover {
+    color: #18181b;
+  }
+
+  .furnisite-newsletter-text {
+    font-size: 0.88rem;
+    color: #71717a;
+    margin-bottom: 14px;
+    line-height: 1.5;
+  }
+
+  .furnisite-newsletter-form {
+    display: flex;
+    gap: 8px;
+  }
+
+  .furnisite-newsletter-input {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid #d4d4d8;
+    background-color: #ffffff;
+    border-radius: 4px;
+    font-size: 0.88rem;
+    outline: none;
+    transition: border-color 0.18s ease;
+  }
+
+  .furnisite-newsletter-input:focus {
+    border-color: #18181b;
+  }
+
+  .furnisite-newsletter-btn {
+    padding: 10px 16px;
+    background-color: #18181b;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    font-family: var(--fs-font-heading);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.18s ease;
+    white-space: nowrap;
+  }
+
+  .furnisite-newsletter-btn:hover {
+    background-color: #27272a;
+  }
+
+  .furnisite-footer-bottom {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding-top: 28px;
+    border-top: 1px solid #e7e5e0;
+    font-size: 0.82rem;
+    color: #a1a1aa;
+  }
+
+  @media (min-width: 640px) {
+    .furnisite-footer-bottom {
+      flex-direction: row;
+    }
+  }
+
+  .furnisite-copyright {
+    margin: 0;
+  }
+
+  .furnisite-legal-links {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .furnisite-legal-links a {
+    color: #71717a;
+    transition: color 0.15s ease;
+  }
+
+  .furnisite-legal-links a:hover {
+    color: #18181b;
+  }
+</style>

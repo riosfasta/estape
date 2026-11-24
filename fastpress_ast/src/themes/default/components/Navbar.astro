@@ -1,0 +1,12 @@
+---
+import SiteHeader from './SiteHeader.astro';
+
+interface Props {
+  activePage?: 'home' | 'about' | 'work' | 'testimonials' | 'services' | 'contact' | string;
+  brandName?: string;
+}
+
+const { activePage = 'home' } = Astro.props;
+---
+
+<SiteHeader activePage={activePage} />

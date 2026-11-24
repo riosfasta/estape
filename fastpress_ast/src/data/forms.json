@@ -1,0 +1,282 @@
+{
+  "forms": [
+    {
+      "id": "form-contact-default",
+      "name": "Contact & Inquiry Form",
+      "createdAt": "2026-11-10T12:00:00.000Z",
+      "updatedAt": "2026-11-11T03:33:19.494Z",
+      "fields": [
+        {
+          "id": "field_first_name",
+          "type": "text",
+          "label": "First Name",
+          "placeholder": "John",
+          "required": true,
+          "width": "50%",
+          "description": ""
+        },
+        {
+          "id": "field_last_name",
+          "type": "text",
+          "label": "Last Name",
+          "placeholder": "Doe",
+          "required": true,
+          "width": "50%",
+          "description": ""
+        },
+        {
+          "id": "field_email",
+          "type": "email",
+          "label": "Business Email",
+          "placeholder": "john@example.com",
+          "required": true,
+          "width": "50%",
+          "description": "We will never share your email."
+        },
+        {
+          "id": "field_phone",
+          "type": "phone",
+          "label": "Phone Number",
+          "placeholder": "+1 (555) 000-0000",
+          "required": false,
+          "width": "50%",
+          "description": "Optional for phone callback"
+        },
+        {
+          "id": "field_inquiry_type",
+          "type": "select",
+          "label": "Inquiry Type",
+          "required": true,
+          "width": "50%",
+          "options": [
+            {
+              "label": "General Inquiry",
+              "value": "General Inquiry",
+              "isDefault": true
+            },
+            {
+              "label": "Project Consultation",
+              "value": "Project Consultation"
+            },
+            {
+              "label": "Technical Support",
+              "value": "Technical Support"
+            },
+            {
+              "label": "Partnership",
+              "value": "Partnership"
+            }
+          ],
+          "description": "Select what best describes your need."
+        },
+        {
+          "id": "field_project_budget",
+          "type": "radio",
+          "label": "Estimated Project Budget",
+          "required": true,
+          "width": "100%",
+          "options": [
+            {
+              "label": "< $2,500 USD",
+              "value": "< $2,500 USD"
+            },
+            {
+              "label": "$2,500 - $10,000 USD",
+              "value": "$2,500 - $10,000 USD",
+              "isDefault": true
+            },
+            {
+              "label": "$10,000+ USD",
+              "value": "$10,000+ USD"
+            }
+          ],
+          "description": "Helps us tailor our proposal to your expectations.",
+          "conditionalLogic": {
+            "enabled": true,
+            "action": "show",
+            "logicType": "all",
+            "rules": [
+              {
+                "fieldId": "field_inquiry_type",
+                "operator": "is",
+                "value": "Project Consultation"
+              }
+            ]
+          }
+        },
+        {
+          "id": "field_message",
+          "type": "textarea",
+          "label": "Your Message",
+          "placeholder": "Tell us about your project, timeline, and goals...",
+          "required": true,
+          "width": "100%",
+          "description": ""
+        }
+      ],
+      "settings": {
+        "title": "Get In Touch",
+        "description": "Fill out the form below and our team will get back to you within 24 hours.",
+        "submitButton": {
+          "text": "Send Message 🚀",
+          "align": "left",
+          "bgColor": "#ff5e3a",
+          "textColor": "#ffffff",
+          "borderRadius": "8px",
+          "size": "md"
+        },
+        "googleSheets": {
+          "enabled": true,
+          "sheetUrl": "https://script.google.com/macros/s/AKfycbwD34R5Z3mP0hHDplbi0RtuffiJQDM9RAQ9OHRmA6yNfRYTJlpkTGBe7gPcXo7w84ZH/exec",
+          "tabName": "Sheet1",
+          "webhookUrl": "https://script.google.com/macros/s/AKfycbwD34R5Z3mP0hHDplbi0RtuffiJQDM9RAQ9OHRmA6yNfRYTJlpkTGBe7gPcXo7w84ZH/exec"
+        },
+        "spamProtection": {
+          "method": "method2",
+          "honeypotEnabled": true,
+          "minSubmissionSeconds": 2
+        },
+        "confirmation": {
+          "type": "message",
+          "message": "🎉 Thank you! Your message has been sent successfully. We will reach out shortly."
+        },
+        "styling": {
+          "theme": "bordered",
+          "labelColor": "#f3f4f6",
+          "inputBg": "#111827",
+          "inputBorder": "#374151",
+          "inputTextColor": "#ffffff",
+          "borderRadius": "8px",
+          "formBgColor": "#0f131d",
+          "formBorderColor": "#28334a",
+          "formBorderWidth": "1px",
+          "formBorderStyle": "solid",
+          "formBorderRadius": "14px",
+          "formPadding": "32px",
+          "formBgImage": "",
+          "formBgOverlay": ""
+        },
+        "showTitle": true,
+        "titleColor": "#f3f4f6",
+        "titleSize": "1.45rem",
+        "titleAlign": "left",
+        "showDescription": true,
+        "descriptionColor": "#9ca3af",
+        "descriptionSize": "0.9rem"
+      }
+    },
+    {
+      "id": "form-lead-gen",
+      "name": "Quick Lead & Demo Request",
+      "createdAt": "2026-11-10T12:00:00.000Z",
+      "updatedAt": "2026-11-10T12:00:00.000Z",
+      "fields": [
+        {
+          "id": "lead_name",
+          "type": "text",
+          "label": "Full Name",
+          "placeholder": "Alex Smith",
+          "required": true,
+          "width": "100%"
+        },
+        {
+          "id": "lead_email",
+          "type": "email",
+          "label": "Work Email Address",
+          "placeholder": "alex@company.com",
+          "required": true,
+          "width": "100%"
+        },
+        {
+          "id": "lead_company_size",
+          "type": "select",
+          "label": "Company Size",
+          "required": true,
+          "width": "100%",
+          "options": [
+            {
+              "label": "1 - 10 employees",
+              "value": "1 - 10 employees",
+              "isDefault": true
+            },
+            {
+              "label": "11 - 50 employees",
+              "value": "11 - 50 employees"
+            },
+            {
+              "label": "51 - 200 employees",
+              "value": "51 - 200 employees"
+            },
+            {
+              "label": "200+ enterprise",
+              "value": "200+ enterprise"
+            }
+          ]
+        },
+        {
+          "id": "lead_demo_interest",
+          "type": "checkbox",
+          "label": "What would you like to see in the demo?",
+          "required": false,
+          "width": "100%",
+          "options": [
+            {
+              "label": "FastPress Visual Page Builder",
+              "value": "FastPress Visual Page Builder"
+            },
+            {
+              "label": "Google Sheets & CRM Integrations",
+              "value": "Google Sheets & CRM Integrations"
+            },
+            {
+              "label": "Enterprise Security & Performance",
+              "value": "Enterprise Security & Performance"
+            }
+          ]
+        }
+      ],
+      "settings": {
+        "title": "Schedule a Product Demo",
+        "description": "See FastPress in action with a custom walkthrough.",
+        "submitButton": {
+          "text": "Request Demo Now",
+          "align": "full",
+          "bgColor": "#2563eb",
+          "textColor": "#ffffff",
+          "borderRadius": "8px",
+          "size": "lg"
+        },
+        "googleSheets": {
+          "enabled": true,
+          "sheetUrl": "",
+          "tabName": "Sheet1",
+          "webhookUrl": ""
+        },
+        "spamProtection": {
+          "method": "method2",
+          "honeypotEnabled": true,
+          "minSubmissionSeconds": 2
+        },
+        "confirmation": {
+          "type": "message",
+          "message": "Thank you! We have received your demo request and will email you with available times."
+        },
+        "styling": {
+          "theme": "modern-dark",
+          "labelColor": "#f3f4f6",
+          "inputBg": "#1f2937",
+          "inputBorder": "#4b5563",
+          "inputTextColor": "#ffffff",
+          "borderRadius": "8px"
+        },
+        "showTitle": true,
+        "titleColor": "#f3f4f6",
+        "titleSize": "1.45rem",
+        "titleAlign": "left",
+        "showDescription": true,
+        "descriptionColor": "#9ca3af",
+        "descriptionSize": "0.9rem"
+      }
+    }
+  ]
+}

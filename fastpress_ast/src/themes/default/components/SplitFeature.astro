@@ -1,0 +1,169 @@
+---
+interface Props {
+  id?: string;
+  number: string;
+  title: string;
+  subtitle?: string;
+  description: string;
+  imageSrc: string;
+  imageAlt: string;
+  ctaText?: string;
+  ctaLink?: string;
+  reversed?: boolean;
+  bgLight?: boolean;
+}
+
+const {
+  id,
+  number,
+  title,
+  subtitle,
+  description,
+  imageSrc,
+  imageAlt,
+  ctaText = 'CLICK HERE',
+  ctaLink = '#contact',
+  reversed = false,
+  bgLight = true,
+} = Astro.props;
+---
+
+<section
+  id={id}
+  class:list={['split-feature-section', { 'bg-light': bgLight, 'is-reversed': reversed }]}
+  aria-label={title}
+>
+  <div class="split-container">
+    <!-- Visual Image Half -->
+    <div class="split-media">
+      <img
+        src={imageSrc}
+        alt={imageAlt}
+        class="split-img"
+        loading="lazy"
+        decoding="async"
+      />
+    </div>
+
+    <!-- Editorial Content Half -->
+    <div class="split-content-wrap">
+      <div class="split-content">
+        <div class="split-number" aria-hidden="true">{number}</div>
+        <div class="split-header-group">
+          <h2 class="split-title">{title}</h2>
+          {subtitle && <span class="split-subtitle">{subtitle}</span>}
+        </div>
+        <p class="split-description">{description}</p>
+        <div class="split-action">
+          <a href={ctaLink} class="btn btn-primary">{ctaText}</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .split-feature-section {
+    position: relative;
+    overflow: hidden;
+    background-color: var(--color-bg-light);
+  }
+
+  .split-container {
+    display: grid;
+    grid-template-columns: 1fr;
+    min-height: 480px;
+    align-items: center;
+  }
+
+  @media (min-width: 900px) {
+    .split-container {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .is-reversed .split-media {
+      order: 2;
+    }
+
+    .is-reversed .split-content-wrap {
+      order: 1;
+    }
+  }
+
+  /* Media Half */
+  .split-media {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 320px;
+  }
+
+  @media (min-width: 900px) {
+    .split-media {
+      min-height: 480px;
+    }
+  }
+
+  .split-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  /* Content Half */
+  .split-content-wrap {
+    padding: clamp(2.5rem, 2rem + 3vw, 5rem) clamp(1.5rem, 1rem + 3vw, 4.5rem);
+    display: flex;
+    align-items: center;
+  }
+
+  .split-content {
+    max-width: 500px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .split-number {
+    font-family: var(--font-heading);
+    font-size: clamp(3rem, 2.5rem + 2vw, 4.2rem);
+    font-weight: 300;
+    color: var(--color-heading);
+    line-height: 1;
+    letter-spacing: -1px;
+    opacity: 0.9;
+  }
+
+  .split-header-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .split-title {
+    font-size: clamp(1.4rem, 1.1rem + 1vw, 1.85rem);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--color-heading);
+  }
+
+  .split-subtitle {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--color-primary);
+  }
+
+  .split-description {
+    font-size: 0.92rem;
+    line-height: 1.8;
+    color: var(--color-text);
+  }
+
+  .split-action {
+    margin-top: 0.5rem;
+  }
+</style>

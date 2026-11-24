@@ -1,0 +1,23 @@
+---
+export const prerender = false;
+
+import { getActiveThemeName } from '../../core/theme';
+import ProductDetailPage from '../../themes/default/pages/ProductDetailPage.astro';
+import FurnisiteProductDetailPage from '../../themes/furnisite/pages/ProductDetailPage.astro';
+import { getProducts } from '../../data/products';
+
+const activeTheme = getActiveThemeName();
+const { slug } = Astro.params;
+const allProducts = getProducts();
+const product = allProducts.find((p) => p.slug === slug);
+
+if (!product) {
+  Astro.response.status = 404;
+}
+---
+
+{activeTheme === 'furnisite' ? (
+  <FurnisiteProductDetailPage product={product} allProducts={allProducts} />
+) : (
+  <ProductDetailPage product={product} allProducts={allProducts} />
+)}

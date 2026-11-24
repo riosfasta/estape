@@ -1,0 +1,222 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Hero from '../components/Hero.astro';
+import ProductsSection from '../components/ProductsSection.astro';
+import VisionMission from '../components/VisionMission.astro';
+import TeamSection from '../components/TeamSection.astro';
+import { getProducts } from '../../../data/products';
+import { getPosts } from '../../../data/posts';
+
+interface Props {
+  customData?: any;
+  isPreview?: boolean;
+  previewTheme?: string;
+}
+
+const { customData, isPreview = false, previewTheme = 'furnisite' } = Astro.props;
+
+const isCustom = Boolean(customData?.isCustom && customData?.html);
+const cleanHtml = customData?.html || '';
+
+const title = customData?.title || 'Infurnish - Modern Home & Furniture Living';
+const description = customData?.description || 'Explore furniture designed to transform your space with modern elegance, organic textures, and lasting comfort.';
+
+// Load existing products and posts for looping
+const products = getProducts().filter((p) => p.status !== 'draft');
+const posts = getPosts().slice(0, 3);
+const prefix = isPreview ? `/preview/${previewTheme}` : '';
+---
+
+<Layout
+  title={title}
+  description={description}
+  activePage="home"
+  showHeader={customData?.showHeader !== false}
+  showFooter={customData?.showFooter !== false}
+  schema={customData?.schema || ''}
+  pageCustomCode={customData?.customCode}
+  isPreview={isPreview}
+  previewTheme={previewTheme}
+>
+  {isCustom ? (
+    <>
+      <div class="custom-builder-content" set:html={cleanHtml} />
+      {customData?.css && <style is:inline set:html={customData.css} />}
+    </>
+  ) : (
+    <>
+      <Hero isPreview={isPreview} previewTheme={previewTheme} />
+      <ProductsSection products={products} isPreview={isPreview} previewTheme={previewTheme} />
+      <VisionMission />
+      <TeamSection />
+
+      <!-- Journal / Editorial Highlights -->
+      {posts && posts.length > 0 && (
+        <section class="furnisite-journal-section">
+          <div class="fs-container">
+            <div class="furnisite-journal-header">
+              <div>
+                <span class="fs-badge fs-badge-neutral">From The Journal</span>
+                <h2 class="furnisite-journal-title">Curated Interior Stories</h2>
+              </div>
+              <a href={prefix ? `${prefix}/blog` : '/blog'} class="fs-btn fs-btn-outline fs-btn-sm">
+                View All Articles
+              </a>
+            </div>
+
+            <div class="furnisite-journal-grid">
+              {posts.map((post) => (
+                <article class="furnisite-journal-card">
+                  <a href={`${prefix}/blog/${post.slug}`} class="furnisite-journal-thumb">
+                    <img
+                      src={post.image || 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=800&q=80'}
+                      alt={post.title}
+                      loading="lazy"
+                    />
+                  </a>
+                  <div class="furnisite-journal-body">
+                    <span class="furnisite-journal-date">{post.formattedDate || 'Recent'}</span>
+                    <h3 class="furnisite-journal-card-title">
+                      <a href={`${prefix}/blog/${post.slug}`}>{post.title}</a>
+                    </h3>
+                    <p class="furnisite-journal-excerpt">{post.excerpt || 'Read the full story in our design journal.'}</p>
+                    <a href={`${prefix}/blog/${post.slug}`} class="furnisite-journal-link">Read Story →</a>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+    </>
+  )}
+</Layout>
+
+<style>
+  .furnisite-journal-section {
+    padding-top: 80px;
+    padding-bottom: 90px;
+    background-color: #faf9f6;
+    border-top: 1px solid #f0eee6;
+  }
+
+  .furnisite-journal-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .furnisite-journal-title {
+    font-family: var(--fs-font-heading);
+    font-size: 2rem;
+    font-weight: 700;
+    color: #18181b;
+    margin: 8px 0 0 0;
+  }
+
+  .furnisite-journal-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+
+  @media (min-width: 768px) {
+    .furnisite-journal-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  .furnisite-journal-card {
+    background-color: #ffffff;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid #f0f0f0;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .furnisite-journal-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.05);
+  }
+
+  .furnisite-journal-thumb {
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    background-color: #f4f4f5;
+  }
+
+  .furnisite-journal-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+  }
+
+  .furnisite-journal-card:hover .furnisite-journal-thumb img {
+    transform: scale(1.04);
+  }
+
+  .furnisite-journal-body {
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+
+  .furnisite-journal-date {
+    font-size: 0.78rem;
+    color: #a1a1aa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+
+  .furnisite-journal-card-title {
+    font-family: var(--fs-font-heading);
+    font-size: 1.1rem;
+    font-weight: 700;
+    line-height: 1.35;
+    color: #18181b;
+    margin: 0 0 10px 0;
+  }
+
+  .furnisite-journal-card-title a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .furnisite-journal-card-title a:hover {
+    color: #71717a;
+  }
+
+  .furnisite-journal-excerpt {
+    font-size: 0.88rem;
+    color: #71717a;
+    line-height: 1.5;
+    margin-bottom: 16px;
+    flex: 1;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .furnisite-journal-link {
+    font-family: var(--fs-font-heading);
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #18181b;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .furnisite-journal-link:hover {
+    color: #71717a;
+  }
+</style>

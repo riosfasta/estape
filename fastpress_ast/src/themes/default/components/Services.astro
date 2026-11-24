@@ -1,0 +1,125 @@
+---
+const services = [
+  {
+    title: 'Branding',
+    description: 'Lorem ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry standard.',
+    icon: `<path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>`,
+  },
+  {
+    title: 'Online Marketing',
+    description: 'Lorem ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry standard.',
+    icon: `<path d="M3 11l19-9-9 19-2-8-8-2z"/>`,
+  },
+  {
+    title: 'Graphic Design',
+    description: 'Lorem ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry standard.',
+    icon: `<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>`,
+  },
+];
+---
+
+<section class="services-section py-section" id="services" aria-label="Our Services">
+  <div class="container">
+    <!-- Header -->
+    <div class="section-center-head">
+      <h2 class="section-title section-title-line">Our Service</h2>
+      <p class="section-subtitle">
+        Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium,
+        totam rem aperiam eaque ipsa quae ab illo.
+      </p>
+    </div>
+
+    <!-- 3-Column Service Grid -->
+    <div class="services-grid">
+      {services.map((service) => (
+        <div class="service-card">
+          <div class="service-icon" aria-hidden="true">
+            <svg
+              width="26"
+              height="26"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--color-primary)"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              set:html={service.icon}
+            />
+          </div>
+          <h3 class="service-title">{service.title}</h3>
+          <p class="service-text">{service.description}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .services-section {
+    background-color: var(--color-white);
+  }
+
+  .services-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+
+  @media (min-width: 768px) {
+    .services-grid {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2.5rem;
+    }
+  }
+
+  .service-card {
+    text-align: center;
+    padding: 2.5rem 1.75rem;
+    border-radius: var(--radius-md);
+    background-color: var(--color-white);
+    border: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    transition: var(--transition);
+  }
+
+  .service-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.06);
+    border-color: rgba(255, 94, 58, 0.3);
+  }
+
+  .service-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: var(--radius-sm);
+    background-color: var(--color-primary-light);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 0.5rem;
+    transition: var(--transition);
+  }
+
+  .service-card:hover .service-icon {
+    background-color: var(--color-primary);
+  }
+
+  .service-card:hover .service-icon svg {
+    stroke: var(--color-white);
+  }
+
+  .service-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--color-heading);
+  }
+
+  .service-text {
+    font-size: 0.88rem;
+    line-height: 1.7;
+    color: var(--color-text);
+  }
+</style>

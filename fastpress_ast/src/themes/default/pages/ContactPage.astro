@@ -1,0 +1,495 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = 'Contact Us - Better Digital Agency',
+  description = 'Reach out to Better Digital Agency for inquiries, partnerships, project estimates, or support.',
+} = Astro.props;
+
+const contactCards = [
+  {
+    title: 'Visit Our Studio',
+    line1: 'Pingzhi Jiangnan Road 88, Suite 300',
+    line2: 'Creative District, Shanghai',
+    actionText: 'View on Maps',
+    actionHref: 'https://maps.google.com',
+    icon: `<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>`,
+  },
+  {
+    title: 'Direct Call',
+    line1: '+1 (234) 567-8900',
+    line2: 'Mon - Fri: 9:00 AM - 6:00 PM EST',
+    actionText: 'Call Now',
+    actionHref: 'tel:+12345678900',
+    icon: `<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>`,
+  },
+  {
+    title: 'Email Inquiries',
+    line1: 'hello@bettercorp.com',
+    line2: 'support@bettercorp.com',
+    actionText: 'Send Email',
+    actionHref: 'mailto:hello@bettercorp.com',
+    icon: `<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>`,
+  },
+];
+
+const faqs = [
+  {
+    q: 'How long does a typical project take?',
+    a: 'Most standard branding and web projects are delivered within 2 to 6 weeks, depending on the scope, custom integrations, and feedback iteration speed.',
+  },
+  {
+    q: 'Do you offer post-launch maintenance and support?',
+    a: 'Yes, we provide flexible retainer packages covering serverless hosting optimization, security patches, content additions, and performance audits.',
+  },
+  {
+    q: 'Can you help redesign an existing platform without downtime?',
+    a: 'Absolutely. We utilize staged development environments and modern migration practices to ensure your live services remain completely uninterrupted.',
+  },
+];
+---
+
+<Layout
+  title={title}
+  description={description}
+  activePage="contact"
+>
+  <!-- Hero Section -->
+  <section class="contact-hero">
+    <div class="container text-center">
+      <span class="badge-tag">LET'S CONNECT</span>
+      <h1 class="page-title">We’d Love to Hear From <span class="highlight">You</span></h1>
+      <p class="hero-subtext">
+        Whether you have an upcoming project, need architectural advice, or want to collaborate with our design team, we are here to help.
+      </p>
+    </div>
+  </section>
+
+  <!-- Contact Cards Strip -->
+  <section class="cards-section">
+    <div class="container">
+      <div class="cards-grid">
+        {contactCards.map((c) => (
+          <div class="contact-channel-card">
+            <div class="channel-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={c.icon} />
+            </div>
+            <h3 class="channel-title">{c.title}</h3>
+            <p class="channel-line">{c.line1}</p>
+            <p class="channel-line secondary">{c.line2}</p>
+            <a href={c.actionHref} class="channel-link">{c.actionText} →</a>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- Form & Map Section -->
+  <section class="contact-main py-section">
+    <div class="container">
+      <div class="contact-wrapper-grid">
+        <!-- Contact Form Card -->
+        <div class="form-card">
+          <h2 class="form-title">Send Us a Direct Message</h2>
+          <p class="form-subtitle">Fill out the brief details below and a senior strategist will respond within 24 hours.</p>
+
+          <form id="contactPageForm" class="styled-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="cpName" class="form-label">Your Name *</label>
+                <input type="text" id="cpName" name="name" required placeholder="John Doe" class="input-ctrl" />
+              </div>
+              <div class="form-group">
+                <label for="cpEmail" class="form-label">Email Address *</label>
+                <input type="email" id="cpEmail" name="email" required placeholder="john@example.com" class="input-ctrl" />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="cpPhone" class="form-label">Phone Number</label>
+                <input type="tel" id="cpPhone" name="phone" placeholder="+1 (555) 000-0000" class="input-ctrl" />
+              </div>
+              <div class="form-group">
+                <label for="cpSubject" class="form-label">Project Type</label>
+                <select id="cpSubject" name="subject" class="input-ctrl">
+                  <option value="Website Design">Website Design & Development</option>
+                  <option value="Branding">Brand Identity & Strategy</option>
+                  <option value="Product Development">Digital Product Engineering</option>
+                  <option value="Other">General Inquiry</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="cpMessage" class="form-label">Your Message *</label>
+              <textarea id="cpMessage" name="message" required rows="5" placeholder="Tell us about your project goals, timelines, and budget expectations..." class="input-ctrl"></textarea>
+            </div>
+
+            <button type="submit" class="btn-submit" id="cpSubmitBtn">
+              <span>Send Message</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+            <div id="cpStatusMsg" class="status-msg" style="display: none;"></div>
+          </form>
+        </div>
+
+        <!-- Right Side: FAQ & Map Info -->
+        <div class="side-info">
+          <div class="faq-container">
+            <h3 class="side-title">Frequently Asked Questions</h3>
+            <div class="faq-list">
+              {faqs.map((f) => (
+                <div class="faq-item">
+                  <h4 class="faq-q">{f.q}</h4>
+                  <p class="faq-a">{f.a}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div class="location-banner">
+            <div class="banner-content">
+              <h4>Headquarters</h4>
+              <p>Pingzhi Jiangnan Road 88, Suite 300, Shanghai</p>
+              <p class="open-hours">Open Monday – Friday: 9:00 AM – 6:00 PM</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<script is:inline>
+  document.getElementById('contactPageForm')?.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const btn = document.getElementById('cpSubmitBtn');
+    const msg = document.getElementById('cpStatusMsg');
+    if (!btn || !msg) return;
+
+    btn.disabled = true;
+    btn.innerHTML = 'Sending message...';
+
+    // Mock network request or send to /api/forms/submit
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.innerHTML = 'Message Sent!';
+      msg.style.display = 'block';
+      msg.className = 'status-msg success';
+      msg.textContent = 'Thank you! Your message has been received. Our team will contact you shortly.';
+      (e.target).reset();
+      setTimeout(() => {
+        btn.innerHTML = '<span>Send Message</span>';
+      }, 4000);
+    }, 600);
+  });
+</script>
+
+<style>
+  .contact-hero {
+    padding: 90px 20px 60px;
+    background: radial-gradient(circle at 50% 10%, rgba(255, 94, 58, 0.12) 0%, transparent 60%), #0c0e14;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .text-center {
+    text-align: center;
+  }
+
+  .badge-tag {
+    display: inline-block;
+    padding: 6px 14px;
+    background: rgba(255, 94, 58, 0.15);
+    color: var(--color-primary);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-radius: 9999px;
+    margin-bottom: 18px;
+    border: 1px solid rgba(255, 94, 58, 0.25);
+  }
+
+  .page-title {
+    font-size: clamp(2.4rem, 5vw, 3.6rem);
+    font-weight: 800;
+    color: #ffffff;
+    line-height: 1.15;
+    margin-bottom: 16px;
+    letter-spacing: -0.02em;
+  }
+
+  .highlight {
+    color: var(--color-primary);
+  }
+
+  .hero-subtext {
+    max-width: 650px;
+    margin: 0 auto;
+    font-size: 1.12rem;
+    line-height: 1.65;
+    color: #9ca3af;
+  }
+
+  .cards-section {
+    background: #11141c;
+    padding: 40px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 24px;
+  }
+
+  .contact-channel-card {
+    background: #161a24;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 28px;
+    text-align: center;
+    transition: transform 0.2s ease, border-color 0.2s ease;
+  }
+
+  .contact-channel-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(255, 94, 58, 0.4);
+  }
+
+  .channel-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: rgba(255, 94, 58, 0.12);
+    color: var(--color-primary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+  }
+
+  .channel-title {
+    font-size: 1.18rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 8px;
+  }
+
+  .channel-line {
+    color: #d1d5db;
+    font-size: 0.95rem;
+    margin-bottom: 4px;
+  }
+
+  .channel-line.secondary {
+    color: #9ca3af;
+    font-size: 0.85rem;
+    margin-bottom: 16px;
+  }
+
+  .channel-link {
+    color: var(--color-primary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: opacity 0.2s;
+  }
+
+  .channel-link:hover {
+    text-decoration: underline;
+  }
+
+  .contact-main {
+    background: #0c0e14;
+  }
+
+  .contact-wrapper-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 48px;
+  }
+
+  .form-card {
+    background: #141722;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 36px;
+  }
+
+  .form-title {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #ffffff;
+    margin-bottom: 8px;
+  }
+
+  .form-subtitle {
+    color: #9ca3af;
+    font-size: 0.95rem;
+    margin-bottom: 28px;
+  }
+
+  .styled-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .form-label {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #e5e7eb;
+  }
+
+  .input-ctrl {
+    background: #0d1017;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: #ffffff;
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.2s ease;
+  }
+
+  .input-ctrl:focus {
+    border-color: var(--color-primary);
+  }
+
+  .btn-submit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: var(--color-primary);
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 1rem;
+    padding: 14px 28px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: filter 0.2s ease;
+    margin-top: 8px;
+  }
+
+  .btn-submit:hover {
+    filter: brightness(1.1);
+  }
+
+  .status-msg {
+    margin-top: 12px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 0.92rem;
+  }
+
+  .status-msg.success {
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: #34d399;
+  }
+
+  .side-info {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  .faq-container {
+    background: #141722;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 32px;
+  }
+
+  .side-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 20px;
+  }
+
+  .faq-list {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .faq-item {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding-bottom: 16px;
+  }
+
+  .faq-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  .faq-q {
+    font-size: 0.98rem;
+    font-weight: 600;
+    color: #f3f4f6;
+    margin-bottom: 6px;
+  }
+
+  .faq-a {
+    font-size: 0.88rem;
+    color: #9ca3af;
+    line-height: 1.55;
+  }
+
+  .location-banner {
+    background: linear-gradient(135deg, rgba(255, 94, 58, 0.15) 0%, rgba(20, 23, 34, 0.9) 100%);
+    border: 1px solid rgba(255, 94, 58, 0.3);
+    border-radius: 16px;
+    padding: 24px;
+  }
+
+  .banner-content h4 {
+    font-size: 1.15rem;
+    color: #ffffff;
+    margin-bottom: 6px;
+  }
+
+  .banner-content p {
+    color: #d1d5db;
+    font-size: 0.92rem;
+    margin-bottom: 6px;
+  }
+
+  .open-hours {
+    color: var(--color-primary) !important;
+    font-size: 0.85rem !important;
+    font-weight: 600;
+  }
+
+  @media (max-width: 900px) {
+    .contact-wrapper-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .form-row {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

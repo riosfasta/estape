@@ -1,0 +1,3482 @@
+---
+import DeviceSwitcher from '../components/admin/DeviceSwitcher.astro';
+import WorkspaceSwitcher from '../components/admin/WorkspaceSwitcher.astro';
+// src/pages/form-builder.astro
+// Gravity Forms Style Visual Form Builder for FastPress CMS
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { readFormsData, defaultSampleForms, type FormConfig } from '../data/forms';
+
+export const prerender = false;
+
+const formsStore = readFormsData();
+const initialForms = formsStore.forms.length > 0 ? formsStore.forms : defaultSampleForms;
+const activeFormId = initialForms[0]?.id || 'form-contact-default';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Form Builder - FastPress Studio</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style is:global>
+      :root {
+        color-scheme: dark;
+        --form-bg-dark: #0a0d14;
+        --form-sidebar-bg: #11141e;
+        --form-card-bg: #161b26;
+        --form-card-hover: #1c2333;
+        --form-border: #232a3b;
+        --form-accent: #2563eb;
+        --form-accent-glow: rgba(37, 99, 235, 0.25);
+        --form-orange: #ff5e3a;
+        --form-text: #f3f4f6;
+        --form-text-muted: #9ca3af;
+        --form-success: #10b981;
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body, html {
+        height: 100%;
+        overflow: hidden;
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        background: var(--form-bg-dark);
+        color: var(--form-text);
+      }
+
+      /* Custom Scrollbars */
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #263045; border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: #3b4661; }
+
+      /* Studio Switcher & Topbar */
+      .form-builder-header {
+        height: 56px;
+        background: #0f131d;
+        border-bottom: 1px solid var(--form-border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 18px;
+        gap: 16px;
+        z-index: 50;
+      }
+
+      .btn-back-editor {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 6px;
+        background: #19202f;
+        color: #d1d5db;
+        border: 1px solid #28334a;
+        font-size: 0.82rem;
+        font-weight: 600;
+        text-decoration: none;
+        transition: all 0.15s ease;
+      }
+      .btn-back-editor:hover { background: #232d42; color: #fff; }
+
+      .studio-switcher-wrap { position: relative; }
+      .studio-switcher-btn {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #141926;
+        border: 1px solid #28334a;
+        padding: 6px 12px;
+        border-radius: 7px;
+        color: #fff;
+        font-size: 0.85rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .studio-switcher-btn:hover { background: #1c2336; }
+      .studio-badge {
+        font-size: 0.65rem;
+        font-weight: 800;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: #2563eb;
+        color: #fff;
+        letter-spacing: 0.04em;
+      }
+
+      .studio-menu-flyout {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        width: 250px;
+        background: #111522;
+        border: 1px solid #28334a;
+        border-radius: 8px;
+        padding: 6px;
+        box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+        display: none;
+        flex-direction: column;
+        gap: 2px;
+        z-index: 100;
+      }
+      .studio-menu-flyout.active { display: flex; }
+      .studio-menu-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #9ca3af;
+        text-decoration: none;
+        transition: all 0.15s;
+      }
+      .studio-menu-item:hover, .studio-menu-item.active { background: #1b2133; color: #fff; }
+
+      /* Form Selector Dropdown */
+      .form-selector-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .form-select-btn {
+        background: #161b27;
+        border: 1px solid #2b364d;
+        color: #fff;
+        font-size: 0.85rem;
+        font-weight: 600;
+        padding: 6px 14px;
+        border-radius: 6px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        max-width: 280px;
+      }
+
+      /* Viewport Toggles */
+      .viewport-toggles {
+        display: flex;
+        align-items: center;
+        background: #111522;
+        border: 1px solid #28334a;
+        border-radius: 6px;
+        padding: 2px;
+      }
+      .viewport-btn {
+        background: transparent;
+        border: none;
+        padding: 6px 10px;
+        border-radius: 4px;
+        color: #9ca3af;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        transition: all 0.15s;
+      }
+      .viewport-btn:hover { color: #fff; }
+      .viewport-btn.active {
+        background: #ff5e3a;
+        color: #fff;
+        box-shadow: 0 2px 8px rgba(255, 94, 58, 0.35);
+      }
+
+      /* Header Action Buttons */
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .btn-header-secondary {
+        background: #161c29;
+        border: 1px solid #2a354c;
+        color: #d1d5db;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: all 0.15s;
+      }
+      .btn-header-secondary:hover { background: #202738; color: #fff; }
+
+      .btn-save-form {
+        background: #ff5e3a;
+        border: none;
+        color: #fff;
+        padding: 7px 16px;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        font-weight: 700;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        box-shadow: 0 2px 10px rgba(255, 94, 58, 0.35);
+        transition: all 0.15s;
+      }
+      .btn-save-form:hover { background: #ff4820; transform: translateY(-1px); }
+
+      /* App Layout */
+      .form-builder-body {
+        height: calc(100vh - 56px);
+        display: flex;
+        overflow: hidden;
+      }
+
+      /* Sidebar (Tabs & Fields) */
+      .form-sidebar {
+        width: 380px;
+        flex-shrink: 0;
+        background: var(--form-sidebar-bg);
+        border-right: 1px solid var(--form-border);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      /* Sidebar Navigation Tabs */
+      .sidebar-tabs {
+        display: flex;
+        border-bottom: 1px solid var(--form-border);
+        background: #0d1017;
+      }
+      .sidebar-tab-btn {
+        flex: 1;
+        padding: 12px 6px;
+        background: transparent;
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: #9ca3af;
+        font-size: 0.8rem;
+        font-weight: 700;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        transition: all 0.15s;
+        text-align: center;
+      }
+      .sidebar-tab-btn:hover { color: #fff; background: rgba(255,255,255,0.02); }
+      .sidebar-tab-btn.active {
+        color: #60a5fa;
+        border-bottom-color: #3b82f6;
+        background: rgba(59, 130, 246, 0.05);
+      }
+
+      .sidebar-tab-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+        display: none;
+      }
+      .sidebar-tab-content.active { display: block; }
+
+      /* Gravity Forms Style Field Palette Grid */
+      .field-section-title {
+        font-size: 0.72rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #6b7280;
+        margin: 16px 0 10px 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .field-section-title:first-child { margin-top: 0; }
+
+      .palette-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+
+      .palette-field-card {
+        background: var(--form-card-bg);
+        border: 1px solid var(--form-border);
+        border-radius: 8px;
+        padding: 12px 10px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        gap: 6px;
+        cursor: pointer;
+        user-select: none;
+        transition: all 0.15s ease;
+      }
+      .palette-field-card:hover {
+        background: var(--form-card-hover);
+        border-color: #3b82f6;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+      }
+      .palette-field-card:active { transform: scale(0.97); }
+
+      .palette-icon {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        background: #1c2436;
+        color: #60a5fa;
+      }
+      .palette-label {
+        font-size: 0.76rem;
+        font-weight: 600;
+        color: #e5e7eb;
+      }
+
+      /* Inspector / Form Controls */
+      .control-group {
+        margin-bottom: 16px;
+      }
+      .control-label {
+        display: block;
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #d1d5db;
+        margin-bottom: 6px;
+      }
+      .control-desc {
+        font-size: 0.72rem;
+        color: #9ca3af;
+        margin-top: 4px;
+        line-height: 1.4;
+      }
+      .control-input, .control-select, .control-textarea {
+        width: 100%;
+        background: #0f131d;
+        border: 1px solid #28334a;
+        color: #fff;
+        padding: 9px 12px;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        outline: none;
+        transition: border-color 0.15s;
+      }
+      .control-input:focus, .control-select:focus, .control-textarea:focus {
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+      }
+
+      .toggle-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+        background: #131722;
+        border: 1px solid #232a3b;
+        border-radius: 8px;
+        margin-bottom: 12px;
+      }
+      .toggle-switch {
+        position: relative;
+        display: inline-block;
+        width: 40px;
+        height: 22px;
+      }
+      .toggle-switch input { opacity: 0; width: 0; height: 0; }
+      .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background-color: #374151;
+        transition: .2s;
+        border-radius: 22px;
+      }
+      .toggle-slider:before {
+        position: absolute;
+        content: "";
+        height: 16px;
+        width: 16px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        transition: .2s;
+        border-radius: 50%;
+      }
+      input:checked + .toggle-slider { background-color: #10b981; }
+      input:checked + .toggle-slider:before { transform: translateX(18px); }
+
+      /* Conditional Logic Box */
+      .conditional-box {
+        background: #121623;
+        border: 1px solid #2b364d;
+        border-radius: 8px;
+        padding: 12px;
+        margin-top: 10px;
+      }
+      .rule-row {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        background: #181e2e;
+        border: 1px solid #2d3852;
+        border-radius: 6px;
+        padding: 8px;
+        margin-bottom: 8px;
+        position: relative;
+      }
+      .btn-del-rule {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        background: transparent;
+        border: none;
+        color: #ef4444;
+        cursor: pointer;
+        padding: 2px 6px;
+        font-size: 0.75rem;
+      }
+
+      /* Canvas / Preview Container */
+      .form-canvas-wrap {
+        flex: 1;
+        background: #090c12;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 40px 20px;
+        position: relative;
+      }
+
+      .canvas-device-frame {
+        width: 100%;
+        max-width: 820px;
+        background: #0f131d;
+        border: 1px solid #28334a;
+        border-radius: 14px;
+        box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.6);
+        transition: max-width 0.3s ease;
+        padding: 28px 32px;
+        position: relative;
+      }
+      .canvas-device-frame.tablet { max-width: 640px; }
+      .canvas-device-frame.mobile { max-width: 375px; padding: 20px 16px; }
+
+      /* Form Canvas Fields Grid */
+      .canvas-fields-grid {
+        display: flex;
+        flex-wrap: wrap;
+        margin: -8px;
+        min-height: 120px;
+      }
+
+      .canvas-field-row {
+        box-sizing: border-box;
+        padding: 8px;
+        position: relative;
+        transition: all 0.2s ease;
+      }
+      .canvas-field-inner {
+        background: rgba(22, 27, 38, 0.4);
+        border: 1px dashed transparent;
+        border-radius: 8px;
+        padding: 8px;
+        transition: all 0.15s;
+        cursor: pointer;
+        position: relative;
+      }
+      .canvas-field-inner:hover {
+        background: rgba(28, 35, 51, 0.7);
+        border-color: #3b82f6;
+      }
+      .canvas-field-row.active .canvas-field-inner {
+        background: rgba(30, 41, 64, 0.9);
+        border: 1.5px solid #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+      }
+
+      /* Field Floating Action Bar */
+      .field-actions-bar {
+        position: absolute;
+        top: -12px;
+        right: 14px;
+        background: #1e293b;
+        border: 1px solid #3b82f6;
+        border-radius: 6px;
+        display: none;
+        align-items: center;
+        gap: 2px;
+        padding: 2px;
+        z-index: 20;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      }
+      .canvas-field-row.active .field-actions-bar { display: flex; }
+      .field-act-btn {
+        background: transparent;
+        border: none;
+        color: #d1d5db;
+        padding: 3px 6px;
+        border-radius: 4px;
+        font-size: 0.72rem;
+        cursor: pointer;
+        transition: all 0.1s;
+      }
+      .field-act-btn:hover { background: #334155; color: #fff; }
+      .field-act-btn.del:hover { background: #ef4444; color: #fff; }
+      .field-act-btn.width-btn {
+        background: #0f172a;
+        color: #60a5fa;
+        font-weight: 700;
+        border: 1px solid #334155;
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+      }
+      .field-act-btn.width-btn:hover {
+        background: #1e3a8a;
+        color: #fff;
+        border-color: #3b82f6;
+      }
+
+      /* Interactive Drag-to-Resize Handle on Canvas */
+      .field-resize-handle {
+        position: absolute;
+        top: 8px;
+        bottom: 8px;
+        right: 2px;
+        width: 14px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        cursor: col-resize;
+        z-index: 25;
+        user-select: none;
+      }
+      .canvas-field-row.active .field-resize-handle,
+      .canvas-field-row:hover .field-resize-handle {
+        display: flex;
+      }
+      .resize-handle-bar {
+        width: 4px;
+        height: 38px;
+        background: #475569;
+        border-radius: 4px;
+        transition: background 0.15s, transform 0.15s;
+      }
+      .field-resize-handle:hover .resize-handle-bar,
+      .field-resize-handle.resizing .resize-handle-bar {
+        background: #3b82f6;
+        transform: scaleX(1.4);
+        box-shadow: 0 0 10px rgba(59, 130, 246, 0.7);
+      }
+
+      /* Drag Resizing Floating Tooltip */
+      .resize-tooltip {
+        position: fixed;
+        background: #1e293b;
+        color: #60a5fa;
+        border: 1px solid #3b82f6;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 800;
+        pointer-events: none;
+        z-index: 10000;
+        display: none;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      }
+
+      /* Width Segmented Buttons in Sidebar Inspector */
+      .width-segmented-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        margin-top: 6px;
+      }
+      .width-seg-btn {
+        background: #131723;
+        border: 1px solid #28334a;
+        border-radius: 8px;
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        color: #d1d5db;
+        user-select: none;
+      }
+      .width-seg-btn:hover {
+        background: #1c2436;
+        border-color: #3b82f6;
+        color: #fff;
+      }
+      .width-seg-btn.active {
+        background: #172554;
+        border-color: #3b82f6;
+        color: #93c5fd;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+      }
+      .width-icon-box {
+        width: 100%;
+        height: 16px;
+        background: #090c12;
+        border: 1px solid #232a3b;
+        border-radius: 4px;
+        display: flex;
+        gap: 3px;
+        padding: 2px;
+      }
+      .w-bar {
+        height: 100%;
+        background: #3b82f6;
+        border-radius: 2px;
+        opacity: 0.5;
+      }
+      .width-seg-btn.active .w-bar {
+        opacity: 1;
+        background: #60a5fa;
+      }
+      .w-bar.full { width: 100%; }
+      .w-bar.half { width: 50%; }
+      .w-bar.third { width: 33.33%; }
+      .w-bar.quarter { width: 25%; }
+      .w-bar.twothirds { width: 66.66%; }
+      .w-bar.threefourths { width: 75%; }
+      .w-btn-title {
+        font-size: 0.78rem;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+      .w-btn-sub {
+        font-size: 0.65rem;
+        color: #9ca3af;
+      }
+
+      /* Mobile Device Canvas preview: Stack columns */
+      .canvas-device-frame.mobile .canvas-field-row {
+        width: 100% !important;
+      }
+
+      /* Empty Canvas Dropzone */
+      .canvas-empty-dropzone {
+        width: 100%;
+        border: 2px dashed #2d3852;
+        border-radius: 10px;
+        padding: 30px;
+        text-align: center;
+        color: #9ca3af;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-top: 14px;
+      }
+      .canvas-empty-dropzone:hover {
+        border-color: #3b82f6;
+        background: rgba(59, 130, 246, 0.04);
+        color: #60a5fa;
+      }
+
+      /* Toast Notification */
+      .toast-notice {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        background: #111827;
+        border: 1px solid #374151;
+        border-left: 4px solid #10b981;
+        color: #fff;
+        padding: 12px 18px;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        display: none;
+        align-items: center;
+        gap: 10px;
+        z-index: 9999;
+        transform: translateY(20px);
+        transition: transform 0.2s ease, opacity 0.2s ease;
+      }
+      .toast-notice.show {
+        display: flex;
+        transform: translateY(0);
+      }
+
+      /* Modal Helpers */
+      .modal-backdrop {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(4px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+      }
+      .modal-backdrop.active { display: flex; }
+      .modal-box {
+        background: #111522;
+        border: 1px solid #28334a;
+        border-radius: 12px;
+        width: 90%;
+        max-width: 620px;
+        max-height: 85vh;
+        overflow-y: auto;
+        padding: 24px;
+        box-shadow: 0 25px 60px rgba(0,0,0,0.6);
+        position: relative;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- Topbar Navigation -->
+    <header class="form-builder-header">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <a href="/editor" class="btn-back-editor" title="Back to Page Builder">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg>
+          <span>Editor</span>
+        </a>
+
+        <!-- FastPress Studio Switcher -->
+        <WorkspaceSwitcher activeApp="form-builder" />
+
+        <!-- Form Selector Dropdown -->
+        <div class="form-selector-wrap">
+          <select id="formSelectDropdown" class="control-select" style="max-width: 240px; font-weight: 700;">
+            <!-- Populated via JS -->
+          </select>
+          <button type="button" class="btn-header-secondary" id="btnNewForm" title="Create New Form">+ New</button>
+          <button type="button" class="btn-header-secondary" id="btnDuplicateForm" title="Duplicate Current Form">Duplicate</button>
+          <button type="button" class="btn-header-secondary" id="btnDeleteForm" title="Delete Form" style="color: #ef4444;">Delete</button>
+        </div>
+      </div>
+
+      <!-- Center: Viewport Mode Switcher & Canvas Mode -->
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <DeviceSwitcher />
+
+        <div class="viewport-toggles">
+          <button type="button" class="viewport-btn active" id="btnModeEdit" title="Builder Edit Mode">
+            <span>🛠️ Edit</span>
+          </button>
+          <button type="button" class="viewport-btn" id="btnModeTest" title="Interactive Test Mode (Test conditional logic)">
+            <span>👁️ Test Live</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Right Header Actions -->
+      <div class="header-actions">
+        <button type="button" class="btn-header-secondary" id="btnOpenSubmissionsModal" title="View saved submissions and Google Sheets delivery status">
+          <span>📥 Submissions</span>
+        </button>
+        <button type="button" class="btn-header-secondary" id="btnOpenDocsModal" title="Learn how to connect Google Sheets">
+          <span>📊 Google Sheets Setup</span>
+        </button>
+        <button type="button" class="btn-save-form" id="btnSaveForm">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          <span>Save Form</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="form-builder-body">
+      <!-- Left Sidebar -->
+      <aside class="form-sidebar">
+        <!-- Sidebar Tabs Navigation -->
+        <nav class="sidebar-tabs">
+          <button type="button" class="sidebar-tab-btn active" data-tab="tab-add-fields">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+            <span>Add Fields</span>
+          </button>
+          <button type="button" class="sidebar-tab-btn" data-tab="tab-field-settings">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            <span>Field Settings</span>
+          </button>
+          <button type="button" class="sidebar-tab-btn" data-tab="tab-form-settings">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span>Form &amp; Sheets</span>
+          </button>
+          <button type="button" class="sidebar-tab-btn" data-tab="tab-styling">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+            <span>Styling</span>
+          </button>
+        </nav>
+
+        <!-- TAB 1: ADD FIELDS (Gravity Forms Palette) -->
+        <div class="sidebar-tab-content active" id="tab-add-fields">
+          <div style="font-size: 0.78rem; color: #9ca3af; margin-bottom: 12px; line-height: 1.4;">
+            Click any field to add it to your form. Drag and arrange rows in the canvas.
+          </div>
+
+          <!-- Standard Fields Section -->
+          <div class="field-section-title">Standard Fields</div>
+          <div class="palette-grid">
+            <div class="palette-field-card" data-add-type="text">
+              <div class="palette-icon">T</div>
+              <div class="palette-label">Single Line Text</div>
+            </div>
+            <div class="palette-field-card" data-add-type="textarea">
+              <div class="palette-icon">¶</div>
+              <div class="palette-label">Paragraph Text</div>
+            </div>
+            <div class="palette-field-card" data-add-type="select">
+              <div class="palette-icon">▼</div>
+              <div class="palette-label">Drop Down</div>
+            </div>
+            <div class="palette-field-card" data-add-type="number">
+              <div class="palette-icon">123</div>
+              <div class="palette-label">Number</div>
+            </div>
+            <div class="palette-field-card" data-add-type="checkbox">
+              <div class="palette-icon">☑</div>
+              <div class="palette-label">Checkboxes</div>
+            </div>
+            <div class="palette-field-card" data-add-type="radio">
+              <div class="palette-icon">🔘</div>
+              <div class="palette-label">Radio Buttons</div>
+            </div>
+            <div class="palette-field-card" data-add-type="section">
+              <div class="palette-icon">➖</div>
+              <div class="palette-label">Section Break</div>
+            </div>
+            <div class="palette-field-card" data-add-type="html">
+              <div class="palette-icon">&lt;&gt;</div>
+              <div class="palette-label">HTML Block</div>
+            </div>
+          </div>
+
+          <!-- Advanced Fields Section -->
+          <div class="field-section-title">Advanced Fields</div>
+          <div class="palette-grid">
+            <div class="palette-field-card" data-add-type="name">
+              <div class="palette-icon">👤</div>
+              <div class="palette-label">Name (First / Last)</div>
+            </div>
+            <div class="palette-field-card" data-add-type="email">
+              <div class="palette-icon">✉️</div>
+              <div class="palette-label">Email Address</div>
+            </div>
+            <div class="palette-field-card" data-add-type="phone">
+              <div class="palette-icon">📞</div>
+              <div class="palette-label">Phone</div>
+            </div>
+            <div class="palette-field-card" data-add-type="date">
+              <div class="palette-icon">📅</div>
+              <div class="palette-label">Date</div>
+            </div>
+            <div class="palette-field-card" data-add-type="time">
+              <div class="palette-icon">⏰</div>
+              <div class="palette-label">Time</div>
+            </div>
+            <div class="palette-field-card" data-add-type="url">
+              <div class="palette-icon">🔗</div>
+              <div class="palette-label">Website URL</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: FIELD SETTINGS & CONDITIONAL LOGIC -->
+        <div class="sidebar-tab-content" id="tab-field-settings">
+          <div id="noFieldSelectedNotice" style="text-align: center; padding: 40px 10px; color: #6b7280;">
+            <div style="font-size: 2rem; margin-bottom: 8px;">🎯</div>
+            <div style="font-size: 0.9rem; font-weight: 700; color: #d1d5db;">No Field Selected</div>
+            <div style="font-size: 0.78rem; margin-top: 4px;">Click any field on the form canvas to inspect and configure its settings and conditional logic rules.</div>
+          </div>
+
+          <div id="fieldInspectorForm" style="display: none;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; border-bottom: 1px solid #232a3b; padding-bottom: 8px;">
+              <span id="inspectorFieldTypeBadge" style="font-size: 0.7rem; font-weight: 800; background: #2563eb; color: #fff; padding: 2px 8px; border-radius: 4px; text-transform: uppercase;">TEXT</span>
+              <span id="inspectorFieldId" style="font-size: 0.72rem; color: #9ca3af; font-family: monospace;">field_1</span>
+            </div>
+
+            <div class="control-group">
+              <label class="control-label">Field Label</label>
+              <input type="text" id="settingFieldLabel" class="control-input" />
+            </div>
+
+            <div class="control-group" id="settingPlaceholderGroup">
+              <label class="control-label">Placeholder Text</label>
+              <input type="text" id="settingFieldPlaceholder" class="control-input" />
+            </div>
+
+            <div class="control-group">
+              <label class="control-label">Description / Subtext</label>
+              <textarea id="settingFieldDesc" class="control-textarea" rows="2"></textarea>
+            </div>
+
+            <div class="control-group">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                <label class="control-label" style="margin-bottom: 0;">Field Width (Column Span)</label>
+                <span id="currentWidthLabel" style="font-size: 0.72rem; font-weight: 700; color: #60a5fa; background: #172554; border: 1px solid #1e40af; padding: 2px 8px; border-radius: 4px;">100% Full</span>
+              </div>
+              <div class="width-segmented-grid" id="widthSegmentedGrid">
+                <button type="button" class="width-seg-btn active" data-width="100%">
+                  <div class="width-icon-box"><div class="w-bar full"></div></div>
+                  <span class="w-btn-title">100% Full</span>
+                  <span class="w-btn-sub">Single Row</span>
+                </button>
+                <button type="button" class="width-seg-btn" data-width="50%">
+                  <div class="width-icon-box"><div class="w-bar half"></div><div class="w-bar half"></div></div>
+                  <span class="w-btn-title">50% Half</span>
+                  <span class="w-btn-sub">Side by Side</span>
+                </button>
+                <button type="button" class="width-seg-btn" data-width="33.33%">
+                  <div class="width-icon-box"><div class="w-bar third"></div><div class="w-bar third"></div><div class="w-bar third"></div></div>
+                  <span class="w-btn-title">33% 1/3</span>
+                  <span class="w-btn-sub">3 Columns</span>
+                </button>
+                <button type="button" class="width-seg-btn" data-width="25%">
+                  <div class="width-icon-box"><div class="w-bar quarter"></div><div class="w-bar quarter"></div><div class="w-bar quarter"></div><div class="w-bar quarter"></div></div>
+                  <span class="w-btn-title">25% 1/4</span>
+                  <span class="w-btn-sub">4 Columns</span>
+                </button>
+                <button type="button" class="width-seg-btn" data-width="66.66%">
+                  <div class="width-icon-box"><div class="w-bar twothirds"></div><div class="w-bar third"></div></div>
+                  <span class="w-btn-title">66% 2/3</span>
+                  <span class="w-btn-sub">Two Thirds</span>
+                </button>
+                <button type="button" class="width-seg-btn" data-width="75%">
+                  <div class="width-icon-box"><div class="w-bar threefourths"></div><div class="w-bar quarter"></div></div>
+                  <span class="w-btn-title">75% 3/4</span>
+                  <span class="w-btn-sub">Three Fourths</span>
+                </button>
+              </div>
+              <input type="hidden" id="settingFieldWidth" value="100%" />
+            </div>
+
+            <div class="toggle-row">
+              <div>
+                <div style="font-size: 0.82rem; font-weight: 700; color: #fff;">Required Field</div>
+                <div style="font-size: 0.72rem; color: #9ca3af;">User must fill this field to submit</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="settingFieldRequired" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <!-- Options Manager (For Select, Radio, Checkbox) -->
+            <div id="optionsManagerSection" style="display: none; margin-top: 14px; border-top: 1px solid #232a3b; padding-top: 14px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                <label class="control-label" style="margin-bottom: 0;">Choices / Options</label>
+                <button type="button" id="btnAddOption" class="btn-header-secondary" style="padding: 2px 8px; font-size: 0.75rem;">+ Add Option</button>
+              </div>
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: #9ca3af; margin-bottom: 8px; cursor: pointer;">
+                <input type="checkbox" id="settingOptionCustomValues" style="accent-color: #3b82f6;" />
+                <span>Separate submitted value (advanced)</span>
+              </label>
+              <div id="optionsListContainer" style="display: flex; flex-direction: column; gap: 6px;">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+
+            <!-- HTML/Content Editor (for Section / HTML blocks) -->
+            <div id="contentEditorSection" style="display: none; margin-top: 14px;">
+              <label class="control-label">HTML / Block Content</label>
+              <textarea id="settingFieldContent" class="control-textarea" rows="4"></textarea>
+            </div>
+
+            <!-- CONDITIONAL LOGIC BUILDER -->
+            <div style="margin-top: 20px; border-top: 1px solid #232a3b; padding-top: 14px;">
+              <div class="toggle-row">
+                <div>
+                  <div style="font-size: 0.82rem; font-weight: 700; color: #60a5fa;">Conditional Logic</div>
+                  <div style="font-size: 0.72rem; color: #9ca3af;">Show or hide this field based on other inputs</div>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="settingCondEnabled" />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+
+              <div id="conditionalConfigWrap" class="conditional-box" style="display: none;">
+                <div style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; margin-bottom: 10px;">
+                  <select id="settingCondAction" class="control-select" style="width: auto; padding: 4px 8px;">
+                    <option value="show">Show</option>
+                    <option value="hide">Hide</option>
+                  </select>
+                  <span>this field if</span>
+                  <select id="settingCondLogicType" class="control-select" style="width: auto; padding: 4px 8px;">
+                    <option value="all">All</option>
+                    <option value="any">Any</option>
+                  </select>
+                  <span>match:</span>
+                </div>
+
+                <div id="conditionalRulesList">
+                  <!-- Rule Rows -->
+                </div>
+
+                <button type="button" id="btnAddRule" class="btn-header-secondary" style="width: 100%; justify-content: center; font-size: 0.75rem; padding: 6px;">
+                  + Add Conditional Rule
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: FORM SETTINGS & GOOGLE SHEETS -->
+        <div class="sidebar-tab-content" id="tab-form-settings">
+          <!-- FORM TITLE SECTION -->
+          <div style="background: #131723; border: 1px solid #232a3b; border-radius: 8px; padding: 12px; margin-bottom: 14px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+              <div style="font-size: 0.82rem; font-weight: 700; color: #fff;">Form Title</div>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span id="titleVisibilityBadge" style="font-size: 0.7rem; color: #10b981; font-weight: 600;">Visible</span>
+                <label class="toggle-switch" title="Show or hide form title">
+                  <input type="checkbox" id="settingShowTitle" checked />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="control-group" style="margin-bottom: 10px;">
+              <input type="text" id="settingFormTitle" class="control-input" placeholder="e.g. Get In Touch" />
+            </div>
+
+            <div id="titleStylingWrap" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div>
+                <label class="control-label" style="font-size: 0.72rem;">Font Color</label>
+                <div style="display: flex; gap: 4px; align-items: center;">
+                  <input type="color" id="settingTitleColorPicker" class="control-input" style="width: 36px; height: 32px; padding: 2px; cursor: pointer;" value="#f3f4f6" />
+                  <input type="text" id="settingTitleColorText" class="control-input" style="font-size: 0.75rem; padding: 5px 6px;" value="#f3f4f6" />
+                </div>
+              </div>
+              <div>
+                <label class="control-label" style="font-size: 0.72rem;">Font Size</label>
+                <select id="settingTitleSize" class="control-select" style="font-size: 0.78rem; padding: 6px 8px;">
+                  <option value="1.15rem">Small (1.15rem)</option>
+                  <option value="1.45rem" selected>Medium (1.45rem)</option>
+                  <option value="1.75rem">Large (1.75rem)</option>
+                  <option value="2.1rem">XL (2.1rem)</option>
+                  <option value="2.5rem">2XL (2.5rem)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- FORM SUBTITLE / DESCRIPTION SECTION -->
+          <div style="background: #131723; border: 1px solid #232a3b; border-radius: 8px; padding: 12px; margin-bottom: 14px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+              <div style="font-size: 0.82rem; font-weight: 700; color: #fff;">Form Subtitle / Description</div>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span id="descVisibilityBadge" style="font-size: 0.7rem; color: #10b981; font-weight: 600;">Visible</span>
+                <label class="toggle-switch" title="Show or hide form subtitle">
+                  <input type="checkbox" id="settingShowDesc" checked />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="control-group" style="margin-bottom: 10px;">
+              <textarea id="settingFormDescription" class="control-textarea" rows="2" placeholder="Briefly explain what users are submitting"></textarea>
+            </div>
+
+            <div id="descStylingWrap" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div>
+                <label class="control-label" style="font-size: 0.72rem;">Font Color</label>
+                <div style="display: flex; gap: 4px; align-items: center;">
+                  <input type="color" id="settingDescColorPicker" class="control-input" style="width: 36px; height: 32px; padding: 2px; cursor: pointer;" value="#9ca3af" />
+                  <input type="text" id="settingDescColorText" class="control-input" style="font-size: 0.75rem; padding: 5px 6px;" value="#9ca3af" />
+                </div>
+              </div>
+              <div>
+                <label class="control-label" style="font-size: 0.72rem;">Font Size</label>
+                <select id="settingDescSize" class="control-select" style="font-size: 0.78rem; padding: 6px 8px;">
+                  <option value="0.8rem">Small (0.8rem)</option>
+                  <option value="0.9rem" selected>Normal (0.9rem)</option>
+                  <option value="1.05rem">Medium (1.05rem)</option>
+                  <option value="1.2rem">Large (1.2rem)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- HEADER ALIGNMENT -->
+          <div class="control-group" style="margin-bottom: 16px;">
+            <label class="control-label">Header Alignment</label>
+            <select id="settingTitleAlign" class="control-select">
+              <option value="left" selected>Left</option>
+              <option value="center">Center</option>
+              <option value="right">Right</option>
+            </select>
+          </div>
+
+          <!-- Submit Button Settings -->
+          <div style="margin-top: 18px; border-top: 1px solid #232a3b; padding-top: 14px;">
+            <div class="field-section-title">Submit Button</div>
+            <div class="control-group">
+              <label class="control-label">Button Text</label>
+              <input type="text" id="settingBtnText" class="control-input" value="Send Message 🚀" />
+            </div>
+            <div class="control-group">
+              <label class="control-label">Button Alignment</label>
+              <select id="settingBtnAlign" class="control-select">
+                <option value="left">Left</option>
+                <option value="center">Center</option>
+                <option value="right">Right</option>
+                <option value="full">Full Width</option>
+              </select>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div class="control-group">
+                <label class="control-label">Button Color</label>
+                <input type="color" id="settingBtnBgColor" class="control-input" style="height: 38px; padding: 2px;" value="#ff5e3a" />
+              </div>
+              <div class="control-group">
+                <label class="control-label">Text Color</label>
+                <input type="color" id="settingBtnTextColor" class="control-input" style="height: 38px; padding: 2px;" value="#ffffff" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Anti-Spam Protection (Method 2) -->
+          <div style="margin-top: 18px; border-top: 1px solid #232a3b; padding-top: 14px;">
+            <div class="field-section-title" style="color: #10b981;">Anti-Spam Protection (Method 2)</div>
+            <div class="toggle-row">
+              <div>
+                <div style="font-size: 0.82rem; font-weight: 700; color: #fff;">Honeypot Trap Enabled</div>
+                <div style="font-size: 0.72rem; color: #9ca3af;">Invisible field that catches automated spambots</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="settingHoneypot" checked />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="control-group">
+              <label class="control-label">Minimum Fill Time (Seconds)</label>
+              <input type="number" id="settingMinSeconds" class="control-input" value="2" min="1" max="10" />
+              <div class="control-desc">Submissions completed faster than this are rejected as automated bots.</div>
+            </div>
+          </div>
+
+          <!-- GOOGLE SPREADSHEETS INTEGRATION -->
+          <div style="margin-top: 18px; border-top: 1px solid #232a3b; padding-top: 14px;">
+            <div class="field-section-title" style="color: #60a5fa;">Google Spreadsheet Delivery</div>
+            <div class="toggle-row">
+              <div>
+                <div style="font-size: 0.82rem; font-weight: 700; color: #fff;">Sync to Google Sheets</div>
+                <div style="font-size: 0.72rem; color: #9ca3af;">Forward every submission to Google Sheets</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="settingGsEnabled" checked />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="control-group">
+              <label class="control-label">Google Sheet / Webhook URL</label>
+              <input type="url" id="settingGsUrl" class="control-input" placeholder="https://script.google.com/macros/s/.../exec or Sheet URL" />
+              <div class="control-desc">Paste your Google Apps Script Webhook URL or Google Sheet URL.</div>
+            </div>
+
+            <div class="control-group">
+              <label class="control-label">Sheet Tab Name</label>
+              <input type="text" id="settingGsTabName" class="control-input" value="Sheet1" />
+            </div>
+
+            <button type="button" class="btn-header-secondary" id="btnOpenDocsModal2" style="width: 100%; justify-content: center; margin-top: 6px;">
+              📋 View 1-Minute Google Sheets Setup Guide
+            </button>
+          </div>
+
+          <!-- Confirmation Settings -->
+          <div style="margin-top: 18px; border-top: 1px solid #232a3b; padding-top: 14px;">
+            <div class="field-section-title">Submission Confirmation</div>
+            <div class="control-group">
+              <label class="control-label">Confirmation Type</label>
+              <select id="settingConfirmType" class="control-select">
+                <option value="message">Display Message</option>
+                <option value="redirect">Redirect to URL</option>
+              </select>
+            </div>
+            <div class="control-group" id="confirmMessageWrap">
+              <label class="control-label">Success Message</label>
+              <textarea id="settingConfirmMsg" class="control-textarea" rows="2">🎉 Thank you! Your message has been sent successfully.</textarea>
+            </div>
+            <div class="control-group" id="confirmRedirectWrap" style="display: none;">
+              <label class="control-label">Redirect URL</label>
+              <input type="url" id="settingConfirmUrl" class="control-input" placeholder="https://example.com/thank-you" />
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 4: STYLING -->
+        <div class="sidebar-tab-content" id="tab-styling">
+          <div class="control-group">
+            <label class="control-label">Theme Preset</label>
+            <select id="settingStyleTheme" class="control-select">
+              <option value="modern-dark">Modern Dark (Default)</option>
+              <option value="clean-light">Clean Light</option>
+              <option value="bordered">Bordered Minimal</option>
+              <option value="custom">Custom Theme</option>
+            </select>
+          </div>
+
+          <!-- FORM CONTAINER BACKGROUND -->
+          <div style="margin-top: 18px; border-top: 1px solid #232a3b; padding-top: 14px;">
+            <div class="field-section-title" style="color: #60a5fa;">Form Container Background</div>
+            
+            <div class="control-group">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                <label class="control-label" style="margin-bottom: 0;">Background Color</label>
+                <div style="display: flex; gap: 4px;">
+                  <button type="button" class="btn-color-swatch" data-target="bg" data-color="#0f131d" title="Dark" style="width: 18px; height: 18px; border-radius: 3px; background: #0f131d; border: 1px solid #374151; cursor: pointer;"></button>
+                  <button type="button" class="btn-color-swatch" data-target="bg" data-color="#080b11" title="Deep Black" style="width: 18px; height: 18px; border-radius: 3px; background: #080b11; border: 1px solid #374151; cursor: pointer;"></button>
+                  <button type="button" class="btn-color-swatch" data-target="bg" data-color="#1e293b" title="Slate" style="width: 18px; height: 18px; border-radius: 3px; background: #1e293b; border: 1px solid #374151; cursor: pointer;"></button>
+                  <button type="button" class="btn-color-swatch" data-target="bg" data-color="#ffffff" title="White" style="width: 18px; height: 18px; border-radius: 3px; background: #ffffff; border: 1px solid #374151; cursor: pointer;"></button>
+                  <button type="button" class="btn-color-swatch" data-target="bg" data-color="transparent" title="Transparent" style="width: 18px; height: 18px; border-radius: 3px; background: repeating-conic-gradient(#374151 0% 25%, #1f2937 0% 50%) 50% / 8px 8px; border: 1px solid #4b5563; cursor: pointer;"></button>
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <input type="color" id="settingFormBgColorPicker" class="control-input" style="width: 48px; height: 38px; padding: 2px; cursor: pointer;" value="#0f131d" />
+                <input type="text" id="settingFormBgColorText" class="control-input" placeholder="#0f131d or transparent" value="#0f131d" style="flex: 1;" />
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label class="control-label">Background Image</label>
+              <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+                <input type="url" id="settingFormBgImage" class="control-input" placeholder="https://... or upload image" />
+                <button type="button" class="btn-header-secondary" id="btnClearFormBgImage" title="Clear Image" style="padding: 0 10px; color: #ef4444;">&times;</button>
+              </div>
+
+              <div style="display: flex; gap: 6px;">
+                <button type="button" class="btn-header-secondary" id="btnUploadFormBg" style="flex: 1; justify-content: center; font-size: 0.75rem; padding: 7px 8px;">
+                  <span>⬆️ Upload Image</span>
+                </button>
+                <input type="file" id="fileInputFormBg" accept="image/*" style="display: none;" />
+                <button type="button" class="btn-header-secondary" id="btnOpenMediaPicker" style="flex: 1; justify-content: center; font-size: 0.75rem; padding: 7px 8px;">
+                  <span>🖼️ Media Library</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Background Image Controls (Size, Position, Repeat, Overlay) -->
+            <div id="bgImageControlsWrap" style="display: none; background: #131723; border: 1px solid #232a3b; border-radius: 8px; padding: 10px; margin-bottom: 14px;">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                <div>
+                  <label class="control-label" style="font-size: 0.72rem;">Image Fit / Size</label>
+                  <select id="settingFormBgSize" class="control-select" style="font-size: 0.78rem; padding: 6px 8px;">
+                    <option value="cover">Cover (Fill)</option>
+                    <option value="contain">Contain</option>
+                    <option value="auto">Auto</option>
+                    <option value="100% 100%">Stretch</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="control-label" style="font-size: 0.72rem;">Position</label>
+                  <select id="settingFormBgPosition" class="control-select" style="font-size: 0.78rem; padding: 6px 8px;">
+                    <option value="center">Center</option>
+                    <option value="top">Top</option>
+                    <option value="bottom">Bottom</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div>
+                  <label class="control-label" style="font-size: 0.72rem;">Repeat</label>
+                  <select id="settingFormBgRepeat" class="control-select" style="font-size: 0.78rem; padding: 6px 8px;">
+                    <option value="no-repeat">No Repeat</option>
+                    <option value="repeat">Repeat Pattern</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="control-label" style="font-size: 0.72rem;">Dark Tint Overlay</label>
+                  <select id="settingFormBgOverlay" class="control-select" style="font-size: 0.78rem; padding: 6px 8px;">
+                    <option value="">None (0%)</option>
+                    <option value="rgba(0, 0, 0, 0.3)">30% Dark Tint</option>
+                    <option value="rgba(0, 0, 0, 0.5)">50% Dark Tint</option>
+                    <option value="rgba(0, 0, 0, 0.75)">75% Dark Tint</option>
+                    <option value="rgba(255, 255, 255, 0.5)">50% Light Tint</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- FORM CONTAINER BORDER & OUTLINE -->
+          <div style="margin-top: 18px; border-top: 1px solid #232a3b; padding-top: 14px;">
+            <div class="field-section-title" style="color: #60a5fa;">Form Border &amp; Shape</div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div class="control-group">
+                <label class="control-label">Border Width</label>
+                <select id="settingFormBorderWidth" class="control-select">
+                  <option value="0px">0px (None)</option>
+                  <option value="1px" selected>1px (Thin)</option>
+                  <option value="2px">2px (Medium)</option>
+                  <option value="3px">3px (Bold)</option>
+                  <option value="4px">4px (Thick)</option>
+                  <option value="6px">6px (Extra)</option>
+                </select>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Border Style</label>
+                <select id="settingFormBorderStyle" class="control-select">
+                  <option value="solid" selected>Solid</option>
+                  <option value="dashed">Dashed</option>
+                  <option value="dotted">Dotted</option>
+                  <option value="double">Double</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                <label class="control-label" style="margin-bottom: 0;">Border Color</label>
+                <div style="display: flex; gap: 4px;">
+                  <button type="button" class="btn-color-swatch" data-target="border" data-color="#28334a" title="Dark Slate" style="width: 18px; height: 18px; border-radius: 3px; background: #28334a; border: 1px solid #374151; cursor: pointer;"></button>
+                  <button type="button" class="btn-color-swatch" data-target="border" data-color="#3b82f6" title="Blue" style="width: 18px; height: 18px; border-radius: 3px; background: #3b82f6; border: 1px solid #1d4ed8; cursor: pointer;"></button>
+                  <button type="button" class="btn-color-swatch" data-target="border" data-color="#ff5e3a" title="Orange" style="width: 18px; height: 18px; border-radius: 3px; background: #ff5e3a; border: 1px solid #ea580c; cursor: pointer;"></button>
+                  <button type="button" class="btn-color-swatch" data-target="border" data-color="#10b981" title="Emerald" style="width: 18px; height: 18px; border-radius: 3px; background: #10b981; border: 1px solid #047857; cursor: pointer;"></button>
+                  <button type="button" class="btn-color-swatch" data-target="border" data-color="#e5e7eb" title="Light" style="width: 18px; height: 18px; border-radius: 3px; background: #e5e7eb; border: 1px solid #9ca3af; cursor: pointer;"></button>
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <input type="color" id="settingFormBorderColorPicker" class="control-input" style="width: 48px; height: 38px; padding: 2px; cursor: pointer;" value="#28334a" />
+                <input type="text" id="settingFormBorderColorText" class="control-input" value="#28334a" style="flex: 1;" />
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div class="control-group">
+                <label class="control-label">Corner Radius</label>
+                <select id="settingFormBorderRadius" class="control-select">
+                  <option value="0px">0px (Square)</option>
+                  <option value="6px">6px (Small)</option>
+                  <option value="10px">10px (Medium)</option>
+                  <option value="14px" selected>14px (Rounded)</option>
+                  <option value="20px">20px (Large)</option>
+                  <option value="28px">28px (Pill)</option>
+                </select>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Form Padding</label>
+                <select id="settingFormPadding" class="control-select">
+                  <option value="16px">Compact (16px)</option>
+                  <option value="24px">Standard (24px)</option>
+                  <option value="32px" selected>Spacious (32px)</option>
+                  <option value="42px">Extra (42px)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label class="control-label">Box Shadow / Depth</label>
+              <select id="settingFormBoxShadow" class="control-select">
+                <option value="none">None</option>
+                <option value="0 4px 12px rgba(0, 0, 0, 0.15)">Subtle Shadow</option>
+                <option value="0 10px 25px -5px rgba(0, 0, 0, 0.3)" selected>Medium Elevation</option>
+                <option value="0 20px 45px -10px rgba(0, 0, 0, 0.6)">Deep Drop Shadow</option>
+                <option value="0 0 25px rgba(59, 130, 246, 0.35)">Blue Glow Accent</option>
+                <option value="0 0 25px rgba(255, 94, 58, 0.35)">Orange Glow Accent</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- INPUT FIELDS & LABELS STYLING -->
+          <div style="margin-top: 18px; border-top: 1px solid #232a3b; padding-top: 14px;">
+            <div class="field-section-title" style="color: #60a5fa;">Inputs &amp; Labels</div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div class="control-group">
+                <label class="control-label">Label Color</label>
+                <input type="color" id="settingStyleLabelColor" class="control-input" style="height: 38px; padding: 2px;" value="#f3f4f6" />
+              </div>
+              <div class="control-group">
+                <label class="control-label">Input Text Color</label>
+                <input type="color" id="settingStyleTextColor" class="control-input" style="height: 38px; padding: 2px;" value="#ffffff" />
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div class="control-group">
+                <label class="control-label">Input Background</label>
+                <input type="color" id="settingStyleInputBg" class="control-input" style="height: 38px; padding: 2px;" value="#111827" />
+              </div>
+              <div class="control-group">
+                <label class="control-label">Input Border Color</label>
+                <input type="color" id="settingStyleInputBorder" class="control-input" style="height: 38px; padding: 2px;" value="#374151" />
+              </div>
+            </div>
+
+            <div class="control-group">
+              <label class="control-label">Input Corner Radius</label>
+              <select id="settingStyleRadius" class="control-select">
+                <option value="4px">Small (4px)</option>
+                <option value="8px" selected>Medium (8px)</option>
+                <option value="12px">Large (12px)</option>
+                <option value="20px">Rounded Pill</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center Canvas Interactive Preview -->
+      <section class="form-canvas-wrap" id="canvasContainer">
+        <!-- Notification banner explaining Page Builder Blocks integration -->
+        <div style="width: 100%; max-width: 820px; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 8px; padding: 10px 14px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 10px; font-size: 0.8rem; color: #93c5fd;">
+            <span style="font-size: 1.1rem;">💡</span>
+            <span>All forms created here are automatically registered in the <strong>Page Builder (`/editor`)</strong> under <strong>Blocks &rarr; Forms</strong>. Just drag and drop!</span>
+          </div>
+          <a href="/editor" class="btn-header-secondary" style="font-size: 0.75rem; padding: 4px 8px; text-decoration: none; white-space: nowrap;">Open Editor &rarr;</a>
+        </div>
+
+        <!-- The Responsive Device Frame -->
+        <div class="canvas-device-frame" id="deviceFrame">
+          <!-- Live Form Preview Container -->
+          <div id="liveFormCanvas">
+            <!-- Form Header on Canvas -->
+            <div id="canvasFormHeader" style="margin-bottom: 20px; text-align: left;">
+              <h3 id="canvasFormTitle" style="margin: 0 0 6px 0; font-size: 1.45rem; font-weight: 800; color: #f3f4f6; letter-spacing: -0.02em;">Get In Touch</h3>
+              <p id="canvasFormDesc" style="margin: 0; font-size: 0.9rem; color: #9ca3af; line-height: 1.5;">Fill out the form below and our team will get back to you within 24 hours.</p>
+            </div>
+
+            <!-- Fields Grid in Canvas -->
+            <div class="canvas-fields-grid" id="canvasFieldsGrid">
+              <!-- Rendered via JS -->
+            </div>
+
+            <!-- Submit Button on Canvas -->
+            <div id="canvasSubmitActionRow" style="margin-top: 24px; display: flex; justify-content: flex-start;">
+              <button type="button" id="canvasSubmitBtn" style="font-weight: 700; font-size: 0.95rem; padding: 12px 28px; border: none; border-radius: 8px; background: #ff5e3a; color: #ffffff; cursor: pointer;">
+                Send Message 🚀
+              </button>
+            </div>
+
+            <!-- Add Field Dropzone at bottom -->
+            <div class="canvas-empty-dropzone" id="btnCanvasDropzone">
+              <span style="font-size: 1.2rem; display: block; margin-bottom: 4px;">➕</span>
+              <span style="font-size: 0.85rem; font-weight: 600;">Click to Add a New Field</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- GOOGLE SHEETS SETUP MODAL -->
+    <div class="modal-backdrop" id="googleSheetsDocsModal">
+      <div class="modal-box">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+          <h3 style="font-size: 1.2rem; font-weight: 800; color: #60a5fa; display: flex; align-items: center; gap: 8px;">
+            <span>📊</span> Connect Form to Google Sheets in 1 Minute
+          </h3>
+          <button type="button" id="btnCloseDocsModal" style="background: transparent; border: none; color: #9ca3af; font-size: 1.2rem; cursor: pointer;">&times;</button>
+        </div>
+
+        <p style="font-size: 0.85rem; color: #d1d5db; line-height: 1.5; margin-bottom: 14px;">
+          FastPress uses Google Apps Script to securely write form entries to your Google Sheet without complex API keys or OAuth logins. Follow these 3 simple steps:
+        </p>
+
+        <ol style="font-size: 0.82rem; color: #9ca3af; line-height: 1.6; padding-left: 20px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px;">
+          <li>Open or create the destination spreadsheet at <a href="https://sheets.new" target="_blank" style="color: #60a5fa;">sheets.new</a>. Submissions will be saved into <strong>that exact spreadsheet</strong> (a Web App URL does not create a new file on its own).</li>
+          <li>Inside that Google Sheet, click <strong>Extensions &rarr; Apps Script</strong> (do not create a standalone project at script.google.com).</li>
+          <li>Replace the code with the script below, click <strong>Deploy &rarr; New deployment &rarr; Web App</strong>, set <strong>Execute as: Me</strong> and <strong>Who has access: Anyone</strong> (required to avoid HTTP 403), click <strong>Deploy</strong>, and paste the <strong>Web App URL</strong> into <strong>Form &amp; Sheets</strong>.</li>
+        </ol>
+
+        <div style="position: relative; margin-bottom: 16px;">
+          <pre style="background: #090c12; border: 1px solid #28334a; border-radius: 8px; padding: 12px; font-size: 0.75rem; color: #e5e7eb; overflow-x: auto; font-family: monospace; max-height: 220px;" id="scriptSnippetCode">{`function doPost(e) {
+  try {
+    var contents = JSON.parse(e.postData.contents);
+    var ss = contents.sheetUrl
+      ? SpreadsheetApp.openByUrl(contents.sheetUrl)
+      : SpreadsheetApp.getActiveSpreadsheet();
+
+    if (!ss) {
+      throw new Error("No spreadsheet found. Open your Google Sheet and click Extensions > Apps Script.");
+    }
+
+    var tabName = (contents.tabName || "").trim();
+    var sheet = tabName
+      ? (ss.getSheetByName(tabName) || ss.insertSheet(tabName))
+      : ss.getActiveSheet();
+
+    var data = contents.data || {};
+    var keys = Object.keys(data);
+
+    // Auto-create headers if sheet is empty
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(["Timestamp", "Form Name"].concat(keys));
+    }
+
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    keys.forEach(function(k) {
+      if (headers.indexOf(k) === -1) {
+        headers.push(k);
+        sheet.getRange(1, headers.length).setValue(k);
+      }
+    });
+
+    var row = headers.map(function(h) {
+      if (h === "Timestamp") return contents.submittedAt || new Date().toISOString();
+      if (h === "Form Name") return contents.formName || "";
+      return data[h] !== undefined ? data[h] : "";
+    });
+
+    sheet.appendRow(row);
+
+    return ContentService.createTextOutput(JSON.stringify({
+      result: "success",
+      spreadsheetUrl: ss.getUrl(),
+      spreadsheetName: ss.getName(),
+      sheetName: sheet.getName()
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService.createTextOutput(JSON.stringify({
+      result: "error",
+      error: err.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}`}</pre>
+          <button type="button" id="btnCopyScriptCode" class="btn-header-secondary" style="position: absolute; top: 8px; right: 8px; font-size: 0.72rem; padding: 3px 8px;">
+            Copy Script
+          </button>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end;">
+          <button type="button" class="btn-save-form" id="btnCloseDocsModal2" style="font-size: 0.8rem; padding: 6px 16px;">Got It!</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MEDIA LIBRARY PICKER MODAL -->
+    <div class="modal-backdrop" id="mediaLibraryModal">
+      <div class="modal-box" style="max-width: 680px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+          <h3 style="font-size: 1.15rem; font-weight: 800; color: #60a5fa; display: flex; align-items: center; gap: 8px; margin: 0;">
+            <span>🖼️</span> Select or Upload Background Image
+          </h3>
+          <button type="button" id="btnCloseMediaModal" style="background: transparent; border: none; color: #9ca3af; font-size: 1.4rem; cursor: pointer; line-height: 1;">&times;</button>
+        </div>
+
+        <div style="border: 2px dashed #28334a; border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; margin-bottom: 16px; background: rgba(255,255,255,0.02); transition: border-color 0.2s;" id="mediaDropzone">
+          <input type="file" id="mediaModalFileInput" accept="image/*" style="display: none;" />
+          <div style="font-size: 1.6rem; margin-bottom: 6px;">📁</div>
+          <div style="font-size: 0.85rem; font-weight: 600; color: #f3f4f6;">Click to upload an image from your device</div>
+          <div style="font-size: 0.72rem; color: #94a3b8; margin-top: 4px;">PNG, JPG, SVG, WebP, GIF up to 2MB</div>
+        </div>
+
+        <div style="font-size: 0.78rem; font-weight: 700; color: #9ca3af; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em;">Project Media Assets</div>
+        <div id="mediaLibraryGrid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; max-height: 250px; overflow-y: auto; padding: 4px;">
+          <!-- Loaded via /api/upload -->
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; border-top: 1px solid #232a3b; padding-top: 14px;">
+          <button type="button" class="btn-header-secondary" id="btnCancelMediaModal" style="font-size: 0.8rem; padding: 6px 14px;">Cancel</button>
+          <button type="button" class="btn-save-form" id="btnApplySelectedMedia" style="font-size: 0.8rem; padding: 6px 16px;">Use Selected Image</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Form Submissions & Google Sheets Delivery Modal -->
+    <div class="modal-backdrop" id="submissionsModal">
+      <div class="modal-box" style="max-width: 720px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <div>
+            <h2 style="font-size: 1.05rem; font-weight: 700; color: #fff; margin: 0;">📥 Form Submissions &amp; Google Sheets Log</h2>
+            <p id="submissionsModalSubtitle" style="font-size: 0.78rem; color: #9ca3af; margin: 4px 0 0 0;">Saved locally in src/data/form-submissions.json</p>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button type="button" class="btn-header-secondary" id="btnRefreshSubmissions" style="font-size: 0.76rem; padding: 5px 10px;">🔄 Refresh</button>
+            <button type="button" id="btnCloseSubmissionsModal" style="background: none; border: none; color: #9ca3af; font-size: 1.3rem; cursor: pointer; line-height: 1;">&times;</button>
+          </div>
+        </div>
+        <div id="submissionsListContainer" style="display: flex; flex-direction: column; gap: 10px; max-height: 55vh; overflow-y: auto; padding-right: 4px;">
+          <div style="text-align: center; color: #9ca3af; font-size: 0.82rem; padding: 24px;">Loading submissions...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast-notice" id="toastNotice">
+      <span id="toastIcon">✅</span>
+      <span id="toastMessage">Form saved successfully!</span>
+    </div>
+
+    <!-- Drag Resizing Floating Tooltip -->
+    <div class="resize-tooltip" id="resizeTooltip">↔️ 50% (Side by Side)</div>
+
+    <!-- Data Injection for Client Script -->
+    <script id="initialFormsData" type="application/json" set:html={JSON.stringify(initialForms)} />
+    <script id="activeFormIdData" type="application/json" set:html={JSON.stringify(activeFormId)} />
+
+    <!-- Client Logic -->
+    <script is:inline>
+      (function() {
+        // State variables
+        let formsList = [];
+        try {
+          formsList = JSON.parse(document.getElementById('initialFormsData').textContent || '[]');
+        } catch (e) {
+          formsList = [];
+        }
+
+        let activeFormId = 'form-contact-default';
+        try {
+          activeFormId = JSON.parse(document.getElementById('activeFormIdData').textContent || '"form-contact-default"');
+        } catch (e) {}
+
+        let activeForm = formsList.find(f => f.id === activeFormId) || formsList[0];
+        let selectedFieldId = null;
+
+        // DOM elements
+        const formSelectDropdown = document.getElementById('formSelectDropdown');
+        const btnNewForm = document.getElementById('btnNewForm');
+        const btnDuplicateForm = document.getElementById('btnDuplicateForm');
+        const btnDeleteForm = document.getElementById('btnDeleteForm');
+        const btnSaveForm = document.getElementById('btnSaveForm');
+        const canvasFieldsGrid = document.getElementById('canvasFieldsGrid');
+        const deviceFrame = document.getElementById('deviceFrame');
+        const toastNotice = document.getElementById('toastNotice');
+        const toastMessage = document.getElementById('toastMessage');
+
+        // Studio Menu Toggle
+        const btnStudioSwitcher = document.getElementById('btnStudioSwitcher');
+        const studioMenuFlyout = document.getElementById('studioMenuFlyout');
+        btnStudioSwitcher?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          studioMenuFlyout.classList.toggle('active');
+        });
+        document.addEventListener('click', () => {
+          studioMenuFlyout?.classList.remove('active');
+        });
+
+        // Toast Helper
+        function showToast(msg, icon = '✅') {
+          toastMessage.textContent = msg;
+          document.getElementById('toastIcon').textContent = icon;
+          toastNotice.classList.add('show');
+          setTimeout(() => {
+            toastNotice.classList.remove('show');
+          }, 3000);
+        }
+
+        // Viewport Switcher
+        document.querySelectorAll('.viewport-btn[data-vp]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            document.querySelectorAll('.viewport-btn[data-vp]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const vp = btn.getAttribute('data-vp');
+            deviceFrame.className = 'canvas-device-frame ' + (vp !== 'desktop' ? vp : '');
+            renderCanvas();
+          });
+        });
+
+        // Mode Switcher (Edit vs Test Mode)
+        let canvasMode = 'edit';
+        const btnModeEdit = document.getElementById('btnModeEdit');
+        const btnModeTest = document.getElementById('btnModeTest');
+
+        btnModeEdit?.addEventListener('click', () => {
+          canvasMode = 'edit';
+          btnModeEdit.classList.add('active');
+          btnModeTest.classList.remove('active');
+          document.getElementById('btnCanvasDropzone').style.display = 'block';
+          renderCanvas();
+        });
+
+        btnModeTest?.addEventListener('click', () => {
+          canvasMode = 'test';
+          btnModeTest.classList.add('active');
+          btnModeEdit.classList.remove('active');
+          selectedFieldId = null;
+          document.getElementById('btnCanvasDropzone').style.display = 'none';
+          renderCanvas();
+          evaluateCanvasConditionalLogic();
+          showToast('Interactive Test Mode: Try changing inputs to test conditional logic!', '👁️');
+        });
+
+        // Tab Navigation
+        document.querySelectorAll('.sidebar-tab-btn').forEach(tabBtn => {
+          tabBtn.addEventListener('click', () => {
+            document.querySelectorAll('.sidebar-tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.sidebar-tab-content').forEach(c => c.classList.remove('active'));
+            tabBtn.classList.add('active');
+            const targetId = tabBtn.getAttribute('data-tab');
+            document.getElementById(targetId)?.classList.add('active');
+          });
+        });
+
+        function switchSidebarTab(tabId) {
+          const btn = document.querySelector(`.sidebar-tab-btn[data-tab="${tabId}"]`);
+          if (btn) btn.click();
+        }
+
+        // Populate Forms Selector
+        function renderFormSelector() {
+          formSelectDropdown.innerHTML = '';
+          formsList.forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f.id;
+            opt.textContent = f.name;
+            if (f.id === activeForm.id) opt.selected = true;
+            formSelectDropdown.appendChild(opt);
+          });
+        }
+
+        formSelectDropdown.addEventListener('change', () => {
+          const selected = formsList.find(f => f.id === formSelectDropdown.value);
+          if (selected) {
+            activeForm = selected;
+            selectedFieldId = null;
+            renderCanvas();
+            syncFormSettingsUI();
+            updateFieldInspector();
+          }
+        });
+
+        // Canvas Rendering
+        function renderCanvas() {
+          if (!activeForm) return;
+
+          // Apply Form Container Background & Border styling to deviceFrame
+          const st = activeForm.settings.styling || {};
+          const isDark = st.theme !== 'clean-light';
+
+          const formBgColor = st.formBgColor || (isDark ? '#0f131d' : '#ffffff');
+          const formBgImage = st.formBgImage?.trim() || '';
+          const formBgSize = st.formBgSize || 'cover';
+          const formBgPos = st.formBgPosition || 'center';
+          const formBgRepeat = st.formBgRepeat || 'no-repeat';
+          const formBgOverlay = st.formBgOverlay || '';
+
+          const formBorderWidth = st.formBorderWidth !== undefined ? st.formBorderWidth : '1px';
+          const formBorderStyle = st.formBorderStyle || 'solid';
+          const formBorderColor = st.formBorderColor || (isDark ? '#28334a' : '#d1d5db');
+          const formBorderRadius = st.formBorderRadius || '14px';
+          const formBoxShadow = st.formBoxShadow !== undefined ? st.formBoxShadow : '0 10px 25px -5px rgba(0, 0, 0, 0.3)';
+          const formPadding = st.formPadding || '32px';
+
+          deviceFrame.style.backgroundColor = formBgColor;
+          if (formBgImage) {
+            if (formBgOverlay) {
+              deviceFrame.style.backgroundImage = `linear-gradient(${formBgOverlay}, ${formBgOverlay}), url("${formBgImage}")`;
+            } else {
+              deviceFrame.style.backgroundImage = `url("${formBgImage}")`;
+            }
+            deviceFrame.style.backgroundSize = formBgSize;
+            deviceFrame.style.backgroundPosition = formBgPos;
+            deviceFrame.style.backgroundRepeat = formBgRepeat;
+          } else {
+            deviceFrame.style.backgroundImage = 'none';
+          }
+
+          deviceFrame.style.border = `${formBorderWidth} ${formBorderStyle} ${formBorderColor}`;
+          deviceFrame.style.borderRadius = formBorderRadius;
+          deviceFrame.style.boxShadow = formBoxShadow;
+          if (!deviceFrame.classList.contains('mobile')) {
+            deviceFrame.style.padding = formPadding;
+          } else {
+            deviceFrame.style.padding = '20px 16px';
+          }
+
+          // Header (Title & Subtitle / Description)
+          const headerContainer = document.getElementById('canvasFormHeader');
+          const titleEl = document.getElementById('canvasFormTitle');
+          const descEl = document.getElementById('canvasFormDesc');
+
+          const showTitle = activeForm.settings.showTitle !== false;
+          const showDesc = activeForm.settings.showDescription !== false;
+          const titleColor = activeForm.settings.titleColor || (isDark ? '#f3f4f6' : '#111827');
+          const titleSize = activeForm.settings.titleSize || '1.45rem';
+          const descColor = activeForm.settings.descriptionColor || (isDark ? '#9ca3af' : '#4b5563');
+          const descSize = activeForm.settings.descriptionSize || '0.9rem';
+          const titleAlign = activeForm.settings.titleAlign || 'left';
+
+          if (headerContainer) {
+            headerContainer.style.textAlign = titleAlign;
+            if ((!showTitle || !activeForm.settings.title) && (!showDesc || !activeForm.settings.description)) {
+              headerContainer.style.display = 'none';
+            } else {
+              headerContainer.style.display = 'block';
+              headerContainer.style.marginBottom = '20px';
+            }
+          }
+
+          if (showTitle && (activeForm.settings.title || activeForm.name)) {
+            titleEl.textContent = activeForm.settings.title || activeForm.name;
+            titleEl.style.color = titleColor;
+            titleEl.style.fontSize = titleSize;
+            titleEl.style.display = 'block';
+          } else {
+            titleEl.style.display = 'none';
+          }
+
+          if (showDesc && activeForm.settings.description) {
+            descEl.textContent = activeForm.settings.description;
+            descEl.style.color = descColor;
+            descEl.style.fontSize = descSize;
+            descEl.style.display = 'block';
+          } else {
+            descEl.style.display = 'none';
+          }
+
+          // Submit button
+          const submitBtn = document.getElementById('canvasSubmitBtn');
+          submitBtn.textContent = activeForm.settings.submitButton.text || 'Submit Form';
+          submitBtn.style.background = activeForm.settings.submitButton.bgColor || '#ff5e3a';
+          submitBtn.style.color = activeForm.settings.submitButton.textColor || '#ffffff';
+          submitBtn.style.borderRadius = activeForm.settings.submitButton.borderRadius || '8px';
+          const align = activeForm.settings.submitButton.align || 'left';
+          const actionRow = document.getElementById('canvasSubmitActionRow');
+          if (align === 'center') actionRow.style.justifyContent = 'center';
+          else if (align === 'right') actionRow.style.justifyContent = 'flex-end';
+          else actionRow.style.justifyContent = 'flex-start';
+          if (align === 'full') submitBtn.style.width = '100%';
+          else submitBtn.style.width = 'auto';
+
+          // Fields
+          canvasFieldsGrid.innerHTML = '';
+          const labelColor = activeForm.settings.styling?.labelColor || (isDark ? '#e5e7eb' : '#1f2937');
+          const inputBg = activeForm.settings.styling?.inputBg || (isDark ? '#111827' : '#ffffff');
+          const inputBorder = activeForm.settings.styling?.inputBorder || (isDark ? '#374151' : '#d1d5db');
+          const inputTextColor = activeForm.settings.styling?.inputTextColor || (isDark ? '#f9fafb' : '#111827');
+          const radius = activeForm.settings.styling?.borderRadius || '8px';
+          const baseInputStyle = `width: 100%; box-sizing: border-box; background: ${inputBg}; border: 1px solid ${inputBorder}; color: ${inputTextColor}; border-radius: ${radius}; padding: 9px 12px; font-size: 0.9rem; outline: none;`;
+
+          activeForm.fields.forEach((field, index) => {
+            const currentWidth = field.width || '100%';
+            const row = document.createElement('div');
+            row.className = `canvas-field-row ${field.id === selectedFieldId ? 'active' : ''}`;
+            row.style.width = currentWidth;
+            row.setAttribute('data-field-id', field.id);
+            row.setAttribute('data-width', currentWidth);
+
+            // Floating action bar
+            const actionBar = document.createElement('div');
+            actionBar.className = 'field-actions-bar';
+
+            let widthBadgeText = '100% Full';
+            if (currentWidth === '50%') widthBadgeText = '50% Half';
+            else if (currentWidth === '33.33%') widthBadgeText = '33% 1/3';
+            else if (currentWidth === '25%') widthBadgeText = '25% 1/4';
+            else if (currentWidth === '66.66%') widthBadgeText = '66% 2/3';
+            else if (currentWidth === '75%') widthBadgeText = '75% 3/4';
+
+            actionBar.innerHTML = `
+              <button type="button" class="field-act-btn width-btn" data-act="toggle-width" title="Click to cycle width: 100% Full ⮂ 50% Side-by-side ⮂ 33% 1/3">
+                ↔️ ${widthBadgeText}
+              </button>
+              <button type="button" class="field-act-btn" data-act="up" title="Move Up">▲</button>
+              <button type="button" class="field-act-btn" data-act="down" title="Move Down">▼</button>
+              <button type="button" class="field-act-btn" data-act="duplicate" title="Duplicate Field">📋</button>
+              <button type="button" class="field-act-btn del" data-act="delete" title="Delete Field">🗑️</button>
+            `;
+            row.appendChild(actionBar);
+
+            // Interactive Drag-to-Resize Handle on the right edge
+            if (canvasMode !== 'test') {
+              const resizeHandle = document.createElement('div');
+              resizeHandle.className = 'field-resize-handle';
+              resizeHandle.title = 'Drag to resize width (or click to toggle 100% Full / 50% Side-by-Side)';
+              resizeHandle.innerHTML = '<div class="resize-handle-bar"></div>';
+              setupResizeHandle(resizeHandle, row, field);
+              row.appendChild(resizeHandle);
+            }
+
+            const inner = document.createElement('div');
+            inner.className = 'canvas-field-inner';
+
+            // Conditional Logic indicator badge
+            const condBadge = field.conditionalLogic?.enabled
+              ? `<span style="font-size:0.62rem; font-weight:800; background:#3b82f6; color:#fff; padding:1px 5px; border-radius:3px; margin-left:6px;">CONDITIONAL</span>`
+              : '';
+
+            const reqMark = field.required ? '<span style="color:#ef4444; margin-left:3px;">*</span>' : '';
+            const desc = field.description ? `<div style="font-size:0.75rem; color:#9ca3af; margin-top:4px;">${field.description}</div>` : '';
+
+            const escHtml = (s) => String(s ?? '')
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;');
+            let controlHtml = '';
+            switch (field.type) {
+              case 'textarea':
+                controlHtml = `<textarea placeholder="${escHtml(field.placeholder || '')}" rows="3" style="${baseInputStyle} resize:vertical;">${escHtml(field.defaultValue || '')}</textarea>`;
+                break;
+              case 'select':
+                const opts = (field.options || []).map(o => `<option value="${escHtml(o.value || o.label)}">${escHtml(o.label)}</option>`).join('');
+                controlHtml = `<select style="${baseInputStyle}"><option value="">${escHtml(field.placeholder || '-- Select --')}</option>${opts}</select>`;
+                break;
+              case 'radio':
+                controlHtml = `<div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;">` +
+                  (field.options || []).map(o => `<label style="display:flex; align-items:center; gap:8px; font-size:0.88rem; color:${labelColor};"><input type="radio" name="${field.id}" value="${escHtml(o.value || o.label)}"> ${escHtml(o.label)}</label>`).join('') +
+                  `</div>`;
+                break;
+              case 'checkbox':
+                controlHtml = `<div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;">` +
+                  (field.options || []).map(o => `<label style="display:flex; align-items:center; gap:8px; font-size:0.88rem; color:${labelColor};"><input type="checkbox" value="${escHtml(o.value || o.label)}"> ${escHtml(o.label)}</label>`).join('') +
+                  `</div>`;
+                break;
+              case 'section':
+                controlHtml = `<div style="border-bottom:1px solid ${inputBorder}; padding-bottom:6px;"><h4 style="margin:0; font-size:1.05rem; font-weight:700; color:${labelColor};">${field.label}</h4>${desc}</div>`;
+                break;
+              case 'html':
+                controlHtml = `<div>${field.content || '<div style="font-size:0.85rem; color:#9ca3af;">Custom HTML Content Block</div>'}</div>`;
+                break;
+              default:
+                controlHtml = `<input type="${field.type === 'phone' ? 'tel' : field.type}" placeholder="${field.placeholder || ''}" value="${field.defaultValue || ''}" style="${baseInputStyle}" />`;
+                break;
+            }
+
+            if (field.type !== 'section') {
+              inner.innerHTML = `
+                <label style="display:block; font-size:0.85rem; font-weight:700; color:${labelColor}; margin-bottom:5px;">
+                  ${field.label}${reqMark}${condBadge}
+                </label>
+                ${controlHtml}
+                ${desc}
+              `;
+            } else {
+              inner.innerHTML = controlHtml;
+            }
+
+            if (canvasMode === 'test') {
+              actionBar.style.display = 'none';
+              inner.querySelectorAll('input, select, textarea').forEach(inp => {
+                inp.addEventListener('input', evaluateCanvasConditionalLogic);
+                inp.addEventListener('change', evaluateCanvasConditionalLogic);
+              });
+            } else {
+              // Click row to inspect in Edit Mode
+              inner.addEventListener('click', (e) => {
+                e.stopPropagation();
+                selectedFieldId = field.id;
+                renderCanvas();
+                updateFieldInspector();
+                switchSidebarTab('tab-field-settings');
+              });
+
+              // Action bar clicks
+              actionBar.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const btn = e.target.closest('.field-act-btn');
+                if (!btn) return;
+                const act = btn.getAttribute('data-act');
+                if (act === 'toggle-width') {
+                  const w = field.width || '100%';
+                  let nextW = '50%';
+                  if (w === '100%') nextW = '50%';
+                  else if (w === '50%') nextW = '33.33%';
+                  else if (w === '33.33%') nextW = '25%';
+                  else nextW = '100%';
+                  field.width = nextW;
+                  renderCanvas();
+                  updateFieldInspector();
+                  showToast(`Field width: ${nextW === '50%' ? '50% (Side-by-side)' : nextW}`);
+                  return;
+                } else if (act === 'up' && index > 0) {
+                  const temp = activeForm.fields[index];
+                  activeForm.fields[index] = activeForm.fields[index - 1];
+                  activeForm.fields[index - 1] = temp;
+                  renderCanvas();
+                } else if (act === 'down' && index < activeForm.fields.length - 1) {
+                  const temp = activeForm.fields[index];
+                  activeForm.fields[index] = activeForm.fields[index + 1];
+                  activeForm.fields[index + 1] = temp;
+                  renderCanvas();
+                } else if (act === 'duplicate') {
+                  const dup = JSON.parse(JSON.stringify(field));
+                  dup.id = `field_${Date.now()}`;
+                  dup.label = `${field.label} (Copy)`;
+                  activeForm.fields.splice(index + 1, 0, dup);
+                  selectedFieldId = dup.id;
+                  renderCanvas();
+                  updateFieldInspector();
+                } else if (act === 'delete') {
+                  if (confirm(`Delete "${field.label}"?`)) {
+                    activeForm.fields.splice(index, 1);
+                    if (selectedFieldId === field.id) selectedFieldId = null;
+                    renderCanvas();
+                    updateFieldInspector();
+                  }
+                }
+              });
+            }
+
+            row.appendChild(inner);
+            canvasFieldsGrid.appendChild(row);
+          });
+        }
+
+        // Interactive Drag-to-Resize Handle Handler
+        function setupResizeHandle(handle, rowEl, field) {
+          let isDragging = false;
+          let startX = 0;
+          let initialWidthPx = 0;
+          let containerWidthPx = 0;
+          let snappedWidth = field.width || '100%';
+          const tooltip = document.getElementById('resizeTooltip');
+
+          handle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (isDragging) return;
+            // Quick toggle between 100% and 50%
+            field.width = (field.width === '50%') ? '100%' : '50%';
+            renderCanvas();
+            updateFieldInspector();
+            showToast(`Field width: ${field.width === '50%' ? '50% (Side by side)' : '100% (Full width)'}`);
+          });
+
+          handle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            isDragging = true;
+            handle.classList.add('resizing');
+            startX = e.clientX;
+            initialWidthPx = rowEl.getBoundingClientRect().width;
+            containerWidthPx = canvasFieldsGrid.getBoundingClientRect().width;
+
+            if (tooltip) {
+              tooltip.style.display = 'block';
+              tooltip.textContent = `↔️ ${field.width || '100%'}`;
+              tooltip.style.left = (e.clientX + 15) + 'px';
+              tooltip.style.top = (e.clientY - 30) + 'px';
+            }
+
+            function onMouseMove(moveEvent) {
+              if (!isDragging) return;
+              const deltaX = moveEvent.clientX - startX;
+              const newWidthPx = Math.max(80, Math.min(containerWidthPx, initialWidthPx + deltaX));
+              const pct = (newWidthPx / containerWidthPx) * 100;
+
+              let label = '100% Full Width';
+              if (pct < 29) {
+                snappedWidth = '25%';
+                label = '25% (4 Columns)';
+              } else if (pct < 41) {
+                snappedWidth = '33.33%';
+                label = '33% (3 Columns)';
+              } else if (pct < 58) {
+                snappedWidth = '50%';
+                label = '50% (Side by Side)';
+              } else if (pct < 71) {
+                snappedWidth = '66.66%';
+                label = '66% (2/3 Width)';
+              } else if (pct < 87) {
+                snappedWidth = '75%';
+                label = '75% (3/4 Width)';
+              } else {
+                snappedWidth = '100%';
+                label = '100% (Full Width)';
+              }
+
+              rowEl.style.width = snappedWidth;
+              if (tooltip) {
+                tooltip.textContent = `↔️ ${label}`;
+                tooltip.style.left = (moveEvent.clientX + 15) + 'px';
+                tooltip.style.top = (moveEvent.clientY - 30) + 'px';
+              }
+            }
+
+            function onMouseUp() {
+              if (!isDragging) return;
+              isDragging = false;
+              handle.classList.remove('resizing');
+              if (tooltip) tooltip.style.display = 'none';
+              document.removeEventListener('mousemove', onMouseMove);
+              document.removeEventListener('mouseup', onMouseUp);
+
+              field.width = snappedWidth;
+              renderCanvas();
+              updateFieldInspector();
+              showToast(`Field resized to ${snappedWidth}`);
+            }
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+          });
+        }
+
+        // Live conditional logic evaluator for Interactive Test Mode
+        function evaluateCanvasConditionalLogic() {
+          if (canvasMode !== 'test') return;
+          activeForm.fields.forEach(field => {
+            const row = canvasFieldsGrid.querySelector(`[data-field-id="${field.id}"]`);
+            if (!row) return;
+
+            if (!field.conditionalLogic || !field.conditionalLogic.enabled || !field.conditionalLogic.rules.length) {
+              row.style.display = 'block';
+              return;
+            }
+
+            const action = field.conditionalLogic.action || 'show';
+            const logicType = field.conditionalLogic.logicType || 'all';
+            let passedCount = 0;
+
+            field.conditionalLogic.rules.forEach(rule => {
+              const targetInput = canvasFieldsGrid.querySelector(`[name="${rule.fieldId}"], [name="${rule.fieldId}[]"]`);
+              let currentVal = '';
+              if (targetInput) {
+                if (targetInput.type === 'radio') {
+                  const checked = canvasFieldsGrid.querySelector(`[name="${rule.fieldId}"]:checked`);
+                  currentVal = checked ? checked.value : '';
+                } else if (targetInput.type === 'checkbox') {
+                  const checkedBoxes = Array.from(canvasFieldsGrid.querySelectorAll(`[name="${rule.fieldId}[]"]:checked`)).map(cb => cb.value);
+                  currentVal = checkedBoxes.join(',');
+                } else {
+                  currentVal = targetInput.value || '';
+                }
+              }
+
+              const targetVal = (rule.value || '').trim().toLowerCase();
+              const val = (currentVal || '').trim().toLowerCase();
+              let ruleMet = false;
+              switch (rule.operator) {
+                case 'is': ruleMet = val === targetVal; break;
+                case 'is_not': ruleMet = val !== targetVal; break;
+                case 'contains': ruleMet = val.includes(targetVal); break;
+                case 'not_contains': ruleMet = !val.includes(targetVal); break;
+                case 'greater_than': ruleMet = parseFloat(val) > parseFloat(targetVal); break;
+                case 'less_than': ruleMet = parseFloat(val) < parseFloat(targetVal); break;
+                case 'is_empty': ruleMet = val === ''; break;
+                case 'is_not_empty': ruleMet = val !== ''; break;
+                default: ruleMet = val === targetVal;
+              }
+              if (ruleMet) passedCount++;
+            });
+
+            const rulesMatch = logicType === 'all'
+              ? (passedCount === field.conditionalLogic.rules.length)
+              : (passedCount > 0);
+
+            const shouldShow = action === 'show' ? rulesMatch : !rulesMatch;
+            row.style.display = shouldShow ? 'block' : 'none';
+          });
+        }
+
+        document.getElementById('canvasSubmitBtn')?.addEventListener('click', () => {
+          if (canvasMode === 'test') {
+            showToast(activeForm.settings.confirmation.message || 'Form submitted successfully! (Test Mode)', '🎉');
+          } else {
+            switchSidebarTab('tab-form-settings');
+          }
+        });
+
+        // Add Field Click Handlers
+        document.querySelectorAll('.palette-field-card').forEach(card => {
+          card.addEventListener('click', () => {
+            const type = card.getAttribute('data-add-type');
+            addNewField(type);
+          });
+        });
+
+        document.getElementById('btnCanvasDropzone')?.addEventListener('click', () => {
+          switchSidebarTab('tab-add-fields');
+        });
+
+        function addNewField(type) {
+          if (!activeForm) return;
+          const timestamp = Date.now();
+
+          let newField = {
+            id: `field_${timestamp}`,
+            type: type,
+            label: 'Untitled Field',
+            placeholder: '',
+            required: false,
+            width: '100%',
+            description: ''
+          };
+
+          if (type === 'name') {
+            // Add First & Last Name side-by-side
+            const f1 = {
+              id: `field_fn_${timestamp}`,
+              type: 'text',
+              label: 'First Name',
+              placeholder: 'Jane',
+              required: true,
+              width: '50%'
+            };
+            const f2 = {
+              id: `field_ln_${timestamp}`,
+              type: 'text',
+              label: 'Last Name',
+              placeholder: 'Smith',
+              required: true,
+              width: '50%'
+            };
+            activeForm.fields.push(f1, f2);
+            selectedFieldId = f1.id;
+            renderCanvas();
+            updateFieldInspector();
+            switchSidebarTab('tab-field-settings');
+            showToast('Added First & Last Name fields');
+            return;
+          } else if (type === 'email') {
+            newField.label = 'Email Address';
+            newField.placeholder = 'you@example.com';
+            newField.required = true;
+          } else if (type === 'phone') {
+            newField.label = 'Phone Number';
+            newField.placeholder = '+1 (555) 000-0000';
+          } else if (type === 'textarea') {
+            newField.label = 'Message / Description';
+            newField.placeholder = 'Enter details here...';
+          } else if (type === 'select') {
+            newField.label = 'Choose an Option';
+            newField.options = [
+              { label: 'Option 1', value: 'Option 1', isDefault: true },
+              { label: 'Option 2', value: 'Option 2' },
+              { label: 'Option 3', value: 'Option 3' }
+            ];
+          } else if (type === 'radio') {
+            newField.label = 'Select One';
+            newField.options = [
+              { label: 'Choice A', value: 'Choice A', isDefault: true },
+              { label: 'Choice B', value: 'Choice B' }
+            ];
+          } else if (type === 'checkbox') {
+            newField.label = 'Select Options';
+            newField.options = [
+              { label: 'Option A', value: 'Option A' },
+              { label: 'Option B', value: 'Option B' }
+            ];
+          } else if (type === 'date') {
+            newField.label = 'Preferred Date';
+          } else if (type === 'time') {
+            newField.label = 'Preferred Time';
+          } else if (type === 'url') {
+            newField.label = 'Website';
+            newField.placeholder = 'https://example.com';
+          } else if (type === 'section') {
+            newField.label = 'Section Title';
+            newField.description = 'Provide a brief explanation of this group of fields.';
+          } else if (type === 'html') {
+            newField.label = 'Custom HTML Block';
+            newField.content = '<p style="color:#9ca3af; font-size:0.85rem;">Custom notice or disclaimer text goes here.</p>';
+          } else {
+            newField.label = 'Single Line Text';
+            newField.placeholder = 'Enter text...';
+          }
+
+          activeForm.fields.push(newField);
+          selectedFieldId = newField.id;
+          renderCanvas();
+          updateFieldInspector();
+          switchSidebarTab('tab-field-settings');
+          showToast(`Added ${newField.label}`);
+        }
+
+        // Field Inspector UI Sync
+        function updateFieldInspector() {
+          const noField = document.getElementById('noFieldSelectedNotice');
+          const inspector = document.getElementById('fieldInspectorForm');
+
+          if (!selectedFieldId) {
+            noField.style.display = 'block';
+            inspector.style.display = 'none';
+            return;
+          }
+
+          const field = activeForm.fields.find(f => f.id === selectedFieldId);
+          if (!field) {
+            noField.style.display = 'block';
+            inspector.style.display = 'none';
+            return;
+          }
+
+          noField.style.display = 'none';
+          inspector.style.display = 'block';
+
+          document.getElementById('inspectorFieldTypeBadge').textContent = field.type;
+          document.getElementById('inspectorFieldId').textContent = field.id;
+          document.getElementById('settingFieldLabel').value = field.label || '';
+          document.getElementById('settingFieldPlaceholder').value = field.placeholder || '';
+          document.getElementById('settingFieldDesc').value = field.description || '';
+          const curWidth = field.width || '100%';
+          document.getElementById('settingFieldWidth').value = curWidth;
+          const widthLabels = {
+            '100%': '100% Full Width',
+            '50%': '50% Half (Side by Side)',
+            '33.33%': '33% 1/3 (3 Columns)',
+            '25%': '25% 1/4 (4 Columns)',
+            '66.66%': '66% 2/3 Width',
+            '75%': '75% 3/4 Width'
+          };
+          const curLabelEl = document.getElementById('currentWidthLabel');
+          if (curLabelEl) {
+            curLabelEl.textContent = widthLabels[curWidth] || `${curWidth} Width`;
+          }
+          document.querySelectorAll('.width-seg-btn').forEach(btn => {
+            const btnW = btn.getAttribute('data-width');
+            btn.classList.toggle('active', btnW === curWidth);
+          });
+          document.getElementById('settingFieldRequired').checked = !!field.required;
+
+          // Placeholder visibility
+          const phGroup = document.getElementById('settingPlaceholderGroup');
+          phGroup.style.display = (field.type === 'section' || field.type === 'radio' || field.type === 'checkbox' || field.type === 'html') ? 'none' : 'block';
+
+          // Options Manager
+          const optSec = document.getElementById('optionsManagerSection');
+          if (field.type === 'select' || field.type === 'radio' || field.type === 'checkbox') {
+            optSec.style.display = 'block';
+            renderOptionsList(field);
+          } else {
+            optSec.style.display = 'none';
+          }
+
+          // HTML / Content
+          const contentSec = document.getElementById('contentEditorSection');
+          if (field.type === 'html') {
+            contentSec.style.display = 'block';
+            document.getElementById('settingFieldContent').value = field.content || '';
+          } else {
+            contentSec.style.display = 'none';
+          }
+
+          // Conditional Logic
+          const condEnabled = document.getElementById('settingCondEnabled');
+          const condWrap = document.getElementById('conditionalConfigWrap');
+          const hasCond = field.conditionalLogic && field.conditionalLogic.enabled;
+          condEnabled.checked = !!hasCond;
+          condWrap.style.display = hasCond ? 'block' : 'none';
+
+          if (hasCond) {
+            document.getElementById('settingCondAction').value = field.conditionalLogic.action || 'show';
+            document.getElementById('settingCondLogicType').value = field.conditionalLogic.logicType || 'all';
+            renderConditionalRules(field);
+          }
+        }
+
+        // Live Inspector Event Listeners
+        document.getElementById('settingFieldLabel').addEventListener('input', (e) => {
+          const field = activeForm.fields.find(f => f.id === selectedFieldId);
+          if (field) { field.label = e.target.value; renderCanvas(); }
+        });
+
+        document.getElementById('settingFieldPlaceholder').addEventListener('input', (e) => {
+          const field = activeForm.fields.find(f => f.id === selectedFieldId);
+          if (field) { field.placeholder = e.target.value; renderCanvas(); }
+        });
+
+        document.getElementById('settingFieldDesc').addEventListener('input', (e) => {
+          const field = activeForm.fields.find(f => f.id === selectedFieldId);
+          if (field) { field.description = e.target.value; renderCanvas(); }
+        });
+
+        document.querySelectorAll('.width-seg-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const field = activeForm.fields.find(f => f.id === selectedFieldId);
+            if (!field) return;
+            const w = btn.getAttribute('data-width');
+            field.width = w;
+            renderCanvas();
+            updateFieldInspector();
+            showToast(`Field width set to ${btn.querySelector('.w-btn-title').textContent}`);
+          });
+        });
+
+        document.getElementById('settingFieldRequired').addEventListener('change', (e) => {
+          const field = activeForm.fields.find(f => f.id === selectedFieldId);
+          if (field) { field.required = e.target.checked; renderCanvas(); }
+        });
+
+        document.getElementById('settingFieldContent').addEventListener('input', (e) => {
+          const field = activeForm.fields.find(f => f.id === selectedFieldId);
+          if (field) { field.content = e.target.value; renderCanvas(); }
+        });
+
+        // Options List Rendering
+        function renderOptionsList(field) {
+          const list = document.getElementById('optionsListContainer');
+          const customChk = document.getElementById('settingOptionCustomValues');
+          const hasDistinctValues = (field.options || []).some(o => o.value && o.value !== o.label);
+          const showCustomValues = field.showValues !== undefined ? Boolean(field.showValues) : hasDistinctValues;
+          if (customChk) customChk.checked = showCustomValues;
+
+          list.innerHTML = '';
+          (field.options || []).forEach((opt, idx) => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex; align-items:center; gap:6px;';
+
+            const lblInput = document.createElement('input');
+            lblInput.type = 'text';
+            lblInput.className = 'control-input opt-lbl';
+            lblInput.value = opt.label || '';
+            lblInput.placeholder = showCustomValues ? 'Label' : 'Option value';
+            lblInput.style.cssText = 'flex:1; padding:6px 8px; font-size:0.8rem;';
+
+            let valInput = null;
+            if (showCustomValues) {
+              valInput = document.createElement('input');
+              valInput.type = 'text';
+              valInput.className = 'control-input opt-val';
+              valInput.value = opt.value || opt.label || '';
+              valInput.placeholder = 'Submit Value';
+              valInput.style.cssText = 'width:105px; padding:6px 8px; font-size:0.8rem;';
+              valInput.addEventListener('input', (e) => {
+                opt.value = e.target.value;
+                renderCanvas();
+              });
+            }
+
+            lblInput.addEventListener('input', (e) => {
+              const prevLabel = opt.label;
+              const nextVal = e.target.value;
+              opt.label = nextVal;
+              if (!showCustomValues || !opt.value || opt.value === prevLabel) {
+                opt.value = nextVal;
+                if (valInput) valInput.value = nextVal;
+              }
+              renderCanvas();
+            });
+
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'field-act-btn del';
+            delBtn.style.cssText = 'padding:4px 6px; font-size:0.8rem;';
+            delBtn.title = 'Remove Option';
+            delBtn.innerHTML = '&times;';
+            delBtn.addEventListener('click', () => {
+              field.options.splice(idx, 1);
+              renderOptionsList(field);
+              renderCanvas();
+            });
+
+            row.appendChild(lblInput);
+            if (valInput) row.appendChild(valInput);
+            row.appendChild(delBtn);
+            list.appendChild(row);
+          });
+        }
+
+        document.getElementById('settingOptionCustomValues')?.addEventListener('change', (e) => {
+          const field = activeForm.fields.find(f => f.id === selectedFieldId);
+          if (!field) return;
+          field.showValues = e.target.checked;
+          if (!e.target.checked) {
+            (field.options || []).forEach(opt => {
+              opt.value = opt.label || '';
+            });
+          }
+          renderOptionsList(field);
+          renderCanvas();
+        });
+
+        document.getElementById('btnAddOption').addEventListener('click', () => {
+          const field = activeForm.fields.find(f => f.id === selectedFieldId);
+          if (!field) return;
+          if (!field.options) field.options = [];
+          const count = field.options.length + 1;
+          const label = `Option ${count}`;
+          field.options.push({ label, value: label });
+          renderOptionsList(field);
+          renderCanvas();
+        });
+
+        // Conditional Logic Listeners
+        document.getElementById('settingCondEnabled').addEventListener('change', (e) => {
+          const field = activeForm.fields.find(f => f.id === selectedFieldId);
+          if (!field) return;
+          if (!field.conditionalLogic) {
+            field.conditionalLogic = { enabled: false, action: 'show', logicType: 'all', rules: [] };
+          }
+          field.conditionalLogic.enabled = e.target.checked;
+          document.getElementById('conditionalConfigWrap').style.display = e.target.checked ? 'block' : 'none';
+
+          if (e.target.checked && field.conditionalLogic.rules.length === 0) {
+            // Add default rule
+            const otherFields = activeForm.fields.filter(f => f.id !== field.id);
+            if (otherFields.length > 0) {
+              field.conditionalLogic.rules.push({
+                fieldId: otherFields[0].id,
+                operator: 'is',
+                value: ''
+              });
+            }
+          }
+          renderConditionalRules(field);
+          renderCanvas();
+        });
+
+        document.getElementById('settingCondAction').addEventListener('change', (e) => {
+          const field = activeForm.fields.find(f => f.id === selectedFieldId);
+          if (field?.conditionalLogic) { field.conditionalLogic.action = e.target.value; renderCanvas(); }
+        });
+
+        document.getElementById('settingCondLogicType').addEventListener('change', (e) => {
+          const field = activeForm.fields.find(f => f.id === selectedFieldId);
+          if (field?.conditionalLogic) { field.conditionalLogic.logicType = e.target.value; renderCanvas(); }
+        });
+
+        function renderConditionalRules(field) {
+          const container = document.getElementById('conditionalRulesList');
+          container.innerHTML = '';
+          const otherFields = activeForm.fields.filter(f => f.id !== field.id);
+
+          (field.conditionalLogic.rules || []).forEach((rule, rIdx) => {
+            const row = document.createElement('div');
+            row.className = 'rule-row';
+
+            let fieldOpts = otherFields.map(of => `<option value="${of.id}" ${of.id === rule.fieldId ? 'selected' : ''}>${of.label || of.id}</option>`).join('');
+
+            row.innerHTML = `
+              <button type="button" class="btn-del-rule" title="Delete Rule">&times;</button>
+              <div style="display:flex; gap:6px;">
+                <select class="control-select rule-fld" style="flex:1; padding:4px 6px; font-size:0.75rem;">${fieldOpts}</select>
+                <select class="control-select rule-op" style="width:110px; padding:4px 6px; font-size:0.75rem;">
+                  <option value="is" ${rule.operator === 'is' ? 'selected' : ''}>is</option>
+                  <option value="is_not" ${rule.operator === 'is_not' ? 'selected' : ''}>is not</option>
+                  <option value="contains" ${rule.operator === 'contains' ? 'selected' : ''}>contains</option>
+                  <option value="greater_than" ${rule.operator === 'greater_than' ? 'selected' : ''}>greater than</option>
+                  <option value="less_than" ${rule.operator === 'less_than' ? 'selected' : ''}>less than</option>
+                </select>
+              </div>
+              <input type="text" class="control-input rule-val" value="${rule.value || ''}" placeholder="Value..." style="padding:4px 8px; font-size:0.75rem; margin-top:2px;" />
+            `;
+
+            row.querySelector('.rule-fld').addEventListener('change', (e) => { rule.fieldId = e.target.value; });
+            row.querySelector('.rule-op').addEventListener('change', (e) => { rule.operator = e.target.value; });
+            row.querySelector('.rule-val').addEventListener('input', (e) => { rule.value = e.target.value; });
+            row.querySelector('.btn-del-rule').addEventListener('click', () => {
+              field.conditionalLogic.rules.splice(rIdx, 1);
+              renderConditionalRules(field);
+            });
+
+            container.appendChild(row);
+          });
+        }
+
+        document.getElementById('btnAddRule').addEventListener('click', () => {
+          const field = activeForm.fields.find(f => f.id === selectedFieldId);
+          if (!field?.conditionalLogic) return;
+          const otherFields = activeForm.fields.filter(f => f.id !== field.id);
+          if (otherFields.length === 0) {
+            alert('Add at least one more field to create conditional rules.');
+            return;
+          }
+          field.conditionalLogic.rules.push({
+            fieldId: otherFields[0].id,
+            operator: 'is',
+            value: ''
+          });
+          renderConditionalRules(field);
+        });
+
+        // Form Settings & Google Sheets Sync
+        function syncFormSettingsUI() {
+          if (!activeForm) return;
+          const s = activeForm.settings;
+
+          document.getElementById('settingFormTitle').value = s.title || activeForm.name;
+          document.getElementById('settingFormDescription').value = s.description || '';
+
+          // Form Title Settings
+          const showTitle = s.showTitle !== false;
+          const showTitleEl = document.getElementById('settingShowTitle');
+          if (showTitleEl) showTitleEl.checked = showTitle;
+          const titleBadge = document.getElementById('titleVisibilityBadge');
+          if (titleBadge) {
+            titleBadge.textContent = showTitle ? 'Visible' : 'Hidden';
+            titleBadge.style.color = showTitle ? '#10b981' : '#9ca3af';
+          }
+          const titleStylingWrap = document.getElementById('titleStylingWrap');
+          if (titleStylingWrap) titleStylingWrap.style.opacity = showTitle ? '1' : '0.4';
+
+          const currentTitleColor = s.titleColor || (s.styling?.theme === 'clean-light' ? '#111827' : '#f3f4f6');
+          const titleColorPicker = document.getElementById('settingTitleColorPicker');
+          const titleColorText = document.getElementById('settingTitleColorText');
+          if (titleColorPicker && titleColorText) {
+            titleColorText.value = currentTitleColor;
+            if (currentTitleColor.startsWith('#') && currentTitleColor.length === 7) {
+              titleColorPicker.value = currentTitleColor;
+            }
+          }
+          const titleSizeEl = document.getElementById('settingTitleSize');
+          if (titleSizeEl) titleSizeEl.value = s.titleSize || '1.45rem';
+
+          // Form Subtitle Settings
+          const showDesc = s.showDescription !== false;
+          const showDescEl = document.getElementById('settingShowDesc');
+          if (showDescEl) showDescEl.checked = showDesc;
+          const descBadge = document.getElementById('descVisibilityBadge');
+          if (descBadge) {
+            descBadge.textContent = showDesc ? 'Visible' : 'Hidden';
+            descBadge.style.color = showDesc ? '#10b981' : '#9ca3af';
+          }
+          const descStylingWrap = document.getElementById('descStylingWrap');
+          if (descStylingWrap) descStylingWrap.style.opacity = showDesc ? '1' : '0.4';
+
+          const currentDescColor = s.descriptionColor || (s.styling?.theme === 'clean-light' ? '#4b5563' : '#9ca3af');
+          const descColorPicker = document.getElementById('settingDescColorPicker');
+          const descColorText = document.getElementById('settingDescColorText');
+          if (descColorPicker && descColorText) {
+            descColorText.value = currentDescColor;
+            if (currentDescColor.startsWith('#') && currentDescColor.length === 7) {
+              descColorPicker.value = currentDescColor;
+            }
+          }
+          const descSizeEl = document.getElementById('settingDescSize');
+          if (descSizeEl) descSizeEl.value = s.descriptionSize || '0.9rem';
+
+          const titleAlignEl = document.getElementById('settingTitleAlign');
+          if (titleAlignEl) titleAlignEl.value = s.titleAlign || 'left';
+
+          document.getElementById('settingBtnText').value = s.submitButton?.text || 'Send Message 🚀';
+          document.getElementById('settingBtnAlign').value = s.submitButton?.align || 'left';
+          document.getElementById('settingBtnBgColor').value = s.submitButton?.bgColor || '#ff5e3a';
+          document.getElementById('settingBtnTextColor').value = s.submitButton?.textColor || '#ffffff';
+
+          document.getElementById('settingHoneypot').checked = s.spamProtection?.honeypotEnabled !== false;
+          document.getElementById('settingMinSeconds').value = s.spamProtection?.minSubmissionSeconds || 2;
+
+          document.getElementById('settingGsEnabled').checked = s.googleSheets?.enabled !== false;
+          document.getElementById('settingGsUrl').value = s.googleSheets?.webhookUrl || s.googleSheets?.sheetUrl || '';
+          document.getElementById('settingGsTabName').value = s.googleSheets?.tabName || 'Sheet1';
+
+          document.getElementById('settingConfirmType').value = s.confirmation?.type || 'message';
+          document.getElementById('settingConfirmMsg').value = s.confirmation?.message || '';
+          document.getElementById('settingConfirmUrl').value = s.confirmation?.redirectUrl || '';
+
+          // Theme styling
+          if (s.styling) {
+            document.getElementById('settingStyleTheme').value = s.styling.theme || 'modern-dark';
+            document.getElementById('settingStyleLabelColor').value = s.styling.labelColor || '#f3f4f6';
+            document.getElementById('settingStyleTextColor').value = s.styling.inputTextColor || '#ffffff';
+            document.getElementById('settingStyleInputBg').value = s.styling.inputBg || '#111827';
+            document.getElementById('settingStyleInputBorder').value = s.styling.inputBorder || '#374151';
+            document.getElementById('settingStyleRadius').value = s.styling.borderRadius || '8px';
+
+            // Background & Border
+            const isDarkTheme = s.styling.theme !== 'clean-light';
+            const currentBgColor = s.styling.formBgColor || (isDarkTheme ? '#0f131d' : '#ffffff');
+            const bgPicker = document.getElementById('settingFormBgColorPicker');
+            const bgText = document.getElementById('settingFormBgColorText');
+            if (bgPicker && bgText) {
+              bgText.value = currentBgColor;
+              if (currentBgColor.startsWith('#') && currentBgColor.length === 7) {
+                bgPicker.value = currentBgColor;
+              }
+            }
+
+            const currentBgImg = s.styling.formBgImage || '';
+            const bgImgInput = document.getElementById('settingFormBgImage');
+            if (bgImgInput) bgImgInput.value = currentBgImg;
+            const bgControlsWrap = document.getElementById('bgImageControlsWrap');
+            if (bgControlsWrap) {
+              bgControlsWrap.style.display = currentBgImg ? 'block' : 'none';
+            }
+
+            if (document.getElementById('settingFormBgSize')) {
+              document.getElementById('settingFormBgSize').value = s.styling.formBgSize || 'cover';
+            }
+            if (document.getElementById('settingFormBgPosition')) {
+              document.getElementById('settingFormBgPosition').value = s.styling.formBgPosition || 'center';
+            }
+            if (document.getElementById('settingFormBgRepeat')) {
+              document.getElementById('settingFormBgRepeat').value = s.styling.formBgRepeat || 'no-repeat';
+            }
+            if (document.getElementById('settingFormBgOverlay')) {
+              document.getElementById('settingFormBgOverlay').value = s.styling.formBgOverlay || '';
+            }
+
+            if (document.getElementById('settingFormBorderWidth')) {
+              document.getElementById('settingFormBorderWidth').value = s.styling.formBorderWidth || '1px';
+            }
+            if (document.getElementById('settingFormBorderStyle')) {
+              document.getElementById('settingFormBorderStyle').value = s.styling.formBorderStyle || 'solid';
+            }
+
+            const currentBorderColor = s.styling.formBorderColor || (isDarkTheme ? '#28334a' : '#d1d5db');
+            const borderPicker = document.getElementById('settingFormBorderColorPicker');
+            const borderText = document.getElementById('settingFormBorderColorText');
+            if (borderPicker && borderText) {
+              borderText.value = currentBorderColor;
+              if (currentBorderColor.startsWith('#') && currentBorderColor.length === 7) {
+                borderPicker.value = currentBorderColor;
+              }
+            }
+
+            if (document.getElementById('settingFormBorderRadius')) {
+              document.getElementById('settingFormBorderRadius').value = s.styling.formBorderRadius || '14px';
+            }
+            if (document.getElementById('settingFormPadding')) {
+              document.getElementById('settingFormPadding').value = s.styling.formPadding || '32px';
+            }
+            if (document.getElementById('settingFormBoxShadow')) {
+              document.getElementById('settingFormBoxShadow').value = s.styling.formBoxShadow || '0 10px 25px -5px rgba(0, 0, 0, 0.3)';
+            }
+          }
+        }
+
+        // Form Settings Listeners
+        document.getElementById('settingFormTitle').addEventListener('input', (e) => {
+          activeForm.settings.title = e.target.value;
+          renderCanvas();
+        });
+
+        // Title toggle & styling listeners
+        document.getElementById('settingShowTitle')?.addEventListener('change', (e) => {
+          activeForm.settings.showTitle = e.target.checked;
+          const badge = document.getElementById('titleVisibilityBadge');
+          if (badge) {
+            badge.textContent = e.target.checked ? 'Visible' : 'Hidden';
+            badge.style.color = e.target.checked ? '#10b981' : '#9ca3af';
+          }
+          const wrap = document.getElementById('titleStylingWrap');
+          if (wrap) wrap.style.opacity = e.target.checked ? '1' : '0.4';
+          renderCanvas();
+          showToast(`Form title ${e.target.checked ? 'visible' : 'hidden'}`);
+        });
+
+        const titlePickerEl = document.getElementById('settingTitleColorPicker');
+        const titleTextEl = document.getElementById('settingTitleColorText');
+        titlePickerEl?.addEventListener('input', (e) => {
+          activeForm.settings.titleColor = e.target.value;
+          if (titleTextEl) titleTextEl.value = e.target.value;
+          renderCanvas();
+        });
+        titleTextEl?.addEventListener('input', (e) => {
+          activeForm.settings.titleColor = e.target.value.trim();
+          if (e.target.value.startsWith('#') && e.target.value.length === 7 && titlePickerEl) {
+            titlePickerEl.value = e.target.value;
+          }
+          renderCanvas();
+        });
+
+        document.getElementById('settingTitleSize')?.addEventListener('change', (e) => {
+          activeForm.settings.titleSize = e.target.value;
+          renderCanvas();
+        });
+
+        // Description toggle & styling listeners
+        document.getElementById('settingFormDescription').addEventListener('input', (e) => {
+          activeForm.settings.description = e.target.value;
+          renderCanvas();
+        });
+
+        document.getElementById('settingShowDesc')?.addEventListener('change', (e) => {
+          activeForm.settings.showDescription = e.target.checked;
+          const badge = document.getElementById('descVisibilityBadge');
+          if (badge) {
+            badge.textContent = e.target.checked ? 'Visible' : 'Hidden';
+            badge.style.color = e.target.checked ? '#10b981' : '#9ca3af';
+          }
+          const wrap = document.getElementById('descStylingWrap');
+          if (wrap) wrap.style.opacity = e.target.checked ? '1' : '0.4';
+          renderCanvas();
+          showToast(`Form subtitle ${e.target.checked ? 'visible' : 'hidden'}`);
+        });
+
+        const descPickerEl = document.getElementById('settingDescColorPicker');
+        const descTextEl = document.getElementById('settingDescColorText');
+        descPickerEl?.addEventListener('input', (e) => {
+          activeForm.settings.descriptionColor = e.target.value;
+          if (descTextEl) descTextEl.value = e.target.value;
+          renderCanvas();
+        });
+        descTextEl?.addEventListener('input', (e) => {
+          activeForm.settings.descriptionColor = e.target.value.trim();
+          if (e.target.value.startsWith('#') && e.target.value.length === 7 && descPickerEl) {
+            descPickerEl.value = e.target.value;
+          }
+          renderCanvas();
+        });
+
+        document.getElementById('settingDescSize')?.addEventListener('change', (e) => {
+          activeForm.settings.descriptionSize = e.target.value;
+          renderCanvas();
+        });
+
+        document.getElementById('settingTitleAlign')?.addEventListener('change', (e) => {
+          activeForm.settings.titleAlign = e.target.value;
+          renderCanvas();
+        });
+        document.getElementById('settingBtnText').addEventListener('input', (e) => {
+          activeForm.settings.submitButton.text = e.target.value;
+          renderCanvas();
+        });
+        document.getElementById('settingBtnAlign').addEventListener('change', (e) => {
+          activeForm.settings.submitButton.align = e.target.value;
+          renderCanvas();
+        });
+        document.getElementById('settingBtnBgColor').addEventListener('input', (e) => {
+          activeForm.settings.submitButton.bgColor = e.target.value;
+          renderCanvas();
+        });
+        document.getElementById('settingBtnTextColor').addEventListener('input', (e) => {
+          activeForm.settings.submitButton.textColor = e.target.value;
+          renderCanvas();
+        });
+
+        document.getElementById('settingHoneypot').addEventListener('change', (e) => {
+          activeForm.settings.spamProtection.honeypotEnabled = e.target.checked;
+        });
+        document.getElementById('settingMinSeconds').addEventListener('change', (e) => {
+          activeForm.settings.spamProtection.minSubmissionSeconds = parseInt(e.target.value, 10) || 2;
+        });
+
+        document.getElementById('settingGsEnabled').addEventListener('change', (e) => {
+          activeForm.settings.googleSheets.enabled = e.target.checked;
+        });
+        document.getElementById('settingGsUrl').addEventListener('input', (e) => {
+          const val = e.target.value.trim();
+          activeForm.settings.googleSheets.sheetUrl = val;
+          if (val.includes('script.google.com')) {
+            activeForm.settings.googleSheets.webhookUrl = val;
+          }
+        });
+        document.getElementById('settingGsTabName').addEventListener('input', (e) => {
+          activeForm.settings.googleSheets.tabName = e.target.value;
+        });
+
+        document.getElementById('settingConfirmType').addEventListener('change', (e) => {
+          activeForm.settings.confirmation.type = e.target.value;
+          document.getElementById('confirmMessageWrap').style.display = e.target.value === 'message' ? 'block' : 'none';
+          document.getElementById('confirmRedirectWrap').style.display = e.target.value === 'redirect' ? 'block' : 'none';
+        });
+        document.getElementById('settingConfirmMsg').addEventListener('input', (e) => {
+          activeForm.settings.confirmation.message = e.target.value;
+        });
+        document.getElementById('settingConfirmUrl').addEventListener('input', (e) => {
+          activeForm.settings.confirmation.redirectUrl = e.target.value;
+        });
+
+        // Styling tab listeners
+        document.getElementById('settingStyleTheme').addEventListener('change', (e) => {
+          if (!activeForm.settings.styling) activeForm.settings.styling = {};
+          const st = activeForm.settings.styling;
+          st.theme = e.target.value;
+          if (e.target.value === 'clean-light') {
+            st.formBgColor = '#ffffff';
+            st.formBorderColor = '#e5e7eb';
+            st.labelColor = '#1f2937';
+            st.inputBg = '#ffffff';
+            st.inputBorder = '#d1d5db';
+            st.inputTextColor = '#111827';
+            activeForm.settings.titleColor = '#111827';
+            activeForm.settings.descriptionColor = '#4b5563';
+          } else if (e.target.value === 'bordered') {
+            st.formBgColor = 'transparent';
+            st.formBorderColor = '#3b82f6';
+            st.formBorderWidth = '2px';
+            st.labelColor = '#f3f4f6';
+            st.inputBg = 'transparent';
+            st.inputBorder = '#3b82f6';
+            st.inputTextColor = '#ffffff';
+            activeForm.settings.titleColor = '#f3f4f6';
+            activeForm.settings.descriptionColor = '#9ca3af';
+          } else {
+            st.formBgColor = '#0f131d';
+            st.formBorderColor = '#28334a';
+            st.labelColor = '#f3f4f6';
+            st.inputBg = '#111827';
+            st.inputBorder = '#374151';
+            st.inputTextColor = '#ffffff';
+            activeForm.settings.titleColor = '#f3f4f6';
+            activeForm.settings.descriptionColor = '#9ca3af';
+          }
+          syncFormSettingsUI();
+          renderCanvas();
+        });
+        document.getElementById('settingStyleLabelColor').addEventListener('input', (e) => {
+          activeForm.settings.styling.labelColor = e.target.value;
+          renderCanvas();
+        });
+        document.getElementById('settingStyleTextColor').addEventListener('input', (e) => {
+          activeForm.settings.styling.inputTextColor = e.target.value;
+          renderCanvas();
+        });
+        document.getElementById('settingStyleInputBg').addEventListener('input', (e) => {
+          activeForm.settings.styling.inputBg = e.target.value;
+          renderCanvas();
+        });
+        document.getElementById('settingStyleInputBorder').addEventListener('input', (e) => {
+          activeForm.settings.styling.inputBorder = e.target.value;
+          renderCanvas();
+        });
+        document.getElementById('settingStyleRadius').addEventListener('change', (e) => {
+          activeForm.settings.styling.borderRadius = e.target.value;
+          renderCanvas();
+        });
+
+        // Background Color Listeners
+        const bgPickerEl = document.getElementById('settingFormBgColorPicker');
+        const bgTextEl = document.getElementById('settingFormBgColorText');
+        bgPickerEl?.addEventListener('input', (e) => {
+          if (!activeForm.settings.styling) activeForm.settings.styling = {};
+          activeForm.settings.styling.formBgColor = e.target.value;
+          if (bgTextEl) bgTextEl.value = e.target.value;
+          renderCanvas();
+        });
+        bgTextEl?.addEventListener('input', (e) => {
+          if (!activeForm.settings.styling) activeForm.settings.styling = {};
+          const val = e.target.value.trim();
+          activeForm.settings.styling.formBgColor = val;
+          if (val.startsWith('#') && val.length === 7 && bgPickerEl) {
+            bgPickerEl.value = val;
+          }
+          renderCanvas();
+        });
+
+        // Quick Swatches for Background & Border
+        document.querySelectorAll('.btn-color-swatch').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const target = btn.getAttribute('data-target');
+            const color = btn.getAttribute('data-color');
+            if (!activeForm.settings.styling) activeForm.settings.styling = {};
+            if (target === 'bg') {
+              activeForm.settings.styling.formBgColor = color;
+              if (bgTextEl) bgTextEl.value = color;
+              if (color.startsWith('#') && color.length === 7 && bgPickerEl) bgPickerEl.value = color;
+              renderCanvas();
+              showToast(`Background set to ${color}`);
+            } else if (target === 'border') {
+              activeForm.settings.styling.formBorderColor = color;
+              const bText = document.getElementById('settingFormBorderColorText');
+              const bPicker = document.getElementById('settingFormBorderColorPicker');
+              if (bText) bText.value = color;
+              if (color.startsWith('#') && color.length === 7 && bPicker) bPicker.value = color;
+              renderCanvas();
+              showToast(`Border color set to ${color}`);
+            }
+          });
+        });
+
+        // Background Image Listeners
+        const bgImgInputEl = document.getElementById('settingFormBgImage');
+        const bgWrapEl = document.getElementById('bgImageControlsWrap');
+        bgImgInputEl?.addEventListener('input', (e) => {
+          if (!activeForm.settings.styling) activeForm.settings.styling = {};
+          const url = e.target.value.trim();
+          activeForm.settings.styling.formBgImage = url;
+          if (bgWrapEl) bgWrapEl.style.display = url ? 'block' : 'none';
+          renderCanvas();
+        });
+
+        document.getElementById('btnClearFormBgImage')?.addEventListener('click', () => {
+          if (!activeForm.settings.styling) activeForm.settings.styling = {};
+          activeForm.settings.styling.formBgImage = '';
+          if (bgImgInputEl) bgImgInputEl.value = '';
+          if (bgWrapEl) bgWrapEl.style.display = 'none';
+          renderCanvas();
+          showToast('Background image removed');
+        });
+
+        // Upload Image directly
+        const btnUploadBg = document.getElementById('btnUploadFormBg');
+        const fileInputBg = document.getElementById('fileInputFormBg');
+        btnUploadBg?.addEventListener('click', () => fileInputBg?.click());
+        fileInputBg?.addEventListener('change', async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const formData = new FormData();
+          formData.append('file', file);
+          try {
+            showToast('Uploading background image...', '⏳');
+            const res = await fetch('/api/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.url) {
+              if (!activeForm.settings.styling) activeForm.settings.styling = {};
+              activeForm.settings.styling.formBgImage = data.url;
+              if (bgImgInputEl) bgImgInputEl.value = data.url;
+              if (bgWrapEl) bgWrapEl.style.display = 'block';
+              renderCanvas();
+              showToast('Background image uploaded & applied!');
+            } else {
+              showToast(data.error || 'Upload failed', '❌');
+            }
+          } catch (err) {
+            console.error(err);
+            showToast('Error uploading image', '❌');
+          } finally {
+            e.target.value = '';
+          }
+        });
+
+        // Media Library Picker Modal
+        const mediaModal = document.getElementById('mediaLibraryModal');
+        const mediaGrid = document.getElementById('mediaLibraryGrid');
+        const mediaDropzone = document.getElementById('mediaDropzone');
+        const mediaModalFileInput = document.getElementById('mediaModalFileInput');
+        let selectedMediaUrl = null;
+
+        function openMediaModal() {
+          selectedMediaUrl = activeForm.settings?.styling?.formBgImage || null;
+          mediaModal?.classList.add('active');
+          loadMediaList();
+        }
+        function closeMediaModal() {
+          mediaModal?.classList.remove('active');
+        }
+
+        document.getElementById('btnOpenMediaPicker')?.addEventListener('click', openMediaModal);
+        document.getElementById('btnCloseMediaModal')?.addEventListener('click', closeMediaModal);
+        document.getElementById('btnCancelMediaModal')?.addEventListener('click', closeMediaModal);
+        mediaModal?.addEventListener('click', (e) => {
+          if (e.target === mediaModal) closeMediaModal();
+        });
+
+        mediaDropzone?.addEventListener('click', () => mediaModalFileInput?.click());
+        mediaModalFileInput?.addEventListener('change', async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const formData = new FormData();
+          formData.append('file', file);
+          try {
+            showToast('Uploading image...', '⏳');
+            const res = await fetch('/api/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.url) {
+              selectedMediaUrl = data.url;
+              await loadMediaList();
+              showToast('Image uploaded! Click "Use Selected Image" to apply.');
+            } else {
+              showToast(data.error || 'Upload failed', '❌');
+            }
+          } catch {
+            showToast('Error uploading image', '❌');
+          } finally {
+            e.target.value = '';
+          }
+        });
+
+        async function loadMediaList() {
+          if (!mediaGrid) return;
+          mediaGrid.innerHTML = '<div style="grid-column: 1/-1; padding: 20px; text-align: center; color: #64748b;">Loading images...</div>';
+          try {
+            const res = await fetch('/api/upload');
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+              mediaGrid.innerHTML = data.map(item => `
+                <div class="media-thumb-item" data-url="${item.url}" style="height: 80px; background: #0c0f17; border: ${selectedMediaUrl === item.url ? '2px solid #3b82f6' : '1px solid #1c2433'}; border-radius: 6px; overflow: hidden; cursor: pointer; display: flex; align-items: center; justify-content: center; position: relative;">
+                  <img src="${item.url}" alt="${item.fileName || 'Media'}" style="max-width: 100%; max-height: 100%; object-fit: contain;" />
+                </div>
+              `).join('');
+
+              mediaGrid.querySelectorAll('.media-thumb-item').forEach(thumb => {
+                thumb.addEventListener('click', () => {
+                  mediaGrid.querySelectorAll('.media-thumb-item').forEach(t => t.style.border = '1px solid #1c2433');
+                  thumb.style.border = '2px solid #3b82f6';
+                  selectedMediaUrl = thumb.dataset.url;
+                });
+              });
+            } else {
+              mediaGrid.innerHTML = '<div style="grid-column: 1/-1; padding: 20px; text-align: center; color: #64748b;">No uploaded images found. Click above to upload one!</div>';
+            }
+          } catch {
+            mediaGrid.innerHTML = '<div style="grid-column: 1/-1; padding: 20px; text-align: center; color: #ef4444;">Failed to load media.</div>';
+          }
+        }
+
+        document.getElementById('btnApplySelectedMedia')?.addEventListener('click', () => {
+          if (selectedMediaUrl) {
+            if (!activeForm.settings.styling) activeForm.settings.styling = {};
+            activeForm.settings.styling.formBgImage = selectedMediaUrl;
+            if (bgImgInputEl) bgImgInputEl.value = selectedMediaUrl;
+            if (bgWrapEl) bgWrapEl.style.display = 'block';
+            renderCanvas();
+            closeMediaModal();
+            showToast('Background image applied!');
+          } else {
+            showToast('Please select or upload an image first', '⚠️');
+          }
+        });
+
+        // Background Size, Position, Repeat, Overlay
+        document.getElementById('settingFormBgSize')?.addEventListener('change', (e) => {
+          if (!activeForm.settings.styling) activeForm.settings.styling = {};
+          activeForm.settings.styling.formBgSize = e.target.value;
+          renderCanvas();
+        });
+        document.getElementById('settingFormBgPosition')?.addEventListener('change', (e) => {
+          if (!activeForm.settings.styling) activeForm.settings.styling = {};
+          activeForm.settings.styling.formBgPosition = e.target.value;
+          renderCanvas();
+        });
+        document.getElementById('settingFormBgRepeat')?.addEventListener('change', (e) => {
+          if (!activeForm.settings.styling) activeForm.settings.styling = {};
+          activeForm.settings.styling.formBgRepeat = e.target.value;
+          renderCanvas();
+        });
+        document.getElementById('settingFormBgOverlay')?.addEventListener('change', (e) => {
+          if (!activeForm.settings.styling) activeForm.settings.styling = {};
+          activeForm.settings.styling.formBgOverlay = e.target.value;
+          renderCanvas();
+        });
+
+        // Border Width, Style, Color, Radius, Padding, Shadow
+        document.getElementById('settingFormBorderWidth')?.addEventListener('change', (e) => {
+          if (!activeForm.settings.styling) activeForm.settings.styling = {};
+          activeForm.settings.styling.formBorderWidth = e.target.value;
+          renderCanvas();
+        });
+        document.getElementById('settingFormBorderStyle')?.addEventListener('change', (e) => {
+          if (!activeForm.settings.styling) activeForm.settings.styling = {};
+          activeForm.settings.styling.formBorderStyle = e.target.value;
+          renderCanvas();
+        });
+
+        const borderPickerEl = document.getElementById('settingFormBorderColorPicker');
+        const borderTextEl = document.getElementById('settingFormBorderColorText');
+        borderPickerEl?.addEventListener('input', (e) => {
+          if (!activeForm.settings.styling) activeForm.settings.styling = {};
+          activeForm.settings.styling.formBorderColor = e.target.value;
+          if (borderTextEl) borderTextEl.value = e.target.value;
+          renderCanvas();
+        });
+        borderTextEl?.addEventListener('input', (e) => {
+          if (!activeForm.settings.styling) activeForm.settings.styling = {};
+          const val = e.target.value.trim();
+          activeForm.settings.styling.formBorderColor = val;
+          if (val.startsWith('#') && val.length === 7 && borderPickerEl) {
+            borderPickerEl.value = val;
+          }
+          renderCanvas();
+        });
+
+        document.getElementById('settingFormBorderRadius')?.addEventListener('change', (e) => {
+          if (!activeForm.settings.styling) activeForm.settings.styling = {};
+          activeForm.settings.styling.formBorderRadius = e.target.value;
+          renderCanvas();
+        });
+        document.getElementById('settingFormPadding')?.addEventListener('change', (e) => {
+          if (!activeForm.settings.styling) activeForm.settings.styling = {};
+          activeForm.settings.styling.formPadding = e.target.value;
+          renderCanvas();
+        });
+        document.getElementById('settingFormBoxShadow')?.addEventListener('change', (e) => {
+          if (!activeForm.settings.styling) activeForm.settings.styling = {};
+          activeForm.settings.styling.formBoxShadow = e.target.value;
+          renderCanvas();
+        });
+
+        // Save Form Action
+        btnSaveForm.addEventListener('click', async () => {
+          try {
+            btnSaveForm.disabled = true;
+            btnSaveForm.innerHTML = '<span>Saving...</span>';
+
+            const resp = await fetch('/api/forms', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(activeForm)
+            });
+
+            if (!resp.ok) throw new Error('Save failed');
+            const data = await resp.json();
+
+            // Update in local list
+            const idx = formsList.findIndex(f => f.id === activeForm.id);
+            if (idx >= 0) formsList[idx] = activeForm;
+            else formsList.push(activeForm);
+
+            renderFormSelector();
+            showToast('Form successfully saved! Available in Page Builder.');
+          } catch (err) {
+            console.error(err);
+            showToast('Error saving form', '❌');
+          } finally {
+            btnSaveForm.disabled = false;
+            btnSaveForm.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg><span>Save Form</span>`;
+          }
+        });
+
+        // New Form Action
+        btnNewForm.addEventListener('click', () => {
+          const title = prompt('Enter a name for the new form:', 'New Inquiry Form');
+          if (!title) return;
+
+          const newId = `form-${Date.now()}`;
+          const newForm = {
+            id: newId,
+            name: title,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            fields: [
+              {
+                id: `field_name_${Date.now()}`,
+                type: 'text',
+                label: 'Your Name',
+                placeholder: 'Jane Doe',
+                required: true,
+                width: '100%'
+              },
+              {
+                id: `field_email_${Date.now()}`,
+                type: 'email',
+                label: 'Email Address',
+                placeholder: 'jane@example.com',
+                required: true,
+                width: '100%'
+              },
+              {
+                id: `field_message_${Date.now()}`,
+                type: 'textarea',
+                label: 'Message',
+                placeholder: 'Your message here...',
+                required: true,
+                width: '100%'
+              }
+            ],
+            settings: {
+              title: title,
+              showTitle: true,
+              titleColor: '#f3f4f6',
+              titleSize: '1.45rem',
+              titleAlign: 'left',
+              description: 'Please fill out this form.',
+              showDescription: true,
+              descriptionColor: '#9ca3af',
+              descriptionSize: '0.9rem',
+              submitButton: {
+                text: 'Submit Form',
+                align: 'left',
+                bgColor: '#2563eb',
+                textColor: '#ffffff',
+                borderRadius: '8px',
+                size: 'md'
+              },
+              googleSheets: {
+                enabled: true,
+                sheetUrl: '',
+                tabName: 'Sheet1',
+                webhookUrl: ''
+              },
+              spamProtection: {
+                method: 'method2',
+                honeypotEnabled: true,
+                minSubmissionSeconds: 2
+              },
+              confirmation: {
+                type: 'message',
+                message: 'Thank you! Your submission has been received.'
+              },
+              styling: {
+                theme: 'modern-dark',
+                formBgColor: '#0f131d',
+                formBgImage: '',
+                formBgSize: 'cover',
+                formBgPosition: 'center',
+                formBgRepeat: 'no-repeat',
+                formBgOverlay: '',
+                formBorderWidth: '1px',
+                formBorderStyle: 'solid',
+                formBorderColor: '#28334a',
+                formBorderRadius: '14px',
+                formPadding: '32px',
+                formBoxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3)',
+                labelColor: '#f3f4f6',
+                inputBg: '#111827',
+                inputBorder: '#374151',
+                inputTextColor: '#ffffff',
+                borderRadius: '8px'
+              }
+            }
+          };
+
+          formsList.push(newForm);
+          activeForm = newForm;
+          selectedFieldId = null;
+          renderFormSelector();
+          renderCanvas();
+          syncFormSettingsUI();
+          updateFieldInspector();
+          showToast(`Created "${title}"`);
+        });
+
+        // Duplicate Form Action
+        btnDuplicateForm.addEventListener('click', async () => {
+          if (!confirm(`Duplicate "${activeForm.name}"?`)) return;
+          try {
+            const resp = await fetch('/api/forms', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'duplicate', id: activeForm.id })
+            });
+            const data = await resp.json();
+            if (data.newForm) {
+              formsList.push(data.newForm);
+              activeForm = data.newForm;
+              selectedFieldId = null;
+              renderFormSelector();
+              renderCanvas();
+              syncFormSettingsUI();
+              updateFieldInspector();
+              showToast('Form duplicated successfully!');
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        });
+
+        // Delete Form Action
+        btnDeleteForm.addEventListener('click', async () => {
+          if (formsList.length <= 1) {
+            alert('Cannot delete the only existing form.');
+            return;
+          }
+          if (!confirm(`Are you sure you want to delete "${activeForm.name}"?`)) return;
+
+          try {
+            const resp = await fetch(`/api/forms?id=${activeForm.id}`, { method: 'DELETE' });
+            if (resp.ok) {
+              formsList = formsList.filter(f => f.id !== activeForm.id);
+              activeForm = formsList[0];
+              selectedFieldId = null;
+              renderFormSelector();
+              renderCanvas();
+              syncFormSettingsUI();
+              updateFieldInspector();
+              showToast('Form deleted');
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        });
+
+        // Google Sheets Guide Modal
+        const modal = document.getElementById('googleSheetsDocsModal');
+        const openModal = () => modal.classList.add('active');
+        const closeModal = () => modal.classList.remove('active');
+
+        document.getElementById('btnOpenDocsModal')?.addEventListener('click', openModal);
+        document.getElementById('btnOpenDocsModal2')?.addEventListener('click', openModal);
+        document.getElementById('btnCloseDocsModal')?.addEventListener('click', closeModal);
+        document.getElementById('btnCloseDocsModal2')?.addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) closeModal();
+        });
+
+        document.getElementById('btnCopyScriptCode')?.addEventListener('click', () => {
+          const code = document.getElementById('scriptSnippetCode').innerText;
+          navigator.clipboard.writeText(code).then(() => {
+            showToast('Apps Script code copied to clipboard!');
+          });
+        });
+
+        // Submissions & Google Sheets Status Modal
+        const subModal = document.getElementById('submissionsModal');
+        const subContainer = document.getElementById('submissionsListContainer');
+        const subSubtitle = document.getElementById('submissionsModalSubtitle');
+
+        function renderSubmissionCard(sub) {
+          const card = document.createElement('div');
+          card.style.cssText = 'background:#0b0f19;border:1px solid #232a3b;border-radius:8px;padding:12px;';
+
+          const header = document.createElement('div');
+          header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;';
+
+          const timeEl = document.createElement('span');
+          timeEl.style.cssText = 'font-size:0.75rem;color:#9ca3af;font-family:monospace;';
+          timeEl.textContent = new Date(sub.submittedAt).toLocaleString();
+          header.appendChild(timeEl);
+
+          const statusWrap = document.createElement('div');
+          statusWrap.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
+
+          const badge = document.createElement('span');
+          const ok = sub.forwardedToGoogleSheets === true;
+          badge.style.cssText = ok
+            ? 'font-size:0.72rem;font-weight:600;padding:2px 8px;border-radius:999px;background:#064e3b;color:#6ee7b7;border:1px solid #059669;'
+            : 'font-size:0.72rem;font-weight:600;padding:2px 8px;border-radius:999px;background:#451a1a;color:#fca5a5;border:1px solid #b91c1c;';
+          badge.textContent = (ok ? '✅ Sheets: ' : '⚠️ Sheets: ') + (sub.googleSheetsStatus || 'Unknown');
+          statusWrap.appendChild(badge);
+
+          if (typeof sub.googleSheetTargetUrl === 'string' && sub.googleSheetTargetUrl.startsWith('https://')) {
+            const link = document.createElement('a');
+            link.href = sub.googleSheetTargetUrl;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.style.cssText = 'font-size:0.72rem;color:#60a5fa;text-decoration:underline;';
+            link.textContent = 'Open Sheet ↗';
+            statusWrap.appendChild(link);
+          }
+
+          header.appendChild(statusWrap);
+          card.appendChild(header);
+
+          const grid = document.createElement('div');
+          grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px 12px;border-top:1px solid #1a2133;padding-top:8px;';
+          Object.entries(sub.fields || {}).forEach(([k, v]) => {
+            const row = document.createElement('div');
+            row.style.cssText = 'font-size:0.78rem;line-height:1.4;word-break:break-word;';
+            const lbl = document.createElement('span');
+            lbl.style.cssText = 'color:#9ca3af;margin-right:4px;';
+            lbl.textContent = k + ':';
+            const val = document.createElement('span');
+            val.style.cssText = 'color:#f3f4f6;font-weight:500;';
+            val.textContent = String(v ?? '');
+            row.appendChild(lbl);
+            row.appendChild(val);
+            grid.appendChild(row);
+          });
+          card.appendChild(grid);
+          return card;
+        }
+
+        async function loadSubmissionsList() {
+          if (!activeForm || !subContainer) return;
+          subSubtitle.textContent = `Form: ${activeForm.name} (${activeForm.id}) • Saved locally in src/data/form-submissions.json`;
+          subContainer.innerHTML = '<div style="text-align:center;color:#9ca3af;font-size:0.82rem;padding:24px;">Loading submissions...</div>';
+          try {
+            const resp = await fetch(`/api/forms/submit?formId=${encodeURIComponent(activeForm.id)}`);
+            const data = await resp.json();
+            const list = Array.isArray(data.submissions) ? data.submissions : [];
+            subContainer.innerHTML = '';
+            if (list.length === 0) {
+              const empty = document.createElement('div');
+              empty.style.cssText = 'text-align:center;color:#9ca3af;font-size:0.82rem;padding:24px;';
+              empty.textContent = 'No submissions recorded yet for this form.';
+              subContainer.appendChild(empty);
+              return;
+            }
+            list.forEach((sub) => subContainer.appendChild(renderSubmissionCard(sub)));
+          } catch (err) {
+            subContainer.innerHTML = '';
+            const errEl = document.createElement('div');
+            errEl.style.cssText = 'text-align:center;color:#f87171;font-size:0.82rem;padding:24px;';
+            errEl.textContent = 'Failed to load submissions: ' + (err.message || err);
+            subContainer.appendChild(errEl);
+          }
+        }
+
+        document.getElementById('btnOpenSubmissionsModal')?.addEventListener('click', () => {
+          subModal.classList.add('active');
+          loadSubmissionsList();
+        });
+        document.getElementById('btnRefreshSubmissions')?.addEventListener('click', loadSubmissionsList);
+        document.getElementById('btnCloseSubmissionsModal')?.addEventListener('click', () => subModal.classList.remove('active'));
+        subModal?.addEventListener('click', (e) => {
+          if (e.target === subModal) subModal.classList.remove('active');
+        });
+
+        // Initialize UI
+        renderFormSelector();
+        renderCanvas();
+        syncFormSettingsUI();
+        updateFieldInspector();
+      })();
+    </script>
+  </body>
+</html>

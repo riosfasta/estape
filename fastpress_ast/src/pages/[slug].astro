@@ -1,0 +1,156 @@
+---
+import Layout from '../themes/default/layouts/Layout.astro';
+import FurnisiteLayout from '../themes/furnisite/layouts/Layout.astro';
+import { getActiveThemeName, getThemePages } from '../core/theme';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { syncGlobalTemplates, cleanLiveContent } from '../data/templates';
+
+export const prerender = false;
+
+const activeTheme = getActiveThemeName();
+const ActiveLayout = activeTheme === 'furnisite' ? FurnisiteLayout : Layout;
+
+const { slug } = Astro.params;
+
+// Daftar reserved route yang ditangani route Astro lain
+const RESERVED = ['blog', 'editor', 'edit-blog', 'api', 'favicon.svg', 'about', 'contact', 'products', 'preview'];
+if (RESERVED.includes(slug || '')) {
+  return Astro.redirect(`/${slug}`);
+}
+
+const pages = getThemePages(activeTheme);
+const pageData: any = slug && pages[slug] ? pages[slug] : null;
+
+if (!pageData) {
+  Astro.response.status = 404;
+}
+
+let cleanHtml = pageData?.html || '';
+if (cleanHtml) {
+  cleanHtml = cleanHtml.replace(/^<body[^>]*>/i, '').replace(/<\/body>$/i, '').trim();
+  cleanHtml = cleanLiveContent(syncGlobalTemplates(cleanHtml));
+}
+---
+
+{pageData ? (
+  <ActiveLayout
+    title={pageData.title ? `${pageData.title} - Better Agency` : 'Better Agency'}
+    description={pageData.description || `Halaman ${pageData.title} di Better Agency`}
+    keywords={pageData.keywords || ''}
+    activePage={slug}
+    showHeader={pageData.showHeader !== false}
+    showFooter={pageData.showFooter !== false}
+    schema={pageData.schema || ''}
+    pageCustomCode={pageData?.customCode}
+  >
+    <div class="custom-builder-content" set:html={cleanHtml} />
+    {pageData.css && <style is:inline set:html={pageData.css} />}
+  </ActiveLayout>
+) : (
+  <ActiveLayout
+    title="Halaman Tidak Ditemukan - 404"
+    description="Halaman yang Anda cari belum dibuat atau tidak ditemukan."
+    activePage="404"
+  >
+    <section class="not-found-section">
+      <div class="not-found-card">
+        <span class="error-badge">404</span>
+        <h1 class="error-title">Halaman Belum Dibuat</h1>
+        <p class="error-desc">
+          Halaman dengan alamat <code>/{slug}</code> belum ada. Anda dapat membuatnya sekarang secara langsung menggunakan Visual Page Builder.
+        </p>
+        <div class="error-actions">
+          <a href="/" class="btn-create-page">
+            Kembali ke Beranda
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <style>
+      .not-found-section {
+        min-height: 70vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 60px 20px;
+        background-color: var(--color-bg-light, #f8f9fa);
+      }
+      .not-found-card {
+        max-width: 560px;
+        text-align: center;
+        background: #ffffff;
+        padding: 50px 30px;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+        border: 1px solid #e9ecef;
+      }
+      .error-badge {
+        display: inline-block;
+        font-family: var(--font-heading, 'Montserrat', sans-serif);
+        font-size: 3.5rem;
+        font-weight: 800;
+        color: #ff5e3a;
+        line-height: 1;
+        margin-bottom: 15px;
+      }
+      .error-title {
+        font-family: var(--font-heading, 'Montserrat', sans-serif);
+        font-size: 1.8rem;
+        font-weight: 800;
+        color: #111827;
+        margin-bottom: 15px;
+      }
+      .error-desc {
+        color: #6b7280;
+        font-size: 1rem;
+        line-height: 1.7;
+        margin-bottom: 30px;
+      }
+      .error-desc code {
+        background-color: #f3f4f6;
+        color: #ff5e3a;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-weight: 700;
+      }
+      .error-actions {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 15px;
+        flex-wrap: wrap;
+      }
+      .btn-create-page {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background-color: #ff5e3a;
+        color: #ffffff;
+        padding: 12px 24px;
+        border-radius: 6px;
+        font-family: var(--font-heading, 'Montserrat', sans-serif);
+        font-weight: 700;
+        font-size: 0.9rem;
+        text-decoration: none;
+        transition: all 0.2s ease;
+      }
+      .btn-create-page:hover {
+        background-color: #e44b28;
+        transform: translateY(-2px);
+      }
+      .btn-home {
+        display: inline-flex;
+        align-items: center;
+        padding: 12px 20px;
+        color: #4b5563;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .btn-home:hover {
+        color: #111827;
+      }
+    </style>
+  </ActiveLayout>
+)}

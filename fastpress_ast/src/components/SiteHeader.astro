@@ -1,0 +1,652 @@
+---
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { getActiveHeader, type HeaderConfig } from '../data/headers';
+import '../styles/header.css';
+
+interface Props {
+  activePage?: string;
+  customConfig?: HeaderConfig;
+}
+
+const { activePage = 'home', customConfig } = Astro.props;
+
+let headerConfig: HeaderConfig;
+if (customConfig) {
+  headerConfig = customConfig;
+} else {
+  try {
+    headerConfig = getActiveHeader();
+  } catch (e) {
+    const { defaultSampleHeaders } = await import('../data/headers');
+    headerConfig = defaultSampleHeaders[0];
+  }
+}
+
+const {
+  layout = {
+    logoPosition: 'left',
+    containerType: 'boxed',
+    height: 80,
+    shrunkHeight: 58,
+    paddingX: 24,
+  },
+  behavior = {
+    sticky: true,
+    shrinkOnScroll: true,
+    shrinkOffset: 45,
+    glassmorphism: true,
+    blurStrength: 16,
+    scrollShadow: 'medium',
+  },
+  styling = {
+    bgColor: 'rgba(21, 24, 30, 0.94)',
+    scrolledBgColor: 'rgba(15, 18, 24, 0.98)',
+    textColor: '#f3f4f6',
+    accentColor: '#ff5e3a',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    fontFamily: 'Plus Jakarta Sans',
+    fontSize: '0.86rem',
+    textTransform: 'none',
+  },
+  logo = {
+    type: 'text',
+    text: 'Better SaaS',
+    tagline: 'Modern Platform',
+    linkUrl: '/',
+    scaleOnShrink: true,
+  },
+  menu = [],
+  actions = {
+    showSearch: true,
+    searchActionUrl: '/blog',
+    buttons: [],
+  },
+} = headerConfig;
+
+const isSticky = behavior.sticky;
+const isShrink = behavior.shrinkOnScroll;
+const logoPos = layout.logoPosition || 'left';
+const containerClass = layout.containerType === 'full' ? 'header-container-full' : (layout.containerType === 'wide' ? 'header-container-wide' : 'header-container-boxed');
+const isCustomCode = headerConfig.builderType === 'custom-code' && headerConfig.customCode?.enabled;
+
+// Resolve Website Global Identity from siteConfig.json as fallback
+let siteConfig: any = null;
+try {
+  const configFile = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
+  const rawConfig = await fs.readFile(configFile, 'utf-8');
+  siteConfig = JSON.parse(rawConfig);
+} catch {}
+
+const effectiveLogoImg = (logo.imageUrl && logo.imageUrl.trim()) || (siteConfig?.logoUrl && siteConfig.logoUrl.trim()) || '';
+const effectiveBrandText = (logo.text && logo.text.trim()) || siteConfig?.brandName || 'Better SaaS';
+const effectiveTagline = logo.tagline !== undefined && logo.tagline !== '' ? logo.tagline : (siteConfig?.tagline || '');
+---
+
+{isCustomCode ? (
+  <header
+    class:list={[
+      'fastpress-site-header',
+      'fastpress-custom-code-header',
+      { 'is-sticky': isSticky, 'has-shrink': isShrink, 'has-glass': behavior.glassmorphism },
+      `shadow-${behavior.scrollShadow || 'none'}`
+    ]}
+    id="siteHeader"
+    data-shrink-offset={behavior.shrinkOffset || 40}
+    data-normal-height={layout.height || 80}
+    data-shrunk-height={layout.shrunkHeight || 58}
+    style={`
+      --hp-height: ${layout.height || 80}px;
+      --hp-shrunk-height: ${layout.shrunkHeight || 58}px;
+      --hp-pad-x: ${layout.paddingX || 24}px;
+      --hp-bg: ${styling.bgColor || 'rgba(21, 24, 30, 0.94)'};
+      --hp-scrolled-bg: ${styling.scrolledBgColor || 'rgba(15, 18, 24, 0.98)'};
+      --hp-text: ${styling.textColor || '#f3f4f6'};
+      --hp-accent: ${styling.accentColor || '#ff5e3a'};
+      --hp-border: ${styling.borderColor || 'rgba(255, 255, 255, 0.08)'};
+      --hp-font: ${styling.fontFamily || 'Plus Jakarta Sans'}, -apple-system, BlinkMacSystemFont, sans-serif;
+      --hp-font-size: ${styling.fontSize || '0.86rem'};
+      --hp-blur: ${behavior.blurStrength || 16}px;
+    `}
+  >
+    {/* Desktop Version */}
+    <div class="custom-header-viewport custom-header-desktop">
+      <Fragment set:html={headerConfig.customCode?.desktopHtml || ''} />
+    </div>
+
+    {/* Tablet Version */}
+    <div class="custom-header-viewport custom-header-tablet">
+      <Fragment set:html={headerConfig.customCode?.tabletHtml || headerConfig.customCode?.desktopHtml || ''} />
+    </div>
+
+    {/* Mobile Version */}
+    <div class="custom-header-viewport custom-header-mobile">
+      <Fragment set:html={headerConfig.customCode?.mobileHtml || headerConfig.customCode?.tabletHtml || headerConfig.customCode?.desktopHtml || ''} />
+    </div>
+
+    {/* Injected Custom Header CSS */}
+    {headerConfig.customCode?.customCss && (
+      <style set:html={headerConfig.customCode.customCss} />
+    )}
+
+    {/* Injected Custom Header Scripts */}
+    {headerConfig.customCode?.customJs && (
+      <script is:inline set:html={headerConfig.customCode.customJs} />
+    )}
+  </header>
+) : (
+<header
+  class:list={[
+    'fastpress-site-header',
+    `logo-pos-${logoPos}`,
+    { 'is-sticky': isSticky, 'has-shrink': isShrink, 'has-glass': behavior.glassmorphism },
+    `shadow-${behavior.scrollShadow || 'none'}`
+  ]}
+  id="siteHeader"
+  data-nav-indicator={styling.navIndicatorStyle || 'underline'}
+  data-shrink-offset={behavior.shrinkOffset || 40}
+  data-normal-height={layout.height || 80}
+  data-shrunk-height={layout.shrunkHeight || 58}
+  style={`
+    --hp-height: ${layout.height || 80}px;
+    --hp-shrunk-height: ${layout.shrunkHeight || 58}px;
+    --hp-pad-x: ${layout.paddingX || 24}px;
+    --hp-bg: ${styling.bgColor || 'rgba(21, 24, 30, 0.94)'};
+    --hp-scrolled-bg: ${styling.scrolledBgColor || 'rgba(15, 18, 24, 0.98)'};
+    --hp-text: ${styling.textColor || '#f3f4f6'};
+    --hp-accent: ${styling.accentColor || '#ff5e3a'};
+    --hp-border: ${styling.borderColor || 'rgba(255, 255, 255, 0.08)'};
+    --hp-font: ${styling.fontFamily || 'Plus Jakarta Sans'}, -apple-system, BlinkMacSystemFont, sans-serif;
+    --hp-font-size: ${styling.fontSize || '0.86rem'};
+    --hp-blur: ${behavior.blurStrength || 16}px;
+  `}
+>
+  <div class:list={['header-inner-wrap', containerClass]}>
+    
+    <!-- LEFT SIDE ELEMENT -->
+    {logoPos === 'left' && (
+      <div class="header-logo-area">
+        <a href={logo.linkUrl || '/'} class="header-brand-link" aria-label={effectiveBrandText || 'Home'}>
+          <div class="logo-box">
+            {effectiveLogoImg ? (
+              <img src={effectiveLogoImg} alt={effectiveBrandText} class="logo-custom-image" style="max-height: 40px; max-width: 170px; object-fit: contain; border-radius: 4px;" />
+            ) : (
+              <>
+                <span class="logo-icon-badge">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="24" height="24" rx="6" fill="var(--hp-accent)" />
+                    <path d="M7 6H13.5C15.433 6 17 7.567 17 9.5C17 10.96 16.104 12.21 14.82 12.72C16.42 13.19 17.5 14.68 17.5 16.5C17.5 18.985 15.485 21 13 21H7V6ZM10 8.5V11.5H13C13.828 11.5 14.5 10.828 14.5 10C14.5 9.172 13.828 8.5 13 8.5H10ZM10 13.5V18.5H13C14.105 18.5 15 17.605 15 16.5C15 15.395 14.105 14.5 13 14.5H10Z" fill="white" />
+                  </svg>
+                </span>
+                <div class="logo-text-group">
+                  <span class="logo-main-text">{effectiveBrandText}</span>
+                  {effectiveTagline && <span class="logo-tagline">{effectiveTagline}</span>}
+                </div>
+              </>
+            )}
+          </div>
+        </a>
+      </div>
+    )}
+
+    {logoPos === 'right' && (
+      <div class="header-actions-area">
+        <!-- Actions on Left when logo is on Right -->
+        <div class="header-buttons-group">
+          {actions.buttons?.map((btn) => (
+            <a
+              href={btn.url}
+              target={btn.target || '_self'}
+              class:list={[
+                'header-btn',
+                `btn-${btn.variant || 'primary'}`,
+                `btn-size-${btn.size || 'sm'}`,
+                { 'btn-pill': btn.pill }
+              ]}
+            >
+              {btn.icon === 'sparkle' && <span class="btn-icon">✨</span>}
+              {btn.icon === 'cart' && <span class="btn-icon">🛒</span>}
+              {btn.icon === 'user' && <span class="btn-icon">👤</span>}
+              {btn.icon === 'phone' && <span class="btn-icon">📞</span>}
+              <span>{btn.label}</span>
+              {btn.icon === 'arrow' && (
+                <svg class="btn-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path>
+                  <path d="m12 5 7 7-7 7"></path>
+                </svg>
+              )}
+            </a>
+          ))}
+        </div>
+      </div>
+    )}
+
+    <!-- NAVIGATION MENU (DESKTOP) -->
+    <nav class:list={['header-desktop-nav', `align-${logoPos}`]} aria-label="Main navigation">
+      <ul class="header-nav-list">
+        {menu.map((item) => {
+          const isCurrent = activePage === item.id || (item.url !== '/' && Astro.url.pathname.startsWith(item.url));
+          const hasDropdown = item.type === 'dropdown' && item.dropdownItems && item.dropdownItems.length > 0;
+          const hasMegaMenu = item.type === 'megamenu' && item.megaMenu && item.megaMenu.columns?.length > 0;
+
+          return (
+            <li class:list={['nav-item-root', { 'has-dropdown': hasDropdown, 'has-megamenu': hasMegaMenu }]}>
+              <a
+                href={item.url}
+                target={item.target || '_self'}
+                class:list={['nav-root-link', { 'is-active': isCurrent }]}
+                aria-haspopup={hasDropdown || hasMegaMenu ? 'true' : undefined}
+                aria-expanded="false"
+              >
+                <span>{item.label}</span>
+                {item.badge && (
+                  <span class="nav-item-badge" style={item.badgeColor ? `background-color: ${item.badgeColor}` : undefined}>
+                    {item.badge}
+                  </span>
+                )}
+                {(hasDropdown || hasMegaMenu) && (
+                  <svg class="nav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                )}
+              </a>
+
+              {/* STANDARD DROPDOWN MENU */}
+              {hasDropdown && (
+                <div class="nav-dropdown-flyout">
+                  <ul class="dropdown-items-list">
+                    {item.dropdownItems!.map((sub) => (
+                      <li class="dropdown-item">
+                        <a href={sub.url} class="dropdown-link">
+                          {sub.icon && <span class="dropdown-icon">{sub.icon}</span>}
+                          <div class="dropdown-text">
+                            <div class="dropdown-label-row">
+                              <span class="dropdown-label">{sub.label}</span>
+                              {sub.badge && <span class="sub-badge">{sub.badge}</span>}
+                            </div>
+                            {sub.description && <span class="dropdown-desc">{sub.description}</span>}
+                          </div>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* RICH MEGA MENU */}
+              {hasMegaMenu && (
+                <div class="nav-megamenu-panel">
+                  <div class="megamenu-grid">
+                    <div class="megamenu-cols-wrapper">
+                      {item.megaMenu!.columns.map((col) => (
+                        <div class="megamenu-column">
+                          <h4 class="megamenu-col-title">{col.title}</h4>
+                          <ul class="megamenu-col-list">
+                            {col.items.map((mi) => (
+                              <li>
+                                <a href={mi.url} class="megamenu-item-link">
+                                  {mi.icon && <span class="megamenu-item-icon">{mi.icon}</span>}
+                                  <div class="megamenu-item-info">
+                                    <div class="megamenu-item-title-row">
+                                      <span class="megamenu-item-title">{mi.label}</span>
+                                      {mi.badge && <span class="sub-badge">{mi.badge}</span>}
+                                    </div>
+                                    {mi.description && <p class="megamenu-item-desc">{mi.description}</p>}
+                                  </div>
+                                </a>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* FEATURED CARD IN MEGA MENU */}
+                    {item.megaMenu!.featuredCard && (
+                      <div class="megamenu-featured-card">
+                        {item.megaMenu!.featuredCard.imageUrl && (
+                          <div class="featured-card-img-wrap">
+                            <img src={item.megaMenu!.featuredCard.imageUrl} alt="" loading="lazy" />
+                            {item.megaMenu!.featuredCard.badge && (
+                              <span class="featured-badge">{item.megaMenu!.featuredCard.badge}</span>
+                            )}
+                          </div>
+                        )}
+                        <div class="featured-card-body">
+                          <h5 class="featured-title">{item.megaMenu!.featuredCard.title}</h5>
+                          <p class="featured-desc">{item.megaMenu!.featuredCard.description}</p>
+                          <a href={item.megaMenu!.featuredCard.buttonUrl || '#'} class="featured-cta-btn">
+                            <span>{item.megaMenu!.featuredCard.buttonText || 'Learn More'}</span>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M5 12h14"></path>
+                              <path d="m12 5 7 7-7 7"></path>
+                            </svg>
+                          </a>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+
+    {/* CENTER LOGO POSITION */}
+    {logoPos === 'center' && (
+      <div class="header-logo-area logo-centered">
+        <a href={logo.linkUrl || '/'} class="header-brand-link" aria-label={effectiveBrandText || 'Home'}>
+          <div class="logo-box">
+            {effectiveLogoImg ? (
+              <img src={effectiveLogoImg} alt={effectiveBrandText} class="logo-custom-image" style="max-height: 40px; max-width: 170px; object-fit: contain; border-radius: 4px;" />
+            ) : (
+              <>
+                <span class="logo-icon-badge">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="24" height="24" rx="6" fill="var(--hp-accent)" />
+                    <path d="M7 6H13.5C15.433 6 17 7.567 17 9.5C17 10.96 16.104 12.21 14.82 12.72C16.42 13.19 17.5 14.68 17.5 16.5C17.5 18.985 15.485 21 13 21H7V6ZM10 8.5V11.5H13C13.828 11.5 14.5 10.828 14.5 10C14.5 9.172 13.828 8.5 13 8.5H10ZM10 13.5V18.5H13C14.105 18.5 15 17.605 15 16.5C15 15.395 14.105 14.5 13 14.5H10Z" fill="white" />
+                  </svg>
+                </span>
+                <div class="logo-text-group">
+                  <span class="logo-main-text">{effectiveBrandText}</span>
+                  {effectiveTagline && <span class="logo-tagline">{effectiveTagline}</span>}
+                </div>
+              </>
+            )}
+          </div>
+        </a>
+      </div>
+    )}
+
+    {/* RIGHT SIDE (ACTIONS / LOGO) */}
+    <div class="header-actions-area">
+      {actions.showSearch && (
+        <div class="header-search-wrap">
+          <button type="button" class="search-btn-icon" id="hpSearchToggle" aria-label="Search site">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </button>
+          <form class="hp-search-form" id="hpSearchForm" action={actions.searchActionUrl || '/blog'} method="get">
+            <input type="search" name="q" placeholder="Search pages, posts..." aria-label="Search" />
+            <button type="submit" aria-label="Submit search">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
+          </form>
+        </div>
+      )}
+
+      {logoPos !== 'right' && (
+        <div class="header-buttons-group">
+          {actions.buttons?.map((btn) => (
+            <a
+              href={btn.url}
+              target={btn.target || '_self'}
+              class:list={[
+                'header-btn',
+                `btn-${btn.variant || 'primary'}`,
+                `btn-size-${btn.size || 'sm'}`,
+                { 'btn-pill': btn.pill }
+              ]}
+            >
+              {btn.icon === 'sparkle' && <span class="btn-icon">✨</span>}
+              {btn.icon === 'cart' && <span class="btn-icon">🛒</span>}
+              {btn.icon === 'user' && <span class="btn-icon">👤</span>}
+              {btn.icon === 'phone' && <span class="btn-icon">📞</span>}
+              <span>{btn.label}</span>
+              {btn.icon === 'arrow' && (
+                <svg class="btn-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path>
+                  <path d="m12 5 7 7-7 7"></path>
+                </svg>
+              )}
+            </a>
+          ))}
+        </div>
+      )}
+
+      {/* Mobile Hamburger Button */}
+      <button type="button" class="hp-mobile-toggle" id="hpMobileToggle" aria-label="Toggle navigation menu" aria-expanded="false">
+        <span class="bar bar-1"></span>
+        <span class="bar bar-2"></span>
+        <span class="bar bar-3"></span>
+      </button>
+    </div>
+
+    {logoPos === 'right' && (
+      <div class="header-logo-area logo-right">
+        <a href={logo.linkUrl || '/'} class="header-brand-link" aria-label={effectiveBrandText || 'Home'}>
+          <div class="logo-box">
+            {effectiveLogoImg ? (
+              <img src={effectiveLogoImg} alt={effectiveBrandText} class="logo-custom-image" style="max-height: 40px; max-width: 170px; object-fit: contain; border-radius: 4px;" />
+            ) : (
+              <>
+                <div class="logo-text-group" style="text-align: right;">
+                  <span class="logo-main-text">{effectiveBrandText}</span>
+                  {effectiveTagline && <span class="logo-tagline">{effectiveTagline}</span>}
+                </div>
+                <span class="logo-icon-badge">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="24" height="24" rx="6" fill="var(--hp-accent)" />
+                    <path d="M7 6H13.5C15.433 6 17 7.567 17 9.5C17 10.96 16.104 12.21 14.82 12.72C16.42 13.19 17.5 14.68 17.5 16.5C17.5 18.985 15.485 21 13 21H7V6ZM10 8.5V11.5H13C13.828 11.5 14.5 10.828 14.5 10C14.5 9.172 13.828 8.5 13 8.5H10ZM10 13.5V18.5H13C14.105 18.5 15 17.605 15 16.5C15 15.395 14.105 14.5 13 14.5H10Z" fill="white" />
+                  </svg>
+                </span>
+              </>
+            )}
+          </div>
+        </a>
+      </div>
+    )}
+
+  </div>
+
+  {/* MOBILE DRAWER */}
+  <div class="hp-mobile-drawer" id="hpMobileDrawer" aria-hidden="true">
+    <div class="hp-mobile-inner">
+      <ul class="hp-mobile-nav-list">
+        {menu.map((item) => {
+          const hasSubs = (item.type === 'dropdown' && item.dropdownItems?.length) || (item.type === 'megamenu' && item.megaMenu?.columns?.length);
+          return (
+            <li class="hp-mobile-item">
+              <div class="hp-mobile-row">
+                <a href={item.url} class="hp-mobile-link">{item.label}</a>
+                {hasSubs && (
+                  <button type="button" class="hp-mobile-sub-toggle" aria-label="Expand submenu">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </button>
+                )}
+              </div>
+
+              {item.type === 'dropdown' && item.dropdownItems && (
+                <ul class="hp-mobile-sub-list">
+                  {item.dropdownItems.map((sub) => (
+                    <li>
+                      <a href={sub.url} class="hp-mobile-sub-link">
+                        {sub.icon && <span>{sub.icon}</span>}
+                        <span>{sub.label}</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {item.type === 'megamenu' && item.megaMenu && (
+                <div class="hp-mobile-megamenu-panel">
+                  {item.megaMenu.columns.map((col) => (
+                    <div class="hp-mobile-col">
+                      <div class="hp-mobile-col-title">{col.title}</div>
+                      <ul class="hp-mobile-sub-list">
+                        {col.items.map((mi) => (
+                          <li>
+                            <a href={mi.url} class="hp-mobile-sub-link">
+                              {mi.icon && <span>{mi.icon}</span>}
+                              <span>{mi.label}</span>
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+
+      {/* MOBILE ACTION BUTTONS */}
+      {actions.buttons?.length > 0 && (
+        <div class="hp-mobile-actions">
+          {actions.buttons.map((btn) => (
+            <a
+              href={btn.url}
+              class:list={['header-btn', `btn-${btn.variant || 'primary'}`, { 'btn-pill': btn.pill }]}
+              style="width: 100%; justify-content: center;"
+            >
+              <span>{btn.label}</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  </div>
+</header>
+)}
+
+{/* Injected Custom Header CSS (for Visual Mode) */}
+{!isCustomCode && headerConfig.customCode?.customCss && (
+  <style set:html={headerConfig.customCode.customCss} />
+)}
+
+{/* Injected Custom Header Scripts (for Visual Mode) */}
+{!isCustomCode && headerConfig.customCode?.customJs && (
+  <script is:inline set:html={headerConfig.customCode.customJs} />
+)}
+
+<script is:inline>
+  // FastPress Header Client Runtime (Sticky, Shrink on Scroll, Search & Mobile Drawer)
+  (function() {
+    function initHeader() {
+      const header = document.getElementById('siteHeader');
+      if (!header) return;
+
+      const shrinkOffset = parseInt(header.dataset.shrinkOffset || '40', 10);
+      const isSticky = header.classList.contains('is-sticky');
+      const hasShrink = header.classList.contains('has-shrink');
+
+      let ticking = false;
+
+      function onScroll() {
+        if (!ticking) {
+          window.requestAnimationFrame(() => {
+            const currentScroll = window.scrollY || document.documentElement.scrollTop;
+
+            if (currentScroll > 15) {
+              header.classList.add('is-scrolled');
+            } else {
+              header.classList.remove('is-scrolled');
+            }
+
+            if (hasShrink) {
+              if (currentScroll > shrinkOffset) {
+                header.classList.add('is-shrunk');
+              } else {
+                header.classList.remove('is-shrunk');
+              }
+            }
+
+            ticking = false;
+          });
+          ticking = true;
+        }
+      }
+
+      window.addEventListener('scroll', onScroll, { passive: true });
+      onScroll(); // initial check
+
+      // Mobile Menu Toggle
+      const mobileToggle = document.getElementById('hpMobileToggle');
+      const mobileDrawer = document.getElementById('hpMobileDrawer');
+      if (mobileToggle && mobileDrawer) {
+        mobileToggle.addEventListener('click', () => {
+          const isOpen = mobileDrawer.classList.toggle('is-open');
+          mobileToggle.classList.toggle('is-active', isOpen);
+          mobileToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+          mobileDrawer.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+        });
+      }
+
+      // Mobile Submenu Accordions
+      const subToggles = header.querySelectorAll('.hp-mobile-sub-toggle');
+      subToggles.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const parentItem = btn.closest('.hp-mobile-item');
+          if (!parentItem) return;
+          const subList = parentItem.querySelector('.hp-mobile-sub-list');
+          const megaPanel = parentItem.querySelector('.hp-mobile-megamenu-panel');
+          if (subList) subList.classList.toggle('is-open');
+          if (megaPanel) megaPanel.classList.toggle('is-open');
+        });
+      });
+
+      // Desktop Nav Hover Intent
+      let navHoverTimers = new Map();
+      header.querySelectorAll('.nav-item-root').forEach(item => {
+        if (item.classList.contains('has-dropdown') || item.classList.contains('has-megamenu')) {
+          item.addEventListener('mouseenter', () => {
+            if (navHoverTimers.has(item)) {
+              clearTimeout(navHoverTimers.get(item));
+              navHoverTimers.delete(item);
+            }
+            header.querySelectorAll('.nav-item-root').forEach(other => {
+              if (other !== item) other.classList.remove('is-open');
+            });
+            item.classList.add('is-open');
+          });
+
+          item.addEventListener('mouseleave', () => {
+            const timer = setTimeout(() => {
+              item.classList.remove('is-open');
+              navHoverTimers.delete(item);
+            }, 250);
+            navHoverTimers.set(item, timer);
+          });
+        }
+      });
+
+      // Search Bar Toggle
+      const searchBtn = document.getElementById('hpSearchToggle');
+      const searchForm = document.getElementById('hpSearchForm');
+      if (searchBtn && searchForm) {
+        searchBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          searchForm.classList.toggle('is-active');
+          if (searchForm.classList.contains('is-active')) {
+            const input = searchForm.querySelector('input');
+            if (input) input.focus();
+          }
+        });
+
+        document.addEventListener('click', (e) => {
+          if (!searchForm.contains(e.target) && !searchBtn.contains(e.target)) {
+            searchForm.classList.remove('is-active');
+          }
+        });
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initHeader);
+    } else {
+      initHeader();
+    }
+  })();
+</script>

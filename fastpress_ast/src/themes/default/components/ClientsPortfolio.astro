@@ -1,0 +1,195 @@
+---
+const clientLogos = [
+  { name: 'VINTAGE', tag: 'EST. 1984' },
+  { name: 'URBAN', tag: 'STUDIO' },
+  { name: 'CRAFT', tag: 'DESIGN' },
+  { name: 'GLOBAL', tag: 'MEDIA' },
+  { name: 'HORIZON', tag: 'LABS' },
+];
+
+const portfolioItems = [
+  {
+    title: 'Wireframing & Strategy',
+    category: 'Branding',
+    image: 'https://images.unsplash.com/photo-1507238691740-187a5b1d37b8?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    title: 'Digital Workspace',
+    category: 'Web Design',
+    image: 'https://images.unsplash.com/photo-1581291518857-4e27b48ff24e?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    title: 'Analytics Dashboard',
+    category: 'UI/UX Design',
+    image: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    title: 'Creative Direction',
+    category: 'Marketing',
+    image: 'https://images.unsplash.com/photo-1522542550221-31fd19575a2d?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    title: 'Architectural Isometric',
+    category: 'Identity',
+    image: 'https://images.unsplash.com/photo-1558655146-d09347e92766?auto=format&fit=crop&w=600&q=80',
+  },
+];
+---
+
+<section class="clients-portfolio-section py-section" id="work" aria-label="Our Clients & Portfolio">
+  <div class="container">
+    <div class="section-center-head">
+      <h2 class="section-title section-title-line">Our Client</h2>
+      <p class="section-subtitle">
+        Trusted by leading innovators, modern startups, and global enterprises.
+      </p>
+    </div>
+
+    <!-- Client Logos Row -->
+    <div class="clients-row" aria-label="Client brand partners">
+      {clientLogos.map((client) => (
+        <div class="client-logo-item">
+          <span class="client-name">{client.name}</span>
+          <span class="client-tag">{client.tag}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <!-- Portfolio Gallery Strip -->
+  <div class="portfolio-strip" aria-label="Selected creative works">
+    {portfolioItems.map((item) => (
+      <div class="portfolio-item">
+        <img
+          src={item.image}
+          alt={item.title}
+          class="portfolio-img"
+          loading="lazy"
+        />
+        <div class="portfolio-overlay">
+          <span class="portfolio-category">{item.category}</span>
+          <h3 class="portfolio-title">{item.title}</h3>
+        </div>
+      </div>
+    ))}
+  </div>
+</section>
+
+<style>
+  .clients-portfolio-section {
+    background-color: var(--color-white);
+    padding-bottom: 0;
+  }
+
+  /* Logos */
+  .clients-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(1.5rem, 3vw, 4rem);
+    margin-bottom: 4rem;
+    padding-inline: 1rem;
+  }
+
+  .client-logo-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem 1.5rem;
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    transition: var(--transition);
+    user-select: none;
+  }
+
+  .client-logo-item:hover {
+    color: var(--color-heading);
+    border-color: var(--color-primary);
+    transform: translateY(-2px);
+  }
+
+  .client-name {
+    font-family: var(--font-heading);
+    font-weight: 800;
+    font-size: 1.15rem;
+    letter-spacing: 2px;
+  }
+
+  .client-tag {
+    font-size: 0.65rem;
+    letter-spacing: 1.5px;
+    font-weight: 600;
+  }
+
+  /* Portfolio Strip */
+  .portfolio-strip {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    width: 100%;
+    margin-top: 2rem;
+  }
+
+  @media (min-width: 640px) {
+    .portfolio-strip {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .portfolio-strip {
+      grid-template-columns: repeat(5, 1fr);
+    }
+  }
+
+  .portfolio-item {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    cursor: pointer;
+  }
+
+  .portfolio-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .portfolio-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(21, 24, 30, 0.2) 0%, rgba(21, 24, 30, 0.9) 100%);
+    opacity: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 1.5rem 1.25rem;
+    transition: opacity 0.3s ease;
+  }
+
+  .portfolio-item:hover .portfolio-overlay {
+    opacity: 1;
+  }
+
+  .portfolio-item:hover .portfolio-img {
+    transform: scale(1.08);
+  }
+
+  .portfolio-category {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--color-primary);
+  }
+
+  .portfolio-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--color-white);
+    margin-top: 0.25rem;
+  }
+</style>

@@ -1,0 +1,40 @@
+{
+  "mode": "visual",
+  "headerComment": "",
+  "autoIncludeSitemap": true,
+  "customSitemaps": [],
+  "host": "",
+  "groups": [
+    {
+      "id": "grp_default_all",
+      "userAgents": [
+        "*"
+      ],
+      "rules": [
+        {
+          "id": "rule_allow_root",
+          "type": "Allow",
+          "path": "/"
+        },
+        {
+          "id": "rule_disallow_editor",
+          "type": "Disallow",
+          "path": "/editor"
+        },
+        {
+          "id": "rule_disallow_edit_blog",
+          "type": "Disallow",
+          "path": "/edit-blog"
+        },
+        {
+          "id": "rule_disallow_api",
+          "type": "Disallow",
+          "path": "/api/"
+        }
+      ],
+      "crawlDelay": null
+    }
+  ],
+  "rawText": "User-agent: *\nAllow: /\nDisallow: /editor\nDisallow: /edit-blog\nDisallow: /api/\n\nSitemap: {SITE_URL}/sitemap.xml\n",
+  "updatedAt": "2026-11-11T07:11:38.373Z"
+}

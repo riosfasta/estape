@@ -1,0 +1,17 @@
+---
+export const prerender = false;
+
+import { getActiveThemeName, getThemePages } from '../core/theme';
+import AboutPage from '../themes/default/pages/AboutPage.astro';
+import FurnisiteAboutPage from '../themes/furnisite/pages/AboutPage.astro';
+
+const activeTheme = getActiveThemeName();
+const pages = getThemePages(activeTheme);
+const aboutData = pages.about || pages['tentang-kami'] || null;
+---
+
+{activeTheme === 'furnisite' ? (
+  <FurnisiteAboutPage customData={aboutData} />
+) : (
+  <AboutPage />
+)}

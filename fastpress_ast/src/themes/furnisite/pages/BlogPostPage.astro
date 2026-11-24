@@ -1,0 +1,383 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getPosts, type Post } from '../../../data/posts';
+
+interface Props {
+  post?: any;
+  allPosts?: Post[];
+  isPreview?: boolean;
+  previewTheme?: string;
+}
+
+const {
+  post: propPost,
+  allPosts = getPosts(),
+  isPreview = false,
+  previewTheme = 'furnisite',
+} = Astro.props;
+
+const prefix = isPreview ? `/preview/${previewTheme}` : '';
+
+// Fallback post
+const post = propPost || {
+  id: 'art-1',
+  slug: 'the-art-of-quiet-spaces',
+  title: 'The Art of Quiet Spaces: How Natural Oak & Rattan Anchor Modern Rooms',
+  formattedDate: 'November 12, 2026',
+  readTime: '6 min read',
+  excerpt: 'Exploring the psychological tranquility of tactile woods, warm diffused lamp fixtures, and intentionally uncrowded floorplans.',
+  image: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=1200&q=80',
+  category: 'Interior Philosophy',
+  author: {
+    name: 'Julian Vance',
+    role: 'Head of Furniture Design',
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
+  },
+  content: `
+    <p>In an age dominated by high-gloss digital surfaces and relentless velocity, the living room has quietly transitioned from an entertainment center to an emotional refuge. We find our nervous systems seeking the grounding solidity of tactile, unhurried materials—solid white oak whose rings chronicle decades of rain, linen that wrinkles with honest dignity, and woven reed that gently filters morning sunlight.</p>
+
+    <h3>1. The Geometry of Subtraction</h3>
+    <p>True spaciousness rarely stems from square footage; it is born from the discipline of subtraction. When every object in a room earns its place through enduring utility and sculptural honesty, visual noise evaporates. A low-slung lounge chair paired with an organic timber side table allows light to pool on the floor, restoring the sense of proportion that oversized sectionals tend to swallow.</p>
+
+    <blockquote>
+      "Furniture should never clamor for attention. Like a quiet conversation among old friends, great design settles into the background and enriches life without demand."
+    </blockquote>
+
+    <h3>2. Honoring the Irregularity of Timber</h3>
+    <p>Factory-laminated veneers attempt to erase every tree's individuality in pursuit of artificial uniformity. In contrast, Scandinavian and Japanese woodcraft embraces slight variances in grain and natural knots. These are not flaws—they are markers of authenticity that patina gracefully as years pass.</p>
+
+    <h3>3. Layering Evening Ambience</h3>
+    <p>Harsh recessed downlights collapse the spatial depth of an interior. By scattering low-wattage, warm-temperature lighting through woven rattan pendants and brushed ceramic table fixtures, we invite shadows back into the home—creating intimate sanctuaries ideal for reading, contemplation, and restorative rest.</p>
+  `,
+};
+
+const relatedPosts = allPosts
+  .filter((p) => p.slug !== post.slug)
+  .slice(0, 2);
+---
+
+<Layout
+  title={`${post.title} - The Infurnish Journal`}
+  description={post.excerpt || `Read ${post.title} on Infurnish.`}
+  activePage="blog"
+  isPreview={isPreview}
+  previewTheme={previewTheme}
+>
+  <article class="fs-single-article">
+    <div class="fs-container fs-article-container">
+      <!-- Breadcrumb -->
+      <nav class="fs-breadcrumbs" aria-label="Breadcrumb">
+        <a href={prefix ? `${prefix}/` : '/'}>Home</a>
+        <span>/</span>
+        <a href={prefix ? `${prefix}/blog` : '/blog'}>The Journal</a>
+        <span>/</span>
+        <span class="fs-crumb-current">{post.title}</span>
+      </nav>
+
+      <!-- Article Header -->
+      <header class="fs-article-header">
+        <span class="fs-badge fs-badge-neutral">{post.category || 'Journal'}</span>
+        <h1 class="fs-article-title">{post.title}</h1>
+
+        <div class="fs-article-author-row">
+          {post.author?.avatar && (
+            <img src={post.author.avatar} alt={post.author?.name || 'Author'} class="fs-author-avatar" />
+          )}
+          <div class="fs-author-text">
+            <span class="fs-author-name">{post.author?.name || 'Infurnish Editorial'}</span>
+            <span class="fs-article-meta-sub">
+              {post.formattedDate || 'Recent'} · {post.readTime || '5 min read'}
+            </span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Featured Image -->
+      {post.image && (
+        <div class="fs-article-cover">
+          <img src={post.image} alt={post.title} class="fs-cover-img" />
+        </div>
+      )}
+
+      <!-- Article Content -->
+      <div class="fs-article-body" set:html={post.content} />
+
+      <!-- Author Bio -->
+      <div class="fs-author-bio-card">
+        {post.author?.avatar && (
+          <img src={post.author.avatar} alt={post.author?.name} class="fs-bio-avatar" />
+        )}
+        <div>
+          <h4 class="fs-bio-title">Written by {post.author?.name || 'Infurnish Editorial'}</h4>
+          <p class="fs-bio-desc">
+            {post.author?.role || 'Design Curator'} focusing on minimalist interior architecture, ethical material sourcing, and organic living spaces.
+          </p>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- Related Posts -->
+  {relatedPosts && relatedPosts.length > 0 && (
+    <section class="fs-article-related">
+      <div class="fs-container">
+        <h3 class="fs-related-heading">More from the Living Space Journal</h3>
+        <div class="fs-related-grid">
+          {relatedPosts.map((item) => (
+            <article class="fs-related-card">
+              <a href={`${prefix}/blog/${item.slug}`} class="fs-related-thumb">
+                <img src={item.image || 'https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?auto=format&fit=crop&w=600&q=80'} alt={item.title} loading="lazy" />
+              </a>
+              <div class="fs-related-content">
+                <span class="fs-related-date">{item.formattedDate || 'Recent'}</span>
+                <h4 class="fs-related-title">
+                  <a href={`${prefix}/blog/${item.slug}`}>{item.title}</a>
+                </h4>
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  )}
+</Layout>
+
+<style>
+  .fs-article-container {
+    max-width: 820px;
+    margin: 0 auto;
+    padding-top: 24px;
+    padding-bottom: 80px;
+  }
+
+  .fs-breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+    color: #71717a;
+    margin-bottom: 32px;
+  }
+
+  .fs-breadcrumbs a {
+    color: #71717a;
+    transition: color 0.15s ease;
+  }
+
+  .fs-breadcrumbs a:hover {
+    color: #18181b;
+  }
+
+  .fs-crumb-current {
+    color: #18181b;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 300px;
+  }
+
+  .fs-article-header {
+    margin-bottom: 36px;
+  }
+
+  .fs-article-title {
+    font-family: var(--fs-font-heading);
+    font-size: 2.3rem;
+    font-weight: 800;
+    line-height: 1.25;
+    color: #18181b;
+    margin: 16px 0 24px 0;
+    letter-spacing: -0.5px;
+  }
+
+  @media (min-width: 768px) {
+    .fs-article-title {
+      font-size: 3rem;
+    }
+  }
+
+  .fs-article-author-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .fs-author-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  .fs-author-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .fs-author-name {
+    font-family: var(--fs-font-heading);
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #18181b;
+  }
+
+  .fs-article-meta-sub {
+    font-size: 0.8rem;
+    color: #71717a;
+  }
+
+  .fs-article-cover {
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 44px;
+    aspect-ratio: 16 / 10;
+    background-color: #f4f4f5;
+  }
+
+  .fs-cover-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* Body Content */
+  .fs-article-body {
+    font-size: 1.1rem;
+    line-height: 1.8;
+    color: #3f3f46;
+  }
+
+  .fs-article-body :global(p) {
+    margin-bottom: 1.6rem;
+  }
+
+  .fs-article-body :global(h2),
+  .fs-article-body :global(h3) {
+    font-family: var(--fs-font-heading);
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #18181b;
+    margin-top: 2.2rem;
+    margin-bottom: 1rem;
+  }
+
+  .fs-article-body :global(blockquote) {
+    border-left: 3px solid #18181b;
+    margin: 2rem 0;
+    padding-left: 20px;
+    font-family: var(--fs-font-serif);
+    font-style: italic;
+    font-size: 1.25rem;
+    color: #27272a;
+    line-height: 1.6;
+  }
+
+  .fs-author-bio-card {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    background-color: #faf9f6;
+    padding: 24px;
+    border-radius: 6px;
+    border: 1px solid #f0eee6;
+    margin-top: 56px;
+  }
+
+  .fs-bio-avatar {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  .fs-bio-title {
+    font-family: var(--fs-font-heading);
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #18181b;
+    margin: 0 0 4px 0;
+  }
+
+  .fs-bio-desc {
+    font-size: 0.9rem;
+    color: #71717a;
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* Related */
+  .fs-article-related {
+    padding-top: 60px;
+    padding-bottom: 80px;
+    background-color: #faf9f6;
+    border-top: 1px solid #f0eee6;
+  }
+
+  .fs-related-heading {
+    font-family: var(--fs-font-heading);
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #18181b;
+    margin-bottom: 32px;
+  }
+
+  .fs-related-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+
+  @media (min-width: 640px) {
+    .fs-related-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  .fs-related-card {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+  }
+
+  .fs-related-thumb {
+    width: 120px;
+    height: 90px;
+    border-radius: 4px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background-color: #e4e4e7;
+  }
+
+  .fs-related-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .fs-related-date {
+    font-size: 0.75rem;
+    color: #a1a1aa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .fs-related-title {
+    font-family: var(--fs-font-heading);
+    font-size: 1rem;
+    font-weight: 700;
+    color: #18181b;
+    margin: 4px 0 0 0;
+    line-height: 1.4;
+  }
+
+  .fs-related-title a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .fs-related-title a:hover {
+    color: #71717a;
+  }
+</style>

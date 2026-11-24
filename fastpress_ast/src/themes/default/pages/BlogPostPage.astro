@@ -1,0 +1,444 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { type Post } from '../../../data/posts';
+import { getBlogLayoutForPost, renderBlogLayout } from '../../../data/blog-layouts';
+import { syncGlobalTemplates, cleanLiveContent } from '../../../data/templates';
+
+interface Props {
+  post?: Post;
+  allPosts?: Post[];
+  relatedPosts?: Post[];
+}
+
+const { post, allPosts = [], relatedPosts: explicitRelated } = Astro.props;
+
+if (!post) {
+  // If no post provided, render a 404 block inside theme
+}
+
+// Layout Mode: Standard Layout vs Blank Canvas
+const isBlankCanvas = post?.layoutMode === 'blank';
+const activeLayout = post && !isBlankCanvas ? getBlogLayoutForPost(post) : null;
+const renderedLayout = activeLayout && post ? renderBlogLayout(activeLayout, post, allPosts) : null;
+
+// Related posts calculation fallback if not explicitly provided
+let relatedPosts = explicitRelated || [];
+if (!explicitRelated && post) {
+  const relatedCategory = (post.relatedCategory || 'auto').trim();
+  const relatedLimit = Math.max(1, Number(post.relatedLimit) || 2);
+  let candidatePosts = allPosts.filter((p) => p.id !== post.id && p.slug !== post.slug);
+
+  if (relatedCategory === 'auto') {
+    const currentPostCats = (post.categories && post.categories.length > 0)
+      ? post.categories.map((c: string) => c.toLowerCase().trim())
+      : [String(post.category || '').toLowerCase().trim()].filter(Boolean);
+
+    const sameCatPosts = candidatePosts.filter((p) => {
+      const pCats = (p.categories && p.categories.length > 0)
+        ? p.categories.map((c: string) => c.toLowerCase().trim())
+        : [String(p.category || '').toLowerCase().trim()].filter(Boolean);
+      return pCats.some((cat) => currentPostCats.includes(cat));
+    });
+
+    if (sameCatPosts.length >= relatedLimit) {
+      candidatePosts = sameCatPosts;
+    } else if (sameCatPosts.length > 0) {
+      const otherCandidates = candidatePosts.filter((p) => !sameCatPosts.some((sc) => sc.id === p.id));
+      candidatePosts = [...sameCatPosts, ...otherCandidates];
+    }
+  }
+  relatedPosts = candidatePosts.slice(0, relatedLimit);
+}
+
+// SEO Meta Keywords & Article Tags
+const postTags: string[] = post
+  ? Array.isArray(post.tags)
+    ? post.tags
+    : typeof post.tags === 'string' && post.tags.trim()
+      ? post.tags.split(',').map((t) => t.trim()).filter(Boolean)
+      : []
+  : [];
+
+const postKeywords: string = post?.keywords?.trim()
+  ? post.keywords.trim()
+  : postTags.length > 0
+    ? postTags.join(', ')
+    : `${post?.category || 'Blog'}, Better, artikel, panduan`;
+
+const postCategories: string[] = post
+  ? Array.isArray(post.categories) && post.categories.length > 0
+    ? post.categories
+    : typeof post.category === 'string' && post.category.trim()
+      ? post.category.split(',').map((c) => c.trim()).filter(Boolean)
+      : ['Uncategorized']
+  : ['Uncategorized'];
+
+const syncedPostContent = post?.content ? cleanLiveContent(syncGlobalTemplates(post.content)) : '';
+---
+
+{post ? (
+  <Layout
+    title={`${post.title} - Better Blog`}
+    description={post.excerpt}
+    keywords={postKeywords}
+    activePage="blog"
+    schema={post.schema || ''}
+    pageCustomCode={post?.customCode}
+  >
+    {isBlankCanvas ? (
+      <main class="blank-canvas-post-wrapper">
+        <div class="blank-canvas-content" set:html={syncedPostContent} />
+        {post.css && <style is:global set:html={post.css} />}
+      </main>
+    ) : renderedLayout ? (
+      <div class="standard-layout-wrapper">
+        <Fragment set:html={renderedLayout.html} />
+        {renderedLayout.css && <style is:global set:html={renderedLayout.css} />}
+      </div>
+    ) : (
+      <article class="single-post-article standard-post-layout">
+        <header class="post-header-wrap">
+          <div class="container post-header-container">
+            <nav class="breadcrumb-nav" aria-label="Breadcrumb">
+              <ol class="breadcrumb-list">
+                <li><a href="/">Home</a></li>
+                <li aria-hidden="true">/</li>
+                <li><a href="/blog">Blog</a></li>
+                <li aria-hidden="true">/</li>
+                <li class="breadcrumb-current" aria-current="page">{postCategories[0] || post.category}</li>
+              </ol>
+            </nav>
+
+            <div class="post-categories-list" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1.25rem;">
+              {postCategories.map((cat) => (
+                <span class="post-category-badge" style="margin-bottom: 0;">{cat}</span>
+              ))}
+            </div>
+
+            <h1 class="post-title-main">{post.title}</h1>
+            <p class="post-excerpt-lead">{post.excerpt}</p>
+
+            <div class="post-author-bar">
+              <div class="author-info">
+                <img src={post.author.avatar} alt={post.author.name} class="author-avatar" width="48" height="48" />
+                <div class="author-text">
+                  <span class="author-name">{post.author.name}</span>
+                  <span class="author-role">{post.author.role}</span>
+                </div>
+              </div>
+              <div class="post-date-read">
+                <time datetime={post.date}>{post.formattedDate}</time>
+                <span class="meta-dot">&bull;</span>
+                <span>{post.readTime}</span>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div class="container post-featured-img-wrap">
+          <img src={post.image} alt={post.title} class="post-featured-image" loading="eager" />
+        </div>
+
+        <section class="post-body-section py-section">
+          <div class="container post-reading-container">
+            <div class="post-content-typography" set:html={syncedPostContent} />
+
+            {postTags.length > 0 && (
+              <div class="post-tags-container">
+                <span class="tags-label">Tags:</span>
+                <div class="tags-pills">
+                  {postTags.map((tag) => (
+                    <span class="tag-pill">#{tag}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {relatedPosts.length > 0 && (
+          <section class="related-posts-section py-section">
+            <div class="container">
+              <div class="section-center-head">
+                <h2 class="section-title section-title-line">Artikel Terkait</h2>
+              </div>
+              <div class="related-grid">
+                {relatedPosts.map((rel) => (
+                  <article class="related-card">
+                    <a href={`/blog/${rel.slug}`} class="related-thumb" tabindex="-1">
+                      <img src={rel.image} alt={rel.title} loading="lazy" />
+                    </a>
+                    <div class="related-body">
+                      <span class="related-cat">{rel.category}</span>
+                      <h3 class="related-title"><a href={`/blog/${rel.slug}`}>{rel.title}</a></h3>
+                      <p class="related-excerpt">{rel.excerpt}</p>
+                      <a href={`/blog/${rel.slug}`} class="related-link">Baca Selengkapnya &rarr;</a>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+      </article>
+    )}
+  </Layout>
+) : (
+  <Layout title="Artikel Tidak Ditemukan - 404" activePage="blog">
+    <div class="container" style="padding: 100px 20px; text-align: center;">
+      <h1 style="font-size: 2.5rem; color: #fff; margin-bottom: 16px;">404 - Artikel Tidak Ditemukan</h1>
+      <p style="color: #9ca3af; margin-bottom: 24px;">Artikel yang Anda cari tidak ditemukan atau telah dipindahkan.</p>
+      <a href="/blog" style="display: inline-block; padding: 10px 24px; background: var(--color-primary); color: #fff; border-radius: 8px; text-decoration: none; font-weight: 600;">Kembali ke Blog</a>
+    </div>
+  </Layout>
+)}
+
+<style>
+  .post-header-wrap {
+    background-color: var(--color-bg-light);
+    border-bottom: 1px solid var(--color-border);
+    padding-block: clamp(2.5rem, 2rem + 3vw, 4.5rem);
+  }
+
+  .post-header-container {
+    max-width: 820px;
+  }
+
+  .breadcrumb-nav {
+    margin-bottom: 1.5rem;
+  }
+
+  .breadcrumb-list {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+  }
+
+  .breadcrumb-list a:hover {
+    color: var(--color-primary);
+  }
+
+  .breadcrumb-current {
+    color: var(--color-heading);
+    font-weight: 600;
+  }
+
+  .post-category-badge {
+    display: inline-block;
+    padding: 0.35rem 0.9rem;
+    background-color: var(--color-primary);
+    color: var(--color-white);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-radius: var(--radius-sm);
+  }
+
+  .post-title-main {
+    font-size: clamp(2rem, 3.5vw, 3rem);
+    line-height: 1.2;
+    color: var(--color-heading);
+    margin-bottom: 1.25rem;
+  }
+
+  .post-excerpt-lead {
+    font-size: 1.15rem;
+    line-height: 1.6;
+    color: var(--color-text-muted);
+    margin-bottom: 2rem;
+  }
+
+  .post-author-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .author-info {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+  }
+
+  .author-avatar {
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  .author-name {
+    display: block;
+    font-weight: 700;
+    color: var(--color-heading);
+    font-size: 0.95rem;
+  }
+
+  .author-role {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+  }
+
+  .post-date-read {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .meta-dot {
+    color: var(--color-primary);
+  }
+
+  .post-featured-img-wrap {
+    max-width: 980px;
+    margin-top: -2.5rem;
+    position: relative;
+    z-index: 2;
+  }
+
+  .post-featured-image {
+    width: 100%;
+    border-radius: var(--radius-md);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
+  }
+
+  .post-reading-container {
+    max-width: 780px;
+  }
+
+  .post-content-typography {
+    font-size: 1.08rem;
+    line-height: 1.8;
+    color: var(--color-text);
+  }
+
+  .post-content-typography :global(p) {
+    margin-bottom: 1.75rem;
+  }
+
+  .post-content-typography :global(h2) {
+    font-size: 1.75rem;
+    color: var(--color-heading);
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .post-content-typography :global(h3) {
+    font-size: 1.35rem;
+    color: var(--color-heading);
+    margin-top: 2rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .post-content-typography :global(ul), .post-content-typography :global(ol) {
+    margin-bottom: 1.75rem;
+    padding-left: 1.5rem;
+  }
+
+  .post-content-typography :global(li) {
+    margin-bottom: 0.5rem;
+  }
+
+  .post-tags-container {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .tags-label {
+    font-weight: 700;
+    color: var(--color-heading);
+    font-size: 0.9rem;
+  }
+
+  .tags-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .tag-pill {
+    padding: 0.3rem 0.75rem;
+    border-radius: var(--radius-full);
+    background-color: var(--color-bg-light);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .related-posts-section {
+    background-color: var(--color-bg-light);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .related-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+    margin-top: 2.5rem;
+  }
+
+  .related-card {
+    background: var(--color-white);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .related-thumb {
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+  }
+
+  .related-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .related-body {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    flex: 1;
+  }
+
+  .related-cat {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--color-primary);
+  }
+
+  .related-title {
+    font-size: 1.15rem;
+  }
+
+  .related-excerpt {
+    font-size: 0.88rem;
+    color: var(--color-text);
+    line-height: 1.55;
+  }
+
+  .related-link {
+    margin-top: auto;
+    font-weight: 700;
+    font-size: 0.82rem;
+    color: var(--color-primary);
+  }
+</style>

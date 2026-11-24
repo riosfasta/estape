@@ -1,0 +1,130 @@
+---
+export const prerender = false;
+
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { getProducts, getPostBySlug, getPosts } from '../../../data/posts';
+import { getProducts as getAllProducts } from '../../../data/products';
+import { getProductCategories } from '../../../data/product-categories';
+import { getCategories } from '../../../data/categories';
+
+// Themes Imports
+import FurnisiteHomePage from '../../../themes/furnisite/pages/HomePage.astro';
+import FurnisiteAboutPage from '../../../themes/furnisite/pages/AboutPage.astro';
+import FurnisiteContactPage from '../../../themes/furnisite/pages/ContactPage.astro';
+import FurnisiteProductsPage from '../../../themes/furnisite/pages/ProductsPage.astro';
+import FurnisiteProductDetailPage from '../../../themes/furnisite/pages/ProductDetailPage.astro';
+import FurnisiteBlogPage from '../../../themes/furnisite/pages/BlogPage.astro';
+import FurnisiteBlogPostPage from '../../../themes/furnisite/pages/BlogPostPage.astro';
+
+import DefaultHomePage from '../../../themes/default/pages/HomePage.astro';
+import DefaultAboutPage from '../../../themes/default/pages/AboutPage.astro';
+import DefaultContactPage from '../../../themes/default/pages/ContactPage.astro';
+import DefaultProductsPage from '../../../themes/default/pages/ProductsPage.astro';
+import DefaultProductDetailPage from '../../../themes/default/pages/ProductDetailPage.astro';
+import DefaultBlogPage from '../../../themes/default/pages/BlogPage.astro';
+import DefaultBlogPostPage from '../../../themes/default/pages/BlogPostPage.astro';
+
+const { theme, slug } = Astro.params;
+const normalizedTheme = (theme || 'furnisite').toLowerCase();
+
+if (normalizedTheme !== 'furnisite' && normalizedTheme !== 'default') {
+  return Astro.redirect('/preview/furnisite');
+}
+
+const isFurnisite = normalizedTheme === 'furnisite';
+const cleanSlug = (slug || '').trim().replace(/^\/+|\/+$/g, '');
+
+// Fetch global content data
+const allProducts = getAllProducts().filter((p) => p.status !== 'draft');
+const allPosts = getPosts();
+const productCategories = getProductCategories();
+const blogCategories = getCategories();
+
+// Routing logic based on subpath
+let pageType: 'home' | 'about' | 'contact' | 'products' | 'product-detail' | 'blog' | 'blog-post' = 'home';
+let detailSlug = '';
+
+if (!cleanSlug || cleanSlug === '') {
+  pageType = 'home';
+} else if (cleanSlug === 'about') {
+  pageType = 'about';
+} else if (cleanSlug === 'contact') {
+  pageType = 'contact';
+} else if (cleanSlug === 'products') {
+  pageType = 'products';
+} else if (cleanSlug.startsWith('products/')) {
+  pageType = 'product-detail';
+  detailSlug = cleanSlug.replace(/^products\//, '');
+} else if (cleanSlug === 'blog') {
+  pageType = 'blog';
+} else if (cleanSlug.startsWith('blog/')) {
+  pageType = 'blog-post';
+  detailSlug = cleanSlug.replace(/^blog\//, '');
+}
+
+// Find specific item for detail pages
+let selectedProduct: any = null;
+if (pageType === 'product-detail') {
+  selectedProduct = allProducts.find((p) => p.slug === detailSlug) || allProducts[0];
+}
+
+let selectedPost: any = null;
+if (pageType === 'blog-post') {
+  selectedPost = getPostBySlug(detailSlug) || allPosts[0];
+}
+---
+
+{/* Render Furnisite Theme Pages */}
+{isFurnisite && (
+  <>
+    {pageType === 'home' && (
+      <FurnisiteHomePage isPreview={true} previewTheme="furnisite" />
+    )}
+    {pageType === 'about' && (
+      <FurnisiteAboutPage isPreview={true} previewTheme="furnisite" />
+    )}
+    {pageType === 'contact' && (
+      <FurnisiteContactPage isPreview={true} previewTheme="furnisite" />
+    )}
+    {pageType === 'products' && (
+      <FurnisiteProductsPage products={allProducts} categories={productCategories} isPreview={true} previewTheme="furnisite" />
+    )}
+    {pageType === 'product-detail' && (
+      <FurnisiteProductDetailPage product={selectedProduct} allProducts={allProducts} isPreview={true} previewTheme="furnisite" />
+    )}
+    {pageType === 'blog' && (
+      <FurnisiteBlogPage posts={allPosts} masterCategories={blogCategories} isPreview={true} previewTheme="furnisite" />
+    )}
+    {pageType === 'blog-post' && (
+      <FurnisiteBlogPostPage post={selectedPost} allPosts={allPosts} isPreview={true} previewTheme="furnisite" />
+    )}
+  </>
+)}
+
+{/* Render Default Theme Pages */}
+{!isFurnisite && (
+  <>
+    {pageType === 'home' && (
+      <DefaultHomePage />
+    )}
+    {pageType === 'about' && (
+      <DefaultAboutPage />
+    )}
+    {pageType === 'contact' && (
+      <DefaultContactPage />
+    )}
+    {pageType === 'products' && (
+      <DefaultProductsPage products={allProducts} categories={productCategories} />
+    )}
+    {pageType === 'product-detail' && (
+      <DefaultProductDetailPage product={selectedProduct} allProducts={allProducts} />
+    )}
+    {pageType === 'blog' && (
+      <DefaultBlogPage posts={allPosts} masterCategories={blogCategories} />
+    )}
+    {pageType === 'blog-post' && (
+      <DefaultBlogPostPage post={selectedPost} allPosts={allPosts} />
+    )}
+  </>
+)}

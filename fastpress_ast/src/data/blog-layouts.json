@@ -1,0 +1,1549 @@
+[
+  {
+    "id": "standard-default-layout",
+    "name": "Standard Blog Layout (Default)",
+    "description": "Clean, elegant editorial layout with centered container, bold typography, featured hero image, and author bio card.",
+    "isDefault": true,
+    "appliedPostSlugs": [
+      "branding-identity-modern-age",
+      "graphic-design-principles-conversion",
+      "hunter-xx-hunter-custom-slug"
+    ],
+    "html": "<body><article data-post-layout=\"standard-default-layout\" class=\"single-post-article standard-post-layout\"><!-- Post Header Section --><header class=\"post-header-wrap c668\"><div class=\"layout-container c672\"><!-- Breadcrumb Navigation --><div data-post-element=\"breadcrumbs\" class=\"c685\"><nav aria-label=\"Breadcrumb\" class=\"breadcrumb-nav\"><ol class=\"breadcrumb-list c692\"><li><a href=\"/\" class=\"c699\">Home</a></li><li aria-hidden=\"true\" class=\"c729\">/</li><li><a href=\"/blog\" class=\"c750\">Blog</a></li><li aria-hidden=\"true\" class=\"c780\">/</li><li class=\"breadcrumb-current c798\">Article</li></ol></nav></div><!-- Category Badges --><div data-post-element=\"categories\" class=\"c860\"><span class=\"post-category-badge c863\">Category</span></div><!-- Main Article Title --><h1 data-post-element=\"title\" class=\"c901\" style=\"font-size:2rem;\">\n        Article Title\n      </h1><!-- Author & Date Meta Bar --><div data-post-element=\"meta\" class=\"c930\"><div class=\"c933\"><img data-post-element=\"author-avatar\" src=\"https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&amp;fit=crop&amp;w=240&amp;h=240&amp;q=80\" alt=\"Author\" class=\"c936\"/><div><div data-post-element=\"author-name\" class=\"c946\">Better Team</div><div data-post-element=\"author-role\" class=\"c964\">Author Role</div></div></div><div class=\"c1006\"></div><div class=\"c1015\"><span data-post-element=\"post-date\">📅 Date</span><span data-post-element=\"post-readtime\">⏱️ 5 min read</span></div></div></div></header><!-- Featured Image --><div class=\"layout-container c1119\"><div data-post-element=\"image\" class=\"c1122\"><img src=\"https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&amp;fit=crop&amp;w=1200&amp;q=80\" alt=\"Featured Media\" class=\"c1125\"/></div></div><!-- Article Body Content Container --><div class=\"layout-container c1161\"><!-- Dynamic Article Content --><div data-post-element=\"content\" class=\"post-content c1173\"><p class=\"lead c1177\">\n        Article body content goes here. When you assign blog posts to this layout, their unique content will render smoothly within this block.\n      </p><h2>Section Heading</h2><p>\n        Edit this standard layout in the Blog Layout Builder to update the structure, colors, spacing, and styling across all blog posts using this layout.\n      </p></div><!-- Article Tags Bar --><div data-post-element=\"tags\" class=\"c1253\"><span class=\"c1256\">TAGS:</span><span class=\"c1274\">#Blog</span></div><!-- Author Bio Box --><div data-post-element=\"author-bio-box\" class=\"c1315\"><img data-post-element=\"author-avatar\" src=\"https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&amp;fit=crop&amp;w=240&amp;h=240&amp;q=80\" alt=\"Author\" class=\"c1318\"/><div><span class=\"c1328\">Written by</span><h3 data-post-element=\"author-name\" class=\"c1346\">Better Team</h3><p data-post-element=\"author-bio\" class=\"c1366\">\n          Creative industry professional focused on developing visual strategy, brand communication, and high-impact user experiences.\n        </p></div></div></div><!-- Related Articles Section --><div data-post-element=\"related\"></div></article></body>",
+    "css": "* { box-sizing: border-box; } body {margin: 0;}#iz2xg{font-size:2rem;}.c699{color:rgb(75, 85, 99);text-decoration-line:none;text-decoration-thickness:initial;text-decoration-style:initial;text-decoration-color:initial;}.c750{color:rgb(75, 85, 99);text-decoration-line:none;text-decoration-thickness:initial;text-decoration-style:initial;text-decoration-color:initial;}.c729{color:rgb(156, 163, 175);}.c780{color:rgb(156, 163, 175);}.c798{color:rgb(17, 24, 39);font-weight:600;}.c692{display:flex;align-items:center;row-gap:8px;column-gap:8px;list-style-position:initial;list-style-image:initial;list-style-type:none;padding-top:0px;padding-right:0px;padding-bottom:0px;padding-left:0px;margin-top:0px;margin-right:0px;margin-bottom:0px;margin-left:0px;font-size:0.85rem;color:rgb(107, 114, 128);}.c863{display:inline-block;padding-top:4px;padding-right:12px;padding-bottom:4px;padding-left:12px;background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgba(255, 94, 58, 0.12);color:rgb(255, 94, 58);font-family:Montserrat, sans-serif;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;border-top-left-radius:9999px;border-top-right-radius:9999px;border-bottom-right-radius:9999px;border-bottom-left-radius:9999px;}.c946{font-size:0.88rem;font-weight:700;color:rgb(17, 24, 39);}.c964{font-size:0.75rem;color:rgb(107, 114, 128);}.c936{width:42px;height:42px;border-top-left-radius:50%;border-top-right-radius:50%;border-bottom-right-radius:50%;border-bottom-left-radius:50%;object-fit:cover;border-top-width:2px;border-right-width:2px;border-bottom-width:2px;border-left-width:2px;border-top-style:solid;border-right-style:solid;border-bottom-style:solid;border-left-style:solid;border-top-color:rgb(255, 94, 58);border-right-color:rgb(255, 94, 58);border-bottom-color:rgb(255, 94, 58);border-left-color:rgb(255, 94, 58);border-image-source:none;border-image-slice:100%;border-image-width:1;border-image-outset:0;border-image-repeat:stretch;}.c933{display:flex;align-items:center;row-gap:10px;column-gap:10px;}.c1006{width:1px;height:26px;background-color:rgb(229, 231, 235);}.c1015{display:flex;align-items:center;row-gap:14px;column-gap:14px;font-size:0.82rem;color:rgb(107, 114, 128);}.c685{margin-bottom:16px;}.c860{display:flex;flex-wrap:wrap;row-gap:8px;column-gap:8px;margin-bottom:14px;}.c901{font-family:Montserrat, sans-serif;font-size:2.35rem;font-weight:800;color:rgb(17, 24, 39);line-height:1.25;margin-bottom:18px;}.c930{display:flex;align-items:center;row-gap:18px;column-gap:18px;flex-wrap:wrap;}.c672{max-width:900px;margin-top:0px;margin-right:auto;margin-bottom:0px;margin-left:auto;padding-top:0px;padding-right:20px;padding-bottom:0px;padding-left:20px;}.c1125{width:100%;height:100%;object-fit:cover;display:block;}.c1122{border-top-left-radius:12px;border-top-right-radius:12px;border-bottom-right-radius:12px;border-bottom-left-radius:12px;overflow-x:hidden;overflow-y:hidden;box-shadow:rgba(0, 0, 0, 0.06) 0px 8px 24px;max-height:440px;}.c1177{font-size:1.22rem;font-weight:500;color:rgb(31, 41, 55);margin-bottom:20px;line-height:1.75;}.c1256{font-size:0.78rem;font-weight:700;color:rgb(107, 114, 128);text-transform:uppercase;letter-spacing:0.5px;}.c1274{display:inline-block;padding-top:3px;padding-right:10px;padding-bottom:3px;padding-left:10px;background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(243, 244, 246);color:rgb(75, 85, 99);font-size:0.8rem;border-top-left-radius:6px;border-top-right-radius:6px;border-bottom-right-radius:6px;border-bottom-left-radius:6px;}.c1328{font-size:0.72rem;font-weight:700;text-transform:uppercase;color:rgb(255, 94, 58);letter-spacing:1px;}.c1346{font-size:1.12rem;font-weight:800;color:rgb(17, 24, 39);margin-top:3px;margin-right:0px;margin-bottom:5px;margin-left:0px;}.c1366{font-size:0.88rem;color:rgb(107, 114, 128);line-height:1.55;margin-top:0px;margin-right:0px;margin-bottom:0px;margin-left:0px;}.c1318{width:64px;height:64px;border-top-left-radius:50%;border-top-right-radius:50%;border-bottom-right-radius:50%;border-bottom-left-radius:50%;object-fit:cover;flex-shrink:0;}.c1424{display:inline-flex;align-items:center;row-gap:8px;column-gap:8px;padding-top:10px;padding-right:20px;padding-bottom:10px;padding-left:20px;border-top-left-radius:8px;border-top-right-radius:8px;border-bottom-right-radius:8px;border-bottom-left-radius:8px;border-top-width:1px;border-right-width:1px;border-bottom-width:1px;border-left-width:1px;border-top-style:solid;border-right-style:solid;border-bottom-style:solid;border-left-style:solid;border-top-color:rgb(209, 213, 219);border-right-color:rgb(209, 213, 219);border-bottom-color:rgb(209, 213, 219);border-left-color:rgb(209, 213, 219);border-image-source:none;border-image-slice:100%;border-image-width:1;border-image-outset:0;border-image-repeat:stretch;background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(255, 255, 255);color:rgb(55, 65, 81);font-size:0.88rem;font-weight:600;text-decoration-line:none;text-decoration-thickness:initial;text-decoration-style:initial;text-decoration-color:initial;transition-behavior:normal;transition-duration:0.2s;transition-timing-function:ease;transition-delay:0s;transition-property:all;}.c1173{font-size:1.08rem;line-height:1.85;color:rgb(55, 65, 81);}.c1253{margin-top:36px;padding-top:20px;border-top-width:1px;border-top-style:solid;border-top-color:rgb(229, 231, 235);display:flex;align-items:center;row-gap:10px;column-gap:10px;flex-wrap:wrap;}.c1315{display:flex;align-items:center;row-gap:20px;column-gap:20px;padding-top:24px;padding-right:24px;padding-bottom:24px;padding-left:24px;background-color:rgb(249, 250, 251);border-top-left-radius:12px;border-top-right-radius:12px;border-bottom-right-radius:12px;border-bottom-left-radius:12px;border-top-width:1px;border-right-width:1px;border-bottom-width:1px;border-left-width:1px;border-top-style:solid;border-right-style:solid;border-bottom-style:solid;border-left-style:solid;border-top-color:rgb(229, 231, 235);border-right-color:rgb(229, 231, 235);border-bottom-color:rgb(229, 231, 235);border-left-color:rgb(229, 231, 235);border-image-source:none;border-image-slice:100%;border-image-width:1;border-image-outset:0;border-image-repeat:stretch;margin-top:36px;}.c1421{margin-top:36px;}.c668{padding-top:40px;padding-right:0px;padding-bottom:28px;padding-left:0px;background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(249, 250, 251);border-bottom-width:1px;border-bottom-style:solid;border-bottom-color:rgb(229, 231, 235);margin-bottom:32px;}.c1119{max-width:900px;margin-top:0px;margin-right:auto;margin-bottom:32px;margin-left:auto;padding-top:0px;padding-right:20px;padding-bottom:0px;padding-left:20px;}.c1161{max-width:900px;margin-top:0px;margin-right:auto;margin-bottom:0px;margin-left:auto;padding-top:0px;padding-right:20px;padding-bottom:48px;padding-left:20px;}.standard-post-layout{font-family:\"Plus Jakarta Sans\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif;color:rgb(31, 41, 55);background-color:rgb(255, 255, 255);}.standard-post-layout h1, .standard-post-layout h2, .standard-post-layout h3{font-family:Montserrat, sans-serif;}.standard-post-layout .breadcrumb-nav{margin-bottom:16px;}.standard-post-layout .breadcrumb-list{display:flex !important;align-items:center !important;row-gap:8px !important;column-gap:8px !important;list-style-position:initial !important;list-style-image:initial !important;list-style-type:none !important;padding-top:0px !important;padding-right:0px !important;padding-bottom:0px !important;padding-left:0px !important;margin-top:0px !important;margin-right:0px !important;margin-bottom:0px !important;margin-left:0px !important;font-size:0.85rem !important;color:rgb(107, 114, 128) !important;}.standard-post-layout .breadcrumb-list li{display:inline-flex !important;align-items:center !important;list-style-position:initial !important;list-style-image:initial !important;list-style-type:none !important;}.standard-post-layout .breadcrumb-list a{transition-behavior:normal;transition-duration:0.15s;transition-timing-function:ease;transition-delay:0s;transition-property:color;color:rgb(75, 85, 99) !important;text-decoration-line:none !important;text-decoration-thickness:initial !important;text-decoration-style:initial !important;text-decoration-color:initial !important;}.standard-post-layout .breadcrumb-list a:hover{color:rgb(255, 94, 58) !important;}.standard-post-layout .breadcrumb-current{color:rgb(17, 24, 39) !important;font-weight:600 !important;}.standard-post-layout .post-category-badge{display:inline-block !important;padding-top:4px !important;padding-right:12px !important;padding-bottom:4px !important;padding-left:12px !important;background-color:rgba(255, 94, 58, 0.12) !important;color:rgb(255, 94, 58) !important;font-family:Montserrat, sans-serif !important;font-size:0.72rem !important;font-weight:700 !important;text-transform:uppercase !important;letter-spacing:0.05em !important;border-top-left-radius:9999px !important;border-top-right-radius:9999px !important;border-bottom-right-radius:9999px !important;border-bottom-left-radius:9999px !important;text-decoration-line:none !important;text-decoration-thickness:initial !important;text-decoration-style:initial !important;text-decoration-color:initial !important;}.standard-post-layout [data-post-element=\"title\"]{font-family:Montserrat, sans-serif;font-size:2.35rem;font-weight:800;color:rgb(17, 24, 39);line-height:1.25;margin-bottom:18px;}.standard-post-layout [data-post-element=\"meta\"]{display:flex !important;align-items:center !important;row-gap:18px !important;column-gap:18px !important;flex-wrap:wrap !important;}.standard-post-layout .author-avatar, .standard-post-layout img[data-post-element=\"author-avatar\"]{width:42px !important;height:42px !important;border-top-left-radius:50% !important;border-top-right-radius:50% !important;border-bottom-right-radius:50% !important;border-bottom-left-radius:50% !important;object-fit:cover !important;border-top-width:2px !important;border-right-width:2px !important;border-bottom-width:2px !important;border-left-width:2px !important;border-top-style:solid !important;border-right-style:solid !important;border-bottom-style:solid !important;border-left-style:solid !important;border-top-color:rgb(255, 94, 58) !important;border-right-color:rgb(255, 94, 58) !important;border-bottom-color:rgb(255, 94, 58) !important;border-left-color:rgb(255, 94, 58) !important;border-image-source:none !important;border-image-slice:100% !important;border-image-width:1 !important;border-image-outset:0 !important;border-image-repeat:stretch !important;display:inline-block !important;}.standard-post-layout [data-post-element=\"author-name\"]{font-size:0.88rem;font-weight:700;color:rgb(17, 24, 39);}.standard-post-layout [data-post-element=\"author-role\"]{font-size:0.75rem;color:rgb(107, 114, 128);}.standard-post-layout [data-post-element=\"image\"]{border-top-left-radius:12px;border-top-right-radius:12px;border-bottom-right-radius:12px;border-bottom-left-radius:12px;overflow-x:hidden;overflow-y:hidden;box-shadow:rgba(0, 0, 0, 0.06) 0px 8px 24px;max-height:440px;}.standard-post-layout [data-post-element=\"image\"] img{width:100% !important;height:100% !important;object-fit:cover !important;display:block !important;}.standard-post-layout .post-content{font-size:1.08rem;line-height:1.85;color:rgb(55, 65, 81);}.standard-post-layout .post-content h2{font-size:1.65rem;font-weight:800;color:rgb(17, 24, 39);margin-top:36px;margin-right:0px;margin-bottom:16px;margin-left:0px;line-height:1.35;}.standard-post-layout .post-content h3{font-size:1.35rem;font-weight:700;color:rgb(17, 24, 39);margin-top:28px;margin-right:0px;margin-bottom:14px;margin-left:0px;}.standard-post-layout .post-content p{margin-bottom:20px;}.standard-post-layout .post-content blockquote{border-left-width:4px;border-left-style:solid;border-left-color:rgb(255, 94, 58);padding-top:16px;padding-right:22px;padding-bottom:16px;padding-left:22px;background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(255, 245, 242);margin-top:28px;margin-right:0px;margin-bottom:28px;margin-left:0px;border-top-left-radius:0px;border-top-right-radius:8px;border-bottom-right-radius:8px;border-bottom-left-radius:0px;font-style:italic;color:rgb(55, 65, 81);}.standard-post-layout .post-content ul, .standard-post-layout .post-content ol{margin-top:20px;margin-right:0px;margin-bottom:24px;margin-left:28px;}.standard-post-layout .post-content li{margin-bottom:8px;}.standard-post-layout [data-post-element=\"author-bio-box\"]{display:flex !important;align-items:center !important;row-gap:20px !important;column-gap:20px !important;padding-top:24px !important;padding-right:24px !important;padding-bottom:24px !important;padding-left:24px !important;background-color:rgb(249, 250, 251) !important;border-top-left-radius:12px !important;border-top-right-radius:12px !important;border-bottom-right-radius:12px !important;border-bottom-left-radius:12px !important;border-top-width:1px !important;border-right-width:1px !important;border-bottom-width:1px !important;border-left-width:1px !important;border-top-style:solid !important;border-right-style:solid !important;border-bottom-style:solid !important;border-left-style:solid !important;border-top-color:rgb(229, 231, 235) !important;border-right-color:rgb(229, 231, 235) !important;border-bottom-color:rgb(229, 231, 235) !important;border-left-color:rgb(229, 231, 235) !important;border-image-source:none !important;border-image-slice:100% !important;border-image-width:1 !important;border-image-outset:0 !important;border-image-repeat:stretch !important;margin-top:36px !important;}.standard-post-layout [data-post-element=\"author-bio-box\"] img[data-post-element=\"author-avatar\"]{width:64px !important;height:64px !important;border-top-left-radius:50% !important;border-top-right-radius:50% !important;border-bottom-right-radius:50% !important;border-bottom-left-radius:50% !important;object-fit:cover !important;flex-shrink:0 !important;border-top-width:medium !important;border-right-width:medium !important;border-bottom-width:medium !important;border-left-width:medium !important;border-top-style:none !important;border-right-style:none !important;border-bottom-style:none !important;border-left-style:none !important;border-top-color:currentcolor !important;border-right-color:currentcolor !important;border-bottom-color:currentcolor !important;border-left-color:currentcolor !important;border-image-source:none !important;border-image-slice:100% !important;border-image-width:1 !important;border-image-outset:0 !important;border-image-repeat:stretch !important;}",
+    "projectData": {
+      "dataSources": [],
+      "assets": [],
+      "styles": [
+        {
+          "selectors": [
+            "c699"
+          ],
+          "style": {
+            "color": "rgb(75, 85, 99)",
+            "text-decoration-line": "none",
+            "text-decoration-thickness": "initial",
+            "text-decoration-style": "initial",
+            "text-decoration-color": "initial"
+          }
+        },
+        {
+          "selectors": [
+            "c750"
+          ],
+          "style": {
+            "color": "rgb(75, 85, 99)",
+            "text-decoration-line": "none",
+            "text-decoration-thickness": "initial",
+            "text-decoration-style": "initial",
+            "text-decoration-color": "initial"
+          }
+        },
+        {
+          "selectors": [
+            "c729"
+          ],
+          "style": {
+            "color": "rgb(156, 163, 175)"
+          }
+        },
+        {
+          "selectors": [
+            "c780"
+          ],
+          "style": {
+            "color": "rgb(156, 163, 175)"
+          }
+        },
+        {
+          "selectors": [
+            "c798"
+          ],
+          "style": {
+            "color": "rgb(17, 24, 39)",
+            "font-weight": "600"
+          }
+        },
+        {
+          "selectors": [
+            "c692"
+          ],
+          "style": {
+            "display": "flex",
+            "align-items": "center",
+            "row-gap": "8px",
+            "column-gap": "8px",
+            "list-style-position": "initial",
+            "list-style-image": "initial",
+            "list-style-type": "none",
+            "padding-top": "0px",
+            "padding-right": "0px",
+            "padding-bottom": "0px",
+            "padding-left": "0px",
+            "margin-top": "0px",
+            "margin-right": "0px",
+            "margin-bottom": "0px",
+            "margin-left": "0px",
+            "font-size": "0.85rem",
+            "color": "rgb(107, 114, 128)"
+          }
+        },
+        {
+          "selectors": [
+            "c863"
+          ],
+          "style": {
+            "display": "inline-block",
+            "padding-top": "4px",
+            "padding-right": "12px",
+            "padding-bottom": "4px",
+            "padding-left": "12px",
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgba(255, 94, 58, 0.12)",
+            "color": "rgb(255, 94, 58)",
+            "font-family": "Montserrat, sans-serif",
+            "font-size": "0.72rem",
+            "font-weight": "700",
+            "text-transform": "uppercase",
+            "letter-spacing": "0.05em",
+            "border-top-left-radius": "9999px",
+            "border-top-right-radius": "9999px",
+            "border-bottom-right-radius": "9999px",
+            "border-bottom-left-radius": "9999px"
+          }
+        },
+        {
+          "selectors": [
+            "c946"
+          ],
+          "style": {
+            "font-size": "0.88rem",
+            "font-weight": "700",
+            "color": "rgb(17, 24, 39)"
+          }
+        },
+        {
+          "selectors": [
+            "c964"
+          ],
+          "style": {
+            "font-size": "0.75rem",
+            "color": "rgb(107, 114, 128)"
+          }
+        },
+        {
+          "selectors": [
+            "c936"
+          ],
+          "style": {
+            "width": "42px",
+            "height": "42px",
+            "border-top-left-radius": "50%",
+            "border-top-right-radius": "50%",
+            "border-bottom-right-radius": "50%",
+            "border-bottom-left-radius": "50%",
+            "object-fit": "cover",
+            "border-top-width": "2px",
+            "border-right-width": "2px",
+            "border-bottom-width": "2px",
+            "border-left-width": "2px",
+            "border-top-style": "solid",
+            "border-right-style": "solid",
+            "border-bottom-style": "solid",
+            "border-left-style": "solid",
+            "border-top-color": "rgb(255, 94, 58)",
+            "border-right-color": "rgb(255, 94, 58)",
+            "border-bottom-color": "rgb(255, 94, 58)",
+            "border-left-color": "rgb(255, 94, 58)",
+            "border-image-source": "none",
+            "border-image-slice": "100%",
+            "border-image-width": "1",
+            "border-image-outset": "0",
+            "border-image-repeat": "stretch"
+          }
+        },
+        {
+          "selectors": [
+            "c933"
+          ],
+          "style": {
+            "display": "flex",
+            "align-items": "center",
+            "row-gap": "10px",
+            "column-gap": "10px"
+          }
+        },
+        {
+          "selectors": [
+            "c1006"
+          ],
+          "style": {
+            "width": "1px",
+            "height": "26px",
+            "background-color": "rgb(229, 231, 235)"
+          }
+        },
+        {
+          "selectors": [
+            "c1015"
+          ],
+          "style": {
+            "display": "flex",
+            "align-items": "center",
+            "row-gap": "14px",
+            "column-gap": "14px",
+            "font-size": "0.82rem",
+            "color": "rgb(107, 114, 128)"
+          }
+        },
+        {
+          "selectors": [
+            "c685"
+          ],
+          "style": {
+            "margin-bottom": "16px"
+          }
+        },
+        {
+          "selectors": [
+            "c860"
+          ],
+          "style": {
+            "display": "flex",
+            "flex-wrap": "wrap",
+            "row-gap": "8px",
+            "column-gap": "8px",
+            "margin-bottom": "14px"
+          }
+        },
+        {
+          "selectors": [
+            "c901"
+          ],
+          "style": {
+            "font-family": "Montserrat, sans-serif",
+            "font-size": "2.35rem",
+            "font-weight": "800",
+            "color": "rgb(17, 24, 39)",
+            "line-height": "1.25",
+            "margin-bottom": "18px"
+          }
+        },
+        {
+          "selectors": [
+            "c930"
+          ],
+          "style": {
+            "display": "flex",
+            "align-items": "center",
+            "row-gap": "18px",
+            "column-gap": "18px",
+            "flex-wrap": "wrap"
+          }
+        },
+        {
+          "selectors": [
+            "c672"
+          ],
+          "style": {
+            "max-width": "900px",
+            "margin-top": "0px",
+            "margin-right": "auto",
+            "margin-bottom": "0px",
+            "margin-left": "auto",
+            "padding-top": "0px",
+            "padding-right": "20px",
+            "padding-bottom": "0px",
+            "padding-left": "20px"
+          }
+        },
+        {
+          "selectors": [
+            "c1125"
+          ],
+          "style": {
+            "width": "100%",
+            "height": "100%",
+            "object-fit": "cover",
+            "display": "block"
+          }
+        },
+        {
+          "selectors": [
+            "c1122"
+          ],
+          "style": {
+            "border-top-left-radius": "12px",
+            "border-top-right-radius": "12px",
+            "border-bottom-right-radius": "12px",
+            "border-bottom-left-radius": "12px",
+            "overflow-x": "hidden",
+            "overflow-y": "hidden",
+            "box-shadow": "rgba(0, 0, 0, 0.06) 0px 8px 24px",
+            "max-height": "440px"
+          }
+        },
+        {
+          "selectors": [
+            "c1177"
+          ],
+          "style": {
+            "font-size": "1.22rem",
+            "font-weight": "500",
+            "color": "rgb(31, 41, 55)",
+            "margin-bottom": "20px",
+            "line-height": "1.75"
+          }
+        },
+        {
+          "selectors": [
+            "c1256"
+          ],
+          "style": {
+            "font-size": "0.78rem",
+            "font-weight": "700",
+            "color": "rgb(107, 114, 128)",
+            "text-transform": "uppercase",
+            "letter-spacing": "0.5px"
+          }
+        },
+        {
+          "selectors": [
+            "c1274"
+          ],
+          "style": {
+            "display": "inline-block",
+            "padding-top": "3px",
+            "padding-right": "10px",
+            "padding-bottom": "3px",
+            "padding-left": "10px",
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(243, 244, 246)",
+            "color": "rgb(75, 85, 99)",
+            "font-size": "0.8rem",
+            "border-top-left-radius": "6px",
+            "border-top-right-radius": "6px",
+            "border-bottom-right-radius": "6px",
+            "border-bottom-left-radius": "6px"
+          }
+        },
+        {
+          "selectors": [
+            "c1328"
+          ],
+          "style": {
+            "font-size": "0.72rem",
+            "font-weight": "700",
+            "text-transform": "uppercase",
+            "color": "rgb(255, 94, 58)",
+            "letter-spacing": "1px"
+          }
+        },
+        {
+          "selectors": [
+            "c1346"
+          ],
+          "style": {
+            "font-size": "1.12rem",
+            "font-weight": "800",
+            "color": "rgb(17, 24, 39)",
+            "margin-top": "3px",
+            "margin-right": "0px",
+            "margin-bottom": "5px",
+            "margin-left": "0px"
+          }
+        },
+        {
+          "selectors": [
+            "c1366"
+          ],
+          "style": {
+            "font-size": "0.88rem",
+            "color": "rgb(107, 114, 128)",
+            "line-height": "1.55",
+            "margin-top": "0px",
+            "margin-right": "0px",
+            "margin-bottom": "0px",
+            "margin-left": "0px"
+          }
+        },
+        {
+          "selectors": [
+            "c1318"
+          ],
+          "style": {
+            "width": "64px",
+            "height": "64px",
+            "border-top-left-radius": "50%",
+            "border-top-right-radius": "50%",
+            "border-bottom-right-radius": "50%",
+            "border-bottom-left-radius": "50%",
+            "object-fit": "cover",
+            "flex-shrink": "0"
+          }
+        },
+        {
+          "selectors": [
+            "c1424"
+          ],
+          "style": {
+            "display": "inline-flex",
+            "align-items": "center",
+            "row-gap": "8px",
+            "column-gap": "8px",
+            "padding-top": "10px",
+            "padding-right": "20px",
+            "padding-bottom": "10px",
+            "padding-left": "20px",
+            "border-top-left-radius": "8px",
+            "border-top-right-radius": "8px",
+            "border-bottom-right-radius": "8px",
+            "border-bottom-left-radius": "8px",
+            "border-top-width": "1px",
+            "border-right-width": "1px",
+            "border-bottom-width": "1px",
+            "border-left-width": "1px",
+            "border-top-style": "solid",
+            "border-right-style": "solid",
+            "border-bottom-style": "solid",
+            "border-left-style": "solid",
+            "border-top-color": "rgb(209, 213, 219)",
+            "border-right-color": "rgb(209, 213, 219)",
+            "border-bottom-color": "rgb(209, 213, 219)",
+            "border-left-color": "rgb(209, 213, 219)",
+            "border-image-source": "none",
+            "border-image-slice": "100%",
+            "border-image-width": "1",
+            "border-image-outset": "0",
+            "border-image-repeat": "stretch",
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(255, 255, 255)",
+            "color": "rgb(55, 65, 81)",
+            "font-size": "0.88rem",
+            "font-weight": "600",
+            "text-decoration-line": "none",
+            "text-decoration-thickness": "initial",
+            "text-decoration-style": "initial",
+            "text-decoration-color": "initial",
+            "transition-behavior": "normal",
+            "transition-duration": "0.2s",
+            "transition-timing-function": "ease",
+            "transition-delay": "0s",
+            "transition-property": "all"
+          }
+        },
+        {
+          "selectors": [
+            "c1173"
+          ],
+          "style": {
+            "font-size": "1.08rem",
+            "line-height": "1.85",
+            "color": "rgb(55, 65, 81)"
+          }
+        },
+        {
+          "selectors": [
+            "c1253"
+          ],
+          "style": {
+            "margin-top": "36px",
+            "padding-top": "20px",
+            "border-top-width": "1px",
+            "border-top-style": "solid",
+            "border-top-color": "rgb(229, 231, 235)",
+            "display": "flex",
+            "align-items": "center",
+            "row-gap": "10px",
+            "column-gap": "10px",
+            "flex-wrap": "wrap"
+          }
+        },
+        {
+          "selectors": [
+            "c1315"
+          ],
+          "style": {
+            "display": "flex",
+            "align-items": "center",
+            "row-gap": "20px",
+            "column-gap": "20px",
+            "padding-top": "24px",
+            "padding-right": "24px",
+            "padding-bottom": "24px",
+            "padding-left": "24px",
+            "background-color": "rgb(249, 250, 251)",
+            "border-top-left-radius": "12px",
+            "border-top-right-radius": "12px",
+            "border-bottom-right-radius": "12px",
+            "border-bottom-left-radius": "12px",
+            "border-top-width": "1px",
+            "border-right-width": "1px",
+            "border-bottom-width": "1px",
+            "border-left-width": "1px",
+            "border-top-style": "solid",
+            "border-right-style": "solid",
+            "border-bottom-style": "solid",
+            "border-left-style": "solid",
+            "border-top-color": "rgb(229, 231, 235)",
+            "border-right-color": "rgb(229, 231, 235)",
+            "border-bottom-color": "rgb(229, 231, 235)",
+            "border-left-color": "rgb(229, 231, 235)",
+            "border-image-source": "none",
+            "border-image-slice": "100%",
+            "border-image-width": "1",
+            "border-image-outset": "0",
+            "border-image-repeat": "stretch",
+            "margin-top": "36px"
+          }
+        },
+        {
+          "selectors": [
+            "c1421"
+          ],
+          "style": {
+            "margin-top": "36px"
+          }
+        },
+        {
+          "selectors": [
+            "c668"
+          ],
+          "style": {
+            "padding-top": "40px",
+            "padding-right": "0px",
+            "padding-bottom": "28px",
+            "padding-left": "0px",
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(249, 250, 251)",
+            "border-bottom-width": "1px",
+            "border-bottom-style": "solid",
+            "border-bottom-color": "rgb(229, 231, 235)",
+            "margin-bottom": "32px"
+          }
+        },
+        {
+          "selectors": [
+            "c1119"
+          ],
+          "style": {
+            "max-width": "900px",
+            "margin-top": "0px",
+            "margin-right": "auto",
+            "margin-bottom": "32px",
+            "margin-left": "auto",
+            "padding-top": "0px",
+            "padding-right": "20px",
+            "padding-bottom": "0px",
+            "padding-left": "20px"
+          }
+        },
+        {
+          "selectors": [
+            "c1161"
+          ],
+          "style": {
+            "max-width": "900px",
+            "margin-top": "0px",
+            "margin-right": "auto",
+            "margin-bottom": "0px",
+            "margin-left": "auto",
+            "padding-top": "0px",
+            "padding-right": "20px",
+            "padding-bottom": "48px",
+            "padding-left": "20px"
+          }
+        },
+        {
+          "selectors": [
+            "standard-post-layout"
+          ],
+          "style": {
+            "font-family": "\"Plus Jakarta Sans\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+            "color": "rgb(31, 41, 55)",
+            "background-color": "rgb(255, 255, 255)"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout h1, .standard-post-layout h2, .standard-post-layout h3",
+          "style": {
+            "font-family": "Montserrat, sans-serif"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout .breadcrumb-nav",
+          "style": {
+            "margin-bottom": "16px"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout .breadcrumb-list",
+          "style": {
+            "display": "flex !important",
+            "align-items": "center !important",
+            "row-gap": "8px !important",
+            "column-gap": "8px !important",
+            "list-style-position": "initial !important",
+            "list-style-image": "initial !important",
+            "list-style-type": "none !important",
+            "padding-top": "0px !important",
+            "padding-right": "0px !important",
+            "padding-bottom": "0px !important",
+            "padding-left": "0px !important",
+            "margin-top": "0px !important",
+            "margin-right": "0px !important",
+            "margin-bottom": "0px !important",
+            "margin-left": "0px !important",
+            "font-size": "0.85rem !important",
+            "color": "rgb(107, 114, 128) !important"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout .breadcrumb-list li",
+          "style": {
+            "display": "inline-flex !important",
+            "align-items": "center !important",
+            "list-style-position": "initial !important",
+            "list-style-image": "initial !important",
+            "list-style-type": "none !important"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout .breadcrumb-list a",
+          "style": {
+            "transition-behavior": "normal",
+            "transition-duration": "0.15s",
+            "transition-timing-function": "ease",
+            "transition-delay": "0s",
+            "transition-property": "color",
+            "color": "rgb(75, 85, 99) !important",
+            "text-decoration-line": "none !important",
+            "text-decoration-thickness": "initial !important",
+            "text-decoration-style": "initial !important",
+            "text-decoration-color": "initial !important"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout .breadcrumb-list a:hover",
+          "style": {
+            "color": "rgb(255, 94, 58) !important"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout .breadcrumb-current",
+          "style": {
+            "color": "rgb(17, 24, 39) !important",
+            "font-weight": "600 !important"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout .post-category-badge",
+          "style": {
+            "display": "inline-block !important",
+            "padding-top": "4px !important",
+            "padding-right": "12px !important",
+            "padding-bottom": "4px !important",
+            "padding-left": "12px !important",
+            "background-color": "rgba(255, 94, 58, 0.12) !important",
+            "color": "rgb(255, 94, 58) !important",
+            "font-family": "Montserrat, sans-serif !important",
+            "font-size": "0.72rem !important",
+            "font-weight": "700 !important",
+            "text-transform": "uppercase !important",
+            "letter-spacing": "0.05em !important",
+            "border-top-left-radius": "9999px !important",
+            "border-top-right-radius": "9999px !important",
+            "border-bottom-right-radius": "9999px !important",
+            "border-bottom-left-radius": "9999px !important",
+            "text-decoration-line": "none !important",
+            "text-decoration-thickness": "initial !important",
+            "text-decoration-style": "initial !important",
+            "text-decoration-color": "initial !important"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout [data-post-element=\"title\"]",
+          "style": {
+            "font-family": "Montserrat, sans-serif",
+            "font-size": "2.35rem",
+            "font-weight": "800",
+            "color": "rgb(17, 24, 39)",
+            "line-height": "1.25",
+            "margin-bottom": "18px"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout [data-post-element=\"meta\"]",
+          "style": {
+            "display": "flex !important",
+            "align-items": "center !important",
+            "row-gap": "18px !important",
+            "column-gap": "18px !important",
+            "flex-wrap": "wrap !important"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout .author-avatar, .standard-post-layout img[data-post-element=\"author-avatar\"]",
+          "style": {
+            "width": "42px !important",
+            "height": "42px !important",
+            "border-top-left-radius": "50% !important",
+            "border-top-right-radius": "50% !important",
+            "border-bottom-right-radius": "50% !important",
+            "border-bottom-left-radius": "50% !important",
+            "object-fit": "cover !important",
+            "border-top-width": "2px !important",
+            "border-right-width": "2px !important",
+            "border-bottom-width": "2px !important",
+            "border-left-width": "2px !important",
+            "border-top-style": "solid !important",
+            "border-right-style": "solid !important",
+            "border-bottom-style": "solid !important",
+            "border-left-style": "solid !important",
+            "border-top-color": "rgb(255, 94, 58) !important",
+            "border-right-color": "rgb(255, 94, 58) !important",
+            "border-bottom-color": "rgb(255, 94, 58) !important",
+            "border-left-color": "rgb(255, 94, 58) !important",
+            "border-image-source": "none !important",
+            "border-image-slice": "100% !important",
+            "border-image-width": "1 !important",
+            "border-image-outset": "0 !important",
+            "border-image-repeat": "stretch !important",
+            "display": "inline-block !important"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout [data-post-element=\"author-name\"]",
+          "style": {
+            "font-size": "0.88rem",
+            "font-weight": "700",
+            "color": "rgb(17, 24, 39)"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout [data-post-element=\"author-role\"]",
+          "style": {
+            "font-size": "0.75rem",
+            "color": "rgb(107, 114, 128)"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout [data-post-element=\"image\"]",
+          "style": {
+            "border-top-left-radius": "12px",
+            "border-top-right-radius": "12px",
+            "border-bottom-right-radius": "12px",
+            "border-bottom-left-radius": "12px",
+            "overflow-x": "hidden",
+            "overflow-y": "hidden",
+            "box-shadow": "rgba(0, 0, 0, 0.06) 0px 8px 24px",
+            "max-height": "440px"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout [data-post-element=\"image\"] img",
+          "style": {
+            "width": "100% !important",
+            "height": "100% !important",
+            "object-fit": "cover !important",
+            "display": "block !important"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout .post-content",
+          "style": {
+            "font-size": "1.08rem",
+            "line-height": "1.85",
+            "color": "rgb(55, 65, 81)"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout .post-content h2",
+          "style": {
+            "font-size": "1.65rem",
+            "font-weight": "800",
+            "color": "rgb(17, 24, 39)",
+            "margin-top": "36px",
+            "margin-right": "0px",
+            "margin-bottom": "16px",
+            "margin-left": "0px",
+            "line-height": "1.35"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout .post-content h3",
+          "style": {
+            "font-size": "1.35rem",
+            "font-weight": "700",
+            "color": "rgb(17, 24, 39)",
+            "margin-top": "28px",
+            "margin-right": "0px",
+            "margin-bottom": "14px",
+            "margin-left": "0px"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout .post-content p",
+          "style": {
+            "margin-bottom": "20px"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout .post-content blockquote",
+          "style": {
+            "border-left-width": "4px",
+            "border-left-style": "solid",
+            "border-left-color": "rgb(255, 94, 58)",
+            "padding-top": "16px",
+            "padding-right": "22px",
+            "padding-bottom": "16px",
+            "padding-left": "22px",
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(255, 245, 242)",
+            "margin-top": "28px",
+            "margin-right": "0px",
+            "margin-bottom": "28px",
+            "margin-left": "0px",
+            "border-top-left-radius": "0px",
+            "border-top-right-radius": "8px",
+            "border-bottom-right-radius": "8px",
+            "border-bottom-left-radius": "0px",
+            "font-style": "italic",
+            "color": "rgb(55, 65, 81)"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout .post-content ul, .standard-post-layout .post-content ol",
+          "style": {
+            "margin-top": "20px",
+            "margin-right": "0px",
+            "margin-bottom": "24px",
+            "margin-left": "28px"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout .post-content li",
+          "style": {
+            "margin-bottom": "8px"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout [data-post-element=\"author-bio-box\"]",
+          "style": {
+            "display": "flex !important",
+            "align-items": "center !important",
+            "row-gap": "20px !important",
+            "column-gap": "20px !important",
+            "padding-top": "24px !important",
+            "padding-right": "24px !important",
+            "padding-bottom": "24px !important",
+            "padding-left": "24px !important",
+            "background-color": "rgb(249, 250, 251) !important",
+            "border-top-left-radius": "12px !important",
+            "border-top-right-radius": "12px !important",
+            "border-bottom-right-radius": "12px !important",
+            "border-bottom-left-radius": "12px !important",
+            "border-top-width": "1px !important",
+            "border-right-width": "1px !important",
+            "border-bottom-width": "1px !important",
+            "border-left-width": "1px !important",
+            "border-top-style": "solid !important",
+            "border-right-style": "solid !important",
+            "border-bottom-style": "solid !important",
+            "border-left-style": "solid !important",
+            "border-top-color": "rgb(229, 231, 235) !important",
+            "border-right-color": "rgb(229, 231, 235) !important",
+            "border-bottom-color": "rgb(229, 231, 235) !important",
+            "border-left-color": "rgb(229, 231, 235) !important",
+            "border-image-source": "none !important",
+            "border-image-slice": "100% !important",
+            "border-image-width": "1 !important",
+            "border-image-outset": "0 !important",
+            "border-image-repeat": "stretch !important",
+            "margin-top": "36px !important"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".standard-post-layout [data-post-element=\"author-bio-box\"] img[data-post-element=\"author-avatar\"]",
+          "style": {
+            "width": "64px !important",
+            "height": "64px !important",
+            "border-top-left-radius": "50% !important",
+            "border-top-right-radius": "50% !important",
+            "border-bottom-right-radius": "50% !important",
+            "border-bottom-left-radius": "50% !important",
+            "object-fit": "cover !important",
+            "flex-shrink": "0 !important",
+            "border-top-width": "medium !important",
+            "border-right-width": "medium !important",
+            "border-bottom-width": "medium !important",
+            "border-left-width": "medium !important",
+            "border-top-style": "none !important",
+            "border-right-style": "none !important",
+            "border-bottom-style": "none !important",
+            "border-left-style": "none !important",
+            "border-top-color": "currentcolor !important",
+            "border-right-color": "currentcolor !important",
+            "border-bottom-color": "currentcolor !important",
+            "border-left-color": "currentcolor !important",
+            "border-image-source": "none !important",
+            "border-image-slice": "100% !important",
+            "border-image-width": "1 !important",
+            "border-image-outset": "0 !important",
+            "border-image-repeat": "stretch !important"
+          }
+        }
+      ],
+      "pages": [
+        {
+          "frames": [
+            {
+              "component": {
+                "type": "wrapper",
+                "stylable": [
+                  "background",
+                  "background-color",
+                  "background-image",
+                  "background-repeat",
+                  "background-attachment",
+                  "background-position",
+                  "background-size"
+                ],
+                "components": [
+                  {
+                    "tagName": "article",
+                    "classes": [
+                      "single-post-article",
+                      "standard-post-layout"
+                    ],
+                    "attributes": {
+                      "data-post-layout": "standard-default-layout"
+                    },
+                    "components": [
+                      {
+                        "type": "comment",
+                        "content": " Post Header Section "
+                      },
+                      {
+                        "tagName": "header",
+                        "classes": [
+                          "post-header-wrap",
+                          "c668"
+                        ],
+                        "components": [
+                          {
+                            "classes": [
+                              "layout-container",
+                              "c672"
+                            ],
+                            "components": [
+                              {
+                                "type": "comment",
+                                "content": " Breadcrumb Navigation "
+                              },
+                              {
+                                "classes": [
+                                  "c685"
+                                ],
+                                "attributes": {
+                                  "data-post-element": "breadcrumbs"
+                                },
+                                "components": [
+                                  {
+                                    "tagName": "nav",
+                                    "classes": [
+                                      "breadcrumb-nav"
+                                    ],
+                                    "attributes": {
+                                      "aria-label": "Breadcrumb"
+                                    },
+                                    "components": [
+                                      {
+                                        "tagName": "ol",
+                                        "classes": [
+                                          "breadcrumb-list",
+                                          "c692"
+                                        ],
+                                        "components": [
+                                          {
+                                            "tagName": "li",
+                                            "components": [
+                                              {
+                                                "type": "link",
+                                                "classes": [
+                                                  "c699"
+                                                ],
+                                                "attributes": {
+                                                  "href": "/"
+                                                },
+                                                "components": [
+                                                  {
+                                                    "type": "textnode",
+                                                    "content": "Home"
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tagName": "li",
+                                            "type": "text",
+                                            "classes": [
+                                              "c729"
+                                            ],
+                                            "attributes": {
+                                              "aria-hidden": "true"
+                                            },
+                                            "components": [
+                                              {
+                                                "type": "textnode",
+                                                "content": "/"
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tagName": "li",
+                                            "components": [
+                                              {
+                                                "type": "link",
+                                                "classes": [
+                                                  "c750"
+                                                ],
+                                                "attributes": {
+                                                  "href": "/blog"
+                                                },
+                                                "components": [
+                                                  {
+                                                    "type": "textnode",
+                                                    "content": "Blog"
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tagName": "li",
+                                            "type": "text",
+                                            "classes": [
+                                              "c780"
+                                            ],
+                                            "attributes": {
+                                              "aria-hidden": "true"
+                                            },
+                                            "components": [
+                                              {
+                                                "type": "textnode",
+                                                "content": "/"
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "tagName": "li",
+                                            "type": "text",
+                                            "classes": [
+                                              "breadcrumb-current",
+                                              "c798"
+                                            ],
+                                            "components": [
+                                              {
+                                                "type": "textnode",
+                                                "content": "Article"
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "comment",
+                                "content": " Category Badges "
+                              },
+                              {
+                                "classes": [
+                                  "c860"
+                                ],
+                                "attributes": {
+                                  "data-post-element": "categories"
+                                },
+                                "components": [
+                                  {
+                                    "tagName": "span",
+                                    "type": "text",
+                                    "classes": [
+                                      "post-category-badge",
+                                      "c863"
+                                    ],
+                                    "components": [
+                                      {
+                                        "type": "textnode",
+                                        "content": "Category"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "comment",
+                                "content": " Main Article Title "
+                              },
+                              {
+                                "tagName": "h1",
+                                "type": "heading",
+                                "style": {
+                                  "font-size": "2rem"
+                                },
+                                "classes": [
+                                  "c901"
+                                ],
+                                "attributes": {
+                                  "data-post-element": "title",
+                                  "style": "font-size:2rem;"
+                                },
+                                "components": [
+                                  {
+                                    "type": "textnode",
+                                    "content": "\n        Article Title\n      "
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "comment",
+                                "content": " Author & Date Meta Bar "
+                              },
+                              {
+                                "classes": [
+                                  "c930"
+                                ],
+                                "attributes": {
+                                  "data-post-element": "meta"
+                                },
+                                "components": [
+                                  {
+                                    "classes": [
+                                      "c933"
+                                    ],
+                                    "components": [
+                                      {
+                                        "type": "image",
+                                        "resizable": {
+                                          "ratioDefault": 1
+                                        },
+                                        "classes": [
+                                          "c936"
+                                        ],
+                                        "attributes": {
+                                          "data-post-element": "author-avatar",
+                                          "src": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=240&h=240&q=80",
+                                          "alt": "Author"
+                                        }
+                                      },
+                                      {
+                                        "components": [
+                                          {
+                                            "type": "text",
+                                            "classes": [
+                                              "c946"
+                                            ],
+                                            "attributes": {
+                                              "data-post-element": "author-name"
+                                            },
+                                            "components": [
+                                              {
+                                                "type": "textnode",
+                                                "content": "Better Team"
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "type": "text",
+                                            "classes": [
+                                              "c964"
+                                            ],
+                                            "attributes": {
+                                              "data-post-element": "author-role"
+                                            },
+                                            "components": [
+                                              {
+                                                "type": "textnode",
+                                                "content": "Author Role"
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "classes": [
+                                      "c1006"
+                                    ]
+                                  },
+                                  {
+                                    "classes": [
+                                      "c1015"
+                                    ],
+                                    "components": [
+                                      {
+                                        "tagName": "span",
+                                        "type": "text",
+                                        "attributes": {
+                                          "data-post-element": "post-date"
+                                        },
+                                        "components": [
+                                          {
+                                            "type": "textnode",
+                                            "content": "📅 Date"
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "tagName": "span",
+                                        "type": "text",
+                                        "attributes": {
+                                          "data-post-element": "post-readtime"
+                                        },
+                                        "components": [
+                                          {
+                                            "type": "textnode",
+                                            "content": "⏱️ 5 min read"
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "comment",
+                        "content": " Featured Image "
+                      },
+                      {
+                        "classes": [
+                          "layout-container",
+                          "c1119"
+                        ],
+                        "components": [
+                          {
+                            "classes": [
+                              "c1122"
+                            ],
+                            "attributes": {
+                              "data-post-element": "image"
+                            },
+                            "components": [
+                              {
+                                "type": "image",
+                                "resizable": {
+                                  "ratioDefault": 1
+                                },
+                                "classes": [
+                                  "c1125"
+                                ],
+                                "attributes": {
+                                  "src": "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80",
+                                  "alt": "Featured Media"
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "comment",
+                        "content": " Article Body Content Container "
+                      },
+                      {
+                        "classes": [
+                          "layout-container",
+                          "c1161"
+                        ],
+                        "components": [
+                          {
+                            "type": "comment",
+                            "content": " Dynamic Article Content "
+                          },
+                          {
+                            "classes": [
+                              "post-content",
+                              "c1173"
+                            ],
+                            "attributes": {
+                              "data-post-element": "content"
+                            },
+                            "components": [
+                              {
+                                "tagName": "p",
+                                "type": "text",
+                                "classes": [
+                                  "lead",
+                                  "c1177"
+                                ],
+                                "components": [
+                                  {
+                                    "type": "textnode",
+                                    "content": "\n        Article body content goes here. When you assign blog posts to this layout, their unique content will render smoothly within this block.\n      "
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "heading",
+                                "components": [
+                                  {
+                                    "type": "textnode",
+                                    "content": "Section Heading"
+                                  }
+                                ]
+                              },
+                              {
+                                "tagName": "p",
+                                "type": "text",
+                                "components": [
+                                  {
+                                    "type": "textnode",
+                                    "content": "\n        Edit this standard layout in the Blog Layout Builder to update the structure, colors, spacing, and styling across all blog posts using this layout.\n      "
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "type": "comment",
+                            "content": " Article Tags Bar "
+                          },
+                          {
+                            "classes": [
+                              "c1253"
+                            ],
+                            "attributes": {
+                              "data-post-element": "tags"
+                            },
+                            "components": [
+                              {
+                                "tagName": "span",
+                                "type": "text",
+                                "classes": [
+                                  "c1256"
+                                ],
+                                "components": [
+                                  {
+                                    "type": "textnode",
+                                    "content": "TAGS:"
+                                  }
+                                ]
+                              },
+                              {
+                                "tagName": "span",
+                                "type": "text",
+                                "classes": [
+                                  "c1274"
+                                ],
+                                "components": [
+                                  {
+                                    "type": "textnode",
+                                    "content": "#Blog"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "type": "comment",
+                            "content": " Author Bio Box "
+                          },
+                          {
+                            "classes": [
+                              "c1315"
+                            ],
+                            "attributes": {
+                              "data-post-element": "author-bio-box"
+                            },
+                            "components": [
+                              {
+                                "type": "image",
+                                "resizable": {
+                                  "ratioDefault": 1
+                                },
+                                "classes": [
+                                  "c1318"
+                                ],
+                                "attributes": {
+                                  "data-post-element": "author-avatar",
+                                  "src": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=240&h=240&q=80",
+                                  "alt": "Author"
+                                }
+                              },
+                              {
+                                "components": [
+                                  {
+                                    "tagName": "span",
+                                    "type": "text",
+                                    "classes": [
+                                      "c1328"
+                                    ],
+                                    "components": [
+                                      {
+                                        "type": "textnode",
+                                        "content": "Written by"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tagName": "h3",
+                                    "type": "heading",
+                                    "classes": [
+                                      "c1346"
+                                    ],
+                                    "attributes": {
+                                      "data-post-element": "author-name"
+                                    },
+                                    "components": [
+                                      {
+                                        "type": "textnode",
+                                        "content": "Better Team"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tagName": "p",
+                                    "type": "text",
+                                    "classes": [
+                                      "c1366"
+                                    ],
+                                    "attributes": {
+                                      "data-post-element": "author-bio"
+                                    },
+                                    "components": [
+                                      {
+                                        "type": "textnode",
+                                        "content": "\n          Creative industry professional focused on developing visual strategy, brand communication, and high-impact user experiences.\n        "
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "type": "comment",
+                            "content": " Back to Blog Button "
+                          }
+                        ]
+                      },
+                      {
+                        "type": "comment",
+                        "content": " Related Articles Section "
+                      },
+                      {
+                        "attributes": {
+                          "data-post-element": "related"
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "head": {
+                  "type": "head"
+                },
+                "docEl": {
+                  "tagName": "html"
+                }
+              },
+              "id": "ZhOvxMod8gaN6Cyp"
+            }
+          ],
+          "type": "main",
+          "id": "xkheEs8M8hnIGzGt"
+        }
+      ],
+      "symbols": []
+    },
+    "updatedAt": "2026-11-09T03:31:47.408Z"
+  },
+  {
+    "id": "magazine-sidebar-layout",
+    "name": "Magazine with Sticky Sidebar",
+    "description": "Modern 2-column editorial layout: 70% main reading area and 30% sticky sidebar with author profile, newsletter CTA, and quick links.",
+    "isDefault": false,
+    "appliedPostSlugs": [
+      "online-marketing-strategies-growth"
+    ],
+    "html": "<article class=\"single-post-article magazine-sidebar-layout\" data-post-layout=\"magazine-sidebar-layout\">\n  <!-- Post Header Bar -->\n  <header style=\"padding: 36px 0 24px 0; background: #0f141e; color: #f3f4f6; border-bottom: 1px solid #232a38; margin-bottom: 36px;\">\n    <div style=\"max-width: 1160px; margin: 0 auto; padding: 0 24px;\">\n      \n      <!-- Breadcrumb Navigation -->\n      <div data-post-element=\"breadcrumbs\" style=\"margin-bottom: 14px;\">\n        <nav aria-label=\"Breadcrumb\">\n          <ol style=\"display: flex; align-items: center; gap: 8px; list-style: none; padding: 0; margin: 0; font-size: 0.82rem; color: #9ca3af;\">\n            <li><a href=\"/\" style=\"color: #9ca3af; text-decoration: none;\">Home</a></li>\n            <li aria-hidden=\"true\">/</li>\n            <li><a href=\"/blog\" style=\"color: #9ca3af; text-decoration: none;\">Blog</a></li>\n            <li aria-hidden=\"true\">/</li>\n            <li style=\"color: #f3f4f6; font-weight: 600;\">Article</li>\n          </ol>\n        </nav>\n      </div>\n\n      <!-- Category Badges -->\n      <div data-post-element=\"categories\" style=\"display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;\">\n        <span style=\"display: inline-block; padding: 4px 12px; background: rgba(255, 94, 58, 0.2); color: #ff7555; font-family: 'Montserrat', sans-serif; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; border-radius: 9999px;\">EDITORIAL</span>\n      </div>\n\n      <!-- Title -->\n      <h1 data-post-element=\"title\" style=\"font-family: 'Montserrat', sans-serif; font-size: 2.5rem; font-weight: 800; color: #ffffff; line-height: 1.25; margin-bottom: 16px;\">\n        Article Title\n      </h1>\n\n      <!-- Meta info -->\n      <div data-post-element=\"meta\" style=\"display: flex; align-items: center; gap: 16px; font-size: 0.85rem; color: #9ca3af;\">\n        <span data-post-element=\"post-date\">📅 Date</span>\n        <span>•</span>\n        <span data-post-element=\"post-readtime\">⏱️ 5 min read</span>\n      </div>\n\n    </div>\n  </header>\n\n  <!-- 2-Column Content Layout (70% content + 30% sidebar) -->\n  <div style=\"max-width: 1160px; margin: 0 auto; padding: 0 24px 60px 24px; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 40px; align-items: start;\">\n    \n    <!-- Main Content Column -->\n    <main style=\"min-width: 0;\">\n      <!-- Featured Image -->\n      <div data-post-element=\"image\" style=\"border-radius: 12px; overflow: hidden; margin-bottom: 32px; box-shadow: 0 8px 24px rgba(0,0,0,0.08);\">\n        <img src=\"https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80\" alt=\"Featured Media\" style=\"width: 100%; height: auto; max-height: 460px; object-fit: cover; display: block;\" />\n      </div>\n\n      <!-- Content Body -->\n      <div data-post-element=\"content\" class=\"post-content\" style=\"font-size: 1.08rem; line-height: 1.85; color: #374151;\">\n        <p class=\"lead\" style=\"font-size: 1.2rem; font-weight: 500; color: #111827; margin-bottom: 20px;\">\n          Sample article content in magazine 2-column sidebar layout.\n        </p>\n      </div>\n\n      <!-- Tags Bar -->\n      <div data-post-element=\"tags\" style=\"margin-top: 36px; padding-top: 20px; border-top: 1px solid #e5e7eb; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;\">\n        <span style=\"font-size: 0.78rem; font-weight: 700; color: #6b7280;\">TAGS:</span>\n        <span style=\"display: inline-block; padding: 3px 10px; background: #f3f4f6; color: #4b5563; font-size: 0.8rem; border-radius: 6px;\">#Magazine</span>\n      </div>\n\n      \n    </main>\n\n    <!-- Sidebar Column (Sticky) -->\n    <aside style=\"position: sticky; top: 90px; display: flex; flex-direction: column; gap: 24px;\">\n      \n      <!-- Author Profile Card -->\n      <div data-post-element=\"author\" style=\"background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 22px; box-shadow: 0 4px 14px rgba(0,0,0,0.03); text-align: center;\">\n        <img data-post-element=\"author-avatar\" src=\"https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=240&h=240&q=80\" alt=\"Author\" style=\"width: 72px; height: 72px; border-radius: 50%; object-fit: cover; margin: 0 auto 12px auto; display: block; border: 3px solid #ff5e3a;\" />\n        <span style=\"font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: #ff5e3a; letter-spacing: 1px;\">Article Author</span>\n        <h4 data-post-element=\"author-name\" style=\"font-family: 'Montserrat', sans-serif; font-size: 1.05rem; font-weight: 800; color: #111827; margin: 4px 0 2px 0;\">Better Team</h4>\n        <div data-post-element=\"author-role\" style=\"font-size: 0.78rem; color: #6b7280; margin-bottom: 12px;\">Head of Strategy</div>\n        <p data-post-element=\"author-bio\" style=\"font-size: 0.82rem; color: #4b5563; line-height: 1.5; margin: 0;\">\n          Digital strategist and creator crafting meaningful online experiences.\n        </p>\n      </div>\n\n      <!-- Newsletter CTA Widget -->\n      <div style=\"background: linear-gradient(135deg, #161b24, #0b0e14); border: 1px solid #283142; border-radius: 12px; padding: 22px; color: #ffffff;\">\n        <span style=\"font-size: 0.68rem; font-weight: 700; text-transform: uppercase; color: #ff7555; letter-spacing: 1px;\">Stay Updated</span>\n        <h4 style=\"font-family: 'Montserrat', sans-serif; font-size: 1.05rem; font-weight: 800; margin: 4px 0 8px 0;\">Subscribe to Insights</h4>\n        <p style=\"font-size: 0.8rem; color: #9ca3af; line-height: 1.45; margin-bottom: 14px;\">\n          Get our freshest design, branding, and marketing strategies straight to your inbox.\n        </p>\n        <div style=\"display: flex; flex-direction: column; gap: 8px;\">\n          <input type=\"email\" placeholder=\"Enter your email...\" style=\"width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid #374151; background: #1c212b; color: #f3f4f6; font-size: 0.82rem;\" />\n          <button type=\"button\" style=\"width: 100%; padding: 8px 12px; border-radius: 6px; background: #ff5e3a; color: #ffffff; border: none; font-weight: 700; font-size: 0.82rem; cursor: pointer;\">Subscribe Free</button>\n        </div>\n      </div>\n\n    </aside>\n\n  </div>\n\n  <!-- Related Section -->\n  <div data-post-element=\"related\"></div>\n</article>",
+    "css": "@media (max-width: 860px) {\n  .magazine-sidebar-layout > div[style*=\"grid-template-columns\"] {\n    grid-template-columns: 1fr !important;\n  }\n}",
+    "updatedAt": "2026-11-08T03:07:17.206Z"
+  },
+  {
+    "id": "minimal-clean-layout",
+    "name": "Minimalist Focus Story",
+    "description": "Distraction-free, typography-focused reading experience designed for in-depth long-form writing.",
+    "isDefault": false,
+    "appliedPostSlugs": [],
+    "html": "<article class=\"single-post-article minimal-clean-layout\" data-post-layout=\"minimal-clean-layout\">\n  <div style=\"max-width: 760px; margin: 0 auto; padding: 56px 20px 72px 20px;\">\n    \n    <!-- Breadcrumb -->\n    <div data-post-element=\"breadcrumbs\" style=\"margin-bottom: 24px;\">\n      <nav aria-label=\"Breadcrumb\">\n        <ol style=\"display: flex; align-items: center; gap: 6px; list-style: none; padding: 0; margin: 0; font-size: 0.8rem; color: #9ca3af;\">\n          <li><a href=\"/\" style=\"color: #9ca3af; text-decoration: none;\">Home</a></li>\n          <li aria-hidden=\"true\">/</li>\n          <li><a href=\"/blog\" style=\"color: #9ca3af; text-decoration: none;\">Blog</a></li>\n        </ol>\n      </nav>\n    </div>\n\n    <!-- Category -->\n    <div data-post-element=\"categories\" style=\"margin-bottom: 12px;\">\n      <span style=\"font-size: 0.75rem; font-weight: 700; color: #ff5e3a; text-transform: uppercase; letter-spacing: 1px;\">Article</span>\n    </div>\n\n    <!-- Title -->\n    <h1 data-post-element=\"title\" style=\"font-family: 'Montserrat', sans-serif; font-size: 2.6rem; font-weight: 800; color: #111827; line-height: 1.2; margin-bottom: 20px;\">\n      Article Title\n    </h1>\n\n    <!-- Subtitle / Excerpt -->\n    <p data-post-element=\"excerpt\" style=\"font-size: 1.25rem; color: #6b7280; line-height: 1.6; margin-bottom: 28px; font-weight: 400;\">\n      A brief intro summary that sets the premise for the article.\n    </p>\n\n    <!-- Author & Meta Line -->\n    <div data-post-element=\"meta\" style=\"display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-top: 1px solid #f3f4f6; border-bottom: 1px solid #f3f4f6; margin-bottom: 36px;\">\n      <div style=\"display: flex; align-items: center; gap: 10px;\">\n        <img data-post-element=\"author-avatar\" src=\"https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=240&h=240&q=80\" alt=\"Author\" style=\"width: 36px; height: 36px; border-radius: 50%; object-fit: cover;\" />\n        <span data-post-element=\"author-name\" style=\"font-size: 0.88rem; font-weight: 600; color: #111827;\">Better Team</span>\n      </div>\n      <div style=\"display: flex; align-items: center; gap: 12px; font-size: 0.82rem; color: #9ca3af;\">\n        <span data-post-element=\"post-date\">Date</span>\n        <span>•</span>\n        <span data-post-element=\"post-readtime\">5 min</span>\n      </div>\n    </div>\n\n    <!-- Featured Image -->\n    <div data-post-element=\"image\" style=\"margin-bottom: 36px; border-radius: 8px; overflow: hidden;\">\n      <img src=\"https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80\" alt=\"Featured Media\" style=\"width: 100%; height: auto; max-height: 420px; object-fit: cover; display: block;\" />\n    </div>\n\n    <!-- Article Content Body -->\n    <div data-post-element=\"content\" class=\"post-content\" style=\"font-size: 1.12rem; line-height: 1.9; color: #374151;\">\n      <p>Clean minimal blog post body text.</p>\n    </div>\n\n    <!-- Tags -->\n    <div data-post-element=\"tags\" style=\"margin-top: 40px; padding-top: 20px; border-top: 1px solid #f3f4f6;\">\n      <span style=\"font-size: 0.8rem; color: #6b7280;\">Tagged in:</span>\n      <span style=\"color: #ff5e3a; font-weight: 600; font-size: 0.82rem; margin-left: 6px;\">#Story</span>\n    </div>\n\n    <!-- Author Card -->\n    <div data-post-element=\"author-bio-box\" style=\"margin-top: 48px; padding: 24px; background: #fafafa; border-radius: 8px;\">\n      <div style=\"font-size: 0.72rem; text-transform: uppercase; font-weight: 700; color: #9ca3af; letter-spacing: 0.5px; margin-bottom: 4px;\">About the author</div>\n      <h4 data-post-element=\"author-name\" style=\"margin: 0 0 6px 0; font-size: 1rem; color: #111827;\">Better Team</h4>\n      <p data-post-element=\"author-bio\" style=\"font-size: 0.85rem; color: #6b7280; line-height: 1.5; margin: 0;\">Writer & strategist at Better Corp.</p>\n    </div>\n\n    \n\n  </div>\n\n  <!-- Related Section -->\n  <div data-post-element=\"related\"></div>\n</article>",
+    "css": ".minimal-clean-layout {\n  font-family: 'Plus Jakarta Sans', sans-serif;\n  color: #2b2f38;\n}\n.minimal-clean-layout .post-content h2 {\n  font-size: 1.7rem;\n  font-weight: 700;\n  margin: 36px 0 16px 0;\n  color: #111827;\n}"
+  }
+]

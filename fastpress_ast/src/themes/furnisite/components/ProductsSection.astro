@@ -1,0 +1,242 @@
+---
+import { getProducts } from '../../../data/products';
+
+interface Props {
+  products?: any[];
+  isPreview?: boolean;
+  previewTheme?: string;
+}
+
+const { products: propProducts = [], isPreview = false, previewTheme = 'furnisite' } = Astro.props;
+const prefix = isPreview ? `/preview/${previewTheme}` : '';
+
+const allDbProducts = propProducts.length > 0 ? propProducts : getProducts().filter((p) => p.status !== 'draft');
+const displayItems = allDbProducts.slice(0, 6).map((item) => ({
+  id: item.id,
+  slug: item.slug,
+  title: item.title,
+  price: item.price,
+  currency: item.currency || '$',
+  category: item.category || 'Living Space',
+  image: item.image,
+}));
+---
+
+<section class="furnisite-products-section">
+  <div class="fs-container">
+    <div class="furnisite-products-layout">
+      <!-- Left Intro Column -->
+      <div class="furnisite-intro-box">
+        <h2 class="furnisite-section-title">
+          Latest Looks<br />for Your Living<br />Space
+        </h2>
+        <p class="furnisite-section-desc">
+          Explore our latest arrivals designed to refresh your home with modern elegance and cozy functionality.
+        </p>
+        <div class="furnisite-intro-action">
+          <a href={prefix ? `${prefix}/products` : '/products'} class="fs-btn fs-btn-dark fs-btn-sm">
+            View All
+          </a>
+        </div>
+      </div>
+
+      <!-- Right Product Grid (3 cols x 2 rows or responsive) -->
+      <div class="furnisite-products-grid">
+        {displayItems.map((item) => (
+          <article class="furnisite-product-card">
+            <a href={`${prefix}/products/${item.slug}`} class="furnisite-card-image-link">
+              <div class="furnisite-card-image-wrap">
+                <img
+                  src={item.image}
+                  alt={item.title}
+                  class="furnisite-card-img"
+                  loading="lazy"
+                />
+                <span class="furnisite-card-arrow" aria-hidden="true">↗</span>
+              </div>
+            </a>
+            <div class="furnisite-card-meta">
+              <h3 class="furnisite-card-title">
+                <a href={`${prefix}/products/${item.slug}`}>{item.title}</a>
+              </h3>
+              <div class="furnisite-card-price-row" style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+                <div class="furnisite-card-price">
+                  ${item.price}
+                </div>
+                <button type="button" class="add-to-cart-btn" style="background:#18181b; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-size:0.8rem; font-weight:600; cursor:pointer;" aria-label="Add to cart">
+                  Add +
+                </button>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .furnisite-products-section {
+    padding-top: 80px;
+    padding-bottom: 90px;
+    background-color: #ffffff;
+  }
+
+  .furnisite-products-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 48px;
+    align-items: start;
+  }
+
+  @media (min-width: 992px) {
+    .furnisite-products-layout {
+      grid-template-columns: 280px 1fr;
+      gap: 56px;
+    }
+  }
+
+  @media (min-width: 1200px) {
+    .furnisite-products-layout {
+      grid-template-columns: 310px 1fr;
+      gap: 64px;
+    }
+  }
+
+  /* Left Intro Box */
+  .furnisite-intro-box {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+
+  .furnisite-section-title {
+    font-family: var(--fs-font-heading);
+    font-size: 2.1rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: #18181b;
+    margin-bottom: 20px;
+    letter-spacing: -0.5px;
+  }
+
+  @media (min-width: 992px) {
+    .furnisite-section-title {
+      font-size: 2.5rem;
+    }
+  }
+
+  .furnisite-section-desc {
+    font-size: 0.95rem;
+    color: #52525b;
+    line-height: 1.6;
+    margin-bottom: 28px;
+  }
+
+  .furnisite-intro-action {
+    display: flex;
+  }
+
+  /* Grid of products */
+  .furnisite-products-grid {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 32px;
+  }
+
+  @media (min-width: 540px) {
+    .furnisite-products-grid {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 28px;
+    }
+  }
+
+  @media (min-width: 992px) {
+    .furnisite-products-grid {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+    }
+  }
+
+  /* Product Card */
+  .furnisite-product-card {
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.2s ease;
+  }
+
+  .furnisite-card-image-link {
+    display: block;
+    text-decoration: none;
+  }
+
+  .furnisite-card-image-wrap {
+    position: relative;
+    background-color: #f7f6f2;
+    border-radius: 4px;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 14px;
+  }
+
+  .furnisite-card-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    transition: transform 0.4s ease;
+  }
+
+  .furnisite-product-card:hover .furnisite-card-img {
+    transform: scale(1.04);
+  }
+
+  .furnisite-card-arrow {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    font-size: 1rem;
+    color: #71717a;
+    opacity: 0;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+
+  .furnisite-product-card:hover .furnisite-card-arrow {
+    opacity: 1;
+    transform: translate(2px, -2px);
+  }
+
+  .furnisite-card-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .furnisite-card-title {
+    font-family: var(--fs-font-heading);
+    font-size: 0.98rem;
+    font-weight: 600;
+    color: #18181b;
+    margin: 0;
+    line-height: 1.35;
+  }
+
+  .furnisite-card-title a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .furnisite-card-title a:hover {
+    color: #71717a;
+  }
+
+  .furnisite-card-price {
+    font-family: var(--fs-font-body);
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #71717a;
+  }
+</style>

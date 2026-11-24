@@ -1,0 +1,23 @@
+---
+export const prerender = false;
+
+import { getActiveThemeName } from '../../core/theme';
+import BlogPostPage from '../../themes/default/pages/BlogPostPage.astro';
+import FurnisiteBlogPostPage from '../../themes/furnisite/pages/BlogPostPage.astro';
+import { getPosts, getPostBySlug } from '../../data/posts';
+
+const activeTheme = getActiveThemeName();
+const { slug } = Astro.params;
+const allPosts = getPosts();
+const post = slug ? getPostBySlug(slug) : undefined;
+
+if (!post) {
+  Astro.response.status = 404;
+}
+---
+
+{activeTheme === 'furnisite' ? (
+  <FurnisiteBlogPostPage post={post} allPosts={allPosts} />
+) : (
+  <BlogPostPage post={post} allPosts={allPosts} />
+)}

@@ -1,0 +1,704 @@
+---
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { getActiveFooter, defaultSampleFooters, type FooterConfig } from '../../../data/footers';
+
+interface Props {
+  customConfig?: FooterConfig;
+  companyName?: string;
+  year?: number;
+  showBackToTop?: boolean;
+}
+
+const { customConfig, companyName: propCompanyName, year: propYear, showBackToTop: propShowBackToTop } = Astro.props;
+
+// Load Active or Custom Footer Configuration
+let footerConfig: FooterConfig;
+if (customConfig) {
+  footerConfig = customConfig;
+} else {
+  try {
+    footerConfig = getActiveFooter();
+  } catch {
+    footerConfig = defaultSampleFooters[0];
+  }
+}
+
+// Load Global siteConfig for master logo/brand fallback
+let siteConfig: any = null;
+try {
+  const configFile = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
+  const raw = await fs.readFile(configFile, 'utf-8');
+  siteConfig = JSON.parse(raw);
+} catch {}
+
+const {
+  layout = {
+    type: 'columns-with-newsletter',
+    containerType: 'boxed',
+    columnsCount: 3,
+    paddingTop: 64,
+    paddingBottom: 32,
+    showBackToTop: true,
+  },
+  styling = {
+    bgColor: '#0f1219',
+    textColor: '#94a3b8',
+    headingColor: '#f8fafc',
+    mutedColor: '#64748b',
+    accentColor: '#ff5e3a',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    fontFamily: 'Plus Jakarta Sans',
+    fontSize: '0.88rem',
+  },
+  logo = {
+    source: 'default',
+    imageUrl: '',
+    brandName: 'Better SaaS',
+    tagline: 'Modern Platform',
+    linkUrl: '/',
+  },
+  about = {
+    enabled: true,
+    description: 'The modern visual website builder and CMS for high-performance Astro web applications.',
+    email: '',
+    phone: '',
+    address: '',
+  },
+  columns = [],
+  newsletter = {
+    enabled: true,
+    title: 'Stay in the Loop',
+    description: 'Subscribe for the latest news, product updates, and design insights.',
+    buttonText: 'Subscribe',
+    placeholder: 'Enter your email address...',
+    actionUrl: '#',
+  },
+  social = {
+    enabled: true,
+    links: [],
+  },
+  bottomBar = {
+    enabled: true,
+    companyName: 'Better Corp Inc.',
+    copyrightText: 'All Rights Reserved.',
+    showYear: true,
+    links: [],
+  },
+  customCode = {
+    enabled: false,
+    desktopHtml: '',
+    tabletHtml: '',
+    mobileHtml: '',
+    customCss: '',
+    customJs: '',
+  },
+} = footerConfig;
+
+// Effective Branding Resolution
+const effectiveLogoImg = logo.source === 'custom' && logo.imageUrl
+  ? logo.imageUrl.trim()
+  : (siteConfig?.logoUrl ? siteConfig.logoUrl.trim() : (logo.imageUrl ? logo.imageUrl.trim() : ''));
+
+const effectiveBrandName = (logo.brandName && logo.brandName.trim()) || siteConfig?.brandName || 'Better SaaS';
+const effectiveTagline = logo.tagline !== undefined && logo.tagline !== '' ? logo.tagline : (siteConfig?.tagline || '');
+const currentYear = propYear || new Date().getFullYear();
+const showBackToTop = propShowBackToTop !== undefined ? propShowBackToTop : (layout.showBackToTop !== false);
+const isCustomCode = footerConfig.builderType === 'custom-code' && customCode?.enabled;
+
+// Social Icons SVG Registry
+const socialIconMap: Record<string, string> = {
+  Facebook: `<path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>`,
+  Twitter: `<path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"/>`,
+  LinkedIn: `<path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/>`,
+  Instagram: `<rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>`,
+  GitHub: `<path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>`,
+  YouTube: `<path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19.1c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.43z"/><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"/>`,
+  Dribbble: `<circle cx="12" cy="12" r="10"/><path d="M19.13 5.09C15.22 9.14 10 10.44 2.25 10.94"/><path d="M21.75 12.84c-6.62-1.41-12.14 1-16.38 6.32"/><path d="M8.56 2.75c4.37 6 6 11.42 8 18.5"/>`,
+  Discord: `<path d="M18 6h0a14.5 14.5 0 0 0-4-1.2 12.3 12.3 0 0 0-.6 1.3 13.9 13.9 0 0 0-4.8 0 12.3 12.3 0 0 0-.6-1.3 14.5 14.5 0 0 0-4 1.2A14.2 14.2 0 0 0 2 17a14.3 14.3 0 0 0 4.4 2.2 11.4 11.4 0 0 0 .9-1.5 9.3 9.3 0 0 1-1.5-.7c.1-.1.3-.2.4-.3a10.2 10.2 0 0 0 9.4 0c.1.1.3.2.4.3-.5.3-1 .5-1.5.7.3.5.6 1 .9 1.5A14.3 14.3 0 0 0 22 17a14.2 14.2 0 0 0-2-11zM8.5 14c-.8 0-1.5-.7-1.5-1.6s.7-1.6 1.5-1.6c.9 0 1.5.7 1.5 1.6s-.6 1.6-1.5 1.6zm7 0c-.8 0-1.5-.7-1.5-1.6s.7-1.6 1.5-1.6c.9 0 1.5.7 1.5 1.6s-.6 1.6-1.5 1.6z"/>`,
+};
+
+const activeSocialLinks = (social.links || [])
+  .filter(s => s.enabled && s.href)
+  .map(s => ({
+    name: s.name,
+    href: s.href,
+    icon: socialIconMap[s.name] || socialIconMap.Facebook,
+  }));
+
+const containerClass = layout.containerType === 'full'
+  ? 'fp-footer-container-full'
+  : (layout.containerType === 'wide' ? 'fp-footer-container-wide' : 'fp-footer-container-boxed');
+---
+
+{isCustomCode ? (
+  <footer
+    class="fastpress-runtime-footer fp-footer-custom-mode"
+    id="siteFooter"
+    style={`
+      --fp-footer-bg: ${styling.bgColor || '#0f1219'};
+      --fp-footer-text: ${styling.textColor || '#94a3b8'};
+      --fp-footer-heading: ${styling.headingColor || '#f8fafc'};
+      --fp-footer-muted: ${styling.mutedColor || '#64748b'};
+      --fp-footer-accent: ${styling.accentColor || '#ff5e3a'};
+      --fp-footer-border: ${styling.borderColor || 'rgba(255, 255, 255, 0.08)'};
+      --fp-footer-font: '${styling.fontFamily || 'Plus Jakarta Sans'}', sans-serif;
+      --fp-footer-font-size: ${styling.fontSize || '0.88rem'};
+    `}
+  >
+    <div class={containerClass}>
+      <!-- Desktop Custom HTML -->
+      <div class="fp-footer-cc-desktop" set:html={customCode.desktopHtml || '<div style="padding: 40px; text-align: center; color: var(--fp-footer-muted);">Custom Footer (Desktop View)</div>'} />
+      <!-- Tablet Custom HTML -->
+      <div class="fp-footer-cc-tablet" set:html={customCode.tabletHtml || customCode.desktopHtml || ''} />
+      <!-- Mobile Custom HTML -->
+      <div class="fp-footer-cc-mobile" set:html={customCode.mobileHtml || customCode.desktopHtml || ''} />
+    </div>
+
+    {customCode.customCss && (
+      <style is:inline set:html={customCode.customCss} />
+    )}
+    {customCode.customJs && (
+      <script is:inline set:html={customCode.customJs} />
+    )}
+  </footer>
+) : (
+  <footer
+    class="fastpress-runtime-footer"
+    id="siteFooter"
+    style={`
+      --fp-footer-bg: ${styling.bgColor || '#0f1219'};
+      --fp-footer-text: ${styling.textColor || '#94a3b8'};
+      --fp-footer-heading: ${styling.headingColor || '#f8fafc'};
+      --fp-footer-muted: ${styling.mutedColor || '#64748b'};
+      --fp-footer-accent: ${styling.accentColor || '#ff5e3a'};
+      --fp-footer-border: ${styling.borderColor || 'rgba(255, 255, 255, 0.08)'};
+      --fp-footer-font: '${styling.fontFamily || 'Plus Jakarta Sans'}', sans-serif;
+      --fp-footer-font-size: ${styling.fontSize || '0.88rem'};
+      --fp-footer-pt: ${layout.paddingTop || 64}px;
+      --fp-footer-pb: ${layout.paddingBottom || 32}px;
+    `}
+  >
+    <div class={containerClass}>
+      {layout.type === 'centered' ? (
+        <div class="fp-footer-centered-wrap">
+          <a href={logo.linkUrl || '/'} class="fp-footer-brand-link">
+            {effectiveLogoImg ? (
+              <img src={effectiveLogoImg} alt={effectiveBrandName} class="fp-footer-logo-img" />
+            ) : (
+              <span class="fp-footer-logo-badge">{effectiveBrandName.charAt(0).toUpperCase()}</span>
+            )}
+            <div class="fp-footer-brand-text">
+              <span class="fp-footer-brand-name">{effectiveBrandName}</span>
+              {effectiveTagline && <span class="fp-footer-brand-tagline">{effectiveTagline}</span>}
+            </div>
+          </a>
+          {about.enabled && about.description && (
+            <p class="fp-footer-about-text fp-footer-text-centered">{about.description}</p>
+          )}
+
+          {columns.length > 0 && (
+            <div class="fp-footer-centered-nav">
+              {columns.flatMap(c => c.links).map(link => (
+                <a href={link.url} target={link.target || '_self'} class="fp-footer-link">
+                  {link.label}
+                </a>
+              ))}
+            </div>
+          )}
+
+          {social.enabled && activeSocialLinks.length > 0 && (
+            <div class="fp-footer-social-row">
+              {activeSocialLinks.map(s => (
+                <a href={s.href} target="_blank" rel="noopener noreferrer" class="fp-footer-social-btn" aria-label={s.name}>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={s.icon} />
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : layout.type === 'simple-inline' ? (
+        <div class="fp-footer-inline-wrap">
+          <div class="fp-footer-inline-left">
+            <a href={logo.linkUrl || '/'} class="fp-footer-brand-link">
+              {effectiveLogoImg ? (
+                <img src={effectiveLogoImg} alt={effectiveBrandName} class="fp-footer-logo-img" />
+              ) : (
+                <span class="fp-footer-logo-badge">{effectiveBrandName.charAt(0).toUpperCase()}</span>
+              )}
+              <span class="fp-footer-brand-name">{effectiveBrandName}</span>
+            </a>
+          </div>
+          <div class="fp-footer-inline-center">
+            {columns.flatMap(c => c.links).map(link => (
+              <a href={link.url} target={link.target || '_self'} class="fp-footer-link">
+                {link.label}
+              </a>
+            ))}
+          </div>
+          {social.enabled && activeSocialLinks.length > 0 && (
+            <div class="fp-footer-social-row">
+              {activeSocialLinks.map(s => (
+                <a href={s.href} target="_blank" rel="noopener noreferrer" class="fp-footer-social-btn" aria-label={s.name}>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={s.icon} />
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div class="fp-footer-grid" style={`--fp-cols: ${layout.columnsCount || 3};`}>
+          {about.enabled && (
+            <div class="fp-footer-col fp-footer-col-about">
+              <a href={logo.linkUrl || '/'} class="fp-footer-brand-link">
+                {effectiveLogoImg ? (
+                  <img src={effectiveLogoImg} alt={effectiveBrandName} class="fp-footer-logo-img" />
+                ) : (
+                  <span class="fp-footer-logo-badge">{effectiveBrandName.charAt(0).toUpperCase()}</span>
+                )}
+                <div class="fp-footer-brand-text">
+                  <span class="fp-footer-brand-name">{effectiveBrandName}</span>
+                  {effectiveTagline && <span class="fp-footer-brand-tagline">{effectiveTagline}</span>}
+                </div>
+              </a>
+
+              {about.description && (
+                <p class="fp-footer-about-text">{about.description}</p>
+              )}
+
+              {(about.email || about.phone || about.address) && (
+                <div class="fp-footer-contact-list">
+                  {about.email && (
+                    <a href={`mailto:${about.email}`} class="fp-footer-contact-item">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                      <span>{about.email}</span>
+                    </a>
+                  )}
+                  {about.phone && (
+                    <a href={`tel:${about.phone}`} class="fp-footer-contact-item">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                      <span>{about.phone}</span>
+                    </a>
+                  )}
+                  {about.address && (
+                    <div class="fp-footer-contact-item">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                      <span>{about.address}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {social.enabled && activeSocialLinks.length > 0 && (
+                <div class="fp-footer-social-row" style="margin-top: 1rem;">
+                  {activeSocialLinks.map(s => (
+                    <a href={s.href} target="_blank" rel="noopener noreferrer" class="fp-footer-social-btn" aria-label={s.name}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={s.icon} />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {columns.map(col => (
+            <div class="fp-footer-col">
+              <h4 class="fp-footer-col-title">{col.title}</h4>
+              <ul class="fp-footer-links-list">
+                {col.links.map(link => (
+                  <li>
+                    <a href={link.url} target={link.target || '_self'} class="fp-footer-link">
+                      {link.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+
+          {layout.type === 'columns-with-newsletter' && newsletter.enabled && (
+            <div class="fp-footer-col fp-footer-col-newsletter">
+              <h4 class="fp-footer-col-title">{newsletter.title}</h4>
+              <p class="fp-footer-about-text" style="margin-bottom: 1rem;">{newsletter.description}</p>
+              <form class="fp-footer-newsletter-form" action={newsletter.actionUrl || '#'} method="POST" onsubmit="event.preventDefault(); alert('Thank you for subscribing!');">
+                <div class="fp-footer-newsletter-input-group">
+                  <input
+                    type="email"
+                    required
+                    placeholder={newsletter.placeholder || 'Enter your email...'}
+                    class="fp-footer-newsletter-input"
+                  />
+                  <button type="submit" class="fp-footer-newsletter-btn">
+                    <span>{newsletter.buttonText || 'Subscribe'}</span>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                      <polyline points="12 5 19 12 12 19"></polyline>
+                    </svg>
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+        </div>
+      )}
+
+      {bottomBar.enabled && (
+        <div class="fp-footer-bottom-bar">
+          <div class="fp-footer-bottom-left">
+            <p class="fp-footer-copyright">
+              &copy; {bottomBar.showYear ? currentYear : ''} {propCompanyName || bottomBar.companyName}. {bottomBar.copyrightText}
+            </p>
+          </div>
+
+          {bottomBar.links && bottomBar.links.length > 0 && (
+            <div class="fp-footer-bottom-links">
+              {bottomBar.links.map(link => (
+                <a href={link.url} target={link.target || '_self'} class="fp-footer-bottom-link">
+                  {link.label}
+                </a>
+              ))}
+            </div>
+          )}
+
+          {showBackToTop && (
+            <a href="#siteHeader" class="fp-footer-back-to-top" aria-label="Scroll back to top" title="Scroll back to top">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="18 15 12 9 6 15"></polyline>
+              </svg>
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  </footer>
+)}
+
+<style>
+  .fastpress-runtime-footer {
+    background-color: var(--fp-footer-bg, #0f1219);
+    color: var(--fp-footer-text, #94a3b8);
+    font-family: var(--fp-footer-font, 'Plus Jakarta Sans', sans-serif);
+    font-size: var(--fp-footer-font-size, 0.88rem);
+    border-top: 1px solid var(--fp-footer-border, rgba(255, 255, 255, 0.08));
+    padding-top: var(--fp-footer-pt, 64px);
+    padding-bottom: var(--fp-footer-pb, 32px);
+    position: relative;
+    width: 100%;
+    margin-top: auto;
+    box-sizing: border-box;
+  }
+
+  /* Container types */
+  .fp-footer-container-boxed {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding-inline: 1.5rem;
+  }
+  .fp-footer-container-wide {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding-inline: 2rem;
+  }
+  .fp-footer-container-full {
+    width: 100%;
+    padding-inline: 2rem;
+  }
+
+  /* Brand link */
+  .fp-footer-brand-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    text-decoration: none;
+    margin-bottom: 1rem;
+  }
+  .fp-footer-logo-img {
+    max-height: 38px;
+    width: auto;
+    object-fit: contain;
+  }
+  .fp-footer-logo-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    background: linear-gradient(135deg, #ff5e3a 0%, #ff8c42 100%);
+    color: #ffffff;
+    font-size: 1.25rem;
+    font-weight: 800;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(255, 94, 58, 0.3);
+  }
+  .fp-footer-brand-text {
+    display: flex;
+    flex-direction: column;
+  }
+  .fp-footer-brand-name {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--fp-footer-heading, #f8fafc);
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+  }
+  .fp-footer-brand-tagline {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fp-footer-muted, #64748b);
+  }
+
+  /* About text */
+  .fp-footer-about-text {
+    color: var(--fp-footer-text, #94a3b8);
+    line-height: 1.6;
+    margin-bottom: 1.25rem;
+    max-width: 340px;
+  }
+  .fp-footer-text-centered {
+    margin-inline: auto;
+    text-align: center;
+  }
+
+  /* Contact list */
+  .fp-footer-contact-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-bottom: 1.25rem;
+  }
+  .fp-footer-contact-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: var(--fp-footer-text, #94a3b8);
+    text-decoration: none;
+    font-size: 0.85rem;
+    transition: color 0.15s ease;
+  }
+  .fp-footer-contact-item:hover {
+    color: var(--fp-footer-accent, #ff5e3a);
+  }
+  .fp-footer-contact-item svg {
+    color: var(--fp-footer-accent, #ff5e3a);
+    flex-shrink: 0;
+  }
+
+  /* Grid layout */
+  .fp-footer-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+    margin-bottom: 3rem;
+  }
+
+  @media (min-width: 640px) {
+    .fp-footer-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .fp-footer-grid {
+      grid-template-columns: 1.4fr repeat(var(--fp-cols, 3), 1fr);
+    }
+    .fp-footer-grid:has(.fp-footer-col-newsletter) {
+      grid-template-columns: 1.2fr repeat(calc(var(--fp-cols, 3) - 1), 1fr) 1.4fr;
+    }
+  }
+
+  .fp-footer-col-title {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--fp-footer-heading, #f8fafc);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 1.25rem;
+  }
+
+  .fp-footer-links-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .fp-footer-link {
+    color: var(--fp-footer-text, #94a3b8);
+    text-decoration: none;
+    transition: all 0.15s ease;
+    display: inline-block;
+  }
+  .fp-footer-link:hover {
+    color: var(--fp-footer-accent, #ff5e3a);
+    transform: translateX(3px);
+  }
+
+  /* Newsletter */
+  .fp-footer-newsletter-input-group {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .fp-footer-newsletter-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--fp-footer-border, rgba(255, 255, 255, 0.1));
+    color: #ffffff;
+    font-size: 0.85rem;
+    outline: none;
+    transition: border-color 0.15s ease;
+  }
+  .fp-footer-newsletter-input:focus {
+    border-color: var(--fp-footer-accent, #ff5e3a);
+  }
+  .fp-footer-newsletter-btn {
+    padding: 0.75rem 1.25rem;
+    border-radius: 8px;
+    background: var(--fp-footer-accent, #ff5e3a);
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 0.85rem;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    white-space: nowrap;
+  }
+  .fp-footer-newsletter-btn:hover {
+    opacity: 0.92;
+    transform: translateY(-1px);
+  }
+
+  /* Centered Layout */
+  .fp-footer-centered-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 1.5rem;
+    margin-bottom: 2.5rem;
+  }
+  .fp-footer-centered-nav {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 1.5rem;
+  }
+
+  /* Simple Inline Layout */
+  .fp-footer-inline-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+  .fp-footer-inline-center {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1.5rem;
+  }
+
+  /* Social Icons */
+  .fp-footer-social-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .fp-footer-social-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    color: var(--fp-footer-text, #94a3b8);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--fp-footer-border, rgba(255, 255, 255, 0.08));
+    transition: all 0.2s ease;
+    text-decoration: none;
+  }
+  .fp-footer-social-btn:hover {
+    color: #ffffff;
+    background: var(--fp-footer-accent, #ff5e3a);
+    border-color: var(--fp-footer-accent, #ff5e3a);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(255, 94, 58, 0.3);
+  }
+
+  /* Bottom Bar */
+  .fp-footer-bottom-bar {
+    padding-top: 1.75rem;
+    border-top: 1px solid var(--fp-footer-border, rgba(255, 255, 255, 0.08));
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.8rem;
+  }
+  .fp-footer-copyright {
+    color: var(--fp-footer-muted, #64748b);
+    margin: 0;
+  }
+  .fp-footer-bottom-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+  }
+  .fp-footer-bottom-link {
+    color: var(--fp-footer-muted, #64748b);
+    text-decoration: none;
+    transition: color 0.15s ease;
+  }
+  .fp-footer-bottom-link:hover {
+    color: var(--fp-footer-text, #94a3b8);
+  }
+
+  /* Back to top */
+  .fp-footer-back-to-top {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 6px;
+    color: var(--fp-footer-text, #94a3b8);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--fp-footer-border, rgba(255, 255, 255, 0.08));
+    transition: all 0.15s ease;
+    text-decoration: none;
+  }
+  .fp-footer-back-to-top:hover {
+    color: #ffffff;
+    background: var(--fp-footer-accent, #ff5e3a);
+    border-color: var(--fp-footer-accent, #ff5e3a);
+  }
+
+  /* Custom Code Viewports */
+  .fp-footer-cc-desktop { display: block; }
+  .fp-footer-cc-tablet { display: none; }
+  .fp-footer-cc-mobile { display: none; }
+
+  @media (max-width: 1024px) and (min-width: 768px) {
+    .fp-footer-cc-desktop { display: none; }
+    .fp-footer-cc-tablet { display: block; }
+    .fp-footer-cc-mobile { display: none; }
+  }
+
+  @media (max-width: 767px) {
+    .fp-footer-cc-desktop { display: none; }
+    .fp-footer-cc-tablet { display: none; }
+    .fp-footer-cc-mobile { display: block; }
+  }
+</style>

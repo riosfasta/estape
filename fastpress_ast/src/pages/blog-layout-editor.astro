@@ -1,0 +1,4107 @@
+---
+import DeviceSwitcher from '../components/admin/DeviceSwitcher.astro';
+import WorkspaceSwitcher from '../components/admin/WorkspaceSwitcher.astro';
+// src/pages/blog-layout-editor.astro
+// Visual Standard Blog Layout Builder - Design reusable layouts for blog posts
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { getBlogLayouts, getBlogLayoutById, type BlogLayout } from '../data/blog-layouts';
+import { getPosts, type Post } from '../data/posts';
+import { getCategories } from '../data/categories';
+import { getTemplates, type Template } from '../data/templates';
+import { getActiveThemeName } from '../core/theme';
+
+export const prerender = false;
+
+const activeTheme = getActiveThemeName();
+const layoutsList = getBlogLayouts();
+const postsList = getPosts();
+const categoriesList = getCategories();
+const templatesList = getTemplates();
+
+// Active layout selection by query param or default
+const targetId = Astro.url.searchParams.get('id') || (layoutsList.find(l => l.isDefault)?.id ?? layoutsList[0]?.id ?? 'standard-default-layout');
+const activeLayout = getBlogLayoutById(targetId);
+
+// Registered Fonts
+let fontsData: any[] = [];
+try {
+  const fontsPath = path.join(process.cwd(), 'src', 'data', 'fonts.json');
+  const fontsContent = await fs.readFile(fontsPath, 'utf-8');
+  fontsData = JSON.parse(fontsContent);
+} catch {
+  fontsData = [
+    {
+      id: 'plus-jakarta-sans',
+      name: 'Plus Jakarta Sans',
+      family: 'Plus Jakarta Sans',
+      type: 'google',
+      url: 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap'
+    },
+    {
+      id: 'montserrat',
+      name: 'Montserrat',
+      family: 'Montserrat',
+      type: 'google',
+      url: 'https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap'
+    }
+  ];
+}
+
+// Find first post applied to this layout for quick live link
+const firstAppliedSlug = activeLayout.appliedPostSlugs?.[0] || postsList[0]?.slug || 'branding-identity-modern-age';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Blog Layout Builder - {activeLayout.name} | BUGMEGA</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Registered Custom & Google Fonts -->
+    {fontsData.map(font => {
+      if (font.type === 'google' && font.url) {
+        return <link rel="stylesheet" href={font.url} />;
+      } else if (font.type === 'upload' && font.url) {
+        return (
+          <style is:inline set:html={`@font-face { font-family: '${font.family}'; src: url('${font.url}') format('${font.format || 'woff2'}'); font-weight: ${font.weight || 'normal'}; font-style: ${font.style || 'normal'}; font-display: swap; }`} />
+        );
+      }
+      return null;
+    })}
+
+    <!-- GrapesJS Default CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/grapesjs@0.23.9/dist/css/grapes.min.css" />
+    <link rel="stylesheet" href="/editor-container-layout.css" />
+    <script is:inline src="https://unpkg.com/grapesjs@0.23.9/dist/grapes.min.js"></script>
+    <script is:inline src="/editor-container-layout.js"></script>
+    <script is:inline src="/editor-file-manager.js"></script>
+    <script is:inline src="/editor-custom-code.js"></script>
+
+    <style is:global>
+      :root {
+        color-scheme: dark;
+        --builder-bg: #0b0e14;
+        --toolbar-bg: #131720;
+        --border-color: #242b38;
+        --accent-color: #10b981;
+        --accent-hover: #059669;
+        --text-primary: #f3f4f6;
+        --text-muted: #9ca3af;
+        --card-bg: #161b24;
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body, html {
+        height: 100%;
+        overflow: hidden;
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        background-color: var(--builder-bg);
+        color: var(--text-primary);
+      }
+
+      /* TOP NAVBAR */
+      .builder-navbar {
+        height: 52px;
+        background-color: var(--toolbar-bg);
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-inline: 1rem;
+        gap: 0.85rem;
+        z-index: 1000;
+        position: relative;
+      }
+      .navbar-left, .navbar-center, .navbar-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .brand-title {
+        font-family: 'Montserrat', sans-serif;
+        font-weight: 800;
+        font-size: 1rem;
+        letter-spacing: 0.05em;
+        color: #ffffff;
+        text-decoration: none;
+        margin-right: 4px;
+      }
+
+      /* SWITCHER DROPDOWN */
+      .builder-switcher-wrap { position: relative; }
+      .builder-switcher-btn {
+        background: #1c212b;
+        border: 1px solid #2d3342;
+        color: #f3f4f6;
+        padding: 5px 10px;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      .builder-switcher-btn:hover { background: #252b38; border-color: #3b4354; }
+      .builder-switcher-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        width: 260px;
+        max-height: calc(100vh - 70px);
+        overflow-y: auto;
+        overflow-x: hidden;
+        overscroll-behavior: contain;
+        scrollbar-width: thin;
+        scrollbar-color: #374151 #141822;
+        background: #141822;
+        border: 1px solid #2a3242;
+        border-radius: 8px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+        padding: 6px;
+        display: none;
+        z-index: 1000;
+      }
+      .builder-switcher-menu::-webkit-scrollbar {
+        width: 6px;
+      }
+      .builder-switcher-menu::-webkit-scrollbar-thumb {
+        background: #2f3849;
+        border-radius: 4px;
+      }
+      .builder-switcher-menu.show { display: block; }
+      .switcher-menu-header {
+        font-size: 0.68rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #6b7280;
+        padding: 6px 10px 4px 10px;
+      }
+      .switcher-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        text-decoration: none;
+        color: #d1d5db;
+        transition: background 0.15s;
+      }
+      .switcher-item:hover { background: #1c212b; }
+      .switcher-item.active {
+        color: var(--accent-color);
+        background: rgba(16, 185, 129, 0.12);
+        font-weight: 600;
+      }
+      .switcher-item-icon {
+        width: 26px;
+        height: 26px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #1c212b;
+      }
+      .switcher-item-title { font-size: 0.8rem; font-weight: 600; }
+      .switcher-item-desc { font-size: 0.68rem; color: #9ca3af; }
+
+      /* LAYOUT SELECTOR */
+      .layout-selector-wrap { position: relative; }
+      .layout-selector-btn {
+        background: #181d26;
+        border: 1px solid #2d3444;
+        color: #e5e7eb;
+        padding: 5px 11px;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .layout-selector-btn:hover { border-color: #3f4a60; }
+      .layout-selector-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        width: 320px;
+        background: #141822;
+        border: 1px solid #2a3242;
+        border-radius: 8px;
+        box-shadow: 0 12px 30px rgba(0,0,0,0.6);
+        padding: 6px;
+        display: none;
+        z-index: 1000;
+        max-height: 420px;
+        overflow-y: auto;
+      }
+      .layout-selector-menu.show { display: block; }
+      .layout-item-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        color: #d1d5db;
+        text-decoration: none;
+        transition: background 0.15s;
+        margin-bottom: 2px;
+      }
+      .layout-item-row:hover { background: #1e2430; }
+      .layout-item-row.active {
+        background: rgba(16, 185, 129, 0.14);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        color: #ffffff;
+      }
+      .btn-add-layout {
+        width: 100%;
+        margin-top: 6px;
+        background: #1c222d;
+        border: 1px dashed #374151;
+        color: #e5e7eb;
+        padding: 7px 10px;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+      }
+      .btn-add-layout:hover { background: #242c3b; border-color: var(--accent-color); color: #ffffff; }
+
+      /* ACTION BUTTONS */
+      .btn-nav-action {
+        background: #1c212b;
+        border: 1px solid #2d3342;
+        color: #d1d5db;
+        padding: 5px 10px;
+        border-radius: 6px;
+        font-size: 0.76rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-decoration: none;
+      }
+      .btn-nav-action:hover { background: #252b38; border-color: #3b4354; color: #ffffff; }
+      .btn-nav-action.highlight {
+        background: rgba(16, 185, 129, 0.15);
+        border-color: rgba(16, 185, 129, 0.4);
+        color: #34d399;
+      }
+      .btn-nav-action.highlight:hover {
+        background: rgba(16, 185, 129, 0.25);
+        color: #ffffff;
+      }
+      .badge-counter {
+        background: var(--accent-color);
+        color: #0b0e14;
+        font-size: 0.68rem;
+        font-weight: 800;
+        padding: 1px 6px;
+        border-radius: 999px;
+      }
+
+      /* VIEWPORT DEVICES */
+      .device-switcher {
+        display: flex;
+        align-items: center;
+        background: #181d26;
+        border: 1px solid #282f3d;
+        border-radius: 6px;
+        padding: 2px;
+      }
+      .device-btn {
+        background: transparent;
+        border: none;
+        color: #9ca3af;
+        padding: 4px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        transition: all 0.15s;
+      }
+      .device-btn:hover { color: #f3f4f6; }
+      .device-btn.active {
+        background: #252d3b;
+        color: #ffffff;
+      }
+
+      /* SAVE BUTTON */
+      .btn-save-layout {
+        background: var(--accent-color);
+        color: #042f24;
+        border: none;
+        padding: 6px 14px;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .btn-save-layout:hover { background: #34d399; }
+
+      /* MAIN WORKSPACE */
+      .layout-workspace {
+        display: flex;
+        height: calc(100% - 52px);
+        position: relative;
+        overflow: hidden;
+      }
+
+      /* CANVAS AREA */
+      .layout-canvas-wrap {
+        flex: 1;
+        position: relative;
+        background: #11141c;
+        overflow: hidden;
+      }
+      #gjs-canvas-host {
+        width: 100%;
+        height: 100%;
+      }
+
+      /* SIDEBAR */
+      .editor-sidebar {
+        width: 320px;
+        background: #161922;
+        border-left: 1px solid #252b37;
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+        z-index: 50;
+      }
+      .sidebar-tabs {
+        display: flex;
+        background: #12151c;
+        border-bottom: 1px solid #252b37;
+      }
+      .tab-btn {
+        flex: 1;
+        padding: 9px 4px;
+        background: transparent;
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: #9ca3af;
+        font-size: 0.74rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        transition: all 0.15s;
+      }
+      .tab-btn:hover { color: #f3f4f6; }
+      .tab-btn.active {
+        color: var(--accent-color);
+        border-bottom-color: var(--accent-color);
+        background: rgba(16, 185, 129, 0.05);
+      }
+      .tab-pane {
+        flex: 1;
+        overflow-y: auto;
+        display: none;
+        padding: 10px;
+      }
+      .tab-pane.active { display: block; }
+
+      /* GRAPESJS STYLING OVERRIDES */
+      /* Hide default GrapesJS panels (we use our own custom header and right sidebar) */
+      .gjs-pn-panel,
+      .gjs-pn-views-container,
+      .gjs-pn-views,
+      .gjs-pn-commands,
+      .gjs-pn-options {
+        display: none !important;
+      }
+
+      .gjs-cv-canvas {
+        width: 100% !important;
+        height: 100% !important;
+        top: 0 !important;
+      }
+      .gjs-blocks-cs { padding: 4px !important; }
+      .gjs-block-category {
+        border-bottom: 1px solid #252b37 !important;
+        margin-bottom: 8px !important;
+      }
+      .gjs-block-category.gjs-open .gjs-blocks-c {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+        padding: 8px 4px !important;
+      }
+      .gjs-block-category.gjs-open:has(.gjs-block-basic) .gjs-blocks-c,
+      .gjs-block-category.is-basic-category.gjs-open .gjs-blocks-c {
+        display: grid !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 8px !important;
+        padding: 8px 4px !important;
+      }
+      .gjs-block-category:not(.gjs-open) .gjs-blocks-c {
+        display: none !important;
+      }
+      .gjs-title {
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
+        font-size: 0.72rem !important;
+        font-weight: 700 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.05em !important;
+        color: #9ca3af !important;
+        background: #1a1e28 !important;
+        padding: 8px 12px !important;
+        border-radius: 6px !important;
+        cursor: pointer !important;
+        user-select: none !important;
+        display: flex !important;
+        align-items: center !important;
+      }
+      .gjs-title:hover {
+        background: #212632 !important;
+        color: #ffffff !important;
+      }
+      .gjs-block {
+        background: #1d222e !important;
+        border: 1px solid #2a3242 !important;
+        border-radius: 7px !important;
+        color: #e5e7eb !important;
+        padding: 10px 8px !important;
+        margin: 0 !important;
+        width: calc(50% - 4px) !important;
+        box-shadow: none !important;
+        transition: all 0.15s !important;
+        box-sizing: border-box !important;
+      }
+      .gjs-block:hover {
+        background: #242b3b !important;
+        border-color: var(--accent-color) !important;
+        color: #ffffff !important;
+      }
+      .gjs-block-label {
+        font-size: 0.73rem !important;
+        font-weight: 600 !important;
+        margin-top: 5px !important;
+      }
+      .gjs-block svg {
+        width: 18px !important;
+        height: 18px !important;
+      }
+
+      /* Tampilan Square Card untuk Basic Elements (Identik dengan Page Builder) */
+      .gjs-block.gjs-block-basic {
+        width: 100% !important;
+        min-height: 84px !important;
+        box-sizing: border-box !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-align: center !important;
+        padding: 12px 6px !important;
+        background-color: #1a1e27 !important;
+        border: 1px solid #282e3b !important;
+        border-radius: 8px !important;
+        gap: 6px !important;
+        cursor: grab !important;
+        margin: 0 !important;
+      }
+      .gjs-block.gjs-block-basic .gjs-block__media {
+        width: 36px !important;
+        height: 36px !important;
+        min-width: 36px !important;
+        background-color: transparent !important;
+        border: none !important;
+        color: #d1d5db !important;
+        margin: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+      }
+      .gjs-block.gjs-block-basic .gjs-block__media svg {
+        width: 26px !important;
+        height: 26px !important;
+        stroke: currentColor !important;
+      }
+      .gjs-block.gjs-block-basic .gjs-block-label {
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
+        font-size: 0.74rem !important;
+        font-weight: 600 !important;
+        color: #d1d5db !important;
+        text-align: center !important;
+        line-height: 1.2 !important;
+        margin: 0 !important;
+      }
+      .gjs-block.gjs-block-basic:hover {
+        border-color: #ff5e3a !important;
+        background-color: #212632 !important;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4) !important;
+      }
+      .gjs-block.gjs-block-basic:hover .gjs-block__media {
+        color: #ff7e5f !important;
+      }
+      .gjs-block.gjs-block-basic:hover .gjs-block-label {
+        color: #ffffff !important;
+      }
+
+      /* DYNAMIC BLOCK BADGE */
+      .dynamic-pill-badge {
+        display: inline-block;
+        font-size: 0.6rem;
+        font-weight: 700;
+        background: rgba(16, 185, 129, 0.2);
+        color: #34d399;
+        padding: 1px 5px;
+        border-radius: 4px;
+        margin-bottom: 2px;
+      }
+
+      /* MODALS */
+      .custom-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.75);
+        backdrop-filter: blur(4px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+        padding: 16px;
+      }
+      .custom-modal-backdrop.open { display: flex; }
+      .custom-modal-box {
+        background: #141822;
+        border: 1px solid #2a3242;
+        border-radius: 12px;
+        width: 100%;
+        max-width: 620px;
+        max-height: 85vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+        overflow: hidden;
+      }
+      .modal-templates-library {
+        max-width: 840px !important;
+        width: 95vw !important;
+        max-height: 85vh !important;
+      }
+      .tpl-type-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        border-radius: 9999px;
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+      .tpl-type-pill.global {
+        background: rgba(16, 185, 129, 0.18);
+        color: #10b981;
+        border: 1px solid rgba(16, 185, 129, 0.35);
+      }
+      .tpl-type-pill.individual {
+        background: rgba(2, 132, 199, 0.18);
+        color: #38bdf8;
+        border: 1px solid rgba(2, 132, 199, 0.35);
+      }
+      .filter-chip {
+        padding: 4px 12px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        background: #1c222e;
+        color: #9ca3af;
+        border: 1px solid #2a3344;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .filter-chip:hover {
+        color: #f3f4f6;
+        border-color: #3b4556;
+      }
+      .filter-chip.active {
+        background: rgba(139, 92, 246, 0.2);
+        color: #c4b5fd;
+        border-color: #8b5cf6;
+      }
+      .modal-header {
+        padding: 14px 18px;
+        border-bottom: 1px solid #242b38;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .modal-title { font-size: 0.95rem; font-weight: 700; color: #ffffff; }
+      .modal-close-btn {
+        background: transparent;
+        border: none;
+        color: #9ca3af;
+        cursor: pointer;
+        padding: 4px;
+      }
+      .modal-close-btn:hover { color: #ffffff; }
+      .modal-body {
+        padding: 18px;
+        overflow-y: auto;
+      }
+      .modal-footer {
+        padding: 12px 18px;
+        border-top: 1px solid #242b38;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        background: #11141c;
+      }
+      .btn-secondary {
+        background: #1f2533;
+        border: 1px solid #333d52;
+        color: #d1d5db;
+        padding: 7px 14px;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .btn-secondary:hover { background: #272f42; color: #ffffff; }
+      .btn-primary-action {
+        background: var(--accent-color);
+        border: none;
+        color: #042f24;
+        padding: 7px 16px;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .btn-primary-action:hover { background: #34d399; }
+
+      /* POST ASSIGNMENT CHECKLIST ITEMS */
+      .post-assign-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        background: #181d28;
+        border: 1px solid #262e3d;
+        border-radius: 8px;
+        margin-bottom: 8px;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .post-assign-item:hover { background: #1f2535; border-color: #3b4559; }
+      .post-assign-item.selected {
+        border-color: rgba(16, 185, 129, 0.4);
+        background: rgba(16, 185, 129, 0.08);
+      }
+      .post-thumb-img {
+        width: 44px;
+        height: 44px;
+        border-radius: 6px;
+        object-fit: cover;
+        flex-shrink: 0;
+      }
+      .post-assign-info { flex: 1; min-width: 0; }
+      .post-assign-title {
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: #f3f4f6;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .post-assign-meta {
+        font-size: 0.72rem;
+        color: #9ca3af;
+        margin-top: 2px;
+        display: flex;
+        gap: 8px;
+      }
+      .post-badge-layout {
+        font-size: 0.68rem;
+        padding: 2px 7px;
+        border-radius: 4px;
+        font-weight: 600;
+      }
+      .post-badge-layout.this-layout {
+        background: rgba(16, 185, 129, 0.2);
+        color: #34d399;
+      }
+      .post-badge-layout.other-layout {
+        background: rgba(99, 102, 241, 0.2);
+        color: #818cf8;
+      }
+      .post-badge-layout.blank {
+        background: #28303f;
+        color: #9ca3af;
+      }
+
+      /* TOAST NOTIFICATION */
+      .toast-notification {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        background: #10b981;
+        color: #042f24;
+        font-weight: 700;
+        font-size: 0.82rem;
+        padding: 10px 18px;
+        border-radius: 8px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        display: none;
+        align-items: center;
+        gap: 8px;
+        z-index: 9999;
+      }
+      .toast-notification.error {
+        background: #ef4444;
+        color: #ffffff;
+      }
+      .toast-notification.show { display: flex; }
+
+      /* ========================================================
+         STYLE MANAGER STATE SWITCHER: NORMAL vs HOVER
+         ======================================================== */
+      .gjs-sm-state-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        background: #0f131a;
+        border-bottom: 1px solid #1e2638;
+        margin-bottom: 8px;
+        border-radius: 6px;
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        gap: 8px;
+      }
+      .gjs-sm-state-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .gjs-sm-state-title {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #94a3b8;
+      }
+      .gjs-sm-state-pills, .gjs-sector-state-switch {
+        display: inline-flex;
+        background: #0b0e14;
+        border: 1px solid #232c3d;
+        border-radius: 6px;
+        padding: 2px;
+        gap: 2px;
+        margin-left: auto;
+      }
+      .gjs-state-btn, .gjs-master-state-btn {
+        background: transparent;
+        border: none;
+        color: #8b9bb4;
+        font-family: 'Montserrat', sans-serif;
+        font-size: 0.68rem;
+        font-weight: 700;
+        text-transform: lowercase;
+        padding: 2px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        line-height: 1.2;
+      }
+      .gjs-master-state-btn {
+        text-transform: none;
+        padding: 3px 10px;
+        font-size: 0.72rem;
+      }
+      .gjs-state-btn:hover, .gjs-master-state-btn:hover {
+        color: #ffffff;
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .gjs-state-btn.is-active, .gjs-master-state-btn.is-active {
+        background: #ff5e3a !important;
+        color: #ffffff !important;
+        box-shadow: 0 2px 6px rgba(255, 94, 58, 0.4);
+      }
+      .gjs-state-btn[data-state="normal"].is-active,
+      .gjs-master-state-btn[data-state="normal"].is-active {
+        background: #252e3e !important;
+        color: #ffffff !important;
+        box-shadow: none;
+      }
+      .gjs-sm-state-badge {
+        font-size: 0.68rem;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 12px;
+        background: #18202d;
+        color: #94a3b8;
+        border: 1px solid #232c3d;
+        white-space: nowrap;
+      }
+      .gjs-sm-state-badge.is-hover {
+        background: rgba(255, 94, 58, 0.15);
+        color: #ff5e3a;
+        border-color: rgba(255, 94, 58, 0.4);
+      }
+      .gjs-sm-sector-title {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        position: relative;
+        padding-right: 8px !important;
+      }
+      .gjs-sm-sector-label {
+        flex: 1;
+      }
+
+      /* Layer Actions Toolbar & Context Menu */
+      .layer-active-badge {
+        font-size: 0.65rem;
+        font-weight: 700;
+        color: #ff5e3a;
+        background: rgba(255, 94, 58, 0.12);
+        border: 1px solid rgba(255, 94, 58, 0.3);
+        border-radius: 4px;
+        padding: 2px 7px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        max-width: 130px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .layer-actions-toolbar {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr) 34px;
+        gap: 5px;
+        background: #11141c;
+        border: 1px solid #232936;
+        border-radius: 8px;
+        padding: 5px;
+        margin-bottom: 10px;
+      }
+
+      .btn-layer-tool {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        padding: 6px 3px;
+        background: #181d28;
+        border: 1px solid #2b3344;
+        border-radius: 6px;
+        color: #9ca3af;
+        font-size: 0.68rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        user-select: none;
+      }
+
+      .btn-layer-tool:hover:not(:disabled) {
+        background: #232a3a;
+        color: #f3f4f6;
+        border-color: #3f4a60;
+        transform: translateY(-1px);
+      }
+
+      .btn-layer-tool:active:not(:disabled) {
+        transform: translateY(0);
+      }
+
+      .btn-layer-tool:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+        background: #131720;
+        border-color: #1f2532;
+        color: #6b7280;
+      }
+
+      .btn-layer-tool.primary:hover:not(:disabled) {
+        background: rgba(255, 94, 58, 0.12);
+        color: #ff7e5f;
+        border-color: rgba(255, 94, 58, 0.4);
+      }
+
+      .btn-layer-tool.success:hover:not(:disabled) {
+        background: rgba(16, 185, 129, 0.12);
+        color: #34d399;
+        border-color: rgba(16, 185, 129, 0.4);
+      }
+
+      .btn-layer-tool.inside:hover:not(:disabled) {
+        background: rgba(59, 130, 246, 0.12);
+        color: #60a5fa;
+        border-color: rgba(59, 130, 246, 0.4);
+      }
+
+      .btn-layer-tool.duplicate:hover:not(:disabled) {
+        background: rgba(245, 158, 11, 0.12);
+        color: #fbbf24;
+        border-color: rgba(245, 158, 11, 0.4);
+      }
+
+      .btn-layer-tool.danger {
+        padding: 6px;
+      }
+
+      .btn-layer-tool.danger:hover:not(:disabled) {
+        background: rgba(239, 68, 68, 0.12);
+        color: #f87171;
+        border-color: rgba(239, 68, 68, 0.4);
+      }
+
+      /* Cross-Page Clipboard Banner */
+      .layer-clipboard-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        background: rgba(16, 185, 129, 0.08);
+        border: 1px solid rgba(16, 185, 129, 0.25);
+        border-radius: 6px;
+        padding: 6px 10px;
+        margin-bottom: 10px;
+        animation: fadeInClipboard 0.2s ease-out;
+      }
+
+      @keyframes fadeInClipboard {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      .clipboard-banner-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .clipboard-banner-icon {
+        font-size: 0.95rem;
+        flex-shrink: 0;
+      }
+
+      .clipboard-banner-info {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        min-width: 0;
+      }
+
+      .clipboard-banner-title {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.72rem;
+        color: #d1fae5;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .clipboard-banner-title strong {
+        color: #34d399;
+        font-weight: 700;
+        max-width: 100px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .clipboard-source-pill {
+        font-size: 0.62rem;
+        color: #6ee7b7;
+        background: rgba(16, 185, 129, 0.2);
+        border-radius: 3px;
+        padding: 1px 4px;
+        font-weight: 500;
+      }
+
+      .clipboard-banner-desc {
+        font-size: 0.65rem;
+        color: #9ca3af;
+      }
+
+      .btn-clipboard-clear {
+        background: none;
+        border: none;
+        color: #6ee7b7;
+        cursor: pointer;
+        padding: 2px 6px;
+        font-size: 1rem;
+        line-height: 1;
+        border-radius: 4px;
+        transition: all 0.15s ease;
+      }
+
+      .btn-clipboard-clear:hover {
+        background: rgba(239, 68, 68, 0.2);
+        color: #fca5a5;
+      }
+
+      /* Context Menu for Layers & Canvas */
+      .layer-context-menu {
+        position: fixed;
+        z-index: 999999;
+        min-width: 185px;
+        background: #141720;
+        border: 1px solid #2b3344;
+        border-radius: 8px;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05);
+        padding: 5px;
+        font-family: inherit;
+        backdrop-filter: blur(8px);
+      }
+
+      .context-menu-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 8px 6px 8px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: #9ca3af;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .ctx-layer-name {
+        color: #ff7e5f;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .context-menu-divider {
+        height: 1px;
+        background: #232936;
+        margin: 4px 0;
+      }
+
+      .ctx-menu-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        padding: 7px 9px;
+        border-radius: 5px;
+        background: transparent;
+        border: none;
+        color: #d1d5db;
+        font-size: 0.76rem;
+        font-weight: 500;
+        cursor: pointer;
+        text-align: left;
+        transition: all 0.12s ease;
+      }
+
+      .ctx-menu-item:hover:not(:disabled) {
+        background: #232b3b;
+        color: #fff;
+      }
+
+      .ctx-menu-item:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+      }
+
+      .ctx-item-left {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .ctx-shortcut {
+        font-size: 0.65rem;
+        color: #6b7280;
+        font-family: monospace;
+      }
+
+      .ctx-menu-item.danger:hover:not(:disabled) {
+        background: rgba(239, 68, 68, 0.15);
+        color: #fca5a5;
+      }
+    </style>
+  </head>
+  <body>
+
+    <!-- TOP NAVBAR -->
+    <header class="builder-navbar">
+      <!-- Left: Logo, Workspace Apps Switcher, Layout Selector -->
+      <div class="navbar-left">
+        <a href="/" class="brand-title" title="BUGMEGA Home">BUGMEGA</a>
+
+        <!-- WORKSPACE APPS SWITCHER DROPDOWN -->
+        <WorkspaceSwitcher activeApp="blog-layouts" />
+
+        <!-- Active Theme Pill -->
+        <div class="active-theme-pill" title={`Active Theme: ${activeTheme}`} style="display: inline-flex; align-items: center; gap: 6px; background: #191f2c; border: 1px solid #313d54; border-radius: 9999px; padding: 4px 10px; font-size: 0.72rem; color: #94a3b8; margin-right: 6px;">
+          <span style="width: 7px; height: 7px; border-radius: 50%; background-color: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);"></span>
+          <span style="text-transform: uppercase; font-weight: 600; font-size: 0.66rem; color: #64748b;">Theme:</span>
+          <strong style="color: #f1f5f9; font-weight: 700; text-transform: capitalize;">{activeTheme}</strong>
+        </div>
+
+        <!-- LAYOUT SELECTOR -->
+        <div class="layout-selector-wrap" id="layoutSelectorWrap">
+          <button type="button" class="layout-selector-btn" id="btnLayoutSelector" title="Switch layout">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line></svg>
+            <span id="activeLayoutNameDisplay">{activeLayout.name}</span>
+            {activeLayout.isDefault && <span style="font-size: 0.65rem; background: #047857; color: #a7f3d0; padding: 1px 5px; border-radius: 4px; font-weight: 700;">DEFAULT</span>}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+
+          <div class="layout-selector-menu" id="layoutSelectorMenu">
+            <div style="font-size: 0.68rem; font-weight: 700; color: #6b7280; text-transform: uppercase; padding: 4px 6px;">Manage Standard Layouts</div>
+            {layoutsList.map(lay => (
+              <a href={`/blog-layout-editor?id=${lay.id}`} class={`layout-item-row ${lay.id === activeLayout.id ? 'active' : ''}`}>
+                <div>
+                  <div style="font-weight: 700; font-size: 0.82rem;">{lay.name}</div>
+                  <div style="font-size: 0.68rem; color: #9ca3af;">{lay.appliedPostSlugs?.length || 0} posts applied {lay.isDefault ? '• Default' : ''}</div>
+                </div>
+                {lay.isDefault && <span style="font-size: 0.65rem; background: #047857; color: #a7f3d0; padding: 1px 5px; border-radius: 4px; font-weight: 700;">DEFAULT</span>}
+              </a>
+            ))}
+            <button type="button" class="btn-add-layout" id="btnOpenNewLayoutModal">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              <span>Create New Standard Layout</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- SPECIFY APPLIED POSTS BUTTON -->
+        <button type="button" class="btn-nav-action highlight" id="btnOpenAssignPostsModal" title="Specify which blog posts use this layout">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <circle cx="12" cy="12" r="6"></circle>
+            <circle cx="12" cy="12" r="2"></circle>
+          </svg>
+          <span>Apply to Posts</span>
+          <span class="badge-counter" id="appliedPostsCountBadge">{activeLayout.appliedPostSlugs?.length || 0}</span>
+        </button>
+      </div>
+
+      <!-- Center: Viewport Device Switching (Dropdown) -->
+      <div class="navbar-center">
+        <DeviceSwitcher />
+      </div>
+
+      <!-- Right: Code Editor, Live View, Save -->
+      <div class="navbar-right">
+        <!-- Media Library & File Manager -->
+        <button type="button" class="btn-nav-action" id="btnOpenMediaLibraryNavbar" title="Open Media Library & File Manager">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+          <span>Media</span>
+        </button>
+
+        <!-- Duplicate Layout -->
+        <button type="button" class="btn-nav-action" id="btnDuplicateLayout" title="Duplicate this layout">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <span>Clone</span>
+        </button>
+
+        <!-- Live Site, Preview & Code Dropdown -->
+        <div class="topbar-dropdown-wrap menu-right" id="viewActionsDropdownWrap">
+          <button type="button" class="topbar-dropdown-btn" id="btnViewActionsDropdown" title="Live Site, Preview & Code">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+            <span>Preview & Code</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+          <div class="topbar-dropdown-menu" id="viewActionsDropdownMenu">
+            <a href={`/blog/${firstAppliedSlug}`} target="_blank" class="topbar-dropdown-item" id="btnLivePreviewLink">
+              <div class="topbar-item-icon" style="color: #60a5fa;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                  <polyline points="15 3 21 3 21 9"></polyline>
+                  <line x1="10" y1="14" x2="21" y2="3"></line>
+                </svg>
+              </div>
+              <div class="topbar-item-text">
+                <span class="topbar-item-title">Live Post</span>
+                <span class="topbar-item-desc">View live article with this layout</span>
+              </div>
+            </a>
+            <button type="button" class="topbar-dropdown-item" onclick="if(window.editor){const cmd = window.editor.Commands; if(cmd.isActive('preview')) cmd.stop('preview'); else cmd.run('preview');}">
+              <div class="topbar-item-icon" style="color: #34d399;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </div>
+              <div class="topbar-item-text">
+                <span class="topbar-item-title">Preview Canvas</span>
+                <span class="topbar-item-desc">Toggle fullscreen canvas preview</span>
+              </div>
+            </button>
+            <button type="button" class="topbar-dropdown-item" id="btnOpenCodeEditor">
+              <div class="topbar-item-icon" style="color: #f59e0b;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="16 18 22 12 16 6"></polyline>
+                  <polyline points="8 6 2 12 8 18"></polyline>
+                </svg>
+              </div>
+              <div class="topbar-item-text">
+                <span class="topbar-item-title">View Code</span>
+                <span class="topbar-item-desc">Inspect HTML & CSS code</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Toggle Sidebar Panel Button -->
+        <button type="button" class="btn-toggle-panel" id="btnToggleSidebar" title="Toggle Sidebar Panel">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="15" y1="3" x2="15" y2="21"></line>
+          </svg>
+          <span>Panel</span>
+        </button>
+
+        <!-- Save Layout Button -->
+        <button type="button" class="btn-save-layout" id="btnSaveLayout" title="Save Layout Changes (Ctrl+S)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+          <span>Save Layout</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- WORKSPACE: CANVAS + SIDEBAR -->
+    <main class="layout-workspace">
+      <!-- CENTER CANVAS AREA -->
+      <div class="layout-canvas-wrap">
+        <div id="gjs-canvas-host"></div>
+      </div>
+
+      <!-- RIGHT SIDEBAR (TABS: BLOCKS, STYLES, SETTINGS, LAYERS) -->
+      <aside class="editor-sidebar">
+        <div class="sidebar-tabs">
+          <button type="button" class="tab-btn active" data-tab="blocks">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+            <span>Blocks</span>
+          </button>
+          <button type="button" class="tab-btn" data-tab="styles">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+            <span>Style</span>
+          </button>
+          <button type="button" class="tab-btn" data-tab="settings">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <span>Settings</span>
+          </button>
+          <button type="button" class="tab-btn" data-tab="layers">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+            <span>Layers</span>
+          </button>
+        </div>
+
+        <div id="tab-blocks" class="tab-pane active">
+          <div id="blocks-container"></div>
+        </div>
+        <div id="tab-styles" class="tab-pane">
+          <div id="styles-container"></div>
+        </div>
+        <div id="tab-settings" class="tab-pane">
+          <!-- LIVE PREVIEW SELECTOR CARD -->
+          <div style="background: #161b24; border: 1px solid #283142; border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+              <div style="display: flex; align-items: center; gap: 7px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                <span style="font-size: 0.8rem; font-weight: 700; color: #f3f4f6; text-transform: uppercase; letter-spacing: 0.05em;">Preview with Post</span>
+              </div>
+              <span style="font-size: 0.65rem; background: rgba(16, 185, 129, 0.15); color: #10b981; font-weight: 700; padding: 2px 6px; border-radius: 4px;">Dynamic</span>
+            </div>
+            <p style="font-size: 0.74rem; color: #9ca3af; line-height: 1.45; margin-bottom: 10px;">
+              Select a blog post to test and preview dynamic elements (title, excerpt, cover image, author, date, categories) in this canvas:
+            </p>
+            <select id="selectSamplePost" style="width: 100%; background: #1c212b; border: 1px solid #323b4c; color: #f3f4f6; padding: 8px 10px; border-radius: 6px; font-size: 0.78rem; font-weight: 600; cursor: pointer; outline: none;">
+              {postsList.map(p => (
+                <option value={p.slug}>{p.title}</option>
+              ))}
+            </select>
+          </div>
+
+          <!-- COMPONENT PROPERTIES / TRAITS -->
+          <div style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; margin: 16px 0 8px 0; display: flex; align-items: center; gap: 6px;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <span>Selected Element Settings</span>
+          </div>
+          <div id="traits-container"></div>
+        </div>
+        <div id="tab-layers" class="tab-pane">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <span class="panel-header-title" style="margin: 0; font-size: 0.75rem; font-weight: 700; color: #9ca3af; text-transform: uppercase;">Element Hierarchy Tree</span>
+            <span class="layer-active-badge" id="layerActiveBadge" style="display: none;">Selected</span>
+          </div>
+
+          <!-- Layer Toolbar Actions -->
+          <div class="layer-actions-toolbar" id="layerActionsToolbar">
+            <button type="button" class="btn-layer-tool primary" id="btnLayerCopy" title="Copy Layer to Clipboard (Ctrl+C)" disabled>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span>Copy</span>
+            </button>
+
+            <button type="button" class="btn-layer-tool success" id="btnLayerPasteBelow" title="Paste as Sibling Below (Ctrl+V)" disabled>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 10 4 15 9 20"></polyline>
+                <path d="M20 4v7a4 4 0 0 1-4 4H4"></path>
+              </svg>
+              <span>Paste</span>
+            </button>
+
+            <button type="button" class="btn-layer-tool inside" id="btnLayerPasteInside" title="Paste as Child Inside Container" disabled>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span>Inside</span>
+            </button>
+
+            <button type="button" class="btn-layer-tool duplicate" id="btnLayerDuplicate" title="Duplicate Layer (Ctrl+D)" disabled>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <rect x="3" y="3" width="13" height="13" rx="2" ry="2"></rect>
+              </svg>
+              <span>Duplicate</span>
+            </button>
+
+            <button type="button" class="btn-layer-tool danger" id="btnLayerDelete" title="Delete Layer (Del)" disabled>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+              <span>Delete</span>
+            </button>
+          </div>
+
+          <!-- Cross-Page Clipboard Banner -->
+          <div class="layer-clipboard-banner" id="layerClipboardBanner" style="display: none;">
+            <div class="clipboard-banner-left">
+              <span class="clipboard-banner-icon">📋</span>
+              <div class="clipboard-banner-info">
+                <div class="clipboard-banner-title">
+                  <span>Clipboard:</span>
+                  <strong id="clipboardLayerName">Section</strong>
+                  <span class="clipboard-source-pill" id="clipboardSourcePill">from Blog Layout</span>
+                </div>
+                <div class="clipboard-banner-desc">Ready to paste here or across pages</div>
+              </div>
+            </div>
+            <button type="button" class="btn-clipboard-clear" id="btnClearLayerClipboard" title="Clear Clipboard">&times;</button>
+          </div>
+
+          <div id="layers-container"></div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- MODAL: ASSIGN LAYOUT TO SPECIFIC BLOG POSTS -->
+    <div class="custom-modal-backdrop" id="modalAssignPosts">
+      <div class="custom-modal-box">
+        <div class="modal-header">
+          <div>
+            <div class="modal-title">Apply Layout to Specific Blog Posts</div>
+            <div style="font-size: 0.74rem; color: #9ca3af; margin-top: 2px;">
+              Specify which blog posts will inherit this layout design and structure.
+            </div>
+          </div>
+          <button type="button" class="modal-close-btn" id="btnCloseAssignModal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <input type="text" id="inputSearchAssignPosts" placeholder="Search blog posts by title or category..." style="flex: 1; padding: 7px 12px; background: #1c222e; border: 1px solid #2a3344; border-radius: 6px; color: #f3f4f6; font-size: 0.8rem;" />
+            <button type="button" class="btn-secondary" id="btnSelectAllPosts" style="font-size: 0.74rem;">Select All</button>
+            <button type="button" class="btn-secondary" id="btnDeselectAllPosts" style="font-size: 0.74rem;">Clear All</button>
+          </div>
+
+          <!-- List of blog posts -->
+          <div id="assignPostsListContainer" style="max-height: 340px; overflow-y: auto;">
+            {postsList.map(p => {
+              const isAppliedHere = activeLayout.appliedPostSlugs?.includes(p.slug);
+              return (
+                <label class={`post-assign-item ${isAppliedHere ? 'selected' : ''}`} data-post-slug={p.slug} data-post-title={p.title.toLowerCase()} data-post-cat={p.category.toLowerCase()}>
+                  <input type="checkbox" class="post-assign-checkbox" value={p.slug} checked={isAppliedHere} style="cursor: pointer; width: 16px; height: 16px;" />
+                  <img src={p.image} alt={p.title} class="post-thumb-img" />
+                  <div class="post-assign-info">
+                    <div class="post-assign-title">{p.title}</div>
+                    <div class="post-assign-meta">
+                      <span>📁 {p.category}</span>
+                      <span>📅 {p.formattedDate}</span>
+                    </div>
+                  </div>
+                  <div>
+                    {isAppliedHere ? (
+                      <span class="post-badge-layout this-layout">✓ This Layout</span>
+                    ) : p.layoutId ? (
+                      <span class="post-badge-layout other-layout">Other Layout</span>
+                    ) : (
+                      <span class="post-badge-layout blank">Blank Canvas</span>
+                    )}
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+
+          <div style="margin-top: 14px; padding: 12px; background: #181d28; border-radius: 8px; border: 1px solid #262e3d;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.82rem; color: #f3f4f6;">
+              <input type="checkbox" id="checkSetAsDefaultLayout" checked={activeLayout.isDefault} style="width: 16px; height: 16px;" />
+              <span style="font-weight: 600;">Set this layout as Default for all new standard blog posts</span>
+            </label>
+            <div style="font-size: 0.72rem; color: #9ca3af; margin-left: 24px; margin-top: 3px;">
+              Newly created blog posts with "Standard Layout" mode will automatically use this layout.
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" id="btnCancelAssign">Cancel</button>
+          <button type="button" class="btn-primary-action" id="btnSavePostAssignments">Save Post Assignments</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: CREATE NEW LAYOUT -->
+    <div class="custom-modal-backdrop" id="modalNewLayout">
+      <div class="custom-modal-box" style="max-width: 500px;">
+        <div class="modal-header">
+          <div class="modal-title">Create New Standard Layout</div>
+          <button type="button" class="modal-close-btn" id="btnCloseNewLayoutModal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 0.78rem; font-weight: 700; color: #d1d5db; margin-bottom: 4px;">Layout Name</label>
+            <input type="text" id="inputNewLayoutName" placeholder="e.g. Modern Minimalist or Hero Magazine" style="width: 100%; padding: 8px 12px; background: #1c222e; border: 1px solid #2a3344; border-radius: 6px; color: #f3f4f6; font-size: 0.82rem;" />
+          </div>
+          <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 0.78rem; font-weight: 700; color: #d1d5db; margin-bottom: 4px;">Description</label>
+            <textarea id="inputNewLayoutDesc" rows="2" placeholder="Brief notes about where or when to use this layout..." style="width: 100%; padding: 8px 12px; background: #1c222e; border: 1px solid #2a3344; border-radius: 6px; color: #f3f4f6; font-size: 0.82rem; resize: vertical;"></textarea>
+          </div>
+          <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 0.78rem; font-weight: 700; color: #d1d5db; margin-bottom: 4px;">Start From Starter Template</label>
+            <select id="selectNewLayoutTemplate" style="width: 100%; padding: 8px 12px; background: #1c222e; border: 1px solid #2a3344; border-radius: 6px; color: #f3f4f6; font-size: 0.82rem;">
+              {layoutsList.map(l => (
+                <option value={l.id}>{l.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" id="btnCancelNewLayout">Cancel</button>
+          <button type="button" class="btn-primary-action" id="btnConfirmCreateLayout">Create Layout</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: CODE EDITOR (HTML & CSS) -->
+    <div class="custom-modal-backdrop" id="modalCodeEditor">
+      <div class="custom-modal-box" style="max-width: 800px; height: 80vh;">
+        <div class="modal-header">
+          <div class="modal-title">Layout Template Code (HTML & CSS)</div>
+          <button type="button" class="modal-close-btn" id="btnCloseCodeModal">&times;</button>
+        </div>
+        <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px; flex: 1;">
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn-secondary active" id="btnCodeTabHtml">HTML Template</button>
+            <button type="button" class="btn-secondary" id="btnCodeTabCss">Custom CSS</button>
+          </div>
+          <textarea id="textareaLayoutCode" style="flex: 1; width: 100%; min-height: 380px; padding: 12px; font-family: 'Consolas', 'Fira Code', monospace; font-size: 0.82rem; background: #0c0f16; border: 1px solid #262e3d; border-radius: 6px; color: #38bdf8; line-height: 1.5; resize: none;"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" id="btnCancelCode">Cancel</button>
+          <button type="button" class="btn-primary-action" id="btnApplyCodeToCanvas">Apply to Canvas</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: SAVED TEMPLATES LIBRARY (INSERT TEMPLATE INTO CANVAS) -->
+    <div class="custom-modal-backdrop" id="modalSavedTemplatesLibrary">
+      <div class="custom-modal-box modal-templates-library">
+        <!-- Header -->
+        <div class="modal-header">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="width: 34px; height: 34px; background: rgba(139, 92, 246, 0.15); border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="#8b5cf6"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"></path></svg>
+            </div>
+            <div>
+              <div style="font-weight: 700; color: #ffffff; font-size: 1.02rem; display: flex; align-items: center; gap: 8px;">
+                <span>Saved Templates Library</span>
+                <span class="tpl-type-pill global">Global</span>
+                <span class="tpl-type-pill individual">Individual</span>
+              </div>
+              <div style="font-size: 0.72rem; color: #9ca3af;">Insert pre-built sections, full components or global synchronized templates</div>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <a href="/template-editor" target="_blank" style="padding: 6px 12px; background: rgba(139, 92, 246, 0.15); border: 1px solid rgba(139, 92, 246, 0.3); color: #c4b5fd; border-radius: 6px; font-size: 0.75rem; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;">
+              <span>Template Builder</span>
+              <span>&rarr;</span>
+            </a>
+            <button type="button" class="modal-close-btn" id="btnCloseLibraryModal">&times;</button>
+          </div>
+        </div>
+
+        <!-- Filter Bar -->
+        <div style="padding: 12px 20px; background: #121620; border-bottom: 1px solid #242c3b; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <input type="text" id="inputSearchLibrary" placeholder="Search templates by name, category or description..." style="flex: 1; min-width: 200px; padding: 7px 12px; font-size: 0.8rem; background: #1c222e; border: 1px solid #2a3344; border-radius: 6px; color: #f3f4f6;" />
+          <div style="display: flex; gap: 6px;">
+            <button type="button" class="filter-chip active" id="btnLibFilterAll">All (<span id="libCountAll">0</span>)</button>
+            <button type="button" class="filter-chip" id="btnLibFilterGlobal">🌐 Global (<span id="libCountGlobal">0</span>)</button>
+            <button type="button" class="filter-chip" id="btnLibFilterIndiv">📄 Individual (<span id="libCountIndiv">0</span>)</button>
+          </div>
+        </div>
+
+        <!-- Body: Grid -->
+        <div class="modal-body" style="padding: 18px 20px;">
+          <div id="libraryTemplatesGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px;">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION -->
+    <div class="toast-notification" id="toastNotification">
+      <span id="toastMessage">Layout saved successfully!</span>
+    </div>
+
+    <!-- Context Menu for Layer Items & Canvas -->
+    <div id="layerContextMenu" class="layer-context-menu" style="display: none;">
+      <div class="context-menu-header" id="ctxMenuHeader">
+        <span class="ctx-layer-icon">🔲</span>
+        <span class="ctx-layer-name" id="ctxMenuLayerName">Element</span>
+      </div>
+      <div class="context-menu-divider"></div>
+      <button type="button" class="ctx-menu-item" id="ctxBtnCopy">
+        <span class="ctx-item-left">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <span>Copy Layer</span>
+        </span>
+        <span class="ctx-shortcut">Ctrl+C</span>
+      </button>
+      <button type="button" class="ctx-menu-item" id="ctxBtnPasteBelow">
+        <span class="ctx-item-left">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 10 4 15 9 20"></polyline><path d="M20 4v7a4 4 0 0 1-4 4H4"></path></svg>
+          <span>Paste Below</span>
+        </span>
+        <span class="ctx-shortcut">Ctrl+V</span>
+      </button>
+      <button type="button" class="ctx-menu-item" id="ctxBtnPasteInside">
+        <span class="ctx-item-left">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          <span>Paste Inside (Child)</span>
+        </span>
+      </button>
+      <div class="context-menu-divider"></div>
+      <button type="button" class="ctx-menu-item" id="ctxBtnDuplicate">
+        <span class="ctx-item-left">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><rect x="3" y="3" width="13" height="13" rx="2" ry="2"></rect></svg>
+          <span>Duplicate</span>
+        </span>
+        <span class="ctx-shortcut">Ctrl+D</span>
+      </button>
+      <button type="button" class="ctx-menu-item danger" id="ctxBtnDelete">
+        <span class="ctx-item-left">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          <span>Delete</span>
+        </span>
+        <span class="ctx-shortcut">Del</span>
+      </button>
+    </div>
+
+    <!-- CLIENT SCRIPT TO INITIALIZE GRAPESJS AND LOGIC -->
+    <script is:inline define:vars={{ initialLayout: activeLayout, allPostsData: postsList, allTemplatesData: templatesList }}>
+      window.activeLayout = initialLayout;
+      window.allPosts = allPostsData;
+      window.allTemplates = allTemplatesData || [];
+
+      // Toast notification
+      function showToast(msg, isError = false) {
+        const toast = document.getElementById('toastNotification');
+        const msgEl = document.getElementById('toastMessage');
+        if (!toast || !msgEl) return;
+        msgEl.textContent = msg;
+        toast.className = `toast-notification ${isError ? 'error' : ''} show`;
+        setTimeout(() => { toast.classList.remove('show'); }, 3000);
+      }
+
+      // Initialize GrapesJS
+      document.addEventListener('DOMContentLoaded', () => {
+        const editor = grapesjs.init({
+          container: '#gjs-canvas-host',
+          fromElement: false,
+          height: '100%',
+          width: 'auto',
+          avoidInlineStyle: false,
+          panels: { defaults: [] },
+          storageManager: false,
+          selectorManager: {
+            componentFirst: true
+          },
+          blockManager: { appendTo: '#blocks-container' },
+          styleManager: { appendTo: '#styles-container' },
+          traitManager: { appendTo: '#traits-container' },
+          layerManager: { appendTo: '#layers-container' },
+          deviceManager: {
+            devices: [
+              { id: 'desktop', name: 'Desktop', width: '' },
+              { id: 'tablet', name: 'Tablet', width: '768px', widthMedia: '992px' },
+              { id: 'mobile', name: 'Mobile', width: '375px', widthMedia: '480px' },
+            ]
+          },
+          canvas: {
+            styles: [
+              'https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap'
+            ]
+          }
+        });
+
+        window.grapesEditor = editor;
+        window.editor = editor;
+
+        // Inject Baseline Styles & CSS Resets into the Canvas Iframe
+        function injectIframeStyles() {
+          const iframeDoc = editor.Canvas.getDocument();
+          if (!iframeDoc) return;
+
+          let styleTag = iframeDoc.getElementById('gjs-blog-layout-baseline-styles');
+          if (!styleTag) {
+            styleTag = iframeDoc.createElement('style');
+            styleTag.id = 'gjs-blog-layout-baseline-styles';
+            iframeDoc.head.appendChild(styleTag);
+          }
+
+          styleTag.innerHTML = `
+            *, *::before, *::after {
+              box-sizing: border-box;
+            }
+            body {
+              font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              color: #1f2937;
+              background-color: #ffffff;
+              margin: 0;
+              padding: 0;
+              line-height: 1.65;
+              width: 100%;
+            }
+            h1, h2, h3, h4, h5, h6 {
+              font-family: 'Montserrat', sans-serif;
+              font-weight: 700;
+              line-height: 1.25;
+              color: #111827;
+            }
+            a {
+              text-decoration: none;
+              color: inherit;
+            }
+            img {
+              max-width: 100%;
+              height: auto;
+            }
+
+            /* Breadcrumbs Reset & Layout */
+            .breadcrumb-nav {
+              margin-bottom: 14px;
+            }
+            .breadcrumb-list {
+              display: flex !important;
+              align-items: center !important;
+              gap: 8px !important;
+              list-style: none !important;
+              padding: 0 !important;
+              margin: 0 !important;
+              font-size: 0.85rem !important;
+              color: #6b7280 !important;
+            }
+            .breadcrumb-list li {
+              display: inline-flex !important;
+              align-items: center !important;
+              list-style-type: none !important;
+            }
+            .breadcrumb-list a {
+              color: #4b5563 !important;
+              text-decoration: none !important;
+              transition: color 0.15s ease;
+            }
+            .breadcrumb-list a:hover {
+              color: #ff5e3a !important;
+            }
+            .breadcrumb-current {
+              color: #111827 !important;
+              font-weight: 600 !important;
+            }
+
+            /* Category Pill Badge */
+            .post-category-badge {
+              display: inline-block !important;
+              padding: 4px 12px !important;
+              background-color: rgba(255, 94, 58, 0.12) !important;
+              color: #ff5e3a !important;
+              font-family: 'Montserrat', sans-serif !important;
+              font-size: 0.72rem !important;
+              font-weight: 700 !important;
+              text-transform: uppercase !important;
+              letter-spacing: 0.05em !important;
+              border-radius: 9999px !important;
+              text-decoration: none !important;
+            }
+
+            /* Post Title */
+            [data-post-element="title"] {
+              font-family: 'Montserrat', sans-serif;
+              font-size: clamp(2rem, 1.6rem + 2vw, 2.6rem);
+              font-weight: 800;
+              color: #111827;
+              line-height: 1.25;
+              margin: 12px 0 16px 0;
+            }
+
+            /* Meta row and author */
+            .post-meta-bar, [data-post-element="meta"] {
+              display: flex !important;
+              align-items: center !important;
+              gap: 16px !important;
+              flex-wrap: wrap !important;
+            }
+            .author-block {
+              display: flex !important;
+              align-items: center !important;
+              gap: 10px !important;
+            }
+            .author-avatar, img[data-post-element="author-avatar"] {
+              width: 44px !important;
+              height: 44px !important;
+              border-radius: 50% !important;
+              object-fit: cover !important;
+              border: 2px solid #ff5e3a !important;
+              flex-shrink: 0 !important;
+              display: inline-block !important;
+            }
+            .author-info {
+              display: flex !important;
+              flex-direction: column !important;
+            }
+            .author-name, [data-post-element="author-name"] {
+              font-family: 'Montserrat', sans-serif;
+              font-size: 0.88rem !important;
+              font-weight: 700 !important;
+              color: #111827 !important;
+            }
+            .author-role, [data-post-element="author-role"] {
+              font-size: 0.75rem !important;
+              color: #6b7280 !important;
+            }
+
+            /* Containers & Media */
+            .layout-container {
+              max-width: 900px;
+              margin-left: auto;
+              margin-right: auto;
+              padding-left: 20px;
+              padding-right: 20px;
+            }
+            .featured-image-wrapper, [data-post-element="image"] {
+              border-radius: 12px;
+              overflow: hidden;
+              box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+            }
+            .featured-image-wrapper img, [data-post-element="image"] img {
+              width: 100% !important;
+              height: auto !important;
+              max-height: 460px !important;
+              object-fit: cover !important;
+              display: block !important;
+            }
+
+            /* Post Content */
+            .post-content {
+              font-size: 1.08rem;
+              line-height: 1.85;
+              color: #374151;
+            }
+            .post-content p {
+              margin-bottom: 20px;
+            }
+            .post-content h2 {
+              font-size: 1.65rem;
+              font-weight: 800;
+              color: #111827;
+              margin: 36px 0 16px 0;
+              line-height: 1.35;
+            }
+            .post-content h3 {
+              font-size: 1.35rem;
+              font-weight: 700;
+              color: #111827;
+              margin: 28px 0 14px 0;
+            }
+            .post-content blockquote {
+              border-left: 4px solid #ff5e3a;
+              padding: 16px 22px;
+              background: #fff5f2;
+              margin: 28px 0;
+              border-radius: 0 8px 8px 0;
+              font-style: italic;
+              color: #374151;
+            }
+            .post-content ul, .post-content ol {
+              margin: 20px 0 24px 28px;
+            }
+            .post-content li {
+              margin-bottom: 8px;
+            }
+
+            /* Author Bio Box */
+            [data-post-element="author-bio-box"] {
+              display: flex !important;
+              align-items: center !important;
+              gap: 20px !important;
+              padding: 24px !important;
+              background-color: #f9fafb !important;
+              border-radius: 12px !important;
+              border: 1px solid #e5e7eb !important;
+              margin-top: 36px !important;
+            }
+            [data-post-element="author-bio-box"] img[data-post-element="author-avatar"] {
+              width: 64px !important;
+              height: 64px !important;
+              border-radius: 50% !important;
+              object-fit: cover !important;
+              flex-shrink: 0 !important;
+              border: none !important;
+            }
+
+            /* Column outline helper inside editor canvas */
+            .cell { outline: 1px dashed rgba(156, 163, 175, 0.45); outline-offset: -1px; min-height: 40px; }
+            .cell:empty { min-height: 75px; background-color: rgba(243, 244, 246, 0.35); }
+          `;
+        }
+
+        // Empty Workspace Dropzone HTML template (Matches Page Builder)
+        const EMPTY_WORKSPACE_HTML = `
+<div class="empty-workspace-dropzone" id="emptyWorkspaceDropzone" style="border: 2px dashed #cdd5e0; border-radius: 6px; padding: 42px 20px; margin: 30px auto; max-width: 960px; min-height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: #ffffff; user-select: none;">
+  <div class="dropzone-buttons-row" data-gjs-layerable="false" data-gjs-selectable="false" data-gjs-hoverable="false" data-gjs-highlightable="false" data-gjs-badgable="false" data-gjs-draggable="false" data-gjs-droppable="false" data-gjs-copyable="false" data-gjs-removable="false" style="display: flex; align-items: center; gap: 14px;">
+    <button type="button" class="dropzone-btn btn-trigger-add-block" id="btnDropzoneAddBlock" data-gjs-layerable="false" data-gjs-selectable="false" data-gjs-hoverable="false" data-gjs-highlightable="false" data-gjs-badgable="false" data-gjs-draggable="false" data-gjs-droppable="false" data-gjs-copyable="false" data-gjs-removable="false" title="Add Block / Widget" style="width: 44px; height: 44px; border-radius: 50%; background: #e2e8f0; color: #1e293b; border: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.08); transition: all 0.2s;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" data-gjs-layerable="false" data-gjs-selectable="false" data-gjs-hoverable="false"><line x1="12" y1="5" x2="12" y2="19" data-gjs-layerable="false" data-gjs-selectable="false"></line><line x1="5" y1="12" x2="19" y2="12" data-gjs-layerable="false" data-gjs-selectable="false"></line></svg>
+    </button>
+    <button type="button" class="dropzone-btn btn-trigger-add-template" id="btnDropzoneAddTemplate" data-gjs-layerable="false" data-gjs-selectable="false" data-gjs-hoverable="false" data-gjs-highlightable="false" data-gjs-badgable="false" data-gjs-draggable="false" data-gjs-droppable="false" data-gjs-copyable="false" data-gjs-removable="false" title="Add a Saved Template" style="width: 44px; height: 44px; border-radius: 50%; background: #e2e8f0; color: #1e293b; border: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.08); transition: all 0.2s;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" data-gjs-layerable="false" data-gjs-selectable="false" data-gjs-hoverable="false"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" data-gjs-layerable="false" data-gjs-selectable="false"/></svg>
+    </button>
+  </div>
+  <div class="dropzone-hint" data-gjs-layerable="false" data-gjs-selectable="false" data-gjs-hoverable="false" data-gjs-highlightable="false" data-gjs-badgable="false" data-gjs-draggable="false" data-gjs-droppable="false" data-gjs-copyable="false" data-gjs-removable="false" style="color: #64748b; font-size: 13px; font-style: italic; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+    Drag widget here
+  </div>
+</div>`;
+
+        // Register custom Heading component type with tag switcher traits
+        editor.DomComponents.addType('heading', {
+          extend: 'text',
+          isComponent: el => el && el.tagName && /^H[1-6]$/i.test(el.tagName),
+          model: {
+            defaults: {
+              tagName: 'h2',
+              editable: true,
+              droppable: false,
+              traits: [
+                {
+                  type: 'select',
+                  name: 'tagName',
+                  label: 'Heading Tag',
+                  changeProp: true,
+                  options: [
+                    { id: 'h1', label: 'H1 - Heading 1 (Large Title)' },
+                    { id: 'h2', label: 'H2 - Heading 2 (Subtitle)' },
+                    { id: 'h3', label: 'H3 - Heading 3 (Section Header)' },
+                    { id: 'h4', label: 'H4 - Heading 4 (Card Title)' },
+                    { id: 'h5', label: 'H5 - Heading 5 (Small Heading)' },
+                    { id: 'h6', label: 'H6 - Heading 6 (Micro Heading)' },
+                    { id: 'p', label: 'P - Paragraph' },
+                  ]
+                },
+                'id',
+                'title'
+              ]
+            },
+            init() {
+              this.on('change:tagName', this.handleTagChange);
+            },
+            handleTagChange() {
+              const view = this.getView ? this.getView() : this.view;
+              if (view && view.el) {
+                const newTag = (this.get('tagName') || 'h2').toLowerCase();
+                if (view.el.tagName.toLowerCase() !== newTag) {
+                  const newEl = view.el.ownerDocument.createElement(newTag);
+                  Array.from(view.el.attributes).forEach(attr => {
+                    newEl.setAttribute(attr.name, attr.value);
+                  });
+                  newEl.innerHTML = view.el.innerHTML;
+                  view.el.parentNode?.replaceChild(newEl, view.el);
+                  view.el = newEl;
+                  if (view.render) view.render();
+                }
+              }
+            }
+          }
+        });
+
+        // ========================================================
+        // SAVED TEMPLATES LIBRARY MODAL
+        // ========================================================
+        let libActiveFilter = 'all';
+
+        function openSavedTemplatesLibrary() {
+          libActiveFilter = 'all';
+          updateLibFilterUI();
+          renderSavedTemplatesLibraryGrid();
+          const modal = document.getElementById('modalSavedTemplatesLibrary');
+          if (modal) modal.classList.add('open');
+        }
+
+        function closeSavedTemplatesLibrary() {
+          const modal = document.getElementById('modalSavedTemplatesLibrary');
+          if (modal) modal.classList.remove('open');
+        }
+
+        function updateLibFilterUI() {
+          const btnAll = document.getElementById('btnLibFilterAll');
+          const btnGlobal = document.getElementById('btnLibFilterGlobal');
+          const btnIndiv = document.getElementById('btnLibFilterIndiv');
+          btnAll?.classList.toggle('active', libActiveFilter === 'all');
+          btnGlobal?.classList.toggle('active', libActiveFilter === 'global');
+          btnIndiv?.classList.toggle('active', libActiveFilter === 'individual');
+
+          const all = allTemplatesData || [];
+          const countAll = document.getElementById('libCountAll');
+          const countGlobal = document.getElementById('libCountGlobal');
+          const countIndiv = document.getElementById('libCountIndiv');
+          if (countAll) countAll.textContent = all.length;
+          if (countGlobal) countGlobal.textContent = all.filter(t => t.type === 'global').length;
+          if (countIndiv) countIndiv.textContent = all.filter(t => t.type === 'individual').length;
+        }
+
+        function renderSavedTemplatesLibraryGrid() {
+          const grid = document.getElementById('libraryTemplatesGrid');
+          if (!grid) return;
+          const searchInput = document.getElementById('inputSearchLibrary');
+          const query = (searchInput?.value || '').trim().toLowerCase();
+          let list = [...(allTemplatesData || [])];
+
+          if (libActiveFilter !== 'all') {
+            list = list.filter(t => t.type === libActiveFilter);
+          }
+          if (query) {
+            list = list.filter(t => 
+              t.name.toLowerCase().includes(query) || 
+              (t.category && t.category.toLowerCase().includes(query)) || 
+              (t.description && t.description.toLowerCase().includes(query))
+            );
+          }
+
+          if (list.length === 0) {
+            grid.innerHTML = `
+              <div style="grid-column: 1 / -1; padding: 40px 20px; text-align: center; color: #9ca3af;">
+                <div style="font-size: 2rem; margin-bottom: 8px;">🔍</div>
+                <div style="font-weight: 700; color: #f3f4f6; margin-bottom: 4px;">No templates found</div>
+                <div style="font-size: 0.8rem;">Try searching for another keyword or create a new template in the Template Builder.</div>
+              </div>`;
+            return;
+          }
+
+          grid.innerHTML = list.map(t => {
+            const isGlobal = t.type === 'global';
+            return `
+              <div style="background: #181d28; border: 1px solid #2a3344; border-radius: 10px; padding: 16px; display: flex; flex-direction: column; justify-content: space-between; transition: all 0.15s; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                <div>
+                  <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                    <span class="tpl-type-pill ${t.type}">${isGlobal ? '🌐 GLOBAL' : '📄 INDIVIDUAL'}</span>
+                    <span style="font-size: 0.7rem; color: #9ca3af; font-weight: 600;">${t.category || 'General'}</span>
+                  </div>
+                  <h4 style="font-size: 0.95rem; font-weight: 700; color: #f3f4f6; margin: 0 0 6px 0;">${t.name}</h4>
+                  <p style="font-size: 0.78rem; color: #9ca3af; line-height: 1.5; margin: 0 0 14px 0;">${t.description || ''}</p>
+                </div>
+                <button type="button" class="btn-insert-lib-tpl" data-id="${t.id}" style="width: 100%; padding: 8px 12px; font-size: 0.8rem; font-weight: 700; border-radius: 6px; background: #ff5e3a; color: #ffffff; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.15s;">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                  <span>Insert into Canvas</span>
+                </button>
+              </div>`;
+          }).join('');
+
+          grid.querySelectorAll('.btn-insert-lib-tpl').forEach(b => {
+            b.addEventListener('click', (e) => {
+              const id = e.currentTarget.dataset.id;
+              const targetTpl = (allTemplatesData || []).find(t => t.id === id);
+              if (!targetTpl) return;
+
+              const wrapper = editor.getWrapper();
+              if (!wrapper) return;
+
+              // Remove any existing dropzone if present
+              const dropzoneComp = wrapper.find('#emptyWorkspaceDropzone')[0] || wrapper.find('.empty-workspace-dropzone')[0];
+              if (dropzoneComp) {
+                try { dropzoneComp.remove(); } catch(err) {}
+              }
+
+              let insertHtml = targetTpl.html;
+              if (targetTpl.type === 'global' && !insertHtml.includes(`data-global-template-id="${targetTpl.id}"`)) {
+                insertHtml = `<div class="global-template-instance" data-global-template-id="${targetTpl.id}">${insertHtml}</div>`;
+              }
+
+              editor.addComponents(insertHtml);
+              if (targetTpl.css) {
+                editor.setStyle((editor.getCss() || '') + '\n' + targetTpl.css);
+              }
+
+              showToast(`✓ Inserted "${targetTpl.name}" (${targetTpl.type.toUpperCase()})!`);
+              closeSavedTemplatesLibrary();
+            });
+          });
+        }
+
+        // Wire filter buttons, search input, and close
+        document.getElementById('btnCloseLibraryModal')?.addEventListener('click', closeSavedTemplatesLibrary);
+        document.getElementById('btnLibFilterAll')?.addEventListener('click', () => { libActiveFilter = 'all'; updateLibFilterUI(); renderSavedTemplatesLibraryGrid(); });
+        document.getElementById('btnLibFilterGlobal')?.addEventListener('click', () => { libActiveFilter = 'global'; updateLibFilterUI(); renderSavedTemplatesLibraryGrid(); });
+        document.getElementById('btnLibFilterIndiv')?.addEventListener('click', () => { libActiveFilter = 'individual'; updateLibFilterUI(); renderSavedTemplatesLibraryGrid(); });
+        document.getElementById('inputSearchLibrary')?.addEventListener('input', renderSavedTemplatesLibraryGrid);
+
+        // Helper predicates and suppressors to ensure dropzone buttons and hint are never detected as layers or selected
+        function isDropzoneHelper(comp) {
+          if (!comp) return false;
+          const cls = comp.getClasses ? comp.getClasses() : [];
+          const tag = (comp.get('tagName') || '').toLowerCase();
+          const id = comp.getId ? comp.getId() : '';
+          return cls.includes('dropzone-buttons-row') ||
+                 cls.includes('dropzone-btn') ||
+                 cls.includes('dropzone-hint') ||
+                 cls.includes('dropzone-text') ||
+                 id === 'btnDropzoneAddBlock' ||
+                 id === 'btnDropzoneAddTemplate' ||
+                 tag === 'svg' || tag === 'path' || tag === 'line';
+        }
+
+        function lockDropzoneComponents() {
+          try {
+            if (!editor || !editor.DomComponents) return;
+            const wrapper = editor.DomComponents.getWrapper();
+            if (!wrapper) return;
+            const comps = wrapper.find('.dropzone-buttons-row, .dropzone-btn, .dropzone-hint, .dropzone-text, #btnDropzoneAddBlock, #btnDropzoneAddTemplate, svg, path, line');
+            comps.forEach(c => {
+              if (isDropzoneHelper(c)) {
+                c.set({
+                  layerable: false,
+                  selectable: false,
+                  hoverable: false,
+                  highlightable: false,
+                  badgable: false,
+                  draggable: false,
+                  droppable: false,
+                  copyable: false,
+                  removable: false
+                });
+              }
+            });
+          } catch (e) {}
+        }
+
+        function filterDropzoneLayers() {
+          try {
+            const container = document.getElementById('layers-container');
+            if (!container) return;
+            const layers = container.querySelectorAll('.gjs-layer');
+            layers.forEach(layer => {
+              let comp = null;
+              for (const k in layer) {
+                if (layer[k] && layer[k].model) {
+                  comp = layer[k].model;
+                  break;
+                }
+              }
+              if (comp && isDropzoneHelper(comp)) {
+                layer.style.setProperty('display', 'none', 'important');
+              }
+            });
+          } catch (e) {}
+        }
+
+        // Dropzone inside-canvas buttons event attachment using event delegation
+        function attachDropzoneEvents() {
+          try {
+            const frameDoc = editor.Canvas?.getDocument();
+            if (!frameDoc) return;
+
+            // Ensure helper components are non-layerable, non-selectable and hidden from layer tree
+            lockDropzoneComponents();
+            filterDropzoneLayers();
+
+            const layersContainerEl = document.getElementById('layers-container');
+            if (layersContainerEl && !layersContainerEl.__dropzoneObserverAttached) {
+              layersContainerEl.__dropzoneObserverAttached = true;
+              const dzLayerObserver = new MutationObserver(() => {
+                filterDropzoneLayers();
+              });
+              dzLayerObserver.observe(layersContainerEl, { childList: true, subtree: true });
+            }
+
+            // 1. Inject dropzone dynamic CSS rules so placeholder icons & hint vanish as soon as content is inside
+            if (!frameDoc.getElementById('gjs-dropzone-styles')) {
+              const style = frameDoc.createElement('style');
+              style.id = 'gjs-dropzone-styles';
+              style.textContent = `
+                .empty-workspace-dropzone:has(> :not(.dropzone-buttons-row):not(.dropzone-hint):not(.dropzone-text)) > .dropzone-buttons-row,
+                .empty-workspace-dropzone:has(> :not(.dropzone-buttons-row):not(.dropzone-hint):not(.dropzone-text)) > .dropzone-hint,
+                .empty-workspace-dropzone:has(> :not(.dropzone-buttons-row):not(.dropzone-hint):not(.dropzone-text)) > .dropzone-text,
+                .empty-workspace-dropzone.has-content > .dropzone-buttons-row,
+                .empty-workspace-dropzone.has-content > .dropzone-hint,
+                .empty-workspace-dropzone.has-content > .dropzone-text {
+                  display: none !important;
+                }
+                .empty-workspace-dropzone:has(> :not(.dropzone-buttons-row):not(.dropzone-hint):not(.dropzone-text)),
+                .empty-workspace-dropzone.has-content {
+                  user-select: auto !important;
+                  min-height: 40px !important;
+                  padding: 14px !important;
+                  gap: 0 !important;
+                  display: block !important;
+                }
+              `;
+              frameDoc.head.appendChild(style);
+            }
+
+            // 2. Synchronize dropzone content state in DOM & GrapesJS component models
+            const dropzones = frameDoc.querySelectorAll('.empty-workspace-dropzone, #emptyWorkspaceDropzone');
+            dropzones.forEach(dz => {
+              const nonPlaceholderChildren = Array.from(dz.children).filter(child =>
+                !child.classList.contains('dropzone-buttons-row') &&
+                !child.classList.contains('dropzone-hint') &&
+                !child.classList.contains('dropzone-text') &&
+                !child.classList.contains('gjs-cv-canvas')
+              );
+              const btnRow = dz.querySelector('.dropzone-buttons-row');
+              const hint = dz.querySelector('.dropzone-hint, .dropzone-text');
+
+              if (nonPlaceholderChildren.length > 0) {
+                dz.classList.add('has-content');
+                if (btnRow) btnRow.style.setProperty('display', 'none', 'important');
+                if (hint) hint.style.setProperty('display', 'none', 'important');
+              } else {
+                dz.classList.remove('has-content');
+                if (btnRow) btnRow.style.removeProperty('display');
+                if (hint) hint.style.removeProperty('display');
+              }
+            });
+
+            if (!frameDoc.__dropzoneEventsDelegated) {
+              frameDoc.__dropzoneEventsDelegated = true;
+              frameDoc.addEventListener('click', (e) => {
+                const btnAddBlock = e.target.closest('#btnDropzoneAddBlock, .btn-trigger-add-block');
+                if (btnAddBlock) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const dz = btnAddBlock.closest('.empty-workspace-dropzone, #emptyWorkspaceDropzone');
+                  if (typeof window.openDropzoneLayoutPicker === 'function' && dz) {
+                    window.openDropzoneLayoutPicker(dz, editor);
+                  } else {
+                    document.querySelector('.sidebar-tabs .tab-btn[data-tab="blocks"]')?.click();
+                  }
+                  return;
+                }
+
+                const btnAddTemplate = e.target.closest('#btnDropzoneAddTemplate, .btn-trigger-add-template');
+                if (btnAddTemplate) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openSavedTemplatesLibrary();
+                  return;
+                }
+              }, true);
+            }
+          } catch (e) {
+            console.warn('attachDropzoneEvents error:', e);
+          }
+        }
+
+        editor.on('load', () => {
+          attachDropzoneEvents();
+        });
+
+        ['component:add', 'component:remove', 'block:drag:stop', 'canvas:drop'].forEach(ev => {
+          editor.on(ev, () => {
+            setTimeout(attachDropzoneEvents, 60);
+            try {
+              const wrapper = editor.getWrapper();
+              const dropzoneComp = wrapper.find('#emptyWorkspaceDropzone')[0];
+              const allChildren = wrapper.components();
+              if (dropzoneComp && allChildren.length > 1) {
+                dropzoneComp.remove();
+              }
+            } catch (e) {}
+          });
+        });
+
+        // ========================================================
+        // NORMAL & HOVER STATE SWITCHER CONTROLLER
+        // ========================================================
+        let activeComponentStylingState = 'normal';
+        const componentNormalStyles = {};
+
+        function snapshotComponentNormalStyle(cmp) {
+          if (!cmp) return;
+          const id = cmp.getId();
+          componentNormalStyles[id] = JSON.parse(JSON.stringify(cmp.getStyle()));
+        }
+
+        function updateStateButtonsUI(state) {
+          activeComponentStylingState = state;
+          document.querySelectorAll('.gjs-state-btn, .gjs-master-state-btn').forEach(btn => {
+            btn.classList.toggle('is-active', btn.dataset.state === state);
+          });
+          const indicator = document.getElementById('gjsStateIndicator');
+          if (indicator) {
+            if (state === 'hover') {
+              indicator.textContent = ':hover State Active';
+              indicator.className = 'gjs-sm-state-badge is-hover';
+            } else {
+              indicator.textContent = 'Normal State';
+              indicator.className = 'gjs-sm-state-badge';
+            }
+          }
+        }
+
+        function refreshAllStyleProperties(edInstance) {
+          const ed = edInstance || editor;
+          if (!ed || !ed.StyleManager) return;
+          const sectors = ed.StyleManager.getSectors();
+          function refreshProp(prop) {
+            if (!prop) return;
+            if (prop.view && typeof prop.view.render === 'function') {
+              try { prop.view.render(); } catch (e) {}
+            }
+            const subProps = prop.getProperties ? prop.getProperties() : (prop.get ? prop.get('properties') : null);
+            if (subProps && subProps.forEach) subProps.forEach(refreshProp);
+          }
+          sectors.forEach(s => {
+            const props = s.getProperties ? s.getProperties() : (s.get ? s.get('properties') : []);
+            if (props && props.forEach) props.forEach(refreshProp);
+          });
+        }
+
+        function setComponentStylingState(state) {
+          if (!editor) return;
+          const sel = editor.getSelected();
+          if (!sel) return;
+          const id = sel.getId();
+
+          activeComponentStylingState = state;
+
+          if (state === 'hover') {
+            snapshotComponentNormalStyle(sel);
+            sel.addClass('gjs-hover-preview');
+            let hoverRule = editor.Css.getRule(`#${id}:hover, #${id}.gjs-hover-preview`);
+            if (!hoverRule) {
+              hoverRule = editor.Css.getRule(`#${id}:hover`);
+            }
+            if (!hoverRule) {
+              hoverRule = editor.Css.setRule(`#${id}:hover, #${id}.gjs-hover-preview`, {});
+            }
+            editor.StyleManager.select(hoverRule);
+          } else {
+            sel.removeClass('gjs-hover-preview');
+            if (componentNormalStyles[id]) {
+              sel.setStyle(componentNormalStyles[id]);
+              const normRule = editor.Css.getRule('#' + id);
+              if (normRule) normRule.setStyle(componentNormalStyles[id]);
+            }
+            editor.StyleManager.select(sel);
+          }
+
+          refreshAllStyleProperties(editor);
+          enhanceStateSwitchers();
+          updateStateButtonsUI(state);
+        }
+
+        function enhanceStateSwitchers() {
+          const stylesEl = document.getElementById('styles-container');
+          if (!stylesEl) return;
+
+          // 1. Top Master State Toolbar
+          if (!stylesEl.querySelector('.gjs-sm-state-toolbar')) {
+            const toolbar = document.createElement('div');
+            toolbar.className = 'gjs-sm-state-toolbar';
+            toolbar.innerHTML = `
+              <div class="gjs-sm-state-left">
+                <span class="gjs-sm-state-title">State:</span>
+                <div class="gjs-sm-state-pills">
+                  <button type="button" class="gjs-master-state-btn ${activeComponentStylingState === 'normal' ? 'is-active' : ''}" data-state="normal">Normal</button>
+                  <button type="button" class="gjs-master-state-btn ${activeComponentStylingState === 'hover' ? 'is-active' : ''}" data-state="hover">Hover (:hover)</button>
+                </div>
+              </div>
+              <span class="gjs-sm-state-badge ${activeComponentStylingState === 'hover' ? 'is-hover' : ''}" id="gjsStateIndicator">
+                ${activeComponentStylingState === 'hover' ? ':hover State Active' : 'Normal State'}
+              </span>
+            `;
+            toolbar.querySelectorAll('.gjs-master-state-btn').forEach(btn => {
+              btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setComponentStylingState(btn.dataset.state);
+              });
+            });
+            stylesEl.insertBefore(toolbar, stylesEl.firstChild);
+          }
+
+          // 2. Add normal/hover switchers directly to Sector Titles
+          const sectors = stylesEl.querySelectorAll('.gjs-sm-sector');
+          sectors.forEach(sector => {
+            const title = sector.querySelector('.gjs-sm-sector-title');
+            const label = sector.querySelector('.gjs-sm-sector-label');
+            if (!title || !label || sector.querySelector('.gjs-sector-state-switch')) return;
+
+            const labelText = label.textContent.trim().toLowerCase();
+            if (
+              labelText.includes('typography') ||
+              labelText.includes('background') ||
+              labelText.includes('color') ||
+              labelText.includes('border') ||
+              labelText.includes('decoration') ||
+              labelText.includes('effect')
+            ) {
+              const switchGroup = document.createElement('div');
+              switchGroup.className = 'gjs-sector-state-switch';
+              switchGroup.innerHTML = `
+                <button type="button" class="gjs-state-btn ${activeComponentStylingState === 'normal' ? 'is-active' : ''}" data-state="normal">normal</button>
+                <button type="button" class="gjs-state-btn ${activeComponentStylingState === 'hover' ? 'is-active' : ''}" data-state="hover">hover</button>
+              `;
+              switchGroup.querySelectorAll('.gjs-state-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setComponentStylingState(btn.dataset.state);
+                });
+              });
+              title.appendChild(switchGroup);
+            }
+          });
+        }
+
+        editor.on('component:selected', (comp) => {
+          if (!comp) return;
+          if (typeof isDropzoneHelper === 'function' && isDropzoneHelper(comp)) {
+            editor.selectRemove(comp);
+            return;
+          }
+          if (comp) {
+            comp.removeClass('gjs-hover-preview');
+            snapshotComponentNormalStyle(comp);
+          }
+          updateStateButtonsUI('normal');
+          if (typeof updateLayerSelectionUI === 'function') {
+            updateLayerSelectionUI(comp);
+          }
+          setTimeout(enhanceStateSwitchers, 50);
+        });
+
+        editor.on('component:deselected', () => {
+          if (typeof updateLayerSelectionUI === 'function') {
+            updateLayerSelectionUI(null);
+          }
+        });
+
+        editor.on('component:styleUpdate', (cmp) => {
+          if (!cmp) return;
+          const id = cmp.getId();
+
+          if (activeComponentStylingState === 'hover') {
+            const normalStyle = componentNormalStyles[id];
+            if (!normalStyle) return;
+
+            const currentStyle = cmp.getStyle();
+            let hoverRule = editor.Css.getRule(`#${id}:hover, #${id}.gjs-hover-preview`) 
+              || editor.Css.getRule(`#${id}:hover`);
+            if (!hoverRule) {
+              hoverRule = editor.Css.setRule(`#${id}:hover, #${id}.gjs-hover-preview`, {});
+            }
+
+            let hasChanges = false;
+            for (const key in currentStyle) {
+              if (currentStyle[key] !== normalStyle[key]) {
+                hoverRule.addStyle({ [key]: currentStyle[key] });
+                hasChanges = true;
+              }
+            }
+
+            if (hasChanges) {
+              cmp.setStyle(normalStyle, { silent: true });
+              const normRule = editor.Css.getRule('#' + id);
+              if (normRule) normRule.setStyle(normalStyle, { silent: true });
+            }
+          } else {
+            componentNormalStyles[id] = JSON.parse(JSON.stringify(cmp.getStyle()));
+          }
+        });
+
+        editor.on('component:deselected', (comp) => {
+          if (comp) {
+            comp.removeClass('gjs-hover-preview');
+          }
+          updateStateButtonsUI('normal');
+        });
+
+        editor.on('styleManager:change', () => {
+          setTimeout(enhanceStateSwitchers, 50);
+        });
+
+        editor.on('load', () => {
+          setTimeout(enhanceStateSwitchers, 100);
+          if (typeof initLayerClipboardSystem === 'function') {
+            initLayerClipboardSystem();
+          }
+          if (window.initContainerLayoutStyler) {
+            window.initContainerLayoutStyler(editor);
+          }
+        });
+
+        const blogLayoutStylesObserverTarget = document.getElementById('styles-container');
+        if (blogLayoutStylesObserverTarget) {
+          const obs = new MutationObserver(() => {
+            enhanceStateSwitchers();
+          });
+          obs.observe(blogLayoutStylesObserverTarget, { childList: true, subtree: true });
+        }
+
+        // Load layout into editor cleanly
+        function loadLayoutIntoEditor(layout) {
+          if (layout.projectData && Object.keys(layout.projectData).length > 0) {
+            try {
+              editor.loadProjectData(layout.projectData);
+              injectIframeStyles();
+              return;
+            } catch (e) {
+              console.warn('Failed to load projectData, fallback to html/css', e);
+            }
+          }
+          editor.setComponents(layout.html || '');
+          if (layout.css) {
+            editor.addStyle(layout.css);
+          }
+          injectIframeStyles();
+        }
+
+        loadLayoutIntoEditor(window.activeLayout);
+        editor.on('load', () => {
+          injectIframeStyles();
+        });
+
+        // ========================================================
+        // REGISTER BASIC BLOCKS, DYNAMIC POST BLOCKS & SAVED TEMPLATES
+        // ========================================================
+        const bm = editor.BlockManager;
+
+        const CAT_BASIC = { id: 'basic', label: 'Basic Blocks', open: true };
+        const CAT_DYNAMIC = { id: 'dynamic-post', label: '⚡ Dynamic Post Elements', open: true };
+        const CAT_SAVED_TEMPLATES = { id: 'saved-templates', label: '🧩 Saved Templates (Global & Individual)', open: true };
+
+        // --------------------------------------------------------
+        // 1. BASIC BLOCKS (IDENTIK DENGAN PAGE BUILDER)
+        // --------------------------------------------------------
+        // 0. Empty Workspace Drop Zone
+        bm.add('empty-workspace-dropzone-block', {
+          label: 'Empty Drop Zone',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Empty Workspace Drop Zone (+ and Template Folder)' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="4 4"></rect><circle cx="10" cy="12" r="2.5"></circle><circle cx="14" cy="12" r="2.5"></circle></svg>`,
+          content: EMPTY_WORKSPACE_HTML
+        });
+
+        // 1. 1 Column
+        bm.add('column1', {
+          label: '1 Column',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: '1 Column' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/></svg>`,
+          content: `<div class="row" style="padding: 20px 0; width: 100%;"><div class="cell" style="min-height: 75px; padding: 12px;"></div></div>`
+        });
+
+        // 2. 2 Columns
+        bm.add('column2', {
+          label: '2 Columns',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: '2 Columns' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="8" height="16" rx="2"/><rect x="13" y="4" width="8" height="16" rx="2"/></svg>`,
+          content: `<div class="row" style="display: flex; flex-wrap: wrap; gap: 20px; padding: 20px 0; width: 100%;"><div class="cell" style="flex: 1 1 300px; min-height: 75px; padding: 12px;"></div><div class="cell" style="flex: 1 1 300px; min-height: 75px; padding: 12px;"></div></div>`
+        });
+
+        // 3. 3 Columns
+        bm.add('column3', {
+          label: '3 Columns',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: '3 Columns' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="5.5" height="16" rx="1.5"/><rect x="9.25" y="4" width="5.5" height="16" rx="1.5"/><rect x="16.5" y="4" width="5.5" height="16" rx="1.5"/></svg>`,
+          content: `<div class="row" style="display: flex; flex-wrap: wrap; gap: 20px; padding: 20px 0; width: 100%;"><div class="cell" style="flex: 1 1 200px; min-height: 75px; padding: 12px;"></div><div class="cell" style="flex: 1 1 200px; min-height: 75px; padding: 12px;"></div><div class="cell" style="flex: 1 1 200px; min-height: 75px; padding: 12px;"></div></div>`
+        });
+
+        // 4. 2 Columns 3/7
+        bm.add('column3-7', {
+          label: '2 Columns 3/7',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: '2 Columns 3/7' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="11" height="16" rx="2"/></svg>`,
+          content: `<div class="row" style="display: flex; flex-wrap: wrap; gap: 20px; padding: 20px 0; width: 100%;"><div class="cell" style="flex: 3 1 240px; min-height: 75px; padding: 12px;"></div><div class="cell" style="flex: 7 1 360px; min-height: 75px; padding: 12px;"></div></div>`
+        });
+
+        // 5. Sidebar 70/30 (Perfect for Blog reading area + sidebar)
+        bm.add('column-sidebar-70-30', {
+          label: 'Sidebar (70/30)',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: '2 Col (70/30 Sidebar)' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="12" height="16" rx="2"></rect><rect x="17" y="4" width="4" height="16" rx="2"></rect></svg>`,
+          content: `<div style="max-width: 1160px; margin: 0 auto; padding: 0 20px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 36px; align-items: start;"><main class="cell" style="min-width: 0; min-height: 120px; padding: 10px;">Main Reading Area (70%)</main><aside class="cell" style="min-height: 120px; padding: 10px;">Sticky Sidebar (30%)</aside></div>`
+        });
+
+        // 6. Heading 1
+        bm.add('heading-1', {
+          label: 'Heading 1',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Heading 1 (H1)' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5v14M11 5v14M4 12h7"/><path d="M17 8.5l3-2.5v13"/></svg>`,
+          content: {
+            type: 'heading',
+            tagName: 'h1',
+            content: 'Heading 1 Title',
+            style: {
+              'font-family': "'Montserrat', sans-serif",
+              'font-size': '2.5rem',
+              'font-weight': '800',
+              'color': '#111827',
+              'margin-bottom': '16px',
+              'line-height': '1.2'
+            }
+          }
+        });
+
+        // 7. Heading 2
+        bm.add('heading-2', {
+          label: 'Heading 2',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Heading 2 (H2)' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5v14M11 5v14M4 12h7"/><path d="M15.5 8.5a2.5 2.5 0 0 1 4.5.5c0 2-2 4-4.5 7h4.8"/></svg>`,
+          content: {
+            type: 'heading',
+            tagName: 'h2',
+            content: 'Heading 2 Title',
+            style: {
+              'font-family': "'Montserrat', sans-serif",
+              'font-size': '2rem',
+              'font-weight': '700',
+              'color': '#111827',
+              'margin-bottom': '14px',
+              'line-height': '1.25'
+            }
+          }
+        });
+
+        // 8. Heading 3
+        bm.add('heading-3', {
+          label: 'Heading 3',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Heading 3 (H3)' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5v14M11 5v14M4 12h7"/><path d="M15.5 8h4.5l-2.2 3.2a2.4 2.4 0 1 1-2 3.8"/></svg>`,
+          content: {
+            type: 'heading',
+            tagName: 'h3',
+            content: 'Heading 3 Title',
+            style: {
+              'font-family': "'Montserrat', sans-serif",
+              'font-size': '1.6rem',
+              'font-weight': '700',
+              'color': '#111827',
+              'margin-bottom': '12px',
+              'line-height': '1.3'
+            }
+          }
+        });
+
+        // 9. Heading 4
+        bm.add('heading-4', {
+          label: 'Heading 4',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Heading 4 (H4)' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5v14M11 5v14M4 12h7"/><path d="M19 7v12M15 7v6.5h4.5"/></svg>`,
+          content: {
+            type: 'heading',
+            tagName: 'h4',
+            content: 'Heading 4 Title',
+            style: {
+              'font-family': "'Montserrat', sans-serif",
+              'font-size': '1.25rem',
+              'font-weight': '600',
+              'color': '#111827',
+              'margin-bottom': '10px',
+              'line-height': '1.35'
+            }
+          }
+        });
+
+        // 10. Heading 5
+        bm.add('heading-5', {
+          label: 'Heading 5',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Heading 5 (H5)' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5v14M11 5v14M4 12h7"/><path d="M19.5 7.5h-4.5v3.5a2.4 2.4 0 0 1 2-.5 2.4 2.4 0 0 1 2.3 2.5 2.4 2.4 0 0 1-2.5 2.5 2.5 2.5 0 0 1-2-.9"/></svg>`,
+          content: {
+            type: 'heading',
+            tagName: 'h5',
+            content: 'Heading 5 Title',
+            style: {
+              'font-family': "'Montserrat', sans-serif",
+              'font-size': '1.05rem',
+              'font-weight': '600',
+              'color': '#111827',
+              'margin-bottom': '8px',
+              'line-height': '1.4'
+            }
+          }
+        });
+
+        // 11. Paragraph
+        bm.add('paragraph', {
+          label: 'Paragraph',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Paragraph' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="14" y2="18"/></svg>`,
+          content: {
+            type: 'text',
+            tagName: 'p',
+            content: 'Insert your text here. Double click to edit this paragraph and craft your message with elegance.',
+            style: {
+              'font-family': "'Plus Jakarta Sans', sans-serif",
+              'font-size': '1rem',
+              'line-height': '1.7',
+              'color': '#4b5563',
+              'margin-bottom': '16px'
+            }
+          }
+        });
+
+        // 12. Text
+        bm.add('text', {
+          label: 'Text',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Text' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>`,
+          content: `<p style="font-family: 'Plus Jakarta Sans', sans-serif; font-size: 1rem; line-height: 1.7; color: #4b5563; margin-bottom: 16px;">Insert your text here. Double click to edit this paragraph.</p>`
+        });
+
+        // 13. Link
+        bm.add('link', {
+          label: 'Link',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Link' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
+          content: {
+            type: 'link',
+            content: 'Link text',
+            style: { color: '#ff5e3a', 'font-weight': '600', 'text-decoration': 'underline' }
+          }
+        });
+
+        // 14. Image
+        bm.add('image', {
+          label: 'Image',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Image' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`,
+          content: {
+            type: 'image',
+            src: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1200&q=80',
+            style: { width: '100%', 'max-width': '600px', height: 'auto', 'border-radius': '6px', display: 'block' }
+          }
+        });
+
+        // 15. Video
+        bm.add('video', {
+          label: 'Video',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Video' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="4"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/></svg>`,
+          content: {
+            type: 'video',
+            provider: 'yt',
+            videoId: 'dQw4w9WgXcQ',
+            style: {
+              height: '380px',
+              width: '100%',
+              'border-radius': '8px'
+            }
+          }
+        });
+
+        // 16. Map
+        bm.add('map', {
+          label: 'Map',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Map' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>`,
+          content: {
+            type: 'map',
+            style: {
+              height: '350px',
+              width: '100%',
+              'border-radius': '8px'
+            }
+          }
+        });
+
+        // 17. Link Block
+        bm.add('link-block', {
+          label: 'Link Block',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Link Block' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>`,
+          content: `<a href="#" style="display: block; padding: 25px; border: 1px solid #e5e7eb; border-radius: 8px; background-color: #f9fafb; text-decoration: none; color: inherit; transition: all 0.2s ease;"><h4 style="font-family: 'Montserrat', sans-serif; font-size: 1.1rem; font-weight: 700; color: #111827; margin: 0 0 8px;">Link Block Title</h4><p style="font-size: 0.9rem; color: #6b7280; margin: 0;">This entire container is clickable. Double click to customize this content.</p></a>`
+        });
+
+        // 18. Quote
+        bm.add('quote', {
+          label: 'Quote',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Quote' },
+          media: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 17h3l2-4V7H5v6h3l-2 4zm8 0h3l2-4V7h-6v6h3l-2 4z"/></svg>`,
+          content: `<blockquote style="border-left: 4px solid #ff5e3a; padding: 15px 24px; margin: 20px 0; background-color: #f9fafb; border-radius: 0 8px 8px 0; font-family: 'Plus Jakarta Sans', sans-serif;"><p style="font-size: 1.15rem; font-style: italic; color: #1f2937; margin-bottom: 8px; line-height: 1.6;">"Simplicity is about subtracting the obvious and adding the meaningful."</p><footer style="font-size: 0.85rem; font-weight: 700; color: #6b7280;">— Author Name</footer></blockquote>`
+        });
+
+        // 19. Text section
+        bm.add('text-section', {
+          label: 'Text section',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Text section' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="14" y2="18"/></svg>`,
+          content: `<section style="padding: 60px 20px; font-family: 'Plus Jakarta Sans', sans-serif;"><div style="max-width: 800px; margin: 0 auto;"><h2 style="font-family: 'Montserrat', sans-serif; font-size: 2rem; font-weight: 800; color: #111827; margin-bottom: 16px;">Section Title</h2><p style="font-size: 1.05rem; line-height: 1.8; color: #4b5563; margin-bottom: 16px;">This is a versatile text section. Use it for article bodies, explanations, feature introductions, or general rich content across your pages.</p></div></section>`
+        });
+
+        // 20. Accordion (FAQ List)
+        bm.add('accordion', {
+          label: 'Accordion (FAQ)',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Accordion / FAQ' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="5" rx="1.5"/><rect x="3" y="11" width="18" height="10" rx="1.5"/><line x1="7" y1="15" x2="17" y2="15"/><line x1="7" y1="18" x2="13" y2="18"/><polyline points="16 5.5 17.5 5.5 17.5 5.5"/></svg>`,
+          content: `
+            <div class="accordion-container" data-faq-schema="true" style="width: 100%; max-width: 800px; margin: 20px auto;">
+              <div class="accordion-item is-open" data-open="true" style="border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 12px; overflow: hidden; background-color: #ffffff;">
+                <div class="accordion-header" style="display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; cursor: pointer; user-select: none; background-color: #ffffff;">
+                  <h4 class="accordion-title" style="font-family: 'Montserrat', sans-serif; font-size: 1.05rem; font-weight: 700; color: #111827; margin: 0; line-height: 1.4;">What services do you provide?</h4>
+                  <span class="accordion-icon" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background-color: rgba(255, 94, 58, 0.08); flex-shrink: 0;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ff5e3a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(180deg); transition: transform 0.25s ease;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  </span>
+                </div>
+                <div class="accordion-content" style="max-height: 500px; padding: 18px 22px 22px 22px; background-color: #f9fafb; overflow: hidden; transition: max-height 0.3s ease;">
+                  <p class="accordion-body" style="font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.95rem; line-height: 1.7; color: #4b5563; margin: 0;">We provide digital branding, responsive website design, custom software development, and online marketing services to help your business succeed.</p>
+                </div>
+              </div>
+              <div class="accordion-item" style="border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 12px; overflow: hidden; background-color: #ffffff;">
+                <div class="accordion-header" style="display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; cursor: pointer; user-select: none; background-color: #ffffff;">
+                  <h4 class="accordion-title" style="font-family: 'Montserrat', sans-serif; font-size: 1.05rem; font-weight: 700; color: #111827; margin: 0; line-height: 1.4;">How long does project delivery take?</h4>
+                  <span class="accordion-icon" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background-color: rgba(255, 94, 58, 0.08); flex-shrink: 0;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ff5e3a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.25s ease;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  </span>
+                </div>
+                <div class="accordion-content" style="max-height: 0px; padding: 0 22px; background-color: #f9fafb; overflow: hidden; transition: max-height 0.3s ease;">
+                  <p class="accordion-body" style="font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.95rem; line-height: 1.7; color: #4b5563; margin: 0;">Standard landing pages and corporate sites typically take 2 to 3 weeks, while larger applications depend on specific feature requirements.</p>
+                </div>
+              </div>
+              <div class="accordion-item" style="border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 12px; overflow: hidden; background-color: #ffffff;">
+                <div class="accordion-header" style="display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; cursor: pointer; user-select: none; background-color: #ffffff;">
+                  <h4 class="accordion-title" style="font-family: 'Montserrat', sans-serif; font-size: 1.05rem; font-weight: 700; color: #111827; margin: 0; line-height: 1.4;">Can I edit the questions and answers easily?</h4>
+                  <span class="accordion-icon" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background-color: rgba(255, 94, 58, 0.08); flex-shrink: 0;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ff5e3a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.25s ease;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  </span>
+                </div>
+                <div class="accordion-content" style="max-height: 0px; padding: 0 22px; background-color: #f9fafb; overflow: hidden; transition: max-height 0.3s ease;">
+                  <p class="accordion-body" style="font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.95rem; line-height: 1.7; color: #4b5563; margin: 0;">Yes! Double-click on any question or answer on the canvas to modify text instantly, or duplicate items to add more questions.</p>
+                </div>
+              </div>
+            </div>
+          `
+        });
+
+        // 21. Filter Button Pill
+        bm.add('filter-pill-btn', {
+          label: 'Filter Button Pill',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Category Filter Button Pill' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="5"/></svg>`,
+          content: `
+            <button type="button" class="filter-pill" data-category="Category Name" role="tab" aria-selected="false" style="padding: 8px 18px; border-radius: 9999px; font-family: 'Montserrat', sans-serif; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.5px; color: #374151; background-color: #f3f4f6; border: 1px solid #e5e7eb; cursor: pointer; transition: all 0.2s ease;">
+              Category Name
+            </button>
+          `
+        });
+
+        // 22. Divider
+        bm.add('divider', {
+          label: 'Divider',
+          category: CAT_BASIC,
+          attributes: { class: 'gjs-block-basic', title: 'Divider Line' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line></svg>`,
+          content: `<div style="height: 1px; background: #e5e7eb; margin: 32px 0;"></div>`
+        });
+
+        // --------------------------------------------------------
+        // 2. DYNAMIC POST ELEMENTS (FOR BLOG LAYOUT TEMPLATES)
+        // --------------------------------------------------------
+
+        // 1. DYNAMIC ARTICLE CONTENT (Main article body)
+        bm.add('post-content-block', {
+          label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Article Content</div>',
+          category: CAT_DYNAMIC,
+          attributes: { title: 'Dynamic article body text element' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>`,
+          content: `<div data-post-element="content" class="post-content" style="font-size: 1.08rem; line-height: 1.85; color: #374151; padding: 12px 0;">
+            <p class="lead" style="font-size: 1.22rem; font-weight: 500; color: #1f2937; margin-bottom: 20px; line-height: 1.75;">
+              This is the dynamic article content placeholder. In live blog posts, the unique article text written in Blog Editor will render here.
+            </p>
+            <h2 style="font-size: 1.65rem; font-weight: 800; color: #111827; margin: 32px 0 16px 0;">1. Section Subheading</h2>
+            <p>
+              Standard layouts allow you to style every blog post universally. Modify typography, fonts, colors, or column layouts once, and all assigned posts will inherit it.
+            </p>
+          </div>`
+        });
+
+        // 2. DYNAMIC FEATURED IMAGE
+        bm.add('post-image-block', {
+          label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Featured Image</div>',
+          category: CAT_DYNAMIC,
+          attributes: { title: 'Dynamic hero featured image' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>`,
+          content: `<div data-post-element="image" style="border-radius: 12px; overflow: hidden; margin: 24px 0; box-shadow: 0 8px 24px rgba(0,0,0,0.06); max-height: 440px;">
+            <img src="https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1200&q=80" alt="Featured Media" style="width: 100%; height: 100%; object-fit: cover; display: block;" />
+          </div>`
+        });
+
+        // 3. DYNAMIC POST TITLE
+        bm.add('post-title-block', {
+          label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Post Title</div>',
+          category: CAT_DYNAMIC,
+          attributes: { title: 'Dynamic article main title headline' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.2"><path d="M4 12h16"></path><path d="M4 6h16"></path><path d="M4 18h10"></path></svg>`,
+          content: `<h1 data-post-element="title" style="font-family: 'Montserrat', sans-serif; font-size: 2.4rem; font-weight: 800; color: #111827; line-height: 1.25; margin: 16px 0;">
+            Dynamic Article Title Headline
+          </h1>`
+        });
+
+        // 4. DYNAMIC POST EXCERPT / SUBTITLE
+        bm.add('post-excerpt-block', {
+          label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Post Excerpt</div>',
+          category: CAT_DYNAMIC,
+          attributes: { title: 'Dynamic article excerpt summary' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><line x1="21" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="21" y1="18" x2="3" y2="18"></line></svg>`,
+          content: `<p data-post-element="excerpt" style="font-size: 1.18rem; color: #4b5563; line-height: 1.6; margin-bottom: 20px;">
+            A compelling summary that introduces your topic and engages readers from the start.
+          </p>`
+        });
+
+        // 5. DYNAMIC AUTHOR CARD
+        bm.add('post-author-block', {
+          label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Author Card</div>',
+          category: CAT_DYNAMIC,
+          attributes: { title: 'Dynamic author profile' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>`,
+          content: `<div data-post-element="author" style="display: flex; align-items: center; gap: 12px; margin: 16px 0;">
+            <img data-post-element="author-avatar" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=240&h=240&q=80" alt="Author" style="width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 2px solid #ff5e3a;" />
+            <div>
+              <div data-post-element="author-name" style="font-size: 0.9rem; font-weight: 700; color: #111827;">Sarah Jenkins</div>
+              <div data-post-element="author-role" style="font-size: 0.76rem; color: #6b7280;">Head of Brand Strategy</div>
+            </div>
+          </div>`
+        });
+
+        // 6. DYNAMIC DATE & READ TIME META BAR
+        bm.add('post-meta-block', {
+          label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Meta Bar (Date & Time)</div>',
+          category: CAT_DYNAMIC,
+          attributes: { title: 'Dynamic post date and read time' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`,
+          content: `<div data-post-element="meta" style="display: flex; align-items: center; gap: 16px; font-size: 0.82rem; color: #6b7280; margin: 12px 0;">
+            <span data-post-element="post-date">📅 October 24, 2026</span>
+            <span>•</span>
+            <span data-post-element="post-readtime">⏱️ 5 min read</span>
+          </div>`
+        });
+
+        // 7. DYNAMIC CATEGORY BADGES
+        bm.add('post-categories-block', {
+          label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Categories Badges</div>',
+          category: CAT_DYNAMIC,
+          attributes: { title: 'Dynamic category tag pills' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>`,
+          content: `<div data-post-element="categories" style="display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0;">
+            <span class="post-category-badge" style="display: inline-block; padding: 4px 12px; background: rgba(255, 94, 58, 0.12); color: #ff5e3a; font-family: 'Montserrat', sans-serif; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; border-radius: 9999px;">BRANDING</span>
+          </div>`
+        });
+
+        // 8. DYNAMIC BREADCRUMBS
+        bm.add('post-breadcrumbs-block', {
+          label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Breadcrumbs</div>',
+          category: CAT_DYNAMIC,
+          attributes: { title: 'Dynamic breadcrumb navigation' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>`,
+          content: `<div data-post-element="breadcrumbs" style="margin: 12px 0;">
+            <nav class="breadcrumb-nav" aria-label="Breadcrumb">
+              <ol class="breadcrumb-list" style="display: flex; align-items: center; gap: 8px; list-style: none; padding: 0; margin: 0; font-size: 0.85rem; color: #6b7280;">
+                <li><a href="/" style="color: #4b5563; text-decoration: none;">Home</a></li>
+                <li aria-hidden="true" style="color: #9ca3af;">/</li>
+                <li><a href="/blog" style="color: #4b5563; text-decoration: none;">Blog</a></li>
+                <li aria-hidden="true" style="color: #9ca3af;">/</li>
+                <li class="breadcrumb-current" style="color: #111827; font-weight: 600;">Article</li>
+              </ol>
+            </nav>
+          </div>`
+        });
+
+        // 9. DYNAMIC AUTHOR BIO BOX (Bottom)
+        bm.add('post-bio-box-block', {
+          label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Author Bio Box</div>',
+          category: CAT_DYNAMIC,
+          attributes: { title: 'Bottom full author bio card' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"></rect><circle cx="9" cy="10" r="2"></circle><line x1="15" y1="8" x2="17" y2="8"></line><line x1="15" y1="12" x2="17" y2="12"></line><line x1="7" y1="16" x2="17" y2="16"></line></svg>`,
+          content: `<div data-post-element="author-bio-box" style="display: flex; align-items: center; gap: 20px; padding: 24px; background-color: #f9fafb; border-radius: 12px; border: 1px solid #e5e7eb; margin: 36px 0;">
+            <img data-post-element="author-avatar" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=240&h=240&q=80" alt="Author" style="width: 64px; height: 64px; border-radius: 50%; object-fit: cover; flex-shrink: 0;" />
+            <div>
+              <span style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: #ff5e3a; letter-spacing: 1px;">Written by</span>
+              <h3 data-post-element="author-name" style="font-size: 1.12rem; font-weight: 800; color: #111827; margin: 3px 0 5px 0;">Sarah Jenkins</h3>
+              <p data-post-element="author-bio" style="font-size: 0.88rem; color: #6b7280; line-height: 1.55; margin: 0;">
+                Creative industry professional focused on developing visual strategy, brand communication, and high-impact user experiences.
+              </p>
+            </div>
+          </div>`
+        });
+
+        // 10. DYNAMIC BACK TO BLOG BUTTON
+        bm.add('post-back-btn-block', {
+          label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Back to Blog Button</div>',
+          category: CAT_DYNAMIC,
+          attributes: { title: 'Button to return to blog index' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>`,
+          content: `<div data-post-element="back-button" style="margin: 28px 0;">
+            <a href="/blog" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: 8px; border: 1px solid #d1d5db; background: #ffffff; color: #374151; font-size: 0.88rem; font-weight: 600; text-decoration: none;">
+              ← Back to All Articles
+            </a>
+          </div>`
+        });
+
+        // 11. DYNAMIC RELATED ARTICLES SECTION
+        bm.add('post-related-block', {
+          label: '<div class="dynamic-pill-badge">DYNAMIC</div><div>Related Posts Grid</div>',
+          category: CAT_DYNAMIC,
+          attributes: { title: 'Dynamic related posts cards grid' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"></rect><rect x="14" y="3" width="7" height="9" rx="1"></rect></svg>`,
+          content: `<div data-post-element="related" style="margin-top: 48px; padding: 48px 0; background: #f8fafc; border-top: 1px solid #e2e8f0;">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <span style="font-size: 0.75rem; font-weight: 700; color: #ff5e3a; text-transform: uppercase;">RECOMMENDED</span>
+              <h2 style="font-size: 1.8rem; font-weight: 800; color: #111827; margin: 4px 0;">Related Articles</h2>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; max-width: 900px; margin: 0 auto; padding: 0 20px;">
+              <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
+                <span style="font-size: 0.72rem; color: #ff5e3a; font-weight: 700;">CATEGORY</span>
+                <h4 style="margin: 6px 0; color: #111827;">Sample Related Article Title</h4>
+                <p style="font-size: 0.82rem; color: #64748b; margin-bottom: 12px;">Summary preview of recommended post.</p>
+                <a href="/blog" style="color: #ff5e3a; font-size: 0.8rem; font-weight: 700; text-decoration: none;">Read More &rarr;</a>
+              </div>
+            </div>
+          </div>`
+        });
+
+        // --------------------------------------------------------
+        // 3. SAVED TEMPLATES (GLOBAL & INDIVIDUAL)
+        // --------------------------------------------------------
+        (window.allTemplates || []).forEach(tpl => {
+          const isGlobal = tpl.type === 'global';
+          const badge = isGlobal ? '🌐 GLOBAL' : '📄 INDIV';
+          const blockId = `tpl-block-${tpl.id}`;
+
+          let blockContent = tpl.html;
+          if (isGlobal && !blockContent.includes(`data-global-template-id="${tpl.id}"`)) {
+            blockContent = `<div class="global-template-instance" data-global-template-id="${tpl.id}">${blockContent}</div>`;
+          }
+
+          bm.add(blockId, {
+            label: `<div style="display:flex; flex-direction:column; align-items:center; gap:4px; text-align:center; padding: 4px 0;">
+              <span style="font-size:0.62rem; font-weight:800; padding:2px 6px; border-radius:4px; ${isGlobal ? 'background:#10b981; color:#fff;' : 'background:#0284c7; color:#fff;'}">${badge}</span>
+              <span style="font-size:0.78rem; font-weight:600; line-height:1.2; color:#f3f4f6;">${tpl.name}</span>
+            </div>`,
+            category: CAT_SAVED_TEMPLATES,
+            attributes: {
+              title: `${tpl.name} • ${isGlobal ? 'Global Template (Synced everywhere)' : 'Individual Template (Independent copy)'}`,
+              class: `gjs-block-template ${isGlobal ? 'gjs-block-global' : 'gjs-block-individual'}`
+            },
+            media: isGlobal
+              ? `<svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" style="width:24px;height:24px;"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1 4-10z"/></svg>`
+              : `<svg viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2" style="width:24px;height:24px;"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`,
+            content: blockContent
+          });
+        });
+
+        // ========================================================
+        // UI SWITCHER & TABS
+        // ========================================================
+        // Sidebar tabs switching
+        const tabBtns = document.querySelectorAll('.sidebar-tabs .tab-btn');
+        tabBtns.forEach(btn => {
+          btn.addEventListener('click', () => {
+            tabBtns.forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+            btn.classList.add('active');
+            const targetId = `tab-${btn.dataset.tab}`;
+            document.getElementById(targetId)?.classList.add('active');
+          });
+        });
+
+        // Builder Switcher dropdown
+        const btnBuilderSwitcher = document.getElementById('btnBuilderSwitcher');
+        const builderSwitcherMenu = document.getElementById('builderSwitcherMenu');
+        btnBuilderSwitcher?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          builderSwitcherMenu?.classList.toggle('show');
+        });
+
+        // Layout Selector dropdown
+        const btnLayoutSelector = document.getElementById('btnLayoutSelector');
+        const layoutSelectorMenu = document.getElementById('layoutSelectorMenu');
+        btnLayoutSelector?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          layoutSelectorMenu?.classList.toggle('show');
+        });
+
+        window.addEventListener('click', () => {
+          builderSwitcherMenu?.classList.remove('show');
+          layoutSelectorMenu?.classList.remove('show');
+        });
+
+        // Viewport Device switching
+        const deviceBtns = document.querySelectorAll('.device-btn');
+        deviceBtns.forEach(btn => {
+          btn.addEventListener('click', () => {
+            deviceBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            editor.setDevice(btn.dataset.device);
+          });
+        });
+
+        // ========================================================
+        // PREVIEW WITH SAMPLE POST FEATURE
+        // ========================================================
+        const selectSamplePost = document.getElementById('selectSamplePost');
+        selectSamplePost?.addEventListener('change', (e) => {
+          const slug = e.target.value;
+          const chosenPost = window.allPosts.find(p => p.slug === slug);
+          if (!chosenPost) return;
+
+          // Dynamically update the preview link
+          const liveLink = document.getElementById('btnLivePreviewLink');
+          if (liveLink) liveLink.href = `/blog/${chosenPost.slug}`;
+
+          const frameDoc = editor.Canvas.getDocument();
+          if (!frameDoc) return;
+
+          // Update elements in canvas
+          const titleEl = frameDoc.querySelector('[data-post-element="title"]');
+          if (titleEl) titleEl.textContent = chosenPost.title;
+
+          const excerptEl = frameDoc.querySelector('[data-post-element="excerpt"]');
+          if (excerptEl) excerptEl.textContent = chosenPost.excerpt;
+
+          const imgEl = frameDoc.querySelector('[data-post-element="image"] img') || frameDoc.querySelector('img[data-post-element="image"]');
+          if (imgEl && chosenPost.image) imgEl.src = chosenPost.image;
+
+          // Update all author names and roles
+          frameDoc.querySelectorAll('[data-post-element="author-name"]').forEach(el => {
+            el.textContent = chosenPost.author?.name || 'Better Team';
+          });
+          frameDoc.querySelectorAll('[data-post-element="author-role"]').forEach(el => {
+            el.textContent = chosenPost.author?.role || 'Contributor';
+          });
+
+          // Update all author avatars (header and bio card)
+          if (chosenPost.author?.avatar) {
+            frameDoc.querySelectorAll('[data-post-element="author-avatar"]').forEach(img => {
+              img.src = chosenPost.author.avatar;
+            });
+          }
+
+          const dateEl = frameDoc.querySelector('[data-post-element="post-date"]');
+          if (dateEl) dateEl.textContent = `📅 ${chosenPost.formattedDate || chosenPost.date || ''}`;
+
+          const readTimeEl = frameDoc.querySelector('[data-post-element="post-readtime"]');
+          if (readTimeEl) readTimeEl.textContent = `⏱️ ${chosenPost.readTime || '5 min read'}`;
+
+          const catEl = frameDoc.querySelector('[data-post-element="categories"]');
+          if (catEl) {
+            const catName = chosenPost.category || 'Blog';
+            catEl.innerHTML = `<span class="post-category-badge">${catName.toUpperCase()}</span>`;
+          }
+
+          const breadcrumbCurrentEl = frameDoc.querySelector('.breadcrumb-current');
+          if (breadcrumbCurrentEl) {
+            breadcrumbCurrentEl.textContent = chosenPost.title.length > 25 ? chosenPost.title.substring(0, 25) + '...' : chosenPost.title;
+          }
+
+          injectIframeStyles();
+          showToast(`Canvas preview updated with: "${chosenPost.title.substring(0, 24)}..."`);
+        });
+
+        // ========================================================
+        // SAVE LAYOUT LOGIC
+        // ========================================================
+        const btnSaveLayout = document.getElementById('btnSaveLayout');
+        async function saveCurrentLayout() {
+          if (!btnSaveLayout) return;
+          btnSaveLayout.disabled = true;
+          btnSaveLayout.style.opacity = '0.7';
+
+          try {
+            try {
+              if (editor.getWrapper()) {
+                editor.getWrapper().find('.gjs-hover-preview').forEach(c => c.removeClass('gjs-hover-preview'));
+              }
+            } catch (e) {}
+
+            let html = editor.getHtml();
+            if (html) html = html.replace(/\s*\bgjs-hover-preview\b/g, '');
+            const css = editor.getCss();
+            const projectData = editor.getProjectData();
+
+            const updatedLayout = {
+              ...window.activeLayout,
+              html,
+              css,
+              projectData
+            };
+
+            const res = await fetch('/api/blog-layouts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'save',
+                layout: updatedLayout
+              })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+              window.activeLayout = data.layout;
+              showToast(`✓ Layout "${data.layout.name}" saved! Applied to all assigned blog posts.`);
+            } else {
+              showToast(data.error || 'Failed to save layout', true);
+            }
+          } catch (err) {
+            showToast('Network error while saving layout: ' + err.message, true);
+          } finally {
+            btnSaveLayout.disabled = false;
+            btnSaveLayout.style.opacity = '1';
+          }
+        }
+
+        btnSaveLayout?.addEventListener('click', saveCurrentLayout);
+
+        // Keyboard Shortcut Ctrl+S / Cmd+S
+        window.addEventListener('keydown', (e) => {
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+            e.preventDefault();
+            saveCurrentLayout();
+          }
+        });
+
+        // ========================================================
+        // SPECIFY / ASSIGN POSTS MODAL
+        // ========================================================
+        const modalAssignPosts = document.getElementById('modalAssignPosts');
+        const btnOpenAssignPostsModal = document.getElementById('btnOpenAssignPostsModal');
+        const btnCloseAssignModal = document.getElementById('btnCloseAssignModal');
+        const btnCancelAssign = document.getElementById('btnCancelAssign');
+        const btnSavePostAssignments = document.getElementById('btnSavePostAssignments');
+        const inputSearchAssignPosts = document.getElementById('inputSearchAssignPosts');
+        const btnSelectAllPosts = document.getElementById('btnSelectAllPosts');
+        const btnDeselectAllPosts = document.getElementById('btnDeselectAllPosts');
+        const checkSetAsDefaultLayout = document.getElementById('checkSetAsDefaultLayout');
+
+        btnOpenAssignPostsModal?.addEventListener('click', () => {
+          modalAssignPosts?.classList.add('open');
+        });
+        const closeAssignModal = () => modalAssignPosts?.classList.remove('open');
+        btnCloseAssignModal?.addEventListener('click', closeAssignModal);
+        btnCancelAssign?.addEventListener('click', closeAssignModal);
+
+        // Search filter
+        inputSearchAssignPosts?.addEventListener('input', (e) => {
+          const q = e.target.value.toLowerCase().trim();
+          document.querySelectorAll('.post-assign-item').forEach(item => {
+            const title = item.dataset.postTitle || '';
+            const cat = item.dataset.postCat || '';
+            const match = !q || title.includes(q) || cat.includes(q);
+            item.style.display = match ? 'flex' : 'none';
+          });
+        });
+
+        // Checkbox click toggle active class
+        document.querySelectorAll('.post-assign-checkbox').forEach(cb => {
+          cb.addEventListener('change', (e) => {
+            const item = e.target.closest('.post-assign-item');
+            if (e.target.checked) {
+              item?.classList.add('selected');
+            } else {
+              item?.classList.remove('selected');
+            }
+          });
+        });
+
+        // Select All / Deselect All
+        btnSelectAllPosts?.addEventListener('click', () => {
+          document.querySelectorAll('.post-assign-checkbox').forEach(cb => {
+            cb.checked = true;
+            cb.closest('.post-assign-item')?.classList.add('selected');
+          });
+        });
+        btnDeselectAllPosts?.addEventListener('click', () => {
+          document.querySelectorAll('.post-assign-checkbox').forEach(cb => {
+            cb.checked = false;
+            cb.closest('.post-assign-item')?.classList.remove('selected');
+          });
+        });
+
+        // Save Assignment
+        btnSavePostAssignments?.addEventListener('click', async () => {
+          const checkedSlugs = Array.from(document.querySelectorAll('.post-assign-checkbox:checked')).map(cb => cb.value);
+          const makeDefault = Boolean(checkSetAsDefaultLayout?.checked);
+
+          btnSavePostAssignments.disabled = true;
+          btnSavePostAssignments.textContent = 'Saving...';
+
+          try {
+            const res = await fetch('/api/blog-layouts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'apply_posts',
+                layoutId: window.activeLayout.id,
+                slugs: checkedSlugs,
+                isDefault: makeDefault
+              })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+              window.activeLayout = data.layout;
+              document.getElementById('appliedPostsCountBadge').textContent = String(checkedSlugs.length);
+              showToast(`✓ Layout applied to ${checkedSlugs.length} blog post${checkedSlugs.length === 1 ? '' : 's'}!`);
+              closeAssignModal();
+              setTimeout(() => window.location.reload(), 600);
+            } else {
+              showToast(data.error || 'Failed to update post assignment', true);
+            }
+          } catch (err) {
+            showToast('Network error: ' + err.message, true);
+          } finally {
+            btnSavePostAssignments.disabled = false;
+            btnSavePostAssignments.textContent = 'Save Post Assignments';
+          }
+        });
+
+        // ========================================================
+        // CREATE NEW LAYOUT MODAL
+        // ========================================================
+        const modalNewLayout = document.getElementById('modalNewLayout');
+        const btnOpenNewLayoutModal = document.getElementById('btnOpenNewLayoutModal');
+        const btnCloseNewLayoutModal = document.getElementById('btnCloseNewLayoutModal');
+        const btnCancelNewLayout = document.getElementById('btnCancelNewLayout');
+        const btnConfirmCreateLayout = document.getElementById('btnConfirmCreateLayout');
+
+        btnOpenNewLayoutModal?.addEventListener('click', () => {
+          layoutSelectorMenu?.classList.remove('show');
+          modalNewLayout?.classList.add('open');
+        });
+        const closeNewLayoutModal = () => modalNewLayout?.classList.remove('open');
+        btnCloseNewLayoutModal?.addEventListener('click', closeNewLayoutModal);
+        btnCancelNewLayout?.addEventListener('click', closeNewLayoutModal);
+
+        btnConfirmCreateLayout?.addEventListener('click', async () => {
+          const name = document.getElementById('inputNewLayoutName').value.trim();
+          const desc = document.getElementById('inputNewLayoutDesc').value.trim();
+          const templateId = document.getElementById('selectNewLayoutTemplate').value;
+
+          if (!name) {
+            alert('Please enter a name for the new standard layout.');
+            return;
+          }
+
+          btnConfirmCreateLayout.disabled = true;
+          btnConfirmCreateLayout.textContent = 'Creating...';
+
+          try {
+            const res = await fetch('/api/blog-layouts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'create',
+                name,
+                description: desc,
+                templateId
+              })
+            });
+
+            const data = await res.json();
+            if (data.success && data.layout) {
+              showToast(`✓ Layout "${data.layout.name}" created! Redirecting...`);
+              window.location.href = `/blog-layout-editor?id=${data.layout.id}`;
+            } else {
+              showToast(data.error || 'Failed to create layout', true);
+            }
+          } catch (err) {
+            showToast('Network error: ' + err.message, true);
+          } finally {
+            btnConfirmCreateLayout.disabled = false;
+            btnConfirmCreateLayout.textContent = 'Create Layout';
+          }
+        });
+
+        // ========================================================
+        // DUPLICATE LAYOUT
+        // ========================================================
+        const btnDuplicateLayout = document.getElementById('btnDuplicateLayout');
+        btnDuplicateLayout?.addEventListener('click', async () => {
+          const ok = confirm(`Duplicate standard layout "${window.activeLayout.name}"?`);
+          if (!ok) return;
+
+          try {
+            const res = await fetch('/api/blog-layouts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'duplicate',
+                id: window.activeLayout.id
+              })
+            });
+
+            const data = await res.json();
+            if (data.success && data.layout) {
+              showToast('Layout duplicated! Opening copy...');
+              window.location.href = `/blog-layout-editor?id=${data.layout.id}`;
+            } else {
+              showToast(data.error || 'Failed to duplicate layout', true);
+            }
+          } catch (err) {
+            showToast('Network error: ' + err.message, true);
+          }
+        });
+
+        // ========================================================
+        // CODE EDITOR (HTML & CSS)
+        // ========================================================
+        const modalCodeEditor = document.getElementById('modalCodeEditor');
+        const btnOpenCodeEditor = document.getElementById('btnOpenCodeEditor');
+        const btnCloseCodeModal = document.getElementById('btnCloseCodeModal');
+        const btnCancelCode = document.getElementById('btnCancelCode');
+        const btnApplyCodeToCanvas = document.getElementById('btnApplyCodeToCanvas');
+        const btnCodeTabHtml = document.getElementById('btnCodeTabHtml');
+        const btnCodeTabCss = document.getElementById('btnCodeTabCss');
+        const textareaLayoutCode = document.getElementById('textareaLayoutCode');
+
+        let activeCodeTab = 'html';
+
+        function syncCodeEditorTab() {
+          if (activeCodeTab === 'html') {
+            btnCodeTabHtml.classList.add('active');
+            btnCodeTabCss.classList.remove('active');
+            textareaLayoutCode.value = editor.getHtml();
+          } else {
+            btnCodeTabCss.classList.add('active');
+            btnCodeTabHtml.classList.remove('active');
+            textareaLayoutCode.value = editor.getCss();
+          }
+        }
+
+        btnOpenCodeEditor?.addEventListener('click', () => {
+          activeCodeTab = 'html';
+          syncCodeEditorTab();
+          modalCodeEditor?.classList.add('open');
+        });
+        const closeCodeModal = () => modalCodeEditor?.classList.remove('open');
+        btnCloseCodeModal?.addEventListener('click', closeCodeModal);
+        btnCancelCode?.addEventListener('click', closeCodeModal);
+
+        btnCodeTabHtml?.addEventListener('click', () => {
+          activeCodeTab = 'html';
+          syncCodeEditorTab();
+        });
+        btnCodeTabCss?.addEventListener('click', () => {
+          activeCodeTab = 'css';
+          syncCodeEditorTab();
+        });
+
+        btnApplyCodeToCanvas?.addEventListener('click', () => {
+          const val = textareaLayoutCode.value;
+          if (activeCodeTab === 'html') {
+            editor.setComponents(val);
+          } else {
+            editor.setStyle(val);
+          }
+          showToast('Updated canvas from code editor!');
+          closeCodeModal();
+        });
+
+        // ==========================================
+        // LAYER ACTIONS & CROSS-BUILDER CLIPBOARD SYSTEM
+        // ==========================================
+        const LAYER_CLIPBOARD_KEY = 'fastpress_layer_clipboard';
+
+        // Elemen UI Toolbar & Clipboard Banner
+        const btnLayerCopy = document.getElementById('btnLayerCopy');
+        const btnLayerPasteBelow = document.getElementById('btnLayerPasteBelow');
+        const btnLayerPasteInside = document.getElementById('btnLayerPasteInside');
+        const btnLayerDuplicate = document.getElementById('btnLayerDuplicate');
+        const btnLayerDelete = document.getElementById('btnLayerDelete');
+        const btnClearLayerClipboard = document.getElementById('btnClearLayerClipboard');
+        const layerClipboardBanner = document.getElementById('layerClipboardBanner');
+        const clipboardLayerName = document.getElementById('clipboardLayerName');
+        const clipboardSourcePill = document.getElementById('clipboardSourcePill');
+        const layerActiveBadge = document.getElementById('layerActiveBadge');
+
+        // Elemen UI Context Menu
+        const layerContextMenu = document.getElementById('layerContextMenu');
+        const ctxMenuLayerName = document.getElementById('ctxMenuLayerName');
+        const ctxBtnCopy = document.getElementById('ctxBtnCopy');
+        const ctxBtnPasteBelow = document.getElementById('ctxBtnPasteBelow');
+        const ctxBtnPasteInside = document.getElementById('ctxBtnPasteInside');
+        const ctxBtnDuplicate = document.getElementById('ctxBtnDuplicate');
+        const ctxBtnDelete = document.getElementById('ctxBtnDelete');
+
+        // Ambil data clipboard dari localStorage
+        function getLayerClipboard() {
+          try {
+            const raw = localStorage.getItem(LAYER_CLIPBOARD_KEY);
+            if (!raw) return null;
+            return JSON.parse(raw);
+          } catch (e) {
+            console.warn('Failed to parse layer clipboard:', e);
+            return null;
+          }
+        }
+
+        // Format nama manusiawi untuk komponen
+        function getComponentHumanName(comp) {
+          if (!comp) return 'Element';
+          try {
+            if (comp.is('wrapper')) return 'Body / Root Layout';
+            const customName = comp.getName ? comp.getName() : null;
+            if (customName && customName !== 'Component' && customName !== 'Box') return customName;
+
+            const tag = (comp.get('tagName') || comp.get('type') || 'Element').toUpperCase();
+            const compClasses = comp.getClasses ? comp.getClasses() : [];
+            if (compClasses.length > 0) {
+              const firstCls = typeof compClasses[0] === 'string' ? compClasses[0] : (compClasses[0]?.get ? compClasses[0].get('name') : '');
+              if (firstCls && !firstCls.startsWith('gjs-')) {
+                return `${tag} (.${firstCls})`;
+              }
+            }
+            return tag;
+          } catch (e) {
+            return 'Element';
+          }
+        }
+
+        // Update tampilan status clipboard & tombol paste
+        function updateLayerClipboardUI() {
+          const payload = getLayerClipboard();
+          const hasContent = !!(payload && payload.html);
+
+          if (layerClipboardBanner && clipboardLayerName && clipboardSourcePill) {
+            if (hasContent) {
+              layerClipboardBanner.style.display = 'flex';
+              clipboardLayerName.textContent = payload.name || 'Component';
+              const originTitle = payload.sourcePageTitle || payload.sourcePageSlug || 'Blog Layout';
+              clipboardSourcePill.textContent = 'from ' + originTitle;
+            } else {
+              layerClipboardBanner.style.display = 'none';
+            }
+          }
+
+          if (btnLayerPasteBelow) btnLayerPasteBelow.disabled = !hasContent;
+          if (btnLayerPasteInside) btnLayerPasteInside.disabled = !hasContent;
+          if (ctxBtnPasteBelow) ctxBtnPasteBelow.disabled = !hasContent;
+          if (ctxBtnPasteInside) ctxBtnPasteInside.disabled = !hasContent;
+        }
+
+        // Pastikan layer aktif dan parent-parentnya terbuka di panel Layers, serta scroll ke view
+        function revealComponentInLayers(comp) {
+          if (!comp || comp.is('wrapper')) return;
+          try {
+            let parent = comp.parent();
+            while (parent && !parent.is('wrapper')) {
+              if (editor && editor.LayerManager && typeof editor.LayerManager.setOpen === 'function') {
+                editor.LayerManager.setOpen(parent, true);
+              }
+              parent = parent.parent();
+            }
+
+            setTimeout(() => {
+              const layersContainer = document.getElementById('layers-container');
+              if (!layersContainer) return;
+              const activeRow = layersContainer.querySelector('.gjs-layer.gjs-selected > .gjs-layer-item') ||
+                                layersContainer.querySelector('.gjs-layer.gjs-selected') ||
+                                layersContainer.querySelector('.gjs-selected');
+              if (activeRow && typeof activeRow.scrollIntoView === 'function') {
+                activeRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              }
+            }, 60);
+          } catch (err) {
+            console.warn('revealComponentInLayers error:', err);
+          }
+        }
+
+        // Update tombol yang bergantung pada pemilihan layer (Copy, Duplicate, Delete)
+        function updateLayerSelectionUI(comp) {
+          const hasSelection = !!(comp && !comp.is('wrapper'));
+          const name = hasSelection ? getComponentHumanName(comp) : '';
+
+          if (layerActiveBadge) {
+            if (hasSelection) {
+              layerActiveBadge.style.display = 'inline-block';
+              layerActiveBadge.textContent = name;
+            } else {
+              layerActiveBadge.style.display = 'none';
+            }
+          }
+
+          if (btnLayerCopy) btnLayerCopy.disabled = !hasSelection;
+          if (btnLayerDuplicate) btnLayerDuplicate.disabled = !hasSelection;
+          if (btnLayerDelete) btnLayerDelete.disabled = !hasSelection;
+
+          if (ctxBtnCopy) ctxBtnCopy.disabled = !hasSelection;
+          if (ctxBtnDuplicate) ctxBtnDuplicate.disabled = !hasSelection;
+          if (ctxBtnDelete) ctxBtnDelete.disabled = !hasSelection;
+
+          if (ctxMenuLayerName) {
+            ctxMenuLayerName.textContent = hasSelection ? name : 'Blog Layout Root';
+          }
+
+          if (hasSelection) {
+            revealComponentInLayers(comp);
+          }
+        }
+
+        // Ekstrak CSS rules yang relevan dengan komponen dan anak-anaknya
+        function extractMatchingCssRules(comp) {
+          if (!comp || !editor) return '';
+          const matchedRules = [];
+
+          try {
+            const ids = [];
+            const classes = [];
+
+            function collectSelectors(c) {
+              const id = c.getId ? c.getId() : null;
+              if (id) ids.push(id);
+              const clsList = c.getClasses ? c.getClasses() : [];
+              clsList.forEach(cls => {
+                const name = typeof cls === 'string' ? cls : (cls?.get ? cls.get('name') : '');
+                if (name) classes.push(name);
+              });
+              const children = c.components ? c.components() : [];
+              if (children && children.forEach) {
+                children.forEach(collectSelectors);
+              }
+            }
+            collectSelectors(comp);
+
+            const allRules = editor.CssComposer ? editor.CssComposer.getAll() : null;
+            if (allRules && allRules.forEach) {
+              allRules.forEach(rule => {
+                try {
+                  const selector = rule.getSelectorsString ? rule.getSelectorsString() : '';
+                  if (!selector) return;
+
+                  const matchesId = ids.some(id => selector.includes('#' + id));
+                  const matchesClass = classes.some(cls => selector.includes('.' + cls));
+
+                  if (matchesId || matchesClass) {
+                    const ruleCss = rule.toCSS ? rule.toCSS() : '';
+                    if (ruleCss && ruleCss.trim()) {
+                      matchedRules.push(ruleCss.trim());
+                    }
+                  }
+                } catch (e) {}
+              });
+            }
+          } catch (e) {
+            console.warn('Error extracting css rules:', e);
+          }
+
+          return matchedRules.join('\n');
+        }
+
+        // Salin layer yang dipilih ke clipboard (tersimpan di localStorage untuk lintas halaman)
+        function copySelectedLayer(targetComp) {
+          if (!editor) return;
+          const comp = targetComp || editor.getSelected();
+          if (!comp || comp.is('wrapper')) {
+            showToast('Please select a specific element or layer to copy.');
+            return;
+          }
+
+          const name = getComponentHumanName(comp);
+          const html = comp.toHTML ? comp.toHTML() : '';
+          const cssRules = extractMatchingCssRules(comp);
+          const sourcePageSlug = window.activeLayout?.id || 'blog-layout';
+          const sourcePageTitle = window.activeLayout?.name || 'Blog Layout';
+
+          const payload = {
+            name,
+            html,
+            cssRules,
+            sourcePageSlug,
+            sourcePageTitle,
+            timestamp: Date.now()
+          };
+
+          try {
+            localStorage.setItem(LAYER_CLIPBOARD_KEY, JSON.stringify(payload));
+            updateLayerClipboardUI();
+            showToast(`Layer "${name}" copied! Ready to paste here or across builders.`);
+          } catch (err) {
+            console.error('Failed to copy layer to storage:', err);
+            showToast('Failed to save layer to clipboard.');
+          }
+        }
+
+        // Tempelkan layer (asChild = false: tempel di bawahnya, asChild = true: tempel di dalam kontainer)
+        function pasteLayer(asChild = false) {
+          if (!editor) return;
+          const payload = getLayerClipboard();
+          if (!payload || !payload.html) {
+            showToast('Clipboard is empty. Please copy a layer first.');
+            return;
+          }
+
+          // 1. Terapkan CSS kustom jika ada
+          if (payload.cssRules && payload.cssRules.trim()) {
+            try {
+              editor.addStyle(payload.cssRules);
+            } catch (e) {
+              console.warn('Error applying copied styles:', e);
+            }
+          }
+
+          // 2. Tentukan target induk (parent) dan indeks penempatan
+          const selected = editor.getSelected();
+          let targetParent = editor.getWrapper();
+          let insertIndex = targetParent.components().length;
+
+          if (selected && !selected.is('wrapper')) {
+            if (asChild) {
+              targetParent = selected;
+              insertIndex = selected.components().length;
+            } else {
+              const parent = selected.parent();
+              if (parent) {
+                targetParent = parent;
+                insertIndex = selected.index() + 1;
+              }
+            }
+          }
+
+          // 3. Tambahkan komponen baru
+          let added = null;
+          try {
+            if (asChild) {
+              added = targetParent.append(payload.html);
+            } else {
+              const comps = targetParent.components();
+              if (comps && typeof comps.add === 'function') {
+                added = comps.add(payload.html, { at: insertIndex });
+              } else if (typeof targetParent.append === 'function') {
+                added = targetParent.append(payload.html);
+              }
+            }
+          } catch (err) {
+            console.warn('Primary paste method error, using editor fallback:', err);
+            added = editor.addComponents(payload.html);
+          }
+
+          // 4. Pilih komponen yang baru ditempel dan gulirkan kanvas
+          if (added) {
+            const compToSelect = Array.isArray(added) ? added[0] : added;
+            if (compToSelect) {
+              editor.select(compToSelect);
+              try {
+                const el = compToSelect.getEl();
+                if (el && el.scrollIntoView) {
+                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+              } catch (e) {}
+            }
+            showToast(`Pasted "${payload.name}" successfully!`);
+            updateLayerSelectionUI(compToSelect);
+          }
+        }
+
+        // Duplikat layer aktif
+        function duplicateSelectedLayer() {
+          if (!editor) return;
+          const comp = editor.getSelected();
+          if (!comp || comp.is('wrapper')) {
+            showToast('Please select a layer to duplicate.');
+            return;
+          }
+
+          const name = getComponentHumanName(comp);
+          const parent = comp.parent() || editor.getWrapper();
+          const index = comp.index();
+          const html = comp.toHTML ? comp.toHTML() : '';
+          const cssRules = extractMatchingCssRules(comp);
+
+          if (cssRules && cssRules.trim()) {
+            try {
+              editor.addStyle(cssRules);
+            } catch (e) {}
+          }
+
+          try {
+            let duplicated = null;
+            const comps = parent.components();
+            if (comps && typeof comps.add === 'function') {
+              duplicated = comps.add(html, { at: index + 1 });
+            } else {
+              duplicated = parent.append(html);
+            }
+
+            if (duplicated) {
+              const compToSelect = Array.isArray(duplicated) ? duplicated[0] : duplicated;
+              if (compToSelect) {
+                editor.select(compToSelect);
+                try {
+                  const el = compToSelect.getEl();
+                  if (el && el.scrollIntoView) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }
+                } catch (e) {}
+              }
+              showToast(`Duplicated "${name}" successfully!`);
+              updateLayerSelectionUI(compToSelect);
+            }
+          } catch (err) {
+            console.error('Failed to duplicate component:', err);
+            showToast('Failed to duplicate layer.');
+          }
+        }
+
+        // Hapus layer aktif
+        function deleteSelectedLayer() {
+          if (!editor) return;
+          const comp = editor.getSelected();
+          if (!comp || comp.is('wrapper')) {
+            showToast('Cannot delete wrapper. Select an inner layer.');
+            return;
+          }
+
+          const name = getComponentHumanName(comp);
+          try {
+            comp.remove();
+            showToast(`Deleted "${name}".`);
+            updateLayerSelectionUI(null);
+          } catch (err) {
+            console.error('Failed to delete layer:', err);
+            showToast('Failed to delete layer.');
+          }
+        }
+
+        // Buka Context Menu di koordinat (x, y)
+        function openLayerContextMenu(x, y) {
+          if (!layerContextMenu) return;
+          const selected = editor.getSelected();
+          const hasSelection = !!(selected && !selected.is('wrapper'));
+
+          updateLayerClipboardUI();
+          updateLayerSelectionUI(selected);
+
+          const menuWidth = 195;
+          const menuHeight = 175;
+          const maxX = window.innerWidth - menuWidth - 10;
+          const maxY = window.innerHeight - menuHeight - 10;
+
+          const posX = Math.max(10, Math.min(x, maxX));
+          const posY = Math.max(10, Math.min(y, maxY));
+
+          layerContextMenu.style.left = `${posX}px`;
+          layerContextMenu.style.top = `${posY}px`;
+          layerContextMenu.style.display = 'block';
+        }
+
+        // Tutup Context Menu
+        function closeLayerContextMenu() {
+          if (layerContextMenu) {
+            layerContextMenu.style.display = 'none';
+          }
+        }
+
+        // Global Keyboard Shortcut handler untuk operasi layer
+        function handleGlobalLayerShortcuts(e) {
+          const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+          const modKey = isMac ? e.metaKey : e.ctrlKey;
+
+          // Cek apakah target atau activeElement sedang dalam mode pengetikan atau editing teks
+          const target = e.target;
+          if (
+            target && (
+              target.tagName === 'INPUT' ||
+              target.tagName === 'TEXTAREA' ||
+              target.tagName === 'SELECT' ||
+              target.isContentEditable ||
+              target.getAttribute('contenteditable') === 'true' ||
+              (target.closest && target.closest('[contenteditable="true"], [contenteditable=""], [contenteditable], input, textarea, select, .gjs-rte-toolbar, .gjs-sm-field, .gjs-fields'))
+            )
+          ) {
+            return;
+          }
+
+          const activeEl = document.activeElement;
+          if (activeEl && (
+            activeEl.tagName === 'INPUT' ||
+            activeEl.tagName === 'TEXTAREA' ||
+            activeEl.isContentEditable ||
+            (activeEl.closest && activeEl.closest('[contenteditable="true"], .gjs-sm-field'))
+          )) {
+            return;
+          }
+
+          try {
+            const frameDoc = editor?.Canvas?.getDocument?.();
+            if (frameDoc && frameDoc.activeElement) {
+              const fActive = frameDoc.activeElement;
+              if (
+                fActive.tagName === 'INPUT' ||
+                fActive.tagName === 'TEXTAREA' ||
+                fActive.isContentEditable ||
+                (fActive.closest && fActive.closest('[contenteditable="true"], [contenteditable]'))
+              ) {
+                return;
+              }
+            }
+          } catch (err) {}
+
+          if (editor?.getEditing && editor.getEditing()) return;
+          if (editor?.getModel && editor.getModel().isEditing && editor.getModel().isEditing()) return;
+
+          const selected = editor ? editor.getSelected() : null;
+
+          // Ctrl/Cmd + C : Copy Layer
+          if (modKey && (e.key === 'c' || e.key === 'C')) {
+            if (selected && !selected.is('wrapper')) {
+              e.preventDefault();
+              copySelectedLayer();
+            }
+          }
+
+          // Ctrl/Cmd + V : Paste Layer Below
+          if (modKey && (e.key === 'v' || e.key === 'V')) {
+            const clip = getLayerClipboard();
+            if (clip && clip.html) {
+              e.preventDefault();
+              pasteLayer(false);
+            }
+          }
+
+          // Ctrl/Cmd + D : Duplicate Layer
+          if (modKey && (e.key === 'd' || e.key === 'D')) {
+            if (selected && !selected.is('wrapper')) {
+              e.preventDefault();
+              duplicateSelectedLayer();
+            }
+          }
+
+          // Delete : Delete Layer (Hanya tombol Delete fisik, atau Backspace di Mac jika BUKAN sedang edit teks)
+          const isDeleteKey = e.key === 'Delete' || (isMac && e.key === 'Backspace');
+          if (isDeleteKey && !modKey) {
+            if (selected && !selected.is('wrapper')) {
+              e.preventDefault();
+              deleteSelectedLayer();
+            }
+          }
+        }
+
+        // Inisialisasi event listener sistem layer clipboard
+        function initLayerClipboardSystem() {
+          if (!editor) return;
+          window.fastpressLayerClipboard = {
+            copySelectedLayer,
+            pasteLayer,
+            duplicateSelectedLayer,
+            deleteSelectedLayer,
+            openLayerContextMenu,
+            closeLayerContextMenu
+          };
+          updateLayerClipboardUI();
+          updateLayerSelectionUI(editor.getSelected());
+
+          // Event Tombol Toolbar
+          if (btnLayerCopy) btnLayerCopy.addEventListener('click', () => copySelectedLayer());
+          if (btnLayerPasteBelow) btnLayerPasteBelow.addEventListener('click', () => pasteLayer(false));
+          if (btnLayerPasteInside) btnLayerPasteInside.addEventListener('click', () => pasteLayer(true));
+          if (btnLayerDuplicate) btnLayerDuplicate.addEventListener('click', () => duplicateSelectedLayer());
+          if (btnLayerDelete) btnLayerDelete.addEventListener('click', () => deleteSelectedLayer());
+
+          if (btnClearLayerClipboard) {
+            btnClearLayerClipboard.addEventListener('click', (e) => {
+              e.stopPropagation();
+              localStorage.removeItem(LAYER_CLIPBOARD_KEY);
+              updateLayerClipboardUI();
+              showToast('Layer clipboard cleared.');
+            });
+          }
+
+          // Event Context Menu Buttons
+          if (ctxBtnCopy) ctxBtnCopy.addEventListener('click', () => { copySelectedLayer(); closeLayerContextMenu(); });
+          if (ctxBtnPasteBelow) ctxBtnPasteBelow.addEventListener('click', () => { pasteLayer(false); closeLayerContextMenu(); });
+          if (ctxBtnPasteInside) ctxBtnPasteInside.addEventListener('click', () => { pasteLayer(true); closeLayerContextMenu(); });
+          if (ctxBtnDuplicate) ctxBtnDuplicate.addEventListener('click', () => { duplicateSelectedLayer(); closeLayerContextMenu(); });
+          if (ctxBtnDelete) ctxBtnDelete.addEventListener('click', () => { deleteSelectedLayer(); closeLayerContextMenu(); });
+
+          // Klik kanan pada container layers
+          const layersContainer = document.getElementById('layers-container');
+          if (layersContainer) {
+            layersContainer.addEventListener('contextmenu', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+
+              const layerRow = e.target.closest('.gjs-layer');
+              if (layerRow) {
+                if (!layerRow.classList.contains('gjs-selected')) {
+                  const titleEl = layerRow.querySelector('.gjs-layer-name, .gjs-layer-title') || layerRow;
+                  titleEl.click();
+                }
+              }
+
+              setTimeout(() => {
+                openLayerContextMenu(e.clientX, e.clientY);
+              }, 20);
+            });
+          }
+
+          // Klik kanan dan shortcut di iframe canvas
+          try {
+            const frameEl = editor.Canvas.getFrameEl();
+            if (frameEl && frameEl.contentDocument) {
+              frameEl.contentDocument.addEventListener('contextmenu', (e) => {
+                const targetEl = e.target;
+                if (targetEl && targetEl !== frameEl.contentDocument.body) {
+                  try {
+                    const comp = editor.Components.getWrapper().find(targetEl)[0] || editor.getSelected();
+                    if (comp && !comp.is('wrapper')) {
+                      editor.select(comp);
+                    }
+                  } catch (err) {}
+                }
+
+                const selected = editor.getSelected();
+                if (selected && !selected.is('wrapper')) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const rect = frameEl.getBoundingClientRect();
+                  const mainX = rect.left + e.clientX;
+                  const mainY = rect.top + e.clientY;
+                  openLayerContextMenu(mainX, mainY);
+                }
+              });
+
+              frameEl.contentDocument.addEventListener('click', closeLayerContextMenu);
+              frameEl.contentDocument.addEventListener('keydown', handleGlobalLayerShortcuts);
+            }
+          } catch (err) {
+            console.warn('Canvas frame contextmenu attach warning:', err);
+          }
+
+          // Double click on layer item in Layers list to rename
+          const layersBox = document.getElementById('layers-container');
+          if (layersBox && !layersBox.dataset.dblclickBound) {
+            layersBox.dataset.dblclickBound = 'true';
+            layersBox.addEventListener('dblclick', (e) => {
+              const item = e.target.closest('.gjs-layer-item');
+              if (!item || !editor) return;
+              const sel = editor.getSelected();
+              if (sel && !sel.is('wrapper')) {
+                const current = sel.get('custom-name') || (sel.getName ? sel.getName() : 'Section');
+                const newName = prompt('Rename layer:', current);
+                if (newName && newName.trim()) {
+                  sel.set('custom-name', newName.trim());
+                  showToast(`Renamed to "${newName.trim()}"`);
+                }
+              }
+            });
+
+            // Auto-expand collapsed layers when dragging over them
+            layersBox.addEventListener('dragover', (e) => {
+              const layerItem = e.target.closest('.gjs-layer-item');
+              if (layerItem) {
+                const caret = layerItem.querySelector('.gjs-layer-caret');
+                if (caret && !caret.classList.contains('gjs-open')) {
+                  caret.click();
+                }
+              }
+            });
+          }
+
+          // Global listeners
+          document.addEventListener('click', (e) => {
+            if (layerContextMenu && !layerContextMenu.contains(e.target)) {
+              closeLayerContextMenu();
+            }
+          });
+          document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeLayerContextMenu();
+          });
+          document.addEventListener('keydown', handleGlobalLayerShortcuts);
+          window.addEventListener('scroll', closeLayerContextMenu, true);
+
+          // Sinkronisasi lintas tab browser
+          window.addEventListener('storage', (e) => {
+            if (e.key === LAYER_CLIPBOARD_KEY) {
+              updateLayerClipboardUI();
+            }
+          });
+        }
+
+        if (typeof initLayerClipboardSystem === 'function') {
+          initLayerClipboardSystem();
+        }
+
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,2283 @@
+---
+import DeviceSwitcher from '../components/admin/DeviceSwitcher.astro';
+import WorkspaceSwitcher from '../components/admin/WorkspaceSwitcher.astro';
+// src/pages/menu-builder.astro
+// Visual Navigation Menu Builder for FastPress CMS & GrapesJS
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { getMenus, type MenuConfig, type MenuItem } from '../data/menus';
+import { getActiveThemeName, getThemePages } from '../core/theme';
+
+export const prerender = false;
+
+const activeTheme = getActiveThemeName();
+const menus = getMenus();
+const activeMenuId = menus[0]?.id || '';
+
+// Load Pages, Posts, Categories and Custom Fonts
+const PAGES_FILE = path.join(process.cwd(), 'src', 'data', 'pages.json');
+const POSTS_FILE = path.join(process.cwd(), 'src', 'data', 'posts.json');
+const CATEGORIES_FILE = path.join(process.cwd(), 'src', 'data', 'categories.json');
+const FONTS_FILE = path.join(process.cwd(), 'src', 'data', 'fonts.json');
+
+let availablePages: Array<{ title: string; url: string }> = [];
+let availablePosts: Array<{ title: string; url: string }> = [];
+let availableCategories: Array<{ title: string; url: string }> = [];
+let availableFonts: Array<{ id: string; name: string; family: string; url?: string }> = [];
+
+try {
+  const themePages = getThemePages(activeTheme);
+  availablePages = Object.entries(themePages).map(([slug, p]: [string, any]) => ({
+    title: p.title || (slug === 'home' ? 'Home' : slug),
+    url: slug === 'home' ? '/' : `/${slug}`,
+  }));
+  if (!availablePages.some(p => p.url === '/')) {
+    availablePages.unshift({ title: 'Home', url: '/' });
+  }
+} catch {
+  availablePages = [
+    { title: 'Home', url: '/' },
+    { title: 'About', url: '/about' },
+    { title: 'Shop', url: '/products' },
+    { title: 'Blog', url: '/blog' },
+    { title: 'Contact', url: '/contact' },
+  ];
+}
+
+try {
+  const rawPosts = await fs.readFile(POSTS_FILE, 'utf-8');
+  const parsedPosts = JSON.parse(rawPosts);
+  if (Array.isArray(parsedPosts)) {
+    availablePosts = parsedPosts.slice(0, 15).map((post: any) => ({
+      title: post.title || post.slug,
+      url: `/blog/${post.slug}`,
+    }));
+  }
+} catch {
+  availablePosts = [];
+}
+
+try {
+  const rawCats = await fs.readFile(CATEGORIES_FILE, 'utf-8');
+  const parsedCats = JSON.parse(rawCats);
+  if (Array.isArray(parsedCats)) {
+    availableCategories = parsedCats.map((cat: any) => ({
+      title: cat.name || cat.title || cat.slug,
+      url: `/category/${cat.slug || cat.id}`,
+    }));
+  }
+} catch {
+  availableCategories = [
+    { title: 'Living Room', url: '/category/living-room' },
+    { title: 'Dining & Kitchen', url: '/category/dining-kitchen' },
+    { title: 'Bedroom Sanctuary', url: '/category/bedroom' },
+    { title: 'Lighting & Fixtures', url: '/category/lighting' },
+    { title: 'Storage & Shelving', url: '/category/storage' },
+  ];
+}
+
+try {
+  const rawFonts = await fs.readFile(FONTS_FILE, 'utf-8');
+  availableFonts = JSON.parse(rawFonts);
+} catch {
+  availableFonts = [];
+}
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Menu Builder — FastPress CMS</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@400;500;600;700&family=Montserrat:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Outfit:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Poppins:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <!-- Nav Menu Widget Styles -->
+    <link rel="stylesheet" href="/nav-menu.css" />
+
+    <style is:global>
+      :root {
+        color-scheme: dark;
+        --mb-bg-dark: #0a0d14;
+        --mb-sidebar-bg: #11141e;
+        --mb-card-bg: #161b26;
+        --mb-card-hover: #1c2333;
+        --mb-border: #232a3b;
+        --mb-accent: #ff5e3a;
+        --mb-accent-hover: #ff7555;
+        --mb-text: #f3f4f6;
+        --mb-text-muted: #9ca3af;
+        --mb-success: #10b981;
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body, html {
+        height: 100%;
+        overflow: hidden;
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        background: var(--mb-bg-dark);
+        color: var(--mb-text);
+      }
+
+      /* App Shell */
+      .mb-app {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+
+      /* Top Toolbar */
+      .mb-topbar {
+        height: 60px;
+        background: #0f121b;
+        border-bottom: 1px solid var(--mb-border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 20px;
+        z-index: 100;
+        gap: 16px;
+      }
+
+      .mb-topbar-left {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .mb-back-link {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--mb-text-muted);
+        text-decoration: none;
+        font-size: 0.82rem;
+        font-weight: 600;
+        padding: 6px 12px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--mb-border);
+        border-radius: 6px;
+        transition: all 0.2s ease;
+      }
+      .mb-back-link:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .mb-title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .mb-logo-badge {
+        background: linear-gradient(135deg, #ff5e3a, #ff9068);
+        color: #fff;
+        font-size: 0.72rem;
+        font-weight: 800;
+        padding: 3px 8px;
+        border-radius: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .mb-app-title {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #fff;
+        letter-spacing: -0.01em;
+      }
+
+      .mb-topbar-center {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .mb-menu-selector-label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--mb-text-muted);
+      }
+      .mb-select-menu {
+        background: #19202f;
+        border: 1px solid var(--mb-border);
+        color: #fff;
+        font-size: 0.85rem;
+        font-weight: 600;
+        padding: 7px 14px;
+        border-radius: 6px;
+        outline: none;
+        cursor: pointer;
+        min-width: 220px;
+      }
+      .mb-select-menu:focus {
+        border-color: var(--mb-accent);
+      }
+
+      .mb-btn-secondary {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--mb-border);
+        color: #e5e7eb;
+        font-size: 0.82rem;
+        font-weight: 600;
+        padding: 7px 14px;
+        border-radius: 6px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: all 0.2s ease;
+      }
+      .mb-btn-secondary:hover {
+        background: rgba(255, 255, 255, 0.12);
+        color: #fff;
+      }
+
+      .mb-topbar-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .mb-btn-delete {
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        color: #f87171;
+        font-size: 0.82rem;
+        font-weight: 600;
+        padding: 7px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      .mb-btn-delete:hover {
+        background: rgba(239, 68, 68, 0.2);
+        color: #ef4444;
+      }
+
+      .mb-btn-save {
+        background: linear-gradient(135deg, #ff5e3a, #ff7e5f);
+        border: none;
+        color: #fff;
+        font-size: 0.85rem;
+        font-weight: 700;
+        padding: 8px 18px;
+        border-radius: 6px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 2px 10px rgba(255, 94, 58, 0.3);
+        transition: all 0.2s ease;
+      }
+      .mb-btn-save:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(255, 94, 58, 0.45);
+      }
+
+      /* Main Body (Panels) */
+      .mb-main {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+      }
+
+      /* Left Panel: Add Items */
+      .mb-panel-left {
+        width: 300px;
+        background: var(--mb-sidebar-bg);
+        border-right: 1px solid var(--mb-border);
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+      }
+
+      .mb-panel-header {
+        padding: 16px;
+        border-bottom: 1px solid var(--mb-border);
+      }
+      .mb-panel-title {
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: #fff;
+        letter-spacing: -0.01em;
+      }
+      .mb-panel-desc {
+        font-size: 0.75rem;
+        color: var(--mb-text-muted);
+        margin-top: 4px;
+      }
+
+      /* Accordion styles */
+      .mb-accordion-item {
+        border-bottom: 1px solid var(--mb-border);
+      }
+      .mb-acc-header {
+        padding: 12px 16px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #e5e7eb;
+        background: rgba(255, 255, 255, 0.02);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        user-select: none;
+      }
+      .mb-acc-header:hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .mb-acc-body {
+        padding: 12px 16px;
+        display: none;
+        background: #0d1017;
+      }
+      .mb-accordion-item.open .mb-acc-body {
+        display: block;
+      }
+      .mb-accordion-item.open .mb-acc-icon {
+        transform: rotate(180deg);
+      }
+
+      .mb-check-list {
+        max-height: 180px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .mb-check-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.8rem;
+        color: #d1d5db;
+        cursor: pointer;
+      }
+      .mb-check-label input {
+        accent-color: var(--mb-accent);
+      }
+
+      .mb-input-group {
+        margin-bottom: 10px;
+      }
+      .mb-input-label {
+        display: block;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--mb-text-muted);
+        margin-bottom: 4px;
+      }
+      .mb-input-text {
+        width: 100%;
+        background: #19202f;
+        border: 1px solid var(--mb-border);
+        color: #fff;
+        font-size: 0.82rem;
+        padding: 8px 10px;
+        border-radius: 6px;
+        outline: none;
+      }
+      .mb-input-text:focus {
+        border-color: var(--mb-accent);
+      }
+
+      .mb-btn-add-item {
+        width: 100%;
+        background: rgba(255, 94, 58, 0.15);
+        border: 1px solid rgba(255, 94, 58, 0.35);
+        color: #ff7e5f;
+        font-size: 0.8rem;
+        font-weight: 700;
+        padding: 8px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      .mb-btn-add-item:hover {
+        background: var(--mb-accent);
+        color: #fff;
+      }
+
+      /* Center Panel: Menu Structure & Live Preview */
+      .mb-panel-center {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: var(--mb-bg-dark);
+        overflow-y: auto;
+        border-right: 1px solid var(--mb-border);
+      }
+
+      .mb-structure-box {
+        padding: 24px;
+        border-bottom: 1px solid var(--mb-border);
+      }
+
+      .mb-menu-name-row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 16px;
+        background: var(--mb-card-bg);
+        padding: 14px 18px;
+        border-radius: 8px;
+        border: 1px solid var(--mb-border);
+      }
+      .mb-menu-name-input {
+        flex: 1;
+        background: #0f131c;
+        border: 1px solid var(--mb-border);
+        color: #fff;
+        font-size: 1rem;
+        font-weight: 700;
+        padding: 8px 14px;
+        border-radius: 6px;
+        outline: none;
+      }
+      .mb-menu-name-input:focus {
+        border-color: var(--mb-accent);
+      }
+
+      /* Tree Items */
+      .mb-items-tree {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-height: 80px;
+      }
+      .mb-tree-item {
+        background: var(--mb-card-bg);
+        border: 1px solid var(--mb-border);
+        border-radius: 6px;
+        transition: all 0.15s ease;
+        position: relative;
+      }
+      .mb-tree-item.level-1 {
+        margin-left: 36px;
+        border-left: 3px solid var(--mb-accent);
+      }
+      .mb-tree-item.level-2 {
+        margin-left: 72px;
+        border-left: 3px solid #3b82f6;
+      }
+      .mb-tree-item-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        cursor: grab;
+      }
+      .mb-tree-item-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .mb-tree-item-title {
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: #fff;
+      }
+      .mb-tree-item-url {
+        font-size: 0.72rem;
+        color: var(--mb-text-muted);
+        background: rgba(255, 255, 255, 0.05);
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+      .mb-tree-item-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .mb-item-btn {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--mb-border);
+        color: var(--mb-text-muted);
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.72rem;
+        cursor: pointer;
+      }
+      .mb-item-btn:hover {
+        background: rgba(255, 255, 255, 0.12);
+        color: #fff;
+      }
+      .mb-item-btn.btn-remove:hover {
+        background: rgba(239, 68, 68, 0.2);
+        color: #ef4444;
+      }
+
+      /* Item Edit Drawer */
+      .mb-item-edit-drawer {
+        padding: 12px 14px;
+        background: #0f131d;
+        border-top: 1px solid var(--mb-border);
+        display: none;
+      }
+      .mb-tree-item.expanded .mb-item-edit-drawer {
+        display: block;
+      }
+
+      /* Live Preview Container */
+      .mb-preview-section {
+        padding: 24px;
+        background: #0c0f17;
+        flex: 1;
+      }
+      .mb-preview-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+      }
+      .mb-preview-title {
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: #e5e7eb;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .mb-device-switch {
+        display: flex;
+        background: #161b26;
+        border: 1px solid var(--mb-border);
+        border-radius: 6px;
+        padding: 2px;
+      }
+      .mb-device-btn {
+        background: none;
+        border: none;
+        color: var(--mb-text-muted);
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.78rem;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .mb-device-btn.active {
+        background: var(--mb-accent);
+        color: #fff;
+      }
+      .mb-preview-frame-wrap {
+        background: #ffffff;
+        border-radius: 8px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+        margin: 0 auto;
+        transition: width 0.3s ease;
+        padding: 24px 30px;
+        min-height: 160px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* Right Panel: Content & Style Tabbed Settings */
+      .mb-panel-right {
+        width: 380px;
+        background: var(--mb-sidebar-bg);
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+      }
+
+      /* Panel Tabs (Content | Style) */
+      .mb-panel-tabs {
+        display: flex;
+        border-bottom: 1px solid var(--mb-border);
+        background: #0e121a;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+      .mb-panel-tab {
+        flex: 1;
+        padding: 13px 16px;
+        background: transparent;
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: var(--mb-text-muted);
+        font-size: 0.84rem;
+        font-weight: 700;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        transition: all 0.2s ease;
+      }
+      .mb-panel-tab:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .mb-panel-tab.active {
+        color: var(--mb-accent);
+        border-bottom-color: var(--mb-accent);
+        background: rgba(255, 94, 58, 0.05);
+      }
+
+      .widget-settings-container {
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+
+      .ws-tab-panel {
+        display: none;
+        flex-direction: column;
+        gap: 18px;
+      }
+      .ws-tab-panel.active {
+        display: flex;
+      }
+
+      .ws-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .ws-label {
+        font-size: 0.84rem;
+        color: #cbd5e1;
+        font-weight: 500;
+      }
+
+      .ws-select {
+        background: #19202f;
+        border: 1px solid var(--mb-border);
+        color: #f1f5f9;
+        font-size: 0.82rem;
+        padding: 7px 10px;
+        border-radius: 6px;
+        outline: none;
+        width: 175px;
+        cursor: pointer;
+      }
+      .ws-select:focus {
+        border-color: var(--mb-accent);
+      }
+
+      /* Segmented icon buttons (Left, Center, Right, Justify) */
+      .ws-segmented-group {
+        display: inline-flex;
+        border: 1px solid var(--mb-border);
+        border-radius: 6px;
+        overflow: hidden;
+        background: #19202f;
+      }
+      .ws-seg-btn {
+        background: transparent;
+        border: none;
+        border-right: 1px solid var(--mb-border);
+        color: #94a3b8;
+        padding: 6px 10px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.95rem;
+        transition: all 0.15s ease;
+      }
+      .ws-seg-btn:last-child {
+        border-right: none;
+      }
+      .ws-seg-btn:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: #fff;
+      }
+      .ws-seg-btn.active {
+        background: #ff5e3a;
+        color: #fff;
+      }
+
+      /* Submenu indicator control */
+      .ws-indicator-wrap {
+        display: flex;
+        align-items: center;
+        border: 1px solid var(--mb-border);
+        border-radius: 6px;
+        overflow: hidden;
+        background: #19202f;
+      }
+      .ws-indicator-icon {
+        padding: 6px 10px;
+        color: #94a3b8;
+        font-size: 1rem;
+        border-right: 1px solid var(--mb-border);
+      }
+      .ws-indicator-select {
+        background: transparent;
+        border: none;
+        color: #fff;
+        font-size: 0.82rem;
+        padding: 6px 10px;
+        outline: none;
+        cursor: pointer;
+      }
+
+      .ws-divider {
+        height: 1px;
+        background: var(--mb-border);
+        margin: 6px 0;
+      }
+
+      .ws-section-header {
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: #fff;
+        margin-top: 4px;
+      }
+
+      /* Collapsible Card Sections for Style Tab */
+      .ws-card-section {
+        background: #141923;
+        border: 1px solid var(--mb-border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .ws-card-header {
+        padding: 12px 14px;
+        background: rgba(255, 255, 255, 0.03);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: #f1f5f9;
+        user-select: none;
+      }
+      .ws-card-header:hover {
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .ws-card-body {
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .ws-card-section.collapsed .ws-card-body {
+        display: none;
+      }
+      .ws-card-section.collapsed .ws-card-arrow {
+        transform: rotate(-90deg);
+      }
+      .ws-card-arrow {
+        transition: transform 0.2s ease;
+      }
+
+      /* Subtitles inside card */
+      .ws-sub-title {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: #ff7e5f;
+        border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+        padding-bottom: 4px;
+        margin-top: 4px;
+      }
+
+      /* Color Swatch & Box */
+      .ws-color-box {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .ws-color-swatch {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        border: 1px solid var(--mb-border);
+        padding: 0;
+        cursor: pointer;
+        background: none;
+        overflow: hidden;
+      }
+      .ws-color-swatch::-webkit-color-swatch-wrapper {
+        padding: 0;
+      }
+      .ws-color-swatch::-webkit-color-swatch {
+        border: none;
+        border-radius: 5px;
+      }
+      .ws-color-text {
+        width: 90px;
+        background: #19202f;
+        border: 1px solid var(--mb-border);
+        color: #fff;
+        font-size: 0.8rem;
+        padding: 6px 8px;
+        border-radius: 6px;
+        outline: none;
+        text-transform: lowercase;
+      }
+      .ws-color-text:focus {
+        border-color: var(--mb-accent);
+      }
+
+      .ws-small-input {
+        width: 85px;
+        background: #19202f;
+        border: 1px solid var(--mb-border);
+        color: #fff;
+        font-size: 0.82rem;
+        padding: 6px 8px;
+        border-radius: 6px;
+        outline: none;
+        text-align: right;
+      }
+      .ws-small-input:focus {
+        border-color: var(--mb-accent);
+      }
+
+      /* Full Width Switch */
+      .ws-switch {
+        position: relative;
+        display: inline-block;
+        width: 52px;
+        height: 26px;
+      }
+      .ws-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .ws-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background-color: #334155;
+        transition: .3s;
+        border-radius: 26px;
+      }
+      .ws-slider:before {
+        position: absolute;
+        content: "";
+        height: 20px;
+        width: 20px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        transition: .3s;
+        border-radius: 50%;
+      }
+      input:checked + .ws-slider {
+        background-color: #a855f7;
+      }
+      input:checked + .ws-slider:before {
+        transform: translateX(26px);
+      }
+      .ws-caption-italic {
+        font-size: 0.72rem;
+        color: #94a3b8;
+        font-style: italic;
+        margin-top: -6px;
+      }
+
+      /* Normal / Hover / Active Tabs */
+      .ws-tabs-segmented {
+        display: flex;
+        background: #19202f;
+        border: 1px solid var(--mb-border);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .ws-tab-btn {
+        flex: 1;
+        background: transparent;
+        border: none;
+        border-right: 1px solid var(--mb-border);
+        color: #94a3b8;
+        padding: 6px 0;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        text-align: center;
+        transition: all 0.15s ease;
+      }
+      .ws-tab-btn:last-child {
+        border-right: none;
+      }
+      .ws-tab-btn.active {
+        background: #e2e8f0;
+        color: #0f172a;
+      }
+
+      /* Toast Notification */
+      .mb-toast {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        background: #10b981;
+        color: #fff;
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-size: 0.88rem;
+        font-weight: 600;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        display: none;
+        z-index: 1000;
+      }
+      .mb-toast.show {
+        display: block;
+        animation: fadeIn 0.3s ease;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="mb-app">
+      <!-- Top Toolbar -->
+      <header class="mb-topbar">
+        <div class="mb-topbar-left">
+          <a href="/editor" class="mb-back-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            Page Builder
+          </a>
+          <a href="/header-builder" class="mb-back-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg>
+            Header Builder
+          </a>
+          <div class="mb-title-wrap">
+            <span class="mb-logo-badge">Menu</span>
+            <h1 class="mb-app-title">Menu Builder</h1>
+          </div>
+        </div>
+
+        <div class="mb-topbar-center">
+          <label for="selectMenuPicker" class="mb-menu-selector-label">Select Menu:</label>
+          <select id="selectMenuPicker" class="mb-select-menu">
+            {menus.map((m) => (
+              <option value={m.id} selected={m.id === activeMenuId}>{m.name}</option>
+            ))}
+          </select>
+          <button type="button" class="mb-btn-secondary" id="btnCreateNewMenu">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            + Create New Menu
+          </button>
+        </div>
+
+        <div class="mb-topbar-right">
+          <button type="button" class="mb-btn-delete" id="btnDeleteMenu" title="Delete current menu">
+            Delete
+          </button>
+          <button type="button" class="mb-btn-save" id="btnSaveMenu">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+            Save Menu
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Work Area -->
+      <main class="mb-main">
+        <!-- 1. Left Panel: Add Items -->
+        <aside class="mb-panel-left">
+          <div class="mb-panel-header">
+            <h2 class="mb-panel-title">Add Menu Items</h2>
+            <p class="mb-panel-desc">Select pages, categories or enter custom links to add to this menu.</p>
+          </div>
+
+          <!-- Accordion: Pages -->
+          <div class="mb-accordion-item open">
+            <div class="mb-acc-header" onclick="this.parentElement.classList.toggle('open')">
+              <span>📄 Pages</span>
+              <svg class="mb-acc-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </div>
+            <div class="mb-acc-body">
+              <div class="mb-check-list" id="pagesCheckList">
+                {availablePages.map((p) => (
+                  <label class="mb-check-label">
+                    <input type="checkbox" value={p.url} data-title={p.title} />
+                    <span>{p.title} <small style="color:#6b7280;">({p.url})</small></span>
+                  </label>
+                ))}
+              </div>
+              <button type="button" class="mb-btn-add-item" id="btnAddPagesToMenu">+ Add Pages to Menu</button>
+            </div>
+          </div>
+
+          <!-- Accordion: Categories -->
+          <div class="mb-accordion-item">
+            <div class="mb-acc-header" onclick="this.parentElement.classList.toggle('open')">
+              <span>🏷️ Categories</span>
+              <svg class="mb-acc-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </div>
+            <div class="mb-acc-body">
+              <div class="mb-check-list" id="catsCheckList">
+                {availableCategories.map((c) => (
+                  <label class="mb-check-label">
+                    <input type="checkbox" value={c.url} data-title={c.title} />
+                    <span>{c.title}</span>
+                  </label>
+                ))}
+              </div>
+              <button type="button" class="mb-btn-add-item" id="btnAddCatsToMenu">+ Add Categories</button>
+            </div>
+          </div>
+
+          <!-- Accordion: Custom Link -->
+          <div class="mb-accordion-item open">
+            <div class="mb-acc-header" onclick="this.parentElement.classList.toggle('open')">
+              <span>🔗 Custom Link</span>
+              <svg class="mb-acc-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </div>
+            <div class="mb-acc-body">
+              <div class="mb-input-group">
+                <label class="mb-input-label">URL</label>
+                <input type="text" id="customLinkUrl" class="mb-input-text" placeholder="https:// or /slug" value="https://" />
+              </div>
+              <div class="mb-input-group">
+                <label class="mb-input-label">Link Text</label>
+                <input type="text" id="customLinkTitle" class="mb-input-text" placeholder="Menu Item Label" />
+              </div>
+              <button type="button" class="mb-btn-add-item" id="btnAddCustomLink">+ Add Custom Link</button>
+            </div>
+          </div>
+
+          <!-- Accordion: Posts -->
+          <div class="mb-accordion-item">
+            <div class="mb-acc-header" onclick="this.parentElement.classList.toggle('open')">
+              <span>✍️ Blog Posts</span>
+              <svg class="mb-acc-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </div>
+            <div class="mb-acc-body">
+              <div class="mb-check-list" id="postsCheckList">
+                {availablePosts.map((post) => (
+                  <label class="mb-check-label">
+                    <input type="checkbox" value={post.url} data-title={post.title} />
+                    <span>{post.title}</span>
+                  </label>
+                ))}
+              </div>
+              <button type="button" class="mb-btn-add-item" id="btnAddPostsToMenu">+ Add Posts</button>
+            </div>
+          </div>
+        </aside>
+
+        <!-- 2. Middle Panel: Menu Tree Structure & Interactive Preview -->
+        <section class="mb-panel-center">
+          <div class="mb-structure-box">
+            <div class="mb-menu-name-row">
+              <label class="ws-label" style="font-weight:700;">Menu Name:</label>
+              <input type="text" id="menuNameInput" class="mb-menu-name-input" value={menus[0]?.name || 'Main Header Menu'} />
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <span style="font-size:0.8rem; color:#9ca3af;">Menu items hierarchy (use ◀ / ▶ to nest into submenus):</span>
+              <button type="button" class="mb-btn-secondary" id="btnClearItems" style="padding:4px 10px; font-size:0.75rem;">Clear All</button>
+            </div>
+
+            <div class="mb-items-tree" id="menuItemsTree">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+
+          <!-- Live Interactive Preview -->
+          <div class="mb-preview-section">
+            <div class="mb-preview-topbar">
+              <div class="mb-preview-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ff5e3a" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                Live Widget Preview
+              </div>
+              <div class="mb-device-switch">
+                <button type="button" class="mb-device-btn active" data-width="100%">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                  Desktop
+                </button>
+                <button type="button" class="mb-device-btn" data-width="768px">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18"/></svg>
+                  Tablet
+                </button>
+                <button type="button" class="mb-device-btn" data-width="380px">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18"/></svg>
+                  Mobile
+                </button>
+              </div>
+            </div>
+
+            <!-- Preview Frame wrapper -->
+            <div class="mb-preview-frame-wrap" id="previewFrameWrap">
+              <div id="liveMenuMount" style="width: 100%;">
+                <!-- Live HTML rendered here -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. Right Panel: Tabbed Settings (Content | Style) -->
+        <aside class="mb-panel-right">
+          <!-- Top Tabs Bar -->
+          <div class="mb-panel-tabs">
+            <button type="button" class="mb-panel-tab active" data-tab="content">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="4" y1="6" x2="20" y2="6"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="18" x2="20" y2="18"></line></svg>
+              Content
+            </button>
+            <button type="button" class="mb-panel-tab" data-tab="style">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+              Style
+            </button>
+          </div>
+
+          <div class="widget-settings-container">
+            <!-- TAB 1: CONTENT (Layout, Alignment, Pointer, Animations, Mobile) -->
+            <div class="ws-tab-panel active" id="tabPanelContent">
+              <!-- Layout -->
+              <div class="ws-row">
+                <span class="ws-label">Layout</span>
+                <select id="cfgLayout" class="ws-select">
+                  <option value="horizontal">Horizontal</option>
+                  <option value="vertical">Vertical</option>
+                  <option value="dropdown">Dropdown</option>
+                </select>
+              </div>
+
+              <!-- Alignment -->
+              <div class="ws-row">
+                <span class="ws-label">Alignment</span>
+                <div class="ws-segmented-group" id="cfgAlignGroup">
+                  <button type="button" class="ws-seg-btn active" data-align="left" title="Left">⇤</button>
+                  <button type="button" class="ws-seg-btn" data-align="center" title="Center">☩</button>
+                  <button type="button" class="ws-seg-btn" data-align="right" title="Right">⇥</button>
+                  <button type="button" class="ws-seg-btn" data-align="justify" title="Justify">⇋</button>
+                </div>
+              </div>
+
+              <!-- Pointer -->
+              <div class="ws-row">
+                <span class="ws-label">Pointer</span>
+                <select id="cfgPointer" class="ws-select">
+                  <option value="underline">Underline</option>
+                  <option value="overline">Overline</option>
+                  <option value="double-line">Double Line</option>
+                  <option value="framed">Framed</option>
+                  <option value="background">Background</option>
+                  <option value="text">Text</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+
+              <!-- Animation -->
+              <div class="ws-row">
+                <span class="ws-label">Animation</span>
+                <select id="cfgAnimation" class="ws-select">
+                  <option value="fade">Fade</option>
+                  <option value="slide">Slide</option>
+                  <option value="grow">Grow</option>
+                  <option value="drop-in">Drop In</option>
+                  <option value="drop-out">Drop Out</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+
+              <!-- Submenu Indicator -->
+              <div class="ws-row">
+                <span class="ws-label">Submenu Indicator</span>
+                <div class="ws-indicator-wrap">
+                  <span class="ws-indicator-icon">⊘</span>
+                  <select id="cfgIndicator" class="ws-indicator-select">
+                    <option value="angle">Angle</option>
+                    <option value="chevron">Chevron</option>
+                    <option value="classic">Classic</option>
+                    <option value="plus">Plus</option>
+                    <option value="none">None</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="ws-divider"></div>
+
+              <!-- Mobile Dropdown Section Header -->
+              <div class="ws-section-header">Mobile Dropdown</div>
+
+              <!-- Breakpoint -->
+              <div class="ws-row">
+                <span class="ws-label">Breakpoint</span>
+                <select id="cfgBreakpoint" class="ws-select">
+                  <option value="tablet">Tablet Portrait (&gt; 1024px)</option>
+                  <option value="mobile">Mobile (&lt; 768px)</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+
+              <!-- Full Width -->
+              <div class="ws-row" style="align-items: flex-start; flex-direction: column; gap: 4px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                  <span class="ws-label">Full Width</span>
+                  <label class="ws-switch">
+                    <input type="checkbox" id="cfgFullWidth" checked />
+                    <span class="ws-slider"></span>
+                  </label>
+                </div>
+                <span class="ws-caption-italic">Stretch the dropdown of the menu to full width.</span>
+              </div>
+
+              <!-- Text Align -->
+              <div class="ws-row">
+                <span class="ws-label">Text Align</span>
+                <select id="cfgTextAlign" class="ws-select">
+                  <option value="aside">Aside</option>
+                  <option value="center">Center</option>
+                </select>
+              </div>
+
+              <!-- Toggle Button -->
+              <div class="ws-row">
+                <span class="ws-label">Toggle Button</span>
+                <select id="cfgToggleButton" class="ws-select">
+                  <option value="hamburger">Hamburger</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+
+              <!-- Toggle Align -->
+              <div class="ws-row">
+                <span class="ws-label">Toggle Align</span>
+                <div class="ws-segmented-group" id="cfgToggleAlignGroup">
+                  <button type="button" class="ws-seg-btn" data-align="left" title="Left">⇤</button>
+                  <button type="button" class="ws-seg-btn" data-align="center" title="Center">☩</button>
+                  <button type="button" class="ws-seg-btn active" data-align="right" title="Right">⇥</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 2: STYLE (Fonts & Colors for Main Menu & Submenu) -->
+            <div class="ws-tab-panel" id="tabPanelStyle">
+              <!-- Card 1: Main Menu Styling -->
+              <div class="ws-card-section" id="cardMainMenuStyle">
+                <div class="ws-card-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                  <span>Main Menu Typography &amp; Colors</span>
+                  <span class="ws-card-arrow">▼</span>
+                </div>
+                <div class="ws-card-body">
+                  <!-- Typography Subtitle -->
+                  <div class="ws-sub-title">Typography</div>
+
+                  <!-- Font Family -->
+                  <div class="ws-row">
+                    <span class="ws-label">Font Family</span>
+                    <select id="cfgMainMenuFontFamily" class="ws-select">
+                      <option value="">Default (Theme)</option>
+                      <option value="'Plus Jakarta Sans', sans-serif">Plus Jakarta Sans</option>
+                      <option value="'Montserrat', sans-serif">Montserrat</option>
+                      <option value="'Inter', sans-serif">Inter</option>
+                      <option value="'Poppins', sans-serif">Poppins</option>
+                      <option value="'Roboto', sans-serif">Roboto</option>
+                      <option value="'Playfair Display', serif">Playfair Display</option>
+                      <option value="'Outfit', sans-serif">Outfit</option>
+                      <option value="'Cinzel', serif">Cinzel</option>
+                      <option value="Arial, Helvetica, sans-serif">Arial</option>
+                      <option value="Georgia, serif">Georgia</option>
+                      <option value="'Times New Roman', serif">Times New Roman</option>
+                      {availableFonts.map(f => (
+                        <option value={`'${f.family}', sans-serif`}>{f.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <!-- Size & Weight -->
+                  <div class="ws-row">
+                    <span class="ws-label">Size</span>
+                    <input type="text" id="cfgMainMenuFontSize" class="ws-small-input" placeholder="15px" value="15px" />
+                  </div>
+
+                  <div class="ws-row">
+                    <span class="ws-label">Weight</span>
+                    <select id="cfgMainMenuFontWeight" class="ws-select">
+                      <option value="400">400 (Normal)</option>
+                      <option value="500" selected>500 (Medium)</option>
+                      <option value="600">600 (Semi Bold)</option>
+                      <option value="700">700 (Bold)</option>
+                      <option value="800">800 (Extra Bold)</option>
+                    </select>
+                  </div>
+
+                  <!-- Transform & Letter Spacing -->
+                  <div class="ws-row">
+                    <span class="ws-label">Transform</span>
+                    <select id="cfgMainMenuTransform" class="ws-select">
+                      <option value="none">Default / None</option>
+                      <option value="uppercase">UPPERCASE</option>
+                      <option value="lowercase">lowercase</option>
+                      <option value="capitalize">Capitalize</option>
+                    </select>
+                  </div>
+
+                  <div class="ws-row">
+                    <span class="ws-label">Letter Spacing</span>
+                    <input type="text" id="cfgMainMenuLetterSpacing" class="ws-small-input" placeholder="0px" value="0px" />
+                  </div>
+
+                  <!-- Colors Subtitle -->
+                  <div class="ws-sub-title">Text &amp; Pointer Colors</div>
+
+                  <!-- State Selector Tabs -->
+                  <div class="ws-tabs-segmented" id="mainMenuColorTabs">
+                    <button type="button" class="ws-tab-btn active" data-state="normal">Normal</button>
+                    <button type="button" class="ws-tab-btn" data-state="hover">Hover</button>
+                    <button type="button" class="ws-tab-btn" data-state="active">Active</button>
+                  </div>
+
+                  <!-- Color Rows for Normal / Hover / Active -->
+                  <div class="ws-color-state-panel" id="colorStateNormal">
+                    <div class="ws-row">
+                      <span class="ws-label">Text Color</span>
+                      <div class="ws-color-box">
+                        <input type="color" id="cfgMainMenuColorPicker" class="ws-color-swatch" value="#374151" />
+                        <input type="text" id="cfgMainMenuColor" class="ws-color-text" value="#374151" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="ws-color-state-panel" id="colorStateHover" style="display:none;">
+                    <div class="ws-row">
+                      <span class="ws-label">Hover Color</span>
+                      <div class="ws-color-box">
+                        <input type="color" id="cfgMainMenuHoverColorPicker" class="ws-color-swatch" value="#111827" />
+                        <input type="text" id="cfgMainMenuHoverColor" class="ws-color-text" value="#111827" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="ws-color-state-panel" id="colorStateActive" style="display:none;">
+                    <div class="ws-row">
+                      <span class="ws-label">Active Color</span>
+                      <div class="ws-color-box">
+                        <input type="color" id="cfgMainMenuActiveColorPicker" class="ws-color-swatch" value="#ff5e3a" />
+                        <input type="text" id="cfgMainMenuActiveColor" class="ws-color-text" value="#ff5e3a" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Pointer Color -->
+                  <div class="ws-row">
+                    <span class="ws-label">Pointer / Line Color</span>
+                    <div class="ws-color-box">
+                      <input type="color" id="cfgMainMenuPointerColorPicker" class="ws-color-swatch" value="#111827" />
+                      <input type="text" id="cfgMainMenuPointerColor" class="ws-color-text" value="#111827" />
+                    </div>
+                  </div>
+
+                  <!-- Spacing Subtitle -->
+                  <div class="ws-sub-title">Spacing &amp; Padding</div>
+
+                  <div class="ws-row">
+                    <span class="ws-label">Horizontal Padding</span>
+                    <input type="text" id="cfgMainMenuPadX" class="ws-small-input" placeholder="12px" value="12px" />
+                  </div>
+
+                  <div class="ws-row">
+                    <span class="ws-label">Vertical Padding</span>
+                    <input type="text" id="cfgMainMenuPadY" class="ws-small-input" placeholder="8px" value="8px" />
+                  </div>
+
+                  <div class="ws-row">
+                    <span class="ws-label">Space Between</span>
+                    <input type="text" id="cfgMainMenuSpace" class="ws-small-input" placeholder="24px" value="24px" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Card 2: Sub Menu (Dropdown) Styling -->
+              <div class="ws-card-section" id="cardSubMenuStyle">
+                <div class="ws-card-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                  <span>Sub Menu (Dropdown) Typography &amp; Box</span>
+                  <span class="ws-card-arrow">▼</span>
+                </div>
+                <div class="ws-card-body">
+                  <!-- Submenu Typography -->
+                  <div class="ws-sub-title">Dropdown Typography</div>
+
+                  <!-- Font Family -->
+                  <div class="ws-row">
+                    <span class="ws-label">Font Family</span>
+                    <select id="cfgSubMenuFontFamily" class="ws-select">
+                      <option value="">Default (Inherit)</option>
+                      <option value="'Plus Jakarta Sans', sans-serif">Plus Jakarta Sans</option>
+                      <option value="'Montserrat', sans-serif">Montserrat</option>
+                      <option value="'Inter', sans-serif">Inter</option>
+                      <option value="'Poppins', sans-serif">Poppins</option>
+                      <option value="'Roboto', sans-serif">Roboto</option>
+                      <option value="'Playfair Display', serif">Playfair Display</option>
+                      <option value="'Outfit', sans-serif">Outfit</option>
+                      <option value="'Cinzel', serif">Cinzel</option>
+                      <option value="Arial, Helvetica, sans-serif">Arial</option>
+                      <option value="Georgia, serif">Georgia</option>
+                      {availableFonts.map(f => (
+                        <option value={`'${f.family}', sans-serif`}>{f.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div class="ws-row">
+                    <span class="ws-label">Size</span>
+                    <input type="text" id="cfgSubMenuFontSize" class="ws-small-input" placeholder="14px" value="14px" />
+                  </div>
+
+                  <div class="ws-row">
+                    <span class="ws-label">Weight</span>
+                    <select id="cfgSubMenuFontWeight" class="ws-select">
+                      <option value="400">400 (Normal)</option>
+                      <option value="500" selected>500 (Medium)</option>
+                      <option value="600">600 (Semi Bold)</option>
+                      <option value="700">700 (Bold)</option>
+                    </select>
+                  </div>
+
+                  <div class="ws-row">
+                    <span class="ws-label">Transform</span>
+                    <select id="cfgSubMenuTransform" class="ws-select">
+                      <option value="none">Default / None</option>
+                      <option value="uppercase">UPPERCASE</option>
+                      <option value="lowercase">lowercase</option>
+                      <option value="capitalize">Capitalize</option>
+                    </select>
+                  </div>
+
+                  <div class="ws-row">
+                    <span class="ws-label">Letter Spacing</span>
+                    <input type="text" id="cfgSubMenuLetterSpacing" class="ws-small-input" placeholder="0px" value="0px" />
+                  </div>
+
+                  <!-- Submenu Colors -->
+                  <div class="ws-sub-title">Dropdown Colors</div>
+
+                  <div class="ws-tabs-segmented" id="subMenuColorTabs">
+                    <button type="button" class="ws-tab-btn active" data-state="normal">Normal</button>
+                    <button type="button" class="ws-tab-btn" data-state="hover">Hover</button>
+                    <button type="button" class="ws-tab-btn" data-state="active">Active</button>
+                  </div>
+
+                  <div class="ws-color-state-panel" id="subColorStateNormal">
+                    <div class="ws-row">
+                      <span class="ws-label">Text Color</span>
+                      <div class="ws-color-box">
+                        <input type="color" id="cfgSubMenuColorPicker" class="ws-color-swatch" value="#374151" />
+                        <input type="text" id="cfgSubMenuColor" class="ws-color-text" value="#374151" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="ws-color-state-panel" id="subColorStateHover" style="display:none;">
+                    <div class="ws-row">
+                      <span class="ws-label">Hover Color</span>
+                      <div class="ws-color-box">
+                        <input type="color" id="cfgSubMenuHoverColorPicker" class="ws-color-swatch" value="#111827" />
+                        <input type="text" id="cfgSubMenuHoverColor" class="ws-color-text" value="#111827" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="ws-color-state-panel" id="subColorStateActive" style="display:none;">
+                    <div class="ws-row">
+                      <span class="ws-label">Active Color</span>
+                      <div class="ws-color-box">
+                        <input type="color" id="cfgSubMenuActiveColorPicker" class="ws-color-swatch" value="#ff5e3a" />
+                        <input type="text" id="cfgSubMenuActiveColor" class="ws-color-text" value="#ff5e3a" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Dropdown Box Styles -->
+                  <div class="ws-sub-title">Box &amp; Container</div>
+
+                  <div class="ws-row">
+                    <span class="ws-label">Background</span>
+                    <div class="ws-color-box">
+                      <input type="color" id="cfgSubMenuBgColorPicker" class="ws-color-swatch" value="#ffffff" />
+                      <input type="text" id="cfgSubMenuBgColor" class="ws-color-text" value="#ffffff" />
+                    </div>
+                  </div>
+
+                  <div class="ws-row">
+                    <span class="ws-label">Item Hover BG</span>
+                    <div class="ws-color-box">
+                      <input type="color" id="cfgSubMenuHoverBgColorPicker" class="ws-color-swatch" value="#f9fafb" />
+                      <input type="text" id="cfgSubMenuHoverBgColor" class="ws-color-text" value="#f9fafb" />
+                    </div>
+                  </div>
+
+                  <div class="ws-row">
+                    <span class="ws-label">Border Color</span>
+                    <div class="ws-color-box">
+                      <input type="color" id="cfgSubMenuBorderColorPicker" class="ws-color-swatch" value="#e5e7eb" />
+                      <input type="text" id="cfgSubMenuBorderColor" class="ws-color-text" value="#e5e7eb" />
+                    </div>
+                  </div>
+
+                  <div class="ws-row">
+                    <span class="ws-label">Border Radius</span>
+                    <input type="text" id="cfgSubMenuBorderRadius" class="ws-small-input" placeholder="8px" value="8px" />
+                  </div>
+
+                  <div class="ws-row">
+                    <span class="ws-label">Min Width</span>
+                    <input type="text" id="cfgSubMenuMinWidth" class="ws-small-input" placeholder="200px" value="200px" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </main>
+
+      <!-- Toast Feedback -->
+      <div id="mbToast" class="mb-toast">Menu saved successfully!</div>
+    </div>
+
+    <!-- Client Script -->
+    <script id="initialMenusJson" type="application/json" set:html={JSON.stringify(menus)} />
+    <script src="/nav-menu.js" is:inline></script>
+
+    <script is:inline>
+      let allMenus = [];
+      try {
+        const raw = document.getElementById('initialMenusJson')?.textContent;
+        if (raw) allMenus = JSON.parse(raw);
+      } catch (err) {
+        allMenus = [];
+      }
+
+      let currentMenuId = allMenus[0]?.id || '';
+      let currentMenu = allMenus.find(m => m.id === currentMenuId) || {
+        id: 'menu-' + Date.now(),
+        name: 'Main Header Menu',
+        slug: 'main-header-menu',
+        layout: 'horizontal',
+        alignment: 'left',
+        pointer: 'underline',
+        animation: 'fade',
+        submenuIndicator: 'angle',
+        mobileDropdown: {
+          breakpoint: 'tablet',
+          fullWidth: true,
+          textAlign: 'aside',
+          toggleButton: 'hamburger',
+          toggleAlign: 'right'
+        },
+        styles: {
+          mainMenu: {
+            typography: { fontFamily: '', fontSize: '15px', fontWeight: '500', textTransform: 'none', letterSpacing: '0px' },
+            colors: { color: '#374151', hoverColor: '#111827', activeColor: '#ff5e3a', pointerColor: '#111827' },
+            spacing: { horizontalPadding: '12px', verticalPadding: '8px', spaceBetween: '24px' }
+          },
+          subMenu: {
+            typography: { fontFamily: '', fontSize: '14px', fontWeight: '500', textTransform: 'none', letterSpacing: '0px' },
+            color: '#374151',
+            hoverColor: '#111827',
+            activeColor: '#ff5e3a',
+            bgColor: '#ffffff',
+            hoverBgColor: '#f9fafb',
+            borderColor: '#e5e7eb',
+            borderRadius: '8px',
+            minWidth: '200px'
+          }
+        },
+        items: []
+      };
+
+      // Flattened items with .level property for tree representation
+      let flatItems = [];
+
+      function flattenItems(items, level = 0) {
+        const res = [];
+        (items || []).forEach(it => {
+          res.push({
+            id: it.id || ('item-' + Math.random().toString(36).substr(2, 6)),
+            label: it.label || 'Link',
+            url: it.url || '#',
+            target: it.target || '_self',
+            badge: it.badge || '',
+            badgeColor: it.badgeColor || '',
+            level: level
+          });
+          if (Array.isArray(it.children) && it.children.length > 0) {
+            res.push(...flattenItems(it.children, level + 1));
+          }
+        });
+        return res;
+      }
+
+      function unflattenItems(flat) {
+        const root = [];
+        const stack = [{ level: -1, children: root }];
+
+        flat.forEach(item => {
+          const node = {
+            id: item.id,
+            label: item.label,
+            url: item.url,
+            target: item.target,
+            badge: item.badge,
+            badgeColor: item.badgeColor,
+            children: []
+          };
+
+          while (stack.length > 1 && stack[stack.length - 1].level >= item.level) {
+            stack.pop();
+          }
+
+          stack[stack.length - 1].children.push(node);
+          stack.push({ level: item.level, children: node.children });
+        });
+
+        // Clean up empty children arrays
+        function clean(list) {
+          list.forEach(i => {
+            if (i.children && i.children.length === 0) {
+              delete i.children;
+            } else if (i.children) {
+              clean(i.children);
+            }
+          });
+        }
+        clean(root);
+        return root;
+      }
+
+      // Sync color picker with text input
+      function bindColorPair(textId, pickerId) {
+        const txt = document.getElementById(textId);
+        const pkr = document.getElementById(pickerId);
+        if (!txt || !pkr) return;
+        pkr.addEventListener('input', () => {
+          txt.value = pkr.value;
+          triggerLivePreview();
+        });
+        txt.addEventListener('input', () => {
+          if (/^#[0-9a-f]{6}$/i.test(txt.value)) {
+            pkr.value = txt.value;
+          }
+          triggerLivePreview();
+        });
+      }
+
+      bindColorPair('cfgMainMenuColor', 'cfgMainMenuColorPicker');
+      bindColorPair('cfgMainMenuHoverColor', 'cfgMainMenuHoverColorPicker');
+      bindColorPair('cfgMainMenuActiveColor', 'cfgMainMenuActiveColorPicker');
+      bindColorPair('cfgMainMenuPointerColor', 'cfgMainMenuPointerColorPicker');
+      bindColorPair('cfgSubMenuColor', 'cfgSubMenuColorPicker');
+      bindColorPair('cfgSubMenuHoverColor', 'cfgSubMenuHoverColorPicker');
+      bindColorPair('cfgSubMenuActiveColor', 'cfgSubMenuActiveColorPicker');
+      bindColorPair('cfgSubMenuBgColor', 'cfgSubMenuBgColorPicker');
+      bindColorPair('cfgSubMenuHoverBgColor', 'cfgSubMenuHoverBgColorPicker');
+      bindColorPair('cfgSubMenuBorderColor', 'cfgSubMenuBorderColorPicker');
+
+      // Top Tab switching (Content vs Style)
+      document.querySelectorAll('.mb-panel-tab').forEach(tabBtn => {
+        tabBtn.addEventListener('click', () => {
+          document.querySelectorAll('.mb-panel-tab').forEach(b => b.classList.remove('active'));
+          tabBtn.classList.add('active');
+          const target = tabBtn.dataset.tab;
+          document.getElementById('tabPanelContent').classList.toggle('active', target === 'content');
+          document.getElementById('tabPanelStyle').classList.toggle('active', target === 'style');
+        });
+      });
+
+      // Main Menu Color State sub-tabs
+      document.querySelectorAll('#mainMenuColorTabs .ws-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#mainMenuColorTabs .ws-tab-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const state = btn.dataset.state;
+          document.getElementById('colorStateNormal').style.display = state === 'normal' ? 'block' : 'none';
+          document.getElementById('colorStateHover').style.display = state === 'hover' ? 'block' : 'none';
+          document.getElementById('colorStateActive').style.display = state === 'active' ? 'block' : 'none';
+        });
+      });
+
+      // Submenu Color State sub-tabs
+      document.querySelectorAll('#subMenuColorTabs .ws-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#subMenuColorTabs .ws-tab-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const state = btn.dataset.state;
+          document.getElementById('subColorStateNormal').style.display = state === 'normal' ? 'block' : 'none';
+          document.getElementById('subColorStateHover').style.display = state === 'hover' ? 'block' : 'none';
+          document.getElementById('subColorStateActive').style.display = state === 'active' ? 'block' : 'none';
+        });
+      });
+
+      function loadMenuIntoUI(menu) {
+        currentMenu = JSON.parse(JSON.stringify(menu));
+        document.getElementById('menuNameInput').value = currentMenu.name || '';
+        document.getElementById('cfgLayout').value = currentMenu.layout || 'horizontal';
+        document.getElementById('cfgPointer').value = currentMenu.pointer || 'underline';
+        document.getElementById('cfgAnimation').value = currentMenu.animation || 'fade';
+        document.getElementById('cfgIndicator').value = currentMenu.submenuIndicator || 'angle';
+
+        const mb = currentMenu.mobileDropdown || {};
+        document.getElementById('cfgBreakpoint').value = mb.breakpoint || 'tablet';
+        document.getElementById('cfgFullWidth').checked = mb.fullWidth !== false;
+        document.getElementById('cfgTextAlign').value = mb.textAlign || 'aside';
+        document.getElementById('cfgToggleButton').value = mb.toggleButton || 'hamburger';
+
+        // Alignment group
+        const align = currentMenu.alignment || 'left';
+        document.querySelectorAll('#cfgAlignGroup .ws-seg-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.align === align);
+        });
+
+        // Toggle align group
+        const toggleAlign = mb.toggleAlign || 'right';
+        document.querySelectorAll('#cfgToggleAlignGroup .ws-seg-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.align === toggleAlign);
+        });
+
+        // Styles: Main Menu
+        const st = currentMenu.styles || {};
+        const mm = st.mainMenu || {};
+        const mmTypo = mm.typography || {};
+        const mmCol = mm.colors || {};
+        const mmSpace = mm.spacing || {};
+
+        document.getElementById('cfgMainMenuFontFamily').value = mmTypo.fontFamily || '';
+        document.getElementById('cfgMainMenuFontSize').value = mmTypo.fontSize || '15px';
+        document.getElementById('cfgMainMenuFontWeight').value = mmTypo.fontWeight || '500';
+        document.getElementById('cfgMainMenuTransform').value = mmTypo.textTransform || 'none';
+        document.getElementById('cfgMainMenuLetterSpacing').value = mmTypo.letterSpacing || '0px';
+
+        const setValAndPicker = (textId, pickerId, val, defaultVal) => {
+          const finalVal = val || defaultVal;
+          document.getElementById(textId).value = finalVal;
+          if (/^#[0-9a-f]{6}$/i.test(finalVal)) {
+            document.getElementById(pickerId).value = finalVal;
+          }
+        };
+
+        setValAndPicker('cfgMainMenuColor', 'cfgMainMenuColorPicker', mmCol.color, '#374151');
+        setValAndPicker('cfgMainMenuHoverColor', 'cfgMainMenuHoverColorPicker', mmCol.hoverColor, '#111827');
+        setValAndPicker('cfgMainMenuActiveColor', 'cfgMainMenuActiveColorPicker', mmCol.activeColor, '#ff5e3a');
+        setValAndPicker('cfgMainMenuPointerColor', 'cfgMainMenuPointerColorPicker', mmCol.pointerColor, '#111827');
+
+        document.getElementById('cfgMainMenuPadX').value = mmSpace.horizontalPadding || '12px';
+        document.getElementById('cfgMainMenuPadY').value = mmSpace.verticalPadding || '8px';
+        document.getElementById('cfgMainMenuSpace').value = mmSpace.spaceBetween || '24px';
+
+        // Styles: Sub Menu
+        const sm = st.subMenu || {};
+        const smTypo = sm.typography || {};
+
+        document.getElementById('cfgSubMenuFontFamily').value = smTypo.fontFamily || '';
+        document.getElementById('cfgSubMenuFontSize').value = smTypo.fontSize || '14px';
+        document.getElementById('cfgSubMenuFontWeight').value = smTypo.fontWeight || '500';
+        document.getElementById('cfgSubMenuTransform').value = smTypo.textTransform || 'none';
+        document.getElementById('cfgSubMenuLetterSpacing').value = smTypo.letterSpacing || '0px';
+
+        setValAndPicker('cfgSubMenuColor', 'cfgSubMenuColorPicker', sm.color, '#374151');
+        setValAndPicker('cfgSubMenuHoverColor', 'cfgSubMenuHoverColorPicker', sm.hoverColor, '#111827');
+        setValAndPicker('cfgSubMenuActiveColor', 'cfgSubMenuActiveColorPicker', sm.activeColor, '#ff5e3a');
+        setValAndPicker('cfgSubMenuBgColor', 'cfgSubMenuBgColorPicker', sm.bgColor, '#ffffff');
+        setValAndPicker('cfgSubMenuHoverBgColor', 'cfgSubMenuHoverBgColorPicker', sm.hoverBgColor, '#f9fafb');
+        setValAndPicker('cfgSubMenuBorderColor', 'cfgSubMenuBorderColorPicker', sm.borderColor, '#e5e7eb');
+
+        document.getElementById('cfgSubMenuBorderRadius').value = sm.borderRadius || '8px';
+        document.getElementById('cfgSubMenuMinWidth').value = sm.minWidth || '200px';
+
+        flatItems = flattenItems(currentMenu.items || []);
+        renderTree();
+        triggerLivePreview();
+      }
+
+      function renderTree() {
+        const container = document.getElementById('menuItemsTree');
+        container.innerHTML = '';
+
+        if (flatItems.length === 0) {
+          container.innerHTML = `<div style="text-align:center; padding:32px 16px; color:#6b7280; font-size:0.85rem;">No menu items added yet. Choose from the left panel to add pages or custom links.</div>`;
+          return;
+        }
+
+        flatItems.forEach((item, idx) => {
+          const itemEl = document.createElement('div');
+          itemEl.className = `mb-tree-item level-${item.level}`;
+          itemEl.dataset.idx = idx;
+
+          itemEl.innerHTML = `
+            <div class="mb-tree-item-header">
+              <div class="mb-tree-item-left">
+                <span style="color:#6b7280; font-size:0.75rem;">☰</span>
+                <span class="mb-tree-item-title">${escape(item.label)}</span>
+                <span class="mb-tree-item-url">${escape(item.url)}</span>
+                ${item.level > 0 ? `<span style="font-size:0.68rem; background:rgba(59,130,246,0.15); color:#60a5fa; padding:1px 5px; border-radius:3px;">Submenu ${item.level}</span>` : ''}
+              </div>
+              <div class="mb-tree-item-actions">
+                <button type="button" class="mb-item-btn btn-outdent" title="Outdent (Move Up Level)" ${item.level === 0 ? 'disabled style="opacity:0.4"' : ''}>◀</button>
+                <button type="button" class="mb-item-btn btn-indent" title="Indent (Make Child Item)" ${item.level >= 2 ? 'disabled style="opacity:0.4"' : ''}>▶</button>
+                <button type="button" class="mb-item-btn btn-move-up" title="Move Up" ${idx === 0 ? 'disabled style="opacity:0.4"' : ''}>▲</button>
+                <button type="button" class="mb-item-btn btn-move-down" title="Move Down" ${idx === flatItems.length - 1 ? 'disabled style="opacity:0.4"' : ''}>▼</button>
+                <button type="button" class="mb-item-btn btn-expand" title="Edit Item Details">⚙</button>
+                <button type="button" class="mb-item-btn btn-remove" title="Remove Item">✕</button>
+              </div>
+            </div>
+            <div class="mb-item-edit-drawer">
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:8px;">
+                <div>
+                  <label class="mb-input-label">Navigation Label</label>
+                  <input type="text" class="mb-input-text edit-label" value="${escape(item.label)}" />
+                </div>
+                <div>
+                  <label class="mb-input-label">URL Destination</label>
+                  <input type="text" class="mb-input-text edit-url" value="${escape(item.url)}" />
+                </div>
+              </div>
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                <div>
+                  <label class="mb-input-label">Badge Text (Optional)</label>
+                  <input type="text" class="mb-input-text edit-badge" placeholder="e.g. NEW, SALE" value="${escape(item.badge || '')}" />
+                </div>
+                <div>
+                  <label class="mb-input-label">Open in New Tab</label>
+                  <select class="mb-input-text edit-target">
+                    <option value="_self" ${item.target !== '_blank' ? 'selected' : ''}>Same Tab (_self)</option>
+                    <option value="_blank" ${item.target === '_blank' ? 'selected' : ''}>New Tab (_blank)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          `;
+
+          // Event handlers
+          itemEl.querySelector('.btn-outdent').addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (item.level > 0) {
+              item.level--;
+              renderTree();
+              triggerLivePreview();
+            }
+          });
+
+          itemEl.querySelector('.btn-indent').addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (item.level < 2) {
+              item.level++;
+              renderTree();
+              triggerLivePreview();
+            }
+          });
+
+          itemEl.querySelector('.btn-move-up').addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (idx > 0) {
+              const temp = flatItems[idx];
+              flatItems[idx] = flatItems[idx - 1];
+              flatItems[idx - 1] = temp;
+              renderTree();
+              triggerLivePreview();
+            }
+          });
+
+          itemEl.querySelector('.btn-move-down').addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (idx < flatItems.length - 1) {
+              const temp = flatItems[idx];
+              flatItems[idx] = flatItems[idx + 1];
+              flatItems[idx + 1] = temp;
+              renderTree();
+              triggerLivePreview();
+            }
+          });
+
+          itemEl.querySelector('.btn-expand').addEventListener('click', (e) => {
+            e.stopPropagation();
+            itemEl.classList.toggle('expanded');
+          });
+
+          itemEl.querySelector('.btn-remove').addEventListener('click', (e) => {
+            e.stopPropagation();
+            flatItems.splice(idx, 1);
+            renderTree();
+            triggerLivePreview();
+          });
+
+          // In-drawer live edits
+          itemEl.querySelector('.edit-label').addEventListener('input', (e) => {
+            item.label = e.target.value;
+            itemEl.querySelector('.mb-tree-item-title').textContent = item.label;
+            triggerLivePreview();
+          });
+
+          itemEl.querySelector('.edit-url').addEventListener('input', (e) => {
+            item.url = e.target.value;
+            itemEl.querySelector('.mb-tree-item-url').textContent = item.url;
+            triggerLivePreview();
+          });
+
+          itemEl.querySelector('.edit-badge').addEventListener('input', (e) => {
+            item.badge = e.target.value;
+            triggerLivePreview();
+          });
+
+          itemEl.querySelector('.edit-target').addEventListener('change', (e) => {
+            item.target = e.target.value;
+          });
+
+          container.appendChild(itemEl);
+        });
+      }
+
+      function escape(str) {
+        if (!str) return '';
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+
+      // Sync settings object from inputs
+      function gatherCurrentConfig() {
+        const alignBtn = document.querySelector('#cfgAlignGroup .ws-seg-btn.active');
+        const toggleAlignBtn = document.querySelector('#cfgToggleAlignGroup .ws-seg-btn.active');
+
+        currentMenu.name = document.getElementById('menuNameInput').value.trim() || 'Menu';
+        currentMenu.layout = document.getElementById('cfgLayout').value;
+        currentMenu.alignment = alignBtn ? alignBtn.dataset.align : 'left';
+        currentMenu.pointer = document.getElementById('cfgPointer').value;
+        currentMenu.animation = document.getElementById('cfgAnimation').value;
+        currentMenu.submenuIndicator = document.getElementById('cfgIndicator').value;
+
+        currentMenu.mobileDropdown = {
+          breakpoint: document.getElementById('cfgBreakpoint').value,
+          fullWidth: document.getElementById('cfgFullWidth').checked,
+          textAlign: document.getElementById('cfgTextAlign').value,
+          toggleButton: document.getElementById('cfgToggleButton').value,
+          toggleAlign: toggleAlignBtn ? toggleAlignBtn.dataset.align : 'right'
+        };
+
+        // Style configuration
+        currentMenu.styles = {
+          mainMenu: {
+            typography: {
+              fontFamily: document.getElementById('cfgMainMenuFontFamily').value,
+              fontSize: document.getElementById('cfgMainMenuFontSize').value,
+              fontWeight: document.getElementById('cfgMainMenuFontWeight').value,
+              textTransform: document.getElementById('cfgMainMenuTransform').value,
+              letterSpacing: document.getElementById('cfgMainMenuLetterSpacing').value,
+            },
+            colors: {
+              color: document.getElementById('cfgMainMenuColor').value,
+              hoverColor: document.getElementById('cfgMainMenuHoverColor').value,
+              activeColor: document.getElementById('cfgMainMenuActiveColor').value,
+              pointerColor: document.getElementById('cfgMainMenuPointerColor').value,
+            },
+            spacing: {
+              horizontalPadding: document.getElementById('cfgMainMenuPadX').value,
+              verticalPadding: document.getElementById('cfgMainMenuPadY').value,
+              spaceBetween: document.getElementById('cfgMainMenuSpace').value,
+            }
+          },
+          subMenu: {
+            typography: {
+              fontFamily: document.getElementById('cfgSubMenuFontFamily').value,
+              fontSize: document.getElementById('cfgSubMenuFontSize').value,
+              fontWeight: document.getElementById('cfgSubMenuFontWeight').value,
+              textTransform: document.getElementById('cfgSubMenuTransform').value,
+              letterSpacing: document.getElementById('cfgSubMenuLetterSpacing').value,
+            },
+            color: document.getElementById('cfgSubMenuColor').value,
+            hoverColor: document.getElementById('cfgSubMenuHoverColor').value,
+            activeColor: document.getElementById('cfgSubMenuActiveColor').value,
+            bgColor: document.getElementById('cfgSubMenuBgColor').value,
+            hoverBgColor: document.getElementById('cfgSubMenuHoverBgColor').value,
+            borderColor: document.getElementById('cfgSubMenuBorderColor').value,
+            borderRadius: document.getElementById('cfgSubMenuBorderRadius').value,
+            minWidth: document.getElementById('cfgSubMenuMinWidth').value,
+          }
+        };
+
+        currentMenu.items = unflattenItems(flatItems);
+        return currentMenu;
+      }
+
+      // Update Live Preview
+      let previewDebounce = null;
+      function triggerLivePreview() {
+        clearTimeout(previewDebounce);
+        previewDebounce = setTimeout(async () => {
+          const cfg = gatherCurrentConfig();
+          try {
+            const resp = await fetch('/api/menus', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'render', menu: cfg })
+            });
+            const data = await resp.json();
+            if (data.success && data.html) {
+              const mount = document.getElementById('liveMenuMount');
+              mount.innerHTML = data.html;
+              if (window.FastPressNavMenu && typeof window.FastPressNavMenu.init === 'function') {
+                window.FastPressNavMenu.init(mount);
+              }
+            }
+          } catch (err) {
+            console.error('Preview error:', err);
+          }
+        }, 120);
+      }
+
+      // Setting inputs change events
+      const liveInputs = [
+        'cfgLayout', 'cfgPointer', 'cfgAnimation', 'cfgIndicator', 'cfgBreakpoint', 
+        'cfgFullWidth', 'cfgTextAlign', 'cfgToggleButton', 'menuNameInput',
+        'cfgMainMenuFontFamily', 'cfgMainMenuFontSize', 'cfgMainMenuFontWeight', 'cfgMainMenuTransform', 'cfgMainMenuLetterSpacing',
+        'cfgMainMenuPadX', 'cfgMainMenuPadY', 'cfgMainMenuSpace',
+        'cfgSubMenuFontFamily', 'cfgSubMenuFontSize', 'cfgSubMenuFontWeight', 'cfgSubMenuTransform', 'cfgSubMenuLetterSpacing',
+        'cfgSubMenuBorderRadius', 'cfgSubMenuMinWidth'
+      ];
+
+      liveInputs.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('change', triggerLivePreview);
+          el.addEventListener('input', triggerLivePreview);
+        }
+      });
+
+      // Alignment button clicks
+      document.querySelectorAll('#cfgAlignGroup .ws-seg-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#cfgAlignGroup .ws-seg-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          triggerLivePreview();
+        });
+      });
+
+      // Toggle Align button clicks
+      document.querySelectorAll('#cfgToggleAlignGroup .ws-seg-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#cfgToggleAlignGroup .ws-seg-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          triggerLivePreview();
+        });
+      });
+
+      // Device switch
+      document.querySelectorAll('.mb-device-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.mb-device-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const width = btn.dataset.width;
+          document.getElementById('previewFrameWrap').style.width = width;
+        });
+      });
+
+      // Add from Pages
+      document.getElementById('btnAddPagesToMenu').addEventListener('click', () => {
+        const checked = document.querySelectorAll('#pagesCheckList input[type="checkbox"]:checked');
+        checked.forEach(chk => {
+          flatItems.push({
+            id: 'item-' + Math.random().toString(36).substr(2, 6),
+            label: chk.dataset.title || 'Page',
+            url: chk.value,
+            target: '_self',
+            level: 0
+          });
+          chk.checked = false;
+        });
+        renderTree();
+        triggerLivePreview();
+      });
+
+      // Add from Categories
+      document.getElementById('btnAddCatsToMenu').addEventListener('click', () => {
+        const checked = document.querySelectorAll('#catsCheckList input[type="checkbox"]:checked');
+        checked.forEach(chk => {
+          flatItems.push({
+            id: 'item-' + Math.random().toString(36).substr(2, 6),
+            label: chk.dataset.title || 'Category',
+            url: chk.value,
+            target: '_self',
+            level: 0
+          });
+          chk.checked = false;
+        });
+        renderTree();
+        triggerLivePreview();
+      });
+
+      // Add Custom Link
+      document.getElementById('btnAddCustomLink').addEventListener('click', () => {
+        const urlInput = document.getElementById('customLinkUrl');
+        const titleInput = document.getElementById('customLinkTitle');
+        const url = urlInput.value.trim();
+        const title = titleInput.value.trim();
+        if (!title) {
+          alert('Please enter a link title.');
+          return;
+        }
+        flatItems.push({
+          id: 'item-' + Math.random().toString(36).substr(2, 6),
+          label: title,
+          url: url || '#',
+          target: '_self',
+          level: 0
+        });
+        titleInput.value = '';
+        urlInput.value = 'https://';
+        renderTree();
+        triggerLivePreview();
+      });
+
+      // Add Posts
+      document.getElementById('btnAddPostsToMenu').addEventListener('click', () => {
+        const checked = document.querySelectorAll('#postsCheckList input[type="checkbox"]:checked');
+        checked.forEach(chk => {
+          flatItems.push({
+            id: 'item-' + Math.random().toString(36).substr(2, 6),
+            label: chk.dataset.title || 'Post',
+            url: chk.value,
+            target: '_self',
+            level: 0
+          });
+          chk.checked = false;
+        });
+        renderTree();
+        triggerLivePreview();
+      });
+
+      // Clear all items
+      document.getElementById('btnClearItems').addEventListener('click', () => {
+        if (confirm('Are you sure you want to remove all items from this menu?')) {
+          flatItems = [];
+          renderTree();
+          triggerLivePreview();
+        }
+      });
+
+      // Select Menu dropdown change
+      document.getElementById('selectMenuPicker').addEventListener('change', (e) => {
+        const selId = e.target.value;
+        const found = allMenus.find(m => m.id === selId);
+        if (found) {
+          loadMenuIntoUI(found);
+        }
+      });
+
+      // Create new menu
+      document.getElementById('btnCreateNewMenu').addEventListener('click', () => {
+        const name = prompt('Enter a name for the new menu:', 'Footer Quick Links');
+        if (!name) return;
+        const newMenu = {
+          id: 'menu-' + Date.now().toString(36),
+          name: name,
+          slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+          layout: 'horizontal',
+          alignment: 'left',
+          pointer: 'underline',
+          animation: 'fade',
+          submenuIndicator: 'angle',
+          mobileDropdown: {
+            breakpoint: 'tablet',
+            fullWidth: true,
+            textAlign: 'aside',
+            toggleButton: 'hamburger',
+            toggleAlign: 'right'
+          },
+          styles: {
+            mainMenu: {
+              typography: { fontFamily: '', fontSize: '15px', fontWeight: '500', textTransform: 'none', letterSpacing: '0px' },
+              colors: { color: '#374151', hoverColor: '#111827', activeColor: '#ff5e3a', pointerColor: '#111827' },
+              spacing: { horizontalPadding: '12px', verticalPadding: '8px', spaceBetween: '24px' }
+            },
+            subMenu: {
+              typography: { fontFamily: '', fontSize: '14px', fontWeight: '500', textTransform: 'none', letterSpacing: '0px' },
+              color: '#374151',
+              hoverColor: '#111827',
+              activeColor: '#ff5e3a',
+              bgColor: '#ffffff',
+              hoverBgColor: '#f9fafb',
+              borderColor: '#e5e7eb',
+              borderRadius: '8px',
+              minWidth: '200px'
+            }
+          },
+          items: [
+            { id: 'it-1', label: 'Home', url: '/' },
+            { id: 'it-2', label: 'About', url: '/about' },
+            { id: 'it-3', label: 'Contact', url: '/contact' }
+          ]
+        };
+        allMenus.push(newMenu);
+        const picker = document.getElementById('selectMenuPicker');
+        const opt = document.createElement('option');
+        opt.value = newMenu.id;
+        opt.textContent = newMenu.name;
+        opt.selected = true;
+        picker.appendChild(opt);
+        loadMenuIntoUI(newMenu);
+      });
+
+      // Delete menu
+      document.getElementById('btnDeleteMenu').addEventListener('click', async () => {
+        if (!confirm(`Are you sure you want to delete "${currentMenu.name}"?`)) return;
+        try {
+          const resp = await fetch('/api/menus', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'delete', id: currentMenu.id })
+          });
+          const data = await resp.json();
+          if (data.success) {
+            allMenus = allMenus.filter(m => m.id !== currentMenu.id);
+            if (allMenus.length > 0) {
+              const picker = document.getElementById('selectMenuPicker');
+              picker.innerHTML = allMenus.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+              loadMenuIntoUI(allMenus[0]);
+            } else {
+              window.location.reload();
+            }
+            showToast('Menu deleted.');
+          }
+        } catch (err) {
+          alert('Failed to delete menu: ' + err.message);
+        }
+      });
+
+      // Save menu
+      document.getElementById('btnSaveMenu').addEventListener('click', async () => {
+        const cfg = gatherCurrentConfig();
+        try {
+          const resp = await fetch('/api/menus', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'save', menu: cfg })
+          });
+          const data = await resp.json();
+          if (data.success) {
+            const idx = allMenus.findIndex(m => m.id === data.menu.id);
+            if (idx >= 0) allMenus[idx] = data.menu;
+            else allMenus.push(data.menu);
+            showToast(`Menu "${data.menu.name}" saved!`);
+          }
+        } catch (err) {
+          alert('Failed to save menu: ' + err.message);
+        }
+      });
+
+      function showToast(msg) {
+        const toast = document.getElementById('mbToast');
+        toast.textContent = msg;
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 2800);
+      }
+
+      // Initial load
+      if (currentMenu) {
+        loadMenuIntoUI(currentMenu);
+      }
+    </script>
+  </body>
+</html>

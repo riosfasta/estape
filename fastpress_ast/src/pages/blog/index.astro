@@ -1,0 +1,23 @@
+---
+export const prerender = false;
+
+import { getActiveThemeName, getThemePages } from '../../core/theme';
+import BlogPage from '../../themes/default/pages/BlogPage.astro';
+import FurnisiteBlogPage from '../../themes/furnisite/pages/BlogPage.astro';
+import { getPosts } from '../../data/posts';
+import { getCategories } from '../../data/categories';
+
+const activeTheme = getActiveThemeName();
+
+const posts = getPosts();
+const masterCategories = getCategories();
+
+const pages = getThemePages(activeTheme);
+const blogData: any = pages.blog || { isCustom: false, html: '', css: '' };
+---
+
+{activeTheme === 'furnisite' ? (
+  <FurnisiteBlogPage posts={posts} masterCategories={masterCategories} customData={blogData} />
+) : (
+  <BlogPage posts={posts} masterCategories={masterCategories} customData={blogData} />
+)}

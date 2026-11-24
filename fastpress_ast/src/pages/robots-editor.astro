@@ -1,0 +1,2812 @@
+---
+import WorkspaceSwitcher from '../components/admin/WorkspaceSwitcher.astro';
+import { readRobotsConfig, discoverSiteRoutes } from '../data/robots';
+import {
+  compileRobotsTxt,
+  lintRobotsTxt,
+  KNOWN_CRAWLERS,
+  FASTPRESS_ADMIN_PATHS,
+  ROBOTS_PRESETS,
+} from '../lib/robots-utils';
+
+export const prerender = false;
+
+const origin = Astro.url.origin || 'http://localhost:4321';
+const siteUrl = (process.env.SITE_URL || origin).replace(/\/+$/, '');
+
+const [initialConfig, discoveredRoutes] = await Promise.all([
+  readRobotsConfig(),
+  discoverSiteRoutes(),
+]);
+
+const initialCompiled = compileRobotsTxt(initialConfig, siteUrl);
+const initialDiagnostics = lintRobotsTxt(initialCompiled, { siteUrl });
+
+const initialPayload = {
+  siteUrl,
+  config: initialConfig,
+  discoveredRoutes,
+  crawlers: KNOWN_CRAWLERS,
+  adminPaths: FASTPRESS_ADMIN_PATHS,
+  presets: ROBOTS_PRESETS.map((p) => ({
+    id: p.id,
+    name: p.name,
+    badge: p.badge,
+    description: p.description,
+  })),
+};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Robots.txt SEO Editor | FastPress Studio</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+
+    <style is:global>
+      :root {
+        color-scheme: dark;
+        --bg-canvas: #090c12;
+        --bg-topbar: #111622;
+        --bg-panel: #131926;
+        --bg-card: #171e2e;
+        --bg-card-elevated: #1c2437;
+        --bg-input: #0d111a;
+        --border-subtle: #232c40;
+        --border-strong: #323f5c;
+        --text-primary: #f3f6fc;
+        --text-secondary: #9aa7bd;
+        --text-muted: #707d96;
+        --accent-orange: #ff5e3a;
+        --accent-orange-hover: #e84b27;
+        --accent-sky: #38bdf8;
+        --accent-emerald: #10b981;
+        --accent-amber: #f59e0b;
+        --accent-rose: #ef4444;
+        --radius-sm: 6px;
+        --radius-md: 10px;
+        --radius-lg: 14px;
+        --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        min-block-size: 100dvb;
+        background: var(--bg-canvas);
+        color: var(--text-primary);
+        font-family: var(--font-sans);
+        line-height: 1.5;
+      }
+
+      /* Focus indicators */
+      :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+        outline: 2px solid var(--accent-sky);
+        outline-offset: 2px;
+      }
+
+      /* Visually hidden utility */
+      .visually-hidden:where(:not(:focus-within, :active)) {
+        position: absolute !important;
+        clip-path: inset(50%) !important;
+        overflow: hidden !important;
+        width: 1px !important;
+        height: 1px !important;
+        margin: -1px !important;
+        padding: 0 !important;
+        border: 0 !important;
+        white-space: nowrap !important;
+      }
+
+      /* Scrollbars */
+      ::-webkit-scrollbar {
+        width: 7px;
+        height: 7px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #2b354b;
+        border-radius: 999px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #3b4866;
+      }
+
+      /* Topbar */
+      .studio-topbar {
+        position: sticky;
+        inset-block-start: 0;
+        z-index: 40;
+        background: var(--bg-topbar);
+        border-block-end: 1px solid var(--border-subtle);
+        padding: 10px 18px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .topbar-left,
+      .topbar-right {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        min-inline-size: 0;
+      }
+
+      .btn-back-editor {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-block-size: 34px;
+        padding: 6px 12px;
+        border-radius: var(--radius-sm);
+        background: #182032;
+        border: 1px solid var(--border-subtle);
+        color: #d8e1f0;
+        text-decoration: none;
+        font-size: 0.82rem;
+        font-weight: 600;
+        transition: background 0.15s ease, color 0.15s ease;
+      }
+      .btn-back-editor:hover {
+        background: #222c44;
+        color: #fff;
+      }
+
+      .studio-switcher-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-block-size: 34px;
+        padding: 6px 12px;
+        border-radius: var(--radius-sm);
+        background: #171e2d;
+        border: 1px solid var(--border-strong);
+        color: var(--text-primary);
+        font-family: inherit;
+        font-size: 0.82rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .studio-switcher-btn:hover {
+        background: #202a3f;
+      }
+
+      .studio-badge {
+        font-size: 0.65rem;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: rgba(16, 185, 129, 0.18);
+        color: #34d399;
+        border: 1px solid rgba(16, 185, 129, 0.35);
+      }
+
+      .studio-menu-flyout {
+        width: 265px;
+        max-block-size: 80dvb;
+        overflow-y: auto;
+        background: #141a27;
+        border: 1px solid var(--border-strong);
+        border-radius: 10px;
+        padding: 6px;
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.65);
+        color: var(--text-primary);
+      }
+      .studio-menu-flyout:not(:popover-open):not(.is-open) {
+        display: none;
+      }
+
+      @supports (position-area: block-end) {
+        #studioMenuFlyout {
+          inset: auto;
+          margin: 0;
+          margin-block-start: 6px;
+          position-area: block-end span-inline-end;
+          position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+        }
+      }
+      @supports not (position-area: block-end) {
+        #studioMenuFlyout {
+          position: fixed;
+          inset-block-start: 56px;
+          inset-inline-start: 18px;
+          margin: 0;
+        }
+      }
+
+      .studio-menu-heading {
+        font-size: 0.68rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--text-muted);
+        padding: 6px 10px 4px;
+      }
+
+      .studio-menu-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: 6px;
+        border: none;
+        background: transparent;
+        color: #d1d5db;
+        text-decoration: none;
+        font-family: inherit;
+        font-size: 0.82rem;
+        font-weight: 600;
+        text-align: left;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+      }
+      .studio-menu-item:hover {
+        background: #1f2739;
+        color: #fff;
+      }
+      .studio-menu-item.active {
+        background: rgba(255, 94, 58, 0.14);
+        color: #ff7a5c;
+      }
+
+      .page-heading-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-inline-size: 0;
+      }
+
+      .page-title {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        color: var(--text-primary);
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 0.74rem;
+        font-weight: 700;
+        border: 1px solid var(--border-subtle);
+        background: var(--bg-card);
+        color: var(--text-secondary);
+      }
+      .status-pill.healthy {
+        background: rgba(16, 185, 129, 0.12);
+        border-color: rgba(16, 185, 129, 0.35);
+        color: #34d399;
+      }
+      .status-pill.warning {
+        background: rgba(245, 158, 11, 0.12);
+        border-color: rgba(245, 158, 11, 0.35);
+        color: #fbbf24;
+      }
+      .status-pill.error {
+        background: rgba(239, 68, 68, 0.14);
+        border-color: rgba(239, 68, 68, 0.4);
+        color: #f87171;
+      }
+      .status-pill.dirty {
+        background: rgba(56, 189, 248, 0.12);
+        border-color: rgba(56, 189, 248, 0.35);
+        color: #7dd3fc;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        min-block-size: 34px;
+        min-inline-size: 34px;
+        padding: 6px 13px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-strong);
+        background: var(--bg-card);
+        color: var(--text-primary);
+        font-family: inherit;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-decoration: none;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+      }
+      .btn:hover {
+        background: var(--bg-card-elevated);
+        border-color: #46577d;
+      }
+      .btn:active {
+        transform: translateY(1px);
+      }
+      .btn:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .btn-primary {
+        background: var(--accent-orange);
+        border-color: var(--accent-orange);
+        color: #fff;
+        font-weight: 700;
+      }
+      .btn-primary:hover {
+        background: var(--accent-orange-hover);
+        border-color: var(--accent-orange-hover);
+      }
+      .btn-danger-ghost {
+        color: #fca5a5;
+        border-color: rgba(239, 68, 68, 0.3);
+        background: rgba(239, 68, 68, 0.08);
+      }
+      .btn-danger-ghost:hover {
+        background: rgba(239, 68, 68, 0.18);
+        border-color: rgba(239, 68, 68, 0.5);
+      }
+      .btn-sm {
+        min-block-size: 28px;
+        min-inline-size: 28px;
+        padding: 4px 10px;
+        font-size: 0.75rem;
+      }
+
+      /* Main Workspace Layout */
+      .robots-workspace {
+        max-inline-size: 1600px;
+        margin-inline: auto;
+        padding: 18px;
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.95fr);
+        gap: 18px;
+        align-items: start;
+      }
+
+      @media (max-width: 1080px) {
+        .robots-workspace {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+
+      .workspace-col {
+        min-inline-size: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      /* Surface Cards */
+      .surface-card {
+        background: var(--bg-panel);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        overflow: clip;
+      }
+
+      .card-header {
+        padding: 14px 18px;
+        background: #161d2c;
+        border-block-end: 1px solid var(--border-subtle);
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .card-title {
+        margin: 0;
+        font-size: 0.92rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .card-body {
+        padding: 16px 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      /* Accessible Tabs */
+      .editor-tablist {
+        display: flex;
+        align-items: stretch;
+        overflow-x: auto;
+        background: #101521;
+        border-block-end: 1px solid var(--border-subtle);
+        padding-inline: 12px;
+        gap: 4px;
+        scrollbar-width: none;
+      }
+      .editor-tablist::-webkit-scrollbar {
+        display: none;
+      }
+
+      .editor-tab {
+        position: relative;
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-block-size: 46px;
+        padding: 10px 14px;
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        font-family: inherit;
+        font-size: 0.84rem;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: color 0.15s ease, background 0.15s ease;
+      }
+      .editor-tab:hover {
+        color: var(--text-primary);
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .editor-tab[aria-selected='true'] {
+        color: #ffffff;
+      }
+      .editor-tab[aria-selected='true']::after {
+        content: '';
+        position: absolute;
+        inset: auto 0 0;
+        border-block-end: 3px solid var(--accent-orange);
+      }
+
+      /* Keep tabpanel element unstyled (no padding/bg/border) for hidden="until-found" compatibility */
+      .tab-panel-inner {
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+
+      /* Presets Strip */
+      .section-subhead {
+        margin: 0;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-secondary);
+      }
+
+      .presets-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+        gap: 10px;
+      }
+
+      .preset-btn {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 5px;
+        padding: 11px 12px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-subtle);
+        background: var(--bg-card);
+        color: var(--text-primary);
+        text-align: left;
+        font-family: inherit;
+        cursor: pointer;
+        transition: border-color 0.15s ease, background 0.15s ease;
+      }
+      .preset-btn:hover {
+        border-color: var(--accent-orange);
+        background: var(--bg-card-elevated);
+      }
+      .preset-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+      }
+      .preset-name {
+        font-size: 0.8rem;
+        font-weight: 700;
+      }
+      .preset-tag {
+        font-size: 0.65rem;
+        font-weight: 700;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: rgba(56, 189, 248, 0.14);
+        color: var(--accent-sky);
+      }
+      .preset-desc {
+        font-size: 0.73rem;
+        color: var(--text-secondary);
+        line-height: 1.4;
+      }
+
+      /* Form Controls & Validation */
+      .field-group {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        min-inline-size: 0;
+      }
+
+      .field-label {
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: #d8e1f0;
+      }
+
+      .field-hint {
+        font-size: 0.74rem;
+        color: var(--text-secondary);
+      }
+
+      .text-input,
+      .select-input,
+      .code-textarea {
+        inline-size: 100%;
+        min-block-size: 38px;
+        padding: 8px 11px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-strong);
+        background: var(--bg-input);
+        color: var(--text-primary);
+        font-family: inherit;
+        font-size: 0.84rem;
+        transition: border-color 0.15s ease;
+      }
+      .text-input.mono,
+      .code-textarea {
+        font-family: var(--font-mono);
+        font-size: 0.82rem;
+      }
+      .text-input:focus,
+      .select-input:focus,
+      .code-textarea:focus {
+        border-color: var(--accent-sky);
+      }
+
+      :is(.text-input, .select-input, .code-textarea):is(:user-invalid, .user-invalid-fallback) {
+        border-color: var(--accent-rose);
+        background: rgba(239, 68, 68, 0.08);
+      }
+
+      .error-msg {
+        display: none;
+        font-size: 0.75rem;
+        color: #fca5a5;
+        font-weight: 600;
+      }
+      :is(.text-input, .select-input, .code-textarea):is(:user-invalid, .user-invalid-fallback) + .error-msg,
+      .error-msg.visible {
+        display: block;
+      }
+
+      .checkbox-row {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        cursor: pointer;
+        font-size: 0.83rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        min-block-size: 28px;
+      }
+      .checkbox-row input[type='checkbox'] {
+        inline-size: 17px;
+        block-size: 17px;
+        accent-color: var(--accent-orange);
+        cursor: pointer;
+      }
+
+      .two-col-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      @media (max-width: 640px) {
+        .two-col-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+
+      /* Sitemaps list */
+      .sitemap-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: start;
+      }
+
+      /* User-Agent Groups */
+      .groups-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .ua-group-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .ua-group-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding-block-end: 10px;
+        border-block-end: 1px solid var(--border-subtle);
+      }
+
+      .ua-group-title-wrap {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        min-inline-size: 0;
+      }
+
+      .ua-group-heading {
+        margin: 0;
+        font-size: 0.88rem;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .ua-chips-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+
+      .ua-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 9px;
+        border-radius: 999px;
+        background: rgba(56, 189, 248, 0.14);
+        border: 1px solid rgba(56, 189, 248, 0.35);
+        color: #7dd3fc;
+        font-family: var(--font-mono);
+        font-size: 0.76rem;
+        font-weight: 600;
+      }
+
+      .chip-remove-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-inline-size: 24px;
+        min-block-size: 24px;
+        padding: 0;
+        border: none;
+        border-radius: 999px;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        font-size: 0.9rem;
+        line-height: 1;
+      }
+      .chip-remove-btn:hover {
+        background: rgba(255, 255, 255, 0.14);
+        color: #fff;
+      }
+
+      .ua-add-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: flex-end;
+      }
+
+      .rules-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .rule-row {
+        display: grid;
+        grid-template-columns: 122px minmax(0, 1fr) minmax(0, 0.65fr) auto;
+        gap: 8px;
+        align-items: start;
+        padding: 8px;
+        border-radius: var(--radius-sm);
+        background: #121723;
+        border: 1px solid #20293d;
+      }
+      @media (max-width: 780px) {
+        .rule-row {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+
+      .rule-type-select.is-allow {
+        border-color: rgba(16, 185, 129, 0.45);
+        color: #34d399;
+      }
+      .rule-type-select.is-disallow {
+        border-color: rgba(239, 68, 68, 0.45);
+        color: #fca5a5;
+      }
+
+      .rule-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .quick-chips-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+
+      .quick-chip-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        min-block-size: 26px;
+        padding: 3px 9px;
+        border-radius: 999px;
+        border: 1px dashed var(--border-strong);
+        background: #121723;
+        color: var(--text-secondary);
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        cursor: pointer;
+        transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+      }
+      .quick-chip-btn:hover {
+        border-color: var(--accent-orange);
+        color: #fff;
+        background: #1a2234;
+      }
+      .quick-chip-btn.accent {
+        border-style: solid;
+        border-color: rgba(255, 94, 58, 0.45);
+        color: #ff9c85;
+        background: rgba(255, 94, 58, 0.1);
+        font-family: var(--font-sans);
+        font-weight: 600;
+      }
+
+      /* Raw Editor */
+      .raw-mode-banner {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 12px 14px;
+        border-radius: var(--radius-md);
+        background: #161d2d;
+        border: 1px solid var(--border-strong);
+      }
+
+      .code-textarea {
+        min-block-size: 380px;
+        resize: vertical;
+        line-height: 1.6;
+        padding: 14px;
+        tab-size: 2;
+      }
+
+      /* Simulator & Batch Audit */
+      .sim-form {
+        display: grid;
+        grid-template-columns: minmax(170px, 0.75fr) minmax(0, 1.4fr) auto;
+        gap: 10px;
+        align-items: end;
+      }
+      @media (max-width: 720px) {
+        .sim-form {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+
+      .sim-result-card {
+        border-radius: var(--radius-md);
+        padding: 14px 16px;
+        border: 1px solid var(--border-subtle);
+        background: var(--bg-card);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .sim-result-card.allowed {
+        border-color: rgba(16, 185, 129, 0.45);
+        background: rgba(16, 185, 129, 0.08);
+      }
+      .sim-result-card.blocked {
+        border-color: rgba(239, 68, 68, 0.45);
+        background: rgba(239, 68, 68, 0.08);
+      }
+
+      .verdict-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+      }
+      .verdict-badge.allowed {
+        background: rgba(16, 185, 129, 0.2);
+        color: #6ee7b7;
+      }
+      .verdict-badge.blocked {
+        background: rgba(239, 68, 68, 0.2);
+        color: #fca5a5;
+      }
+
+      .audit-table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+      }
+
+      table.audit-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+      }
+      .audit-table th,
+      .audit-table td {
+        padding: 9px 12px;
+        text-align: left;
+        border-block-end: 1px solid var(--border-subtle);
+      }
+      .audit-table th {
+        background: #101521;
+        color: var(--text-secondary);
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .audit-table tr:last-child td {
+        border-block-end: none;
+      }
+      .audit-table code {
+        font-family: var(--font-mono);
+        font-size: 0.76rem;
+        color: #cbd5e1;
+      }
+
+      /* Preview & Copy Button */
+      .preview-code-shell {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        background: #080b10;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        max-block-size: 400px;
+        overflow: auto;
+        scrollbar-gutter: stable;
+        overscroll-behavior: contain;
+        font-family: var(--font-mono);
+        font-size: 0.8rem;
+        line-height: 1.65;
+      }
+
+      .code-gutter {
+        padding: 12px 10px;
+        border-inline-end: 1px solid #1b2232;
+        color: #4f5c78;
+        text-align: right;
+        user-select: none;
+        white-space: pre;
+      }
+
+      .preview-pre {
+        margin: 0;
+        padding: 12px 14px;
+        min-inline-size: 0;
+        overflow-x: auto;
+      }
+      .preview-pre code {
+        font-family: inherit;
+        color: #e2e8f0;
+        white-space: pre;
+      }
+
+      .copy-wrap {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+      }
+      .copy-tip {
+        position: absolute;
+        inset-block-end: calc(100% + 6px);
+        inset-inline-end: 0;
+        padding: 3px 8px;
+        border-radius: 5px;
+        background: #0f172a;
+        border: 1px solid var(--border-strong);
+        color: #6ee7b7;
+        font-size: 0.72rem;
+        font-weight: 700;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.15s ease;
+      }
+      .copy-button[data-copied] + .copy-tip {
+        opacity: 1;
+        color: #6ee7b7;
+      }
+      .copy-button[data-failed] + .copy-tip {
+        opacity: 1;
+        color: #fca5a5;
+      }
+
+      /* Diagnostics */
+      .diagnostics-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+      }
+
+      .diag-item {
+        padding: 10px 12px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-subtle);
+        background: var(--bg-card);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .diag-item.error {
+        border-color: rgba(239, 68, 68, 0.45);
+        background: rgba(239, 68, 68, 0.08);
+      }
+      .diag-item.warning {
+        border-color: rgba(245, 158, 11, 0.4);
+        background: rgba(245, 158, 11, 0.08);
+      }
+      .diag-item.info {
+        border-color: rgba(56, 189, 248, 0.35);
+        background: rgba(56, 189, 248, 0.07);
+      }
+      .diag-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 0.8rem;
+        font-weight: 700;
+      }
+      .diag-detail {
+        font-size: 0.76rem;
+        color: var(--text-secondary);
+        line-height: 1.45;
+      }
+
+      /* Toast Popovers */
+      .toast-region {
+        position: fixed;
+        inset-block-end: 20px;
+        inset-inline-end: 20px;
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        pointer-events: none;
+      }
+
+      .fp-toast {
+        position: static;
+        inset: auto;
+        margin: 0;
+        pointer-events: auto;
+        min-inline-size: 260px;
+        max-inline-size: min(420px, calc(100dvw - 40px));
+        padding: 11px 14px;
+        border-radius: var(--radius-md);
+        border: 1px solid rgba(16, 185, 129, 0.45);
+        background: #10251f;
+        color: #ecfdf5;
+        font-family: var(--font-sans);
+        font-size: 0.83rem;
+        font-weight: 600;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        opacity: 0;
+        transform: translateY(8px);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+        transition-behavior: allow-discrete;
+      }
+      .fp-toast.is-error {
+        border-color: rgba(239, 68, 68, 0.55);
+        background: #2a1216;
+        color: #fef2f2;
+      }
+      .fp-toast:is(:popover-open, .\:popover-open, .is-open) {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .fp-toast:not(:popover-open):not(.is-open) {
+        display: none;
+      }
+      @starting-style {
+        .fp-toast:is(:popover-open, .\:popover-open, .is-open) {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+      }
+
+      .fp-toast-close {
+        min-inline-size: 24px;
+        min-block-size: 24px;
+        border-radius: 4px;
+        border: none;
+        background: rgba(255, 255, 255, 0.12);
+        color: inherit;
+        cursor: pointer;
+        font-size: 0.85rem;
+        line-height: 1;
+      }
+      .fp-toast-close:hover {
+        background: rgba(255, 255, 255, 0.22);
+      }
+
+      /* Native Reset Confirm Dialog */
+      dialog.fp-dialog {
+        background: var(--bg-panel);
+        color: var(--text-primary);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-lg);
+        max-inline-size: min(460px, calc(100dvw - 32px));
+        padding: 20px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.75);
+      }
+      dialog.fp-dialog::backdrop {
+        background: rgba(4, 7, 13, 0.75);
+        backdrop-filter: blur(4px);
+      }
+      .dialog-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-block-start: 18px;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          transition-duration: 0.01ms !important;
+          animation-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="studio-topbar">
+      <div class="topbar-left">
+        <a href="/editor" class="btn-back-editor">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+          <span>Editor</span>
+        </a>
+
+        <WorkspaceSwitcher activeApp="robots" />
+
+        <div class="page-heading-group">
+          <h1 class="page-title">Robots.txt SEO Manager</h1>
+          <span class="status-pill" id="seoHealthPill">Checking…</span>
+          <span class="status-pill" id="byteSizePill">0 B / 500 KiB</span>
+          <span class="status-pill dirty" id="unsavedPill" hidden>Unsaved changes</span>
+        </div>
+      </div>
+
+      <div class="topbar-right">
+        <button type="button" class="btn btn-danger-ghost" id="btnResetDefault">
+          Reset Default
+        </button>
+        <a href="/robots.txt" target="_blank" rel="noopener noreferrer" class="btn">
+          <span>View /robots.txt</span>
+          <span aria-hidden="true">↗</span>
+        </a>
+        <a href="/sitemap.xml" target="_blank" rel="noopener noreferrer" class="btn">
+          <span>/sitemap.xml</span>
+          <span aria-hidden="true">↗</span>
+        </a>
+        <button type="button" class="btn btn-primary" id="btnSaveRobots">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <span>Save robots.txt</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="robots-workspace">
+      <!-- Left Column: Visual Builder, Raw Editor, URL & Bot Simulator -->
+      <div class="workspace-col">
+        <section class="surface-card" aria-label="Robots.txt configuration editor">
+          <div class="editor-tablist" role="tablist" aria-label="Robots.txt editor modes">
+            <button
+              type="button"
+              role="tab"
+              class="editor-tab"
+              id="tabVisual"
+              aria-selected="true"
+              tabindex="0"
+            >
+              <span aria-hidden="true">🎛️</span>
+              <span>Visual Rule Builder</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              class="editor-tab"
+              id="tabRaw"
+              aria-selected="false"
+              tabindex="-1"
+            >
+              <span aria-hidden="true">📝</span>
+              <span>Raw robots.txt</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              class="editor-tab"
+              id="tabSimulator"
+              aria-selected="false"
+              tabindex="-1"
+            >
+              <span aria-hidden="true">🔍</span>
+              <span>URL &amp; Bot Tester</span>
+            </button>
+          </div>
+
+          <!-- Panel 1: Visual Rule Builder -->
+          <div id="panelVisual" role="tabpanel" aria-labelledby="tabVisual">
+            <div class="tab-panel-inner">
+              <!-- SEO Presets -->
+              <section aria-labelledby="presetsHeading">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-block-end: 10px;">
+                  <h2 class="section-subhead" id="presetsHeading">One-Click SEO Presets</h2>
+                  <span class="field-hint">Replace rules with a curated template</span>
+                </div>
+                <div class="presets-grid" id="presetsGrid">
+                  {ROBOTS_PRESETS.map((preset) => (
+                    <button type="button" class="preset-btn" data-preset-id={preset.id}>
+                      <div class="preset-top">
+                        <span class="preset-name">{preset.name}</span>
+                        <span class="preset-tag">{preset.badge}</span>
+                      </div>
+                      <span class="preset-desc">{preset.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <!-- Global SEO Directives -->
+              <section class="ua-group-card" aria-labelledby="globalDirectivesHeading">
+                <div class="ua-group-header">
+                  <h2 class="ua-group-heading" id="globalDirectivesHeading">Global Sitemap &amp; Host Directives</h2>
+                  <span class="field-hint">Dynamic origin: <code style="color: #7dd3fc;">{siteUrl}</code></span>
+                </div>
+
+                <label class="checkbox-row" for="chkAutoSitemap">
+                  <input type="checkbox" id="chkAutoSitemap" checked={initialConfig.autoIncludeSitemap} />
+                  <span>Automatically include dynamic XML Sitemap (<code>{siteUrl}/sitemap.xml</code>)</span>
+                </label>
+
+                <div class="field-group">
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <span class="field-label">Additional Sitemap URLs</span>
+                    <button type="button" class="btn btn-sm" id="btnAddSitemap">+ Add Sitemap</button>
+                  </div>
+                  <span class="field-hint">Must be full absolute URLs (e.g. <code>https://example.com/sitemap-news.xml</code>).</span>
+                  <div id="customSitemapsList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                </div>
+
+                <div class="two-col-grid">
+                  <div class="field-group">
+                    <label class="field-label" for="inpHostDirective">Preferred Host (Optional / Legacy Yandex)</label>
+                    <span class="field-hint" id="hostHint">Leave blank unless explicitly targeting Yandex canonical host.</span>
+                    <input
+                      type="text"
+                      id="inpHostDirective"
+                      class="text-input mono"
+                      placeholder="https://example.com"
+                      aria-describedby="hostHint"
+                      autocorrect="off"
+                      autocapitalize="none"
+                      spellcheck="false"
+                    />
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="inpHeaderComment">Header Comment (Optional)</label>
+                    <span class="field-hint" id="commentHint">Printed as <code># ...</code> comments at top of file.</span>
+                    <input
+                      type="text"
+                      id="inpHeaderComment"
+                      class="text-input"
+                      placeholder="Managed by FastPress SEO"
+                      aria-describedby="commentHint"
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <!-- User-Agent Groups -->
+              <section aria-labelledby="groupsHeading">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-block-end: 10px;">
+                  <h2 class="section-subhead" id="groupsHeading">Crawler Rule Groups (User-agent)</h2>
+                  <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    <button type="button" class="btn btn-sm" id="btnAddAiBlockGroup">
+                      + Block AI Training Bots
+                    </button>
+                    <button type="button" class="btn btn-sm btn-primary" id="btnAddGroup">
+                      + Add User-Agent Group
+                    </button>
+                  </div>
+                </div>
+                <div class="groups-stack" id="groupsStack"></div>
+              </section>
+            </div>
+          </div>
+
+          <!-- Panel 2: Raw robots.txt Editor -->
+          <div id="panelRaw" role="tabpanel" aria-labelledby="tabRaw" hidden>
+            <div class="tab-panel-inner">
+              <div class="raw-mode-banner">
+                <div>
+                  <div style="font-size: 0.84rem; font-weight: 700;" id="rawModeTitle">
+                    Mode: Visual Rules Active
+                  </div>
+                  <div style="font-size: 0.75rem; color: var(--text-secondary);" id="rawModeDesc">
+                    Editing this textarea switches publishing to Raw Mode so custom comments and ordering are preserved verbatim.
+                  </div>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                  <button type="button" class="btn btn-sm" id="btnSyncRawToVisual">
+                    Parse Raw → Visual Builder
+                  </button>
+                  <button type="button" class="btn btn-sm" id="btnRegenerateFromVisual">
+                    Reset Text from Visual
+                  </button>
+                </div>
+              </div>
+
+              <div class="quick-chips-bar" aria-label="Quick insert directives">
+                <span class="field-hint" style="margin-inline-end: 4px;">Insert snippet:</span>
+                <button type="button" class="quick-chip-btn" data-insert-raw="User-agent: *\nAllow: /\n">+ User-agent: *</button>
+                <button type="button" class="quick-chip-btn" data-insert-raw="Disallow: /editor\nDisallow: /edit-blog\nDisallow: /api/\n">+ Block Studio &amp; API</button>
+                <button type="button" class="quick-chip-btn" data-insert-raw="User-agent: GPTBot\nUser-agent: ClaudeBot\nUser-agent: Google-Extended\nDisallow: /\n">+ Block AI Bots</button>
+                <button type="button" class="quick-chip-btn" data-insert-raw="Sitemap: {SITE_URL}/sitemap.xml\n">+ Dynamic Sitemap</button>
+              </div>
+
+              <div class="field-group">
+                <label class="field-label" for="rawRobotsTextarea">Raw <code>robots.txt</code> Content</label>
+                <span class="field-hint" id="rawTextareaHint">
+                  Supports <code>{"{SITE_URL}"}</code> placeholder (automatically replaced with <code>{siteUrl}</code> when served at <code>/robots.txt</code>).
+                </span>
+                <textarea
+                  id="rawRobotsTextarea"
+                  class="code-textarea"
+                  aria-describedby="rawTextareaHint"
+                  autocorrect="off"
+                  autocapitalize="none"
+                  spellcheck="false"
+                >{initialCompiled}</textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- Panel 3: URL & Bot Simulator -->
+          <div id="panelSimulator" role="tabpanel" aria-labelledby="tabSimulator" hidden>
+            <div class="tab-panel-inner">
+              <form id="simTestForm" class="sim-form" novalidate>
+                <div class="field-group">
+                  <label class="field-label" for="simUserAgent">Crawler / User-Agent</label>
+                  <input
+                    type="text"
+                    id="simUserAgent"
+                    name="userAgent"
+                    class="text-input mono"
+                    list="crawlerTokenOptions"
+                    value="Googlebot"
+                    required
+                    autocorrect="off"
+                    autocapitalize="none"
+                    spellcheck="false"
+                  />
+                  <datalist id="crawlerTokenOptions">
+                    {KNOWN_CRAWLERS.map((c) => (
+                      <option value={c.token}>{c.label}</option>
+                    ))}
+                  </datalist>
+                </div>
+
+                <div class="field-group">
+                  <label class="field-label" for="simTargetPath">Target Path or Full URL</label>
+                  <input
+                    type="text"
+                    id="simTargetPath"
+                    name="targetPath"
+                    class="text-input mono"
+                    value="/"
+                    placeholder="/blog/my-article or /editor"
+                    required
+                    autocorrect="off"
+                    autocapitalize="none"
+                    spellcheck="false"
+                  />
+                </div>
+
+                <button type="submit" class="btn btn-primary" style="min-block-size: 38px;">
+                  Test Crawl Access
+                </button>
+              </form>
+
+              <div class="quick-chips-bar" id="simQuickPaths">
+                <span class="field-hint">Quick test paths:</span>
+                {discoveredRoutes.slice(0, 10).map((r) => (
+                  <button type="button" class="quick-chip-btn" data-test-path={r.url}>
+                    {r.url}
+                  </button>
+                ))}
+              </div>
+
+              <div id="simResultBox" class="sim-result-card allowed" aria-live="polite">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+                  <span class="verdict-badge allowed" id="simVerdictBadge">✓ ALLOWED</span>
+                  <code id="simTestedUrl" style="font-family: var(--font-mono); font-size: 0.8rem;">/</code>
+                </div>
+                <p id="simResultReason" style="margin: 0; font-size: 0.82rem; color: var(--text-primary);"></p>
+              </div>
+
+              <section aria-labelledby="batchAuditHeading">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-block-end: 8px;">
+                  <h2 class="section-subhead" id="batchAuditHeading">Discovered Site Routes Audit</h2>
+                  <span class="field-hint">Evaluated live against selected bot (<strong id="auditBotLabel">Googlebot</strong>)</span>
+                </div>
+                <div class="audit-table-wrap">
+                  <table class="audit-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Route</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Winning Rule</th>
+                      </tr>
+                    </thead>
+                    <tbody id="batchAuditBody"></tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Right Column: Live Compiled Preview & SEO Diagnostics -->
+      <aside class="workspace-col" aria-label="Live preview and SEO diagnostics">
+        <!-- Live Compiled Output Card -->
+        <section class="surface-card" aria-labelledby="previewCardTitle">
+          <div class="card-header">
+            <h2 class="card-title" id="previewCardTitle">
+              <span aria-hidden="true">📄</span>
+              <span>Live /robots.txt Preview</span>
+              <span class="status-pill" id="activeModeBadge" style="font-size: 0.68rem;">Visual Mode</span>
+            </h2>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="copy-wrap">
+                <button
+                  type="button"
+                  class="btn btn-sm copy-button"
+                  id="btnCopyRobots"
+                  command="--copy"
+                  commandfor="robotsRawPreview"
+                >
+                  <span class="copy-icon" aria-hidden="true">📋</span>
+                  <span>Copy <span class="visually-hidden">robots.txt</span></span>
+                </button>
+                <span class="copy-tip" role="status"></span>
+              </span>
+              <button type="button" class="btn btn-sm" id="btnDownloadRobots">
+                Download
+              </button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="preview-code-shell">
+              <div class="code-gutter" id="previewGutter" aria-hidden="true">1</div>
+              <pre class="preview-pre" role="region" aria-label="Compiled robots.txt content" tabindex="0"><code id="robotsRawPreview">{initialCompiled}</code></pre>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 0.74rem; color: var(--text-secondary);">
+              <span>Served dynamically by <code style="color: #7dd3fc;">/robots.txt</code></span>
+              <span id="lastUpdatedLabel">Last saved: {initialConfig.updatedAt ? new Date(initialConfig.updatedAt).toLocaleString() : 'Default'}</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- SEO Diagnostics & Linter Card -->
+        <section class="surface-card" aria-labelledby="diagnosticsCardTitle">
+          <div class="card-header">
+            <h2 class="card-title" id="diagnosticsCardTitle">
+              <span aria-hidden="true">🩺</span>
+              <span>SEO Health &amp; RFC 9309 Diagnostics</span>
+            </h2>
+            <span class="field-hint" id="diagnosticsSummaryCount">0 issues</span>
+          </div>
+          <div class="card-body">
+            <ul class="diagnostics-list" id="diagnosticsList">
+              {initialDiagnostics.length === 0 && (
+                <li class="diag-item" style="border-color: rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.08);">
+                  <div class="diag-head" style="color: #6ee7b7;">✓ All SEO &amp; RFC 9309 checks passed</div>
+                  <div class="diag-detail">Public content is crawlable, studio/API routes are blocked, and your XML Sitemap is linked.</div>
+                </li>
+              )}
+            </ul>
+          </div>
+        </section>
+
+        <!-- SEO Quick Reference Card -->
+        <section class="surface-card" aria-labelledby="seoReferenceTitle">
+          <div class="card-header">
+            <h2 class="card-title" id="seoReferenceTitle">
+              <span aria-hidden="true">💡</span>
+              <span>SEO Best Practices</span>
+            </h2>
+          </div>
+          <div class="card-body" style="font-size: 0.78rem; color: var(--text-secondary); gap: 8px;">
+            <div><strong style="color: var(--text-primary);">Crawling vs Indexing:</strong> <code>robots.txt</code> controls whether bots crawl URLs. To prevent an already-linked page from appearing in Google Search, use a <code>noindex</code> meta tag or HTTP header instead.</div>
+            <div><strong style="color: var(--text-primary);">Keep Assets Crawlable:</strong> Avoid blocking CSS, JS, or image paths (such as <code>/_astro/</code> or <code>/uploads/</code>) so Googlebot renders pages accurately.</div>
+            <div><strong style="color: var(--text-primary);">Wildcards:</strong> Use <code>*</code> for any sequence of characters and <code>$</code> to anchor the end of a URL (e.g., <code>Disallow: /*?sort=</code> or <code>Disallow: /*.pdf$</code>).</div>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <!-- Native Reset Confirmation Modal -->
+    <dialog id="resetConfirmDialog" class="fp-dialog" closedby="any" aria-labelledby="resetDialogTitle">
+      <h2 id="resetDialogTitle" style="margin: 0 0 8px; font-size: 1.05rem;">Reset robots.txt to defaults?</h2>
+      <p style="margin: 0; font-size: 0.84rem; color: var(--text-secondary);">
+        This restores the default FastPress <code>robots.txt</code> rules (<code>Allow: /</code>, disallow <code>/editor</code>, <code>/edit-blog</code>, <code>/api/</code>, and auto-include <code>/sitemap.xml</code>).
+      </p>
+      <form method="dialog" class="dialog-actions">
+        <button type="submit" value="cancel" class="btn">Cancel</button>
+        <button type="submit" value="confirm" class="btn btn-danger-ghost">Reset to Default</button>
+      </form>
+    </dialog>
+
+    <!-- Notification Region & Screen Reader Live Announcer -->
+    <div id="toastRegion" class="toast-region" role="region" aria-label="Notifications"></div>
+    <div id="srAnnouncer" class="visually-hidden" aria-live="polite"></div>
+
+    <!-- Embedded Initial Data -->
+    <script
+      id="robotsInitialData"
+      type="application/json"
+      set:html={JSON.stringify(initialPayload).replace(/<\/script/gi, '<\\/script')}
+    ></script>
+    <script is:inline src="/editor-custom-code.js"></script>
+
+    <script>
+      import {
+        compileRobotsTxt,
+        parseRobotsTxt,
+        lintRobotsTxt,
+        testUrlAgainstRobots,
+        createUid,
+        KNOWN_CRAWLERS,
+        FASTPRESS_ADMIN_PATHS,
+        ROBOTS_PRESETS,
+        type RobotsConfig,
+        type RobotsGroup,
+        type RobotsDiagnostic,
+      } from '../lib/robots-utils';
+
+      const payloadEl = document.getElementById('robotsInitialData');
+      const initialData = payloadEl ? JSON.parse(payloadEl.textContent || '{}') : {};
+
+      const siteUrl: string = initialData.siteUrl || window.location.origin;
+      const discoveredRoutes: { title: string; url: string; kind: string }[] = initialData.discoveredRoutes || [];
+
+      let state: RobotsConfig = structuredClone(initialData.config);
+      let isDirty = false;
+      let activeTabId = 'tabVisual';
+      let lastCopiedMessage = '';
+      const copyTimers = new WeakMap<Element, number>();
+
+      // Elements
+      const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+      const tabPanels = Array.from(document.querySelectorAll<HTMLElement>('[role="tabpanel"]'));
+      const groupsStack = document.getElementById('groupsStack')!;
+      const customSitemapsList = document.getElementById('customSitemapsList')!;
+      const chkAutoSitemap = document.getElementById('chkAutoSitemap') as HTMLInputElement;
+      const inpHostDirective = document.getElementById('inpHostDirective') as HTMLInputElement;
+      const inpHeaderComment = document.getElementById('inpHeaderComment') as HTMLInputElement;
+      const rawRobotsTextarea = document.getElementById('rawRobotsTextarea') as HTMLTextAreaElement;
+      const robotsRawPreview = document.getElementById('robotsRawPreview')!;
+      const previewGutter = document.getElementById('previewGutter')!;
+      const diagnosticsList = document.getElementById('diagnosticsList')!;
+      const diagnosticsSummaryCount = document.getElementById('diagnosticsSummaryCount')!;
+      const seoHealthPill = document.getElementById('seoHealthPill')!;
+      const byteSizePill = document.getElementById('byteSizePill')!;
+      const unsavedPill = document.getElementById('unsavedPill')!;
+      const activeModeBadge = document.getElementById('activeModeBadge')!;
+      const rawModeTitle = document.getElementById('rawModeTitle')!;
+      const rawModeDesc = document.getElementById('rawModeDesc')!;
+      const lastUpdatedLabel = document.getElementById('lastUpdatedLabel')!;
+      const simUserAgent = document.getElementById('simUserAgent') as HTMLInputElement;
+      const simTargetPath = document.getElementById('simTargetPath') as HTMLInputElement;
+      const simResultBox = document.getElementById('simResultBox')!;
+      const simVerdictBadge = document.getElementById('simVerdictBadge')!;
+      const simTestedUrl = document.getElementById('simTestedUrl')!;
+      const simResultReason = document.getElementById('simResultReason')!;
+      const auditBotLabel = document.getElementById('auditBotLabel')!;
+      const batchAuditBody = document.getElementById('batchAuditBody')!;
+      const srAnnouncer = document.getElementById('srAnnouncer')!;
+      const toastRegion = document.getElementById('toastRegion')!;
+      const resetConfirmDialog = document.getElementById('resetConfirmDialog') as HTMLDialogElement;
+
+      function escapeHtml(str: string): string {
+        return String(str ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      let announceTimer: number | undefined;
+      function announcePolitely(msg: string) {
+        window.clearTimeout(announceTimer);
+        srAnnouncer.textContent = '';
+        announceTimer = window.setTimeout(() => {
+          srAnnouncer.textContent = msg;
+        }, 120);
+      }
+
+      // Studio Switcher Popover fallback for browsers without native Popover API
+      const studioSwitcherBtn = document.getElementById('studioSwitcherBtn') as HTMLButtonElement | null;
+      const studioMenuFlyout = document.getElementById('studioMenuFlyout');
+      if (studioMenuFlyout && !Object.hasOwn(HTMLElement.prototype, 'popover') && studioSwitcherBtn) {
+        studioSwitcherBtn.removeAttribute('popovertarget');
+        studioMenuFlyout.removeAttribute('popover');
+        studioSwitcherBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          studioMenuFlyout.classList.toggle('is-open');
+        });
+        document.addEventListener('click', (e) => {
+          if (!studioMenuFlyout.contains(e.target as Node) && e.target !== studioSwitcherBtn) {
+            studioMenuFlyout.classList.remove('is-open');
+          }
+        });
+      }
+
+      // Accessible Toast Notification via popover="manual"
+      let toastCounter = 0;
+      function showToast(message: string, isError = false) {
+        const supportsPopover = Object.hasOwn(HTMLElement.prototype, 'popover');
+        const id = `fpToast_${++toastCounter}`;
+        const toast = document.createElement('div');
+        toast.id = id;
+        toast.className = `fp-toast${isError ? ' is-error' : ''}`;
+        if (supportsPopover) {
+          toast.setAttribute('popover', 'manual');
+        } else {
+          toast.classList.add('is-open');
+        }
+
+        const msgSpan = document.createElement('span');
+        msgSpan.textContent = message;
+
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'fp-toast-close';
+        closeBtn.setAttribute('aria-label', 'Dismiss notification');
+        closeBtn.textContent = '✕';
+        if (supportsPopover) {
+          closeBtn.setAttribute('popovertarget', id);
+          closeBtn.setAttribute('popovertargetaction', 'hide');
+        }
+
+        const triggerBeforeToast = document.activeElement as HTMLElement | null;
+        let dismissTimer: number | undefined;
+
+        const removeToast = () => {
+          window.clearTimeout(dismissTimer);
+          const hadFocus = toast.contains(document.activeElement);
+          if (supportsPopover && toast.matches(':popover-open')) {
+            try {
+              toast.hidePopover();
+            } catch {}
+          }
+          toast.remove();
+          if (hadFocus && triggerBeforeToast?.isConnected) {
+            triggerBeforeToast.focus();
+          }
+        };
+
+        const scheduleHide = () => {
+          window.clearTimeout(dismissTimer);
+          dismissTimer = window.setTimeout(() => {
+            if (toast.contains(document.activeElement) || toast.matches(':hover')) {
+              scheduleHide();
+              return;
+            }
+            removeToast();
+          }, 4000);
+        };
+
+        closeBtn.addEventListener('click', removeToast);
+        toast.addEventListener('focusin', () => window.clearTimeout(dismissTimer));
+        toast.addEventListener('focusout', scheduleHide);
+        toast.addEventListener('mouseenter', () => window.clearTimeout(dismissTimer));
+        toast.addEventListener('mouseleave', scheduleHide);
+
+        toast.append(msgSpan, closeBtn);
+        toastRegion.appendChild(toast);
+
+        if (supportsPopover) {
+          try {
+            toast.showPopover();
+          } catch {
+            toast.classList.add('is-open');
+          }
+        }
+
+        if (typeof (window as any).ariaNotify === 'function') {
+          (window as any).ariaNotify(message);
+        } else {
+          announcePolitely(message);
+        }
+
+        scheduleHide();
+      }
+
+      // Tabs Navigation & Selection
+      const panelMap: Record<string, HTMLElement | null> = {
+        tabVisual: document.getElementById('panelVisual'),
+        tabRaw: document.getElementById('panelRaw'),
+        tabSimulator: document.getElementById('panelSimulator'),
+      };
+
+      function selectTab(nextTabId: string, focusTab = false) {
+        activeTabId = nextTabId;
+        for (const btn of tabButtons) {
+          const isSelected = btn.id === nextTabId;
+          btn.setAttribute('aria-selected', String(isSelected));
+          btn.tabIndex = isSelected ? 0 : -1;
+          if (isSelected) {
+            try {
+              btn.scrollIntoView({ block: 'nearest', inline: 'nearest', container: 'nearest' } as any);
+            } catch {
+              btn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            }
+            if (focusTab) btn.focus();
+          }
+        }
+
+        for (const panel of tabPanels) {
+          const match = panel.getAttribute('aria-labelledby') === nextTabId;
+          if (match) {
+            panel.removeAttribute('hidden');
+          } else {
+            panel.setAttribute('hidden', 'until-found');
+          }
+        }
+
+        if (nextTabId === 'tabRaw' && state.mode === 'visual') {
+          rawRobotsTextarea.value = compileRobotsTxt(state, '{SITE_URL}');
+        }
+        if (nextTabId === 'tabSimulator') {
+          runSimulationAndAudit();
+        }
+      }
+
+      tabButtons.forEach((btn, idx) => {
+        btn.addEventListener('click', () => selectTab(btn.id));
+        btn.addEventListener('keydown', (e) => {
+          let nextIdx = -1;
+          if (e.key === 'ArrowRight') nextIdx = (idx + 1) % tabButtons.length;
+          else if (e.key === 'ArrowLeft') nextIdx = (idx - 1 + tabButtons.length) % tabButtons.length;
+          else if (e.key === 'Home') nextIdx = 0;
+          else if (e.key === 'End') nextIdx = tabButtons.length - 1;
+          if (nextIdx >= 0) {
+            e.preventDefault();
+            selectTab(tabButtons[nextIdx].id, true);
+          }
+        });
+      });
+
+      // Reveal matching tab when browser Find-in-Page hits hidden="until-found" content
+      tabPanels.forEach((panel) => {
+        panel.addEventListener('beforematch', () => {
+          const ownerId = panel.getAttribute('aria-labelledby');
+          if (ownerId) selectTab(ownerId);
+        });
+      });
+
+      // Mark dirty
+      function markDirty() {
+        isDirty = true;
+        unsavedPill.hidden = false;
+      }
+
+      function clearDirty() {
+        isDirty = false;
+        unsavedPill.hidden = true;
+      }
+
+      // Render Compiled Preview + Diagnostics + Badges
+      function refreshPreviewAndDiagnostics() {
+        const compiled = compileRobotsTxt(state, siteUrl);
+        robotsRawPreview.textContent = compiled;
+
+        const lineCount = Math.max(1, compiled.replace(/\n$/, '').split('\n').length);
+        previewGutter.textContent = Array.from({ length: lineCount }, (_, i) => i + 1).join('\n');
+
+        const bytes = new TextEncoder().encode(compiled).length;
+        const sizeDisplay = bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KiB`;
+        byteSizePill.textContent = `${sizeDisplay} / 500 KiB`;
+
+        const diagnostics = lintRobotsTxt(compiled, { siteUrl });
+        renderDiagnostics(diagnostics);
+
+        const errorsCount = diagnostics.filter((d) => d.severity === 'error').length;
+        const warningsCount = diagnostics.filter((d) => d.severity === 'warning').length;
+
+        if (errorsCount > 0) {
+          seoHealthPill.className = 'status-pill error';
+          seoHealthPill.textContent = `${errorsCount} Error${errorsCount > 1 ? 's' : ''}${warningsCount ? `, ${warningsCount} Warn` : ''}`;
+        } else if (warningsCount > 0) {
+          seoHealthPill.className = 'status-pill warning';
+          seoHealthPill.textContent = `${warningsCount} Warning${warningsCount > 1 ? 's' : ''}`;
+        } else {
+          seoHealthPill.className = 'status-pill healthy';
+          seoHealthPill.textContent = 'SEO Healthy';
+        }
+
+        if (state.mode === 'raw') {
+          activeModeBadge.textContent = 'Raw Mode';
+          rawModeTitle.textContent = 'Mode: Raw Text Active';
+          rawModeDesc.textContent = 'Your raw robots.txt text is served verbatim (with {SITE_URL} expanded dynamically).';
+        } else {
+          activeModeBadge.textContent = 'Visual Mode';
+          rawModeTitle.textContent = 'Mode: Visual Rules Active';
+          rawModeDesc.textContent = 'Editing this textarea switches publishing to Raw Mode so custom comments and ordering are preserved.';
+        }
+
+        if (activeTabId === 'tabSimulator') {
+          runSimulationAndAudit();
+        }
+      }
+
+      function renderDiagnostics(diagnostics: RobotsDiagnostic[]) {
+        diagnosticsSummaryCount.textContent =
+          diagnostics.length === 0
+            ? 'No issues'
+            : `${diagnostics.length} check${diagnostics.length === 1 ? '' : 's'}`;
+
+        if (diagnostics.length === 0) {
+          diagnosticsList.innerHTML = `
+            <li class="diag-item" style="border-color: rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.08);">
+              <div class="diag-head" style="color: #6ee7b7;">✓ All SEO &amp; RFC 9309 checks passed</div>
+              <div class="diag-detail">Public pages are crawlable, studio/API routes are blocked, and your XML Sitemap is advertised.</div>
+            </li>
+          `;
+          return;
+        }
+
+        diagnosticsList.innerHTML = diagnostics
+          .map((d) => {
+            const icon = d.severity === 'error' ? '✕' : d.severity === 'warning' ? '⚠' : 'ℹ';
+            const color = d.severity === 'error' ? '#fca5a5' : d.severity === 'warning' ? '#fcd34d' : '#7dd3fc';
+            const fixLabel =
+              d.fixAction === 'add-sitemap'
+                ? 'Auto-fix: Add Dynamic Sitemap'
+                : d.fixAction === 'disallow-studio'
+                  ? 'Auto-fix: Disallow Studio & API'
+                  : d.fixAction === 'allow-root'
+                    ? 'Auto-fix: Allow Root /'
+                    : d.fixAction === 'fix-relative-sitemap'
+                      ? 'Auto-fix: Make Sitemap Absolute'
+                      : '';
+
+            return `
+              <li class="diag-item ${escapeHtml(d.severity)}">
+                <div class="diag-head" style="color: ${color};">
+                  <span>${icon} ${escapeHtml(d.title)}</span>
+                  ${d.line ? `<span style="font-family: var(--font-mono); font-size: 0.72rem; opacity: 0.85;">Line ${d.line}</span>` : ''}
+                </div>
+                <div class="diag-detail">${escapeHtml(d.detail)}</div>
+                ${
+                  fixLabel
+                    ? `<div><button type="button" class="btn btn-sm" data-diag-fix="${escapeHtml(d.fixAction!)}">${escapeHtml(fixLabel)}</button></div>`
+                    : ''
+                }
+              </li>
+            `;
+          })
+          .join('');
+      }
+
+      // Apply 1-click diagnostic auto-fixes
+      diagnosticsList.addEventListener('click', (e) => {
+        const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-diag-fix]');
+        if (!btn) return;
+        const fix = btn.dataset.diagFix;
+
+        if (state.mode === 'raw') {
+          const parsed = parseRobotsTxt(rawRobotsTextarea.value, siteUrl);
+          state.groups = parsed.groups;
+          state.autoIncludeSitemap = parsed.autoIncludeSitemap;
+          state.customSitemaps = parsed.customSitemaps;
+          state.host = parsed.host;
+          state.headerComment = parsed.headerComment;
+          state.mode = 'visual';
+        }
+
+        if (fix === 'add-sitemap') {
+          state.autoIncludeSitemap = true;
+        } else if (fix === 'fix-relative-sitemap') {
+          state.autoIncludeSitemap = true;
+          state.customSitemaps = state.customSitemaps
+            .map((sm) => {
+              if (/^https?:\/\//i.test(sm) || sm.startsWith('{SITE_URL}/')) return sm;
+              const clean = sm.startsWith('/') ? sm : `/${sm}`;
+              return clean === '/sitemap.xml' ? '' : `${siteUrl}${clean}`;
+            })
+            .filter(Boolean);
+        } else if (fix === 'disallow-studio') {
+          let wildcardGroup = state.groups.find((g) => g.userAgents.includes('*'));
+          if (!wildcardGroup) {
+            wildcardGroup = { id: createUid('grp'), userAgents: ['*'], rules: [{ id: createUid('rule'), type: 'Allow', path: '/' }], crawlDelay: null };
+            state.groups.unshift(wildcardGroup);
+          }
+          for (const p of ['/editor', '/edit-blog', '/edit-product', '/api/']) {
+            if (!wildcardGroup.rules.some((r) => r.type === 'Disallow' && r.path === p)) {
+              wildcardGroup.rules.push({ id: createUid('rule'), type: 'Disallow', path: p });
+            }
+          }
+        } else if (fix === 'allow-root') {
+          for (const g of state.groups) {
+            if (g.userAgents.includes('*') || g.userAgents.some((u) => u.toLowerCase() === 'googlebot')) {
+              g.rules = g.rules.filter((r) => !(r.type === 'Disallow' && r.path === '/'));
+              if (!g.rules.some((r) => r.type === 'Allow' && r.path === '/')) {
+                g.rules.unshift({ id: createUid('rule'), type: 'Allow', path: '/' });
+              }
+            }
+          }
+        }
+
+        markDirty();
+        renderVisualEditor();
+        refreshPreviewAndDiagnostics();
+        showToast('Applied SEO quick fix');
+      });
+
+      // Render Visual Editor
+      function renderVisualEditor() {
+        chkAutoSitemap.checked = Boolean(state.autoIncludeSitemap);
+        inpHostDirective.value = state.host || '';
+        inpHeaderComment.value = state.headerComment || '';
+
+        // Custom Sitemaps
+        if (!state.customSitemaps || state.customSitemaps.length === 0) {
+          customSitemapsList.innerHTML = `<span class="field-hint">No additional custom sitemaps added.</span>`;
+        } else {
+          customSitemapsList.innerHTML = state.customSitemaps
+            .map((sm, idx) => {
+              const inputId = `customSitemap_${idx}`;
+              const errId = `customSitemapErr_${idx}`;
+              return `
+                <div class="sitemap-row">
+                  <div class="field-group">
+                    <label class="visually-hidden" for="${inputId}">Additional Sitemap URL ${idx + 1}</label>
+                    <input
+                      type="url"
+                      id="${inputId}"
+                      class="text-input mono custom-sitemap-input"
+                      data-sitemap-idx="${idx}"
+                      data-error="${errId}"
+                      value="${escapeHtml(sm)}"
+                      placeholder="https://example.com/sitemap-posts.xml"
+                      required
+                      autocorrect="off"
+                      autocapitalize="none"
+                      spellcheck="false"
+                    />
+                    <span id="${errId}" class="error-msg">Error: Enter a valid absolute URL starting with https:// or http://.</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-danger-ghost"
+                    data-remove-sitemap="${idx}"
+                    aria-label="Remove sitemap ${idx + 1}"
+                    style="min-block-size: 38px;"
+                  >
+                    Remove
+                  </button>
+                </div>
+              `;
+            })
+            .join('');
+        }
+
+        // User-Agent Groups
+        if (!state.groups || state.groups.length === 0) {
+          groupsStack.innerHTML = `
+            <div class="ua-group-card" style="text-align: center; padding: 24px;">
+              <p style="margin: 0 0 10px; font-size: 0.85rem; color: var(--text-secondary);">No User-agent rule groups defined yet.</p>
+              <div>
+                <button type="button" class="btn btn-primary btn-sm" id="btnEmptyAddGroup">+ Create Default User-agent: * Group</button>
+              </div>
+            </div>
+          `;
+          document.getElementById('btnEmptyAddGroup')?.addEventListener('click', () => {
+            state.groups.push({
+              id: createUid('grp'),
+              userAgents: ['*'],
+              rules: [{ id: createUid('rule'), type: 'Allow', path: '/' }],
+              crawlDelay: null,
+            });
+            state.mode = 'visual';
+            markDirty();
+            renderVisualEditor();
+            refreshPreviewAndDiagnostics();
+          });
+          return;
+        }
+
+        groupsStack.innerHTML = state.groups
+          .map((grp, gIdx) => {
+            const uaChipsHtml = grp.userAgents
+              .map(
+                (ua, uaIdx) => `
+                  <span class="ua-chip">
+                    <span>${escapeHtml(ua)}</span>
+                    <button
+                      type="button"
+                      class="chip-remove-btn"
+                      data-remove-ua="${gIdx}:${uaIdx}"
+                      aria-label="Remove user-agent ${escapeHtml(ua)}"
+                    >&times;</button>
+                  </span>
+                `
+              )
+              .join('');
+
+            const rulesHtml = grp.rules
+              .map((rule, rIdx) => {
+                const selectId = `ruleType_${gIdx}_${rIdx}`;
+                const pathId = `rulePath_${gIdx}_${rIdx}`;
+                const errId = `ruleErr_${gIdx}_${rIdx}`;
+                const noteId = `ruleNote_${gIdx}_${rIdx}`;
+                const isAllow = rule.type === 'Allow';
+
+                return `
+                  <div class="rule-row">
+                    <div class="field-group">
+                      <label class="visually-hidden" for="${selectId}">Directive type for rule ${rIdx + 1}</label>
+                      <select
+                        id="${selectId}"
+                        class="select-input rule-type-select ${isAllow ? 'is-allow' : 'is-disallow'}"
+                        data-rule-type="${gIdx}:${rIdx}"
+                      >
+                        <option value="Allow" ${isAllow ? 'selected' : ''}>Allow</option>
+                        <option value="Disallow" ${!isAllow ? 'selected' : ''}>Disallow</option>
+                      </select>
+                    </div>
+
+                    <div class="field-group">
+                      <label class="visually-hidden" for="${pathId}">URL path pattern for rule ${rIdx + 1}</label>
+                      <input
+                        type="text"
+                        id="${pathId}"
+                        class="text-input mono rule-path-input"
+                        data-rule-path="${gIdx}:${rIdx}"
+                        data-error="${errId}"
+                        value="${escapeHtml(rule.path)}"
+                        placeholder="/path or /*.pdf$"
+                        pattern="^(\/.*|\\*.*)?$"
+                        ${isAllow ? 'required' : ''}
+                        autocorrect="off"
+                        autocapitalize="none"
+                        spellcheck="false"
+                      />
+                      <span id="${errId}" class="error-msg">Error: Path must start with "/" (or "*" wildcard).</span>
+                    </div>
+
+                    <div class="field-group">
+                      <label class="visually-hidden" for="${noteId}">Optional comment for rule ${rIdx + 1}</label>
+                      <input
+                        type="text"
+                        id="${noteId}"
+                        class="text-input rule-note-input"
+                        data-rule-note="${gIdx}:${rIdx}"
+                        value="${escapeHtml(rule.comment || '')}"
+                        placeholder="Note (optional # comment)"
+                      />
+                    </div>
+
+                    <div class="rule-actions">
+                      <button
+                        type="button"
+                        class="btn btn-sm"
+                        data-move-rule="${gIdx}:${rIdx}:-1"
+                        aria-label="Move rule ${rIdx + 1} up"
+                        ${rIdx === 0 ? 'disabled' : ''}
+                      >↑</button>
+                      <button
+                        type="button"
+                        class="btn btn-sm"
+                        data-move-rule="${gIdx}:${rIdx}:1"
+                        aria-label="Move rule ${rIdx + 1} down"
+                        ${rIdx === grp.rules.length - 1 ? 'disabled' : ''}
+                      >↓</button>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-danger-ghost"
+                        data-remove-rule="${gIdx}:${rIdx}"
+                        aria-label="Delete rule ${rIdx + 1}"
+                      >✕</button>
+                    </div>
+                  </div>
+                `;
+              })
+              .join('');
+
+            const addUaInputId = `addUaInput_${gIdx}`;
+            const crawlDelayId = `crawlDelay_${gIdx}`;
+            const groupCommentId = `groupComment_${gIdx}`;
+
+            return `
+              <article class="ua-group-card" aria-labelledby="groupHeading_${gIdx}">
+                <div class="ua-group-header">
+                  <div class="ua-group-title-wrap">
+                    <h3 class="ua-group-heading" id="groupHeading_${gIdx}">
+                      Group #${gIdx + 1}: ${grp.userAgents.length ? escapeHtml(grp.userAgents.join(', ')) : 'No User-agent'}
+                    </h3>
+                    <div class="ua-chips-row">${uaChipsHtml}</div>
+                  </div>
+                  <div style="display: flex; gap: 6px;">
+                    <button type="button" class="btn btn-sm" data-dup-group="${gIdx}">Duplicate</button>
+                    <button type="button" class="btn btn-sm btn-danger-ghost" data-remove-group="${gIdx}">Delete Group</button>
+                  </div>
+                </div>
+
+                <div class="ua-add-row">
+                  <div class="field-group" style="flex: 1 1 200px;">
+                    <label class="field-label" for="${addUaInputId}">Add Crawler (User-agent)</label>
+                    <input
+                      type="text"
+                      id="${addUaInputId}"
+                      class="text-input mono add-ua-input"
+                      data-ua-input="${gIdx}"
+                      list="crawlerTokenOptions"
+                      placeholder="e.g. Googlebot, GPTBot, *"
+                      autocorrect="off"
+                      autocapitalize="none"
+                      spellcheck="false"
+                    />
+                  </div>
+                  <button type="button" class="btn btn-sm" data-add-ua-btn="${gIdx}" style="min-block-size: 38px;">
+                    + Add Bot
+                  </button>
+                </div>
+
+                <div class="field-group">
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <span class="field-label">Allow &amp; Disallow Rules</span>
+                    <button type="button" class="btn btn-sm" data-add-rule="${gIdx}">+ Add Rule</button>
+                  </div>
+                  <div class="rules-list">
+                    ${rulesHtml || '<span class="field-hint">No rules in this group yet. Add an Allow or Disallow rule.</span>'}
+                  </div>
+                </div>
+
+                <div class="quick-chips-bar">
+                  <button type="button" class="quick-chip-btn accent" data-block-all-studio="${gIdx}">
+                    + Block All Studio &amp; API Paths
+                  </button>
+                  ${FASTPRESS_ADMIN_PATHS.slice(0, 5)
+                    .map(
+                      (p) =>
+                        `<button type="button" class="quick-chip-btn" data-quick-disallow="${gIdx}:${escapeHtml(p)}">Disallow ${escapeHtml(p)}</button>`
+                    )
+                    .join('')}
+                </div>
+
+                <div class="two-col-grid">
+                  <div class="field-group">
+                    <label class="field-label" for="${crawlDelayId}">Crawl-delay (Seconds, Optional)</label>
+                    <span class="field-hint">Respected by Bing/Yandex; ignored by Googlebot.</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      id="${crawlDelayId}"
+                      class="text-input mono crawl-delay-input"
+                      data-crawl-delay="${gIdx}"
+                      value="${grp.crawlDelay ?? ''}"
+                      placeholder="None"
+                    />
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="${groupCommentId}">Group Comment (Optional)</label>
+                    <span class="field-hint">Appears as a <code># comment</code> above User-agent.</span>
+                    <input
+                      type="text"
+                      id="${groupCommentId}"
+                      class="text-input group-comment-input"
+                      data-group-comment="${gIdx}"
+                      value="${escapeHtml(grp.comment || '')}"
+                      placeholder="e.g. Search engine bots"
+                    />
+                  </div>
+                </div>
+              </article>
+            `;
+          })
+          .join('');
+      }
+
+      // Consistent ARIA experience for :user-invalid inputs
+      function syncAriaValidation(el: HTMLElement) {
+        if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)) return;
+        const supportsUserInvalid = CSS.supports('selector(:user-invalid)');
+        const isInvalid = supportsUserInvalid ? el.matches(':user-invalid') : el.classList.contains('user-invalid-fallback');
+        el.setAttribute('aria-invalid', isInvalid ? 'true' : 'false');
+
+        const errId = el.dataset.error;
+        if (!errId) return;
+        const ids = (el.getAttribute('aria-describedby') || '')
+          .split(/\s+/)
+          .filter((id) => id && id !== errId);
+        if (isInvalid) ids.push(errId);
+        if (ids.length) el.setAttribute('aria-describedby', ids.join(' '));
+        else el.removeAttribute('aria-describedby');
+      }
+
+      document.addEventListener(
+        'blur',
+        (e) => {
+          const target = e.target as HTMLElement;
+          if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+            if (!CSS.supports('selector(:user-invalid)')) {
+              target.classList.toggle('user-invalid-fallback', !target.validity.valid);
+            }
+            syncAriaValidation(target);
+          }
+        },
+        true
+      );
+
+      // Visual Mode Input & Event Delegation
+      chkAutoSitemap.addEventListener('change', () => {
+        state.mode = 'visual';
+        state.autoIncludeSitemap = chkAutoSitemap.checked;
+        markDirty();
+        refreshPreviewAndDiagnostics();
+      });
+
+      inpHostDirective.addEventListener('input', () => {
+        state.mode = 'visual';
+        state.host = inpHostDirective.value.trim();
+        markDirty();
+        refreshPreviewAndDiagnostics();
+      });
+
+      inpHeaderComment.addEventListener('input', () => {
+        state.mode = 'visual';
+        state.headerComment = inpHeaderComment.value;
+        markDirty();
+        refreshPreviewAndDiagnostics();
+      });
+
+      document.getElementById('btnAddSitemap')?.addEventListener('click', () => {
+        state.mode = 'visual';
+        state.customSitemaps.push('');
+        markDirty();
+        renderVisualEditor();
+        refreshPreviewAndDiagnostics();
+        const inputs = customSitemapsList.querySelectorAll<HTMLInputElement>('.custom-sitemap-input');
+        inputs[inputs.length - 1]?.focus();
+      });
+
+      customSitemapsList.addEventListener('input', (e) => {
+        const input = (e.target as HTMLElement).closest<HTMLInputElement>('.custom-sitemap-input');
+        if (!input) return;
+        const idx = Number(input.dataset.sitemapIdx);
+        state.mode = 'visual';
+        state.customSitemaps[idx] = input.value;
+        if (input.classList.contains('user-invalid-fallback') && input.validity.valid) {
+          input.classList.remove('user-invalid-fallback');
+        }
+        syncAriaValidation(input);
+        markDirty();
+        refreshPreviewAndDiagnostics();
+      });
+
+      customSitemapsList.addEventListener('click', (e) => {
+        const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-remove-sitemap]');
+        if (!btn) return;
+        const idx = Number(btn.dataset.removeSitemap);
+        state.mode = 'visual';
+        state.customSitemaps.splice(idx, 1);
+        markDirty();
+        renderVisualEditor();
+        refreshPreviewAndDiagnostics();
+      });
+
+      // Presets
+      document.getElementById('presetsGrid')?.addEventListener('click', (e) => {
+        const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-preset-id]');
+        if (!btn) return;
+        const preset = ROBOTS_PRESETS.find((p) => p.id === btn.dataset.presetId);
+        if (!preset) return;
+        state = preset.buildConfig();
+        state.rawText = compileRobotsTxt(state, '{SITE_URL}');
+        markDirty();
+        renderVisualEditor();
+        refreshPreviewAndDiagnostics();
+        showToast(`Applied "${preset.name}" preset — click Save to publish`);
+      });
+
+      // Add Group Buttons
+      document.getElementById('btnAddGroup')?.addEventListener('click', () => {
+        state.mode = 'visual';
+        state.groups.push({
+          id: createUid('grp'),
+          userAgents: ['Googlebot'],
+          rules: [{ id: createUid('rule'), type: 'Allow', path: '/' }],
+          crawlDelay: null,
+        });
+        markDirty();
+        renderVisualEditor();
+        refreshPreviewAndDiagnostics();
+      });
+
+      document.getElementById('btnAddAiBlockGroup')?.addEventListener('click', () => {
+        state.mode = 'visual';
+        const aiBots = ['GPTBot', 'Google-Extended', 'ClaudeBot', 'CCBot', 'Bytespider'];
+        state.groups.push({
+          id: createUid('grp'),
+          userAgents: aiBots,
+          comment: 'AI Model Training Crawlers',
+          rules: [{ id: createUid('rule'), type: 'Disallow', path: '/' }],
+          crawlDelay: null,
+        });
+        markDirty();
+        renderVisualEditor();
+        refreshPreviewAndDiagnostics();
+        showToast('Added AI Training Crawler block group');
+      });
+
+      // Groups Stack Delegation
+      groupsStack.addEventListener('input', (e) => {
+        const target = e.target as HTMLInputElement;
+        state.mode = 'visual';
+
+        if (target.matches('.rule-path-input')) {
+          const [gIdx, rIdx] = (target.dataset.rulePath || '').split(':').map(Number);
+          if (state.groups[gIdx]?.rules[rIdx]) {
+            state.groups[gIdx].rules[rIdx].path = target.value;
+          }
+          if (target.classList.contains('user-invalid-fallback') && target.validity.valid) {
+            target.classList.remove('user-invalid-fallback');
+          }
+          syncAriaValidation(target);
+          markDirty();
+          refreshPreviewAndDiagnostics();
+        } else if (target.matches('.rule-note-input')) {
+          const [gIdx, rIdx] = (target.dataset.ruleNote || '').split(':').map(Number);
+          if (state.groups[gIdx]?.rules[rIdx]) {
+            state.groups[gIdx].rules[rIdx].comment = target.value;
+          }
+          markDirty();
+          refreshPreviewAndDiagnostics();
+        } else if (target.matches('.crawl-delay-input')) {
+          const gIdx = Number(target.dataset.crawlDelay);
+          const val = target.value.trim();
+          state.groups[gIdx].crawlDelay = val === '' ? null : Math.max(0, Number(val));
+          markDirty();
+          refreshPreviewAndDiagnostics();
+        } else if (target.matches('.group-comment-input')) {
+          const gIdx = Number(target.dataset.groupComment);
+          state.groups[gIdx].comment = target.value;
+          markDirty();
+          refreshPreviewAndDiagnostics();
+        }
+      });
+
+      groupsStack.addEventListener('change', (e) => {
+        const target = e.target as HTMLSelectElement;
+        if (!target.matches('.rule-type-select')) return;
+        const [gIdx, rIdx] = (target.dataset.ruleType || '').split(':').map(Number);
+        const val = target.value === 'Allow' ? 'Allow' : 'Disallow';
+        state.mode = 'visual';
+        state.groups[gIdx].rules[rIdx].type = val;
+        target.classList.toggle('is-allow', val === 'Allow');
+        target.classList.toggle('is-disallow', val === 'Disallow');
+        markDirty();
+        renderVisualEditor();
+        refreshPreviewAndDiagnostics();
+      });
+
+      groupsStack.addEventListener('keydown', (e) => {
+        const input = e.target as HTMLInputElement;
+        if (input.matches('.add-ua-input') && e.key === 'Enter' && !e.isComposing) {
+          e.preventDefault();
+          const gIdx = Number(input.dataset.uaInput);
+          addBotToGroup(gIdx, input.value);
+        }
+      });
+
+      function addBotToGroup(gIdx: number, rawToken: string) {
+        const token = rawToken.trim();
+        if (!token || !state.groups[gIdx]) return;
+        state.mode = 'visual';
+        if (!state.groups[gIdx].userAgents.includes(token)) {
+          state.groups[gIdx].userAgents.push(token);
+          markDirty();
+          renderVisualEditor();
+          refreshPreviewAndDiagnostics();
+        }
+      }
+
+      groupsStack.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        const btn = target.closest<HTMLButtonElement>('button');
+        if (!btn) return;
+
+        state.mode = 'visual';
+
+        if (btn.dataset.removeUa) {
+          const [gIdx, uaIdx] = btn.dataset.removeUa.split(':').map(Number);
+          state.groups[gIdx]?.userAgents.splice(uaIdx, 1);
+          markDirty();
+          renderVisualEditor();
+          refreshPreviewAndDiagnostics();
+        } else if (btn.dataset.addUaBtn) {
+          const gIdx = Number(btn.dataset.addUaBtn);
+          const input = document.getElementById(`addUaInput_${gIdx}`) as HTMLInputElement | null;
+          if (input) addBotToGroup(gIdx, input.value);
+        } else if (btn.dataset.dupGroup) {
+          const gIdx = Number(btn.dataset.dupGroup);
+          const src = state.groups[gIdx];
+          if (src) {
+            const copy: RobotsGroup = structuredClone(src);
+            copy.id = createUid('grp');
+            copy.rules = copy.rules.map((r) => ({ ...r, id: createUid('rule') }));
+            state.groups.splice(gIdx + 1, 0, copy);
+            markDirty();
+            renderVisualEditor();
+            refreshPreviewAndDiagnostics();
+          }
+        } else if (btn.dataset.removeGroup) {
+          const gIdx = Number(btn.dataset.removeGroup);
+          state.groups.splice(gIdx, 1);
+          markDirty();
+          renderVisualEditor();
+          refreshPreviewAndDiagnostics();
+        } else if (btn.dataset.addRule) {
+          const gIdx = Number(btn.dataset.addRule);
+          state.groups[gIdx]?.rules.push({ id: createUid('rule'), type: 'Disallow', path: '/' });
+          markDirty();
+          renderVisualEditor();
+          refreshPreviewAndDiagnostics();
+        } else if (btn.dataset.removeRule) {
+          const [gIdx, rIdx] = btn.dataset.removeRule.split(':').map(Number);
+          state.groups[gIdx]?.rules.splice(rIdx, 1);
+          markDirty();
+          renderVisualEditor();
+          refreshPreviewAndDiagnostics();
+        } else if (btn.dataset.moveRule) {
+          const [gIdx, rIdx, delta] = btn.dataset.moveRule.split(':').map(Number);
+          const rules = state.groups[gIdx]?.rules;
+          if (!rules) return;
+          const nextIdx = rIdx + delta;
+          if (nextIdx >= 0 && nextIdx < rules.length) {
+            const [item] = rules.splice(rIdx, 1);
+            rules.splice(nextIdx, 0, item);
+            markDirty();
+            renderVisualEditor();
+            refreshPreviewAndDiagnostics();
+          }
+        } else if (btn.dataset.quickDisallow) {
+          const colonIdx = btn.dataset.quickDisallow.indexOf(':');
+          const gIdx = Number(btn.dataset.quickDisallow.slice(0, colonIdx));
+          const pathVal = btn.dataset.quickDisallow.slice(colonIdx + 1);
+          const grp = state.groups[gIdx];
+          if (grp && !grp.rules.some((r) => r.type === 'Disallow' && r.path === pathVal)) {
+            grp.rules.push({ id: createUid('rule'), type: 'Disallow', path: pathVal });
+            markDirty();
+            renderVisualEditor();
+            refreshPreviewAndDiagnostics();
+          }
+        } else if (btn.dataset.blockAllStudio) {
+          const gIdx = Number(btn.dataset.blockAllStudio);
+          const grp = state.groups[gIdx];
+          if (grp) {
+            for (const p of FASTPRESS_ADMIN_PATHS) {
+              if (!grp.rules.some((r) => r.type === 'Disallow' && r.path === p)) {
+                grp.rules.push({ id: createUid('rule'), type: 'Disallow', path: p });
+              }
+            }
+            markDirty();
+            renderVisualEditor();
+            refreshPreviewAndDiagnostics();
+            showToast('Added Disallow rules for all FastPress Studio & API routes');
+          }
+        }
+      });
+
+      // Raw Editor Handlers
+      rawRobotsTextarea.addEventListener('input', () => {
+        state.mode = 'raw';
+        state.rawText = rawRobotsTextarea.value;
+        markDirty();
+        refreshPreviewAndDiagnostics();
+      });
+
+      document.querySelectorAll<HTMLButtonElement>('[data-insert-raw]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const snippet = (btn.dataset.insertRaw || '').replace(/\\n/g, '\n');
+          const current = rawRobotsTextarea.value;
+          rawRobotsTextarea.value = current ? `${current.replace(/\s+$/, '')}\n\n${snippet}` : snippet;
+          state.mode = 'raw';
+          state.rawText = rawRobotsTextarea.value;
+          markDirty();
+          refreshPreviewAndDiagnostics();
+          rawRobotsTextarea.focus();
+        });
+      });
+
+      document.getElementById('btnSyncRawToVisual')?.addEventListener('click', () => {
+        const parsed = parseRobotsTxt(rawRobotsTextarea.value, siteUrl);
+        state.headerComment = parsed.headerComment;
+        state.autoIncludeSitemap = parsed.autoIncludeSitemap;
+        state.customSitemaps = parsed.customSitemaps;
+        state.host = parsed.host;
+        state.groups = parsed.groups;
+        state.mode = 'visual';
+        markDirty();
+        renderVisualEditor();
+        refreshPreviewAndDiagnostics();
+        selectTab('tabVisual');
+        if (parsed.unparsedLines.length > 0) {
+          showToast(
+            `Parsed to Visual Builder (${parsed.unparsedLines.length} unrecognized line(s) skipped — see preview)`,
+            true
+          );
+        } else {
+          showToast('Synced raw text into Visual Rule Builder');
+        }
+      });
+
+      document.getElementById('btnRegenerateFromVisual')?.addEventListener('click', () => {
+        state.mode = 'visual';
+        const generated = compileRobotsTxt(state, '{SITE_URL}');
+        rawRobotsTextarea.value = generated;
+        state.rawText = generated;
+        markDirty();
+        refreshPreviewAndDiagnostics();
+        showToast('Regenerated text from Visual Rule Builder');
+      });
+
+      // URL & Bot Simulator
+      function runSimulationAndAudit() {
+        const compiled = compileRobotsTxt(state, siteUrl);
+        const ua = simUserAgent.value.trim() || 'Googlebot';
+        const target = simTargetPath.value.trim() || '/';
+
+        const result = testUrlAgainstRobots(compiled, ua, target);
+        simResultBox.classList.toggle('allowed', result.allowed);
+        simResultBox.classList.toggle('blocked', !result.allowed);
+        simVerdictBadge.className = `verdict-badge ${result.allowed ? 'allowed' : 'blocked'}`;
+        simVerdictBadge.textContent = result.allowed ? '✓ ALLOWED' : '✕ BLOCKED';
+        simTestedUrl.textContent = result.normalizedTarget;
+        simResultReason.textContent = result.reason;
+
+        auditBotLabel.textContent = ua;
+        batchAuditBody.innerHTML = discoveredRoutes
+          .map((route) => {
+            const res = testUrlAgainstRobots(compiled, ua, route.url);
+            const isStudioOrApi = route.kind === 'Studio';
+            const expectedWarning = isStudioOrApi && res.allowed;
+            const publicBlockedWarning = !isStudioOrApi && !res.allowed;
+
+            let badgeHtml = res.allowed
+              ? `<span class="verdict-badge allowed">✓ Allowed</span>`
+              : `<span class="verdict-badge blocked">✕ Blocked</span>`;
+            if (expectedWarning) {
+              badgeHtml += ` <span style="font-size: 0.7rem; color: #fbbf24;">(Admin exposed)</span>`;
+            } else if (publicBlockedWarning) {
+              badgeHtml += ` <span style="font-size: 0.7rem; color: #f87171;">(Public blocked!)</span>`;
+            }
+
+            const ruleText = res.matchedRule
+              ? `${res.matchedRule.type}: ${res.matchedRule.pattern} (L${res.matchedRule.lineNumber})`
+              : 'Default Allow';
+
+            return `
+              <tr>
+                <td>
+                  <div style="font-weight: 600;">${escapeHtml(route.title)}</div>
+                  <code>${escapeHtml(route.url)}</code>
+                </td>
+                <td style="color: var(--text-secondary);">${escapeHtml(route.kind)}</td>
+                <td>${badgeHtml}</td>
+                <td><code>${escapeHtml(ruleText)}</code></td>
+              </tr>
+            `;
+          })
+          .join('');
+      }
+
+      document.getElementById('simTestForm')?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        runSimulationAndAudit();
+      });
+      simUserAgent.addEventListener('input', runSimulationAndAudit);
+      simTargetPath.addEventListener('input', runSimulationAndAudit);
+
+      document.getElementById('simQuickPaths')?.addEventListener('click', (e) => {
+        const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-test-path]');
+        if (!btn) return;
+        simTargetPath.value = btn.dataset.testPath || '/';
+        runSimulationAndAudit();
+      });
+
+      // Copy Button (Modern Invoker Commands + fallback, single registration)
+      function legacyCopy(text: string): boolean {
+        const field = Object.assign(document.createElement('textarea'), { value: text });
+        field.setAttribute('readonly', '');
+        field.style.cssText = 'position:fixed;inset-block-start:0;opacity:0';
+        document.body.append(field);
+        field.select();
+        try {
+          return document.execCommand('copy');
+        } finally {
+          field.remove();
+        }
+      }
+
+      function reportCopyResult(button: HTMLButtonElement, ok: boolean) {
+        const tip = button.nextElementSibling as HTMLElement | null;
+        window.clearTimeout(copyTimers.get(button));
+        button.removeAttribute('data-copied');
+        button.removeAttribute('data-failed');
+
+        let message = ok ? 'Copied' : 'Copy failed';
+        if (message === lastCopiedMessage) message += '\u00A0';
+        lastCopiedMessage = message;
+
+        if (tip) tip.textContent = '';
+        void button.offsetWidth;
+        button.setAttribute(ok ? 'data-copied' : 'data-failed', '');
+        requestAnimationFrame(() => {
+          if (tip) tip.textContent = message;
+        });
+
+        copyTimers.set(
+          button,
+          window.setTimeout(() => {
+            button.removeAttribute('data-copied');
+            button.removeAttribute('data-failed');
+            if (tip) tip.textContent = '';
+          }, 2000)
+        );
+      }
+
+      async function handleCopyCommand(button: HTMLButtonElement, target: HTMLElement | null) {
+        if (!target) return;
+        const text =
+          target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
+            ? target.value
+            : target.innerText.trim();
+        if (!text) return;
+        try {
+          await navigator.clipboard.writeText(text);
+          reportCopyResult(button, true);
+        } catch {
+          if (legacyCopy(text)) {
+            reportCopyResult(button, true);
+          } else {
+            reportCopyResult(button, false);
+          }
+        }
+      }
+
+      if ('CommandEvent' in window) {
+        document.addEventListener(
+          'command',
+          (event: any) => {
+            if (typeof event.command === 'string' && event.command.startsWith('--copy')) {
+              handleCopyCommand(event.source, event.target);
+            }
+          },
+          true
+        );
+      } else {
+        document.addEventListener('click', (event) => {
+          const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[command^="--copy"]');
+          if (!button) return;
+          const targetId = button.getAttribute('commandfor');
+          const target = targetId ? document.getElementById(targetId) : null;
+          handleCopyCommand(button, target);
+        });
+      }
+
+      // Download robots.txt
+      document.getElementById('btnDownloadRobots')?.addEventListener('click', () => {
+        const compiled = compileRobotsTxt(state, siteUrl);
+        const blob = new Blob([compiled], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'robots.txt';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      });
+
+      // Save Action
+      const btnSaveRobots = document.getElementById('btnSaveRobots') as HTMLButtonElement;
+      async function saveRobots() {
+        // Validate visible custom sitemap inputs before saving in visual mode
+        if (state.mode === 'visual') {
+          const invalidInput = Array.from(
+            document.querySelectorAll<HTMLInputElement>('.custom-sitemap-input, .rule-path-input')
+          ).find((inp) => !inp.checkValidity());
+          if (invalidInput) {
+            if (!CSS.supports('selector(:user-invalid)')) {
+              invalidInput.classList.add('user-invalid-fallback');
+            }
+            syncAriaValidation(invalidInput);
+            invalidInput.focus();
+            showToast('Please fix invalid path or sitemap URL fields before saving.', true);
+            return;
+          }
+        }
+
+        btnSaveRobots.disabled = true;
+        try {
+          const res = await fetch('/api/robots', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'save', config: state }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Failed to save robots.txt');
+          }
+          state = data.config;
+          clearDirty();
+          if (state.mode === 'raw') {
+            rawRobotsTextarea.value = state.rawText || '';
+          }
+          renderVisualEditor();
+          refreshPreviewAndDiagnostics();
+          lastUpdatedLabel.textContent = `Last saved: ${new Date(state.updatedAt).toLocaleString()}`;
+          showToast('robots.txt saved and published to /robots.txt!');
+        } catch (err: any) {
+          showToast(err?.message || 'Save failed', true);
+        } finally {
+          btnSaveRobots.disabled = false;
+        }
+      }
+
+      btnSaveRobots.addEventListener('click', saveRobots);
+
+      // Ctrl+S / Cmd+S shortcut
+      document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+          e.preventDefault();
+          saveRobots();
+        }
+      });
+
+      // Native Dialog for Reset to Default
+      document.getElementById('btnResetDefault')?.addEventListener('click', () => {
+        if (typeof resetConfirmDialog.showModal === 'function') {
+          resetConfirmDialog.showModal();
+        } else {
+          performReset();
+        }
+      });
+
+      resetConfirmDialog.addEventListener('close', () => {
+        if (resetConfirmDialog.returnValue === 'confirm') {
+          performReset();
+        }
+      });
+
+      async function performReset() {
+        try {
+          const res = await fetch('/api/robots', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'reset' }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Failed to reset robots.txt');
+          }
+          state = data.config;
+          rawRobotsTextarea.value = compileRobotsTxt(state, '{SITE_URL}');
+          clearDirty();
+          renderVisualEditor();
+          refreshPreviewAndDiagnostics();
+          lastUpdatedLabel.textContent = `Last saved: ${new Date(state.updatedAt).toLocaleString()}`;
+          showToast('Reset to FastPress default robots.txt');
+        } catch (err: any) {
+          showToast(err?.message || 'Reset failed', true);
+        }
+      }
+
+      // Initialize UI
+      if (state.mode === 'raw') {
+        rawRobotsTextarea.value = state.rawText || compileRobotsTxt(state, '{SITE_URL}');
+        selectTab('tabRaw');
+      }
+      renderVisualEditor();
+      refreshPreviewAndDiagnostics();
+      runSimulationAndAudit();
+    </script>
+  </body>
+</html>

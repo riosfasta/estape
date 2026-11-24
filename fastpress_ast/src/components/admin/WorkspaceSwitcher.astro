@@ -1,0 +1,500 @@
+---
+interface Props {
+  activeApp?:
+    | 'page-builder'
+    | 'blog-editor'
+    | 'header-builder'
+    | 'footer-builder'
+    | 'popup-builder'
+    | 'blog-layouts'
+    | 'template-builder'
+    | 'form-builder'
+    | 'product-studio'
+    | 'product-layouts'
+    | 'robots'
+    | string;
+  style?: string;
+  class?: string;
+}
+
+const { activeApp = 'page-builder', style = '', class: className = '' } = Astro.props;
+
+interface WorkspaceApp {
+  id: string;
+  name: string;
+  desc: string;
+  url: string;
+  stroke: string;
+  icon: string;
+}
+
+const workspaceApps: WorkspaceApp[] = [
+  {
+    id: 'page-builder',
+    name: 'Page Builder',
+    desc: 'Visual drag & drop website designer',
+    url: '/editor',
+    stroke: '#60a5fa',
+    icon: `<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline>`,
+  },
+  {
+    id: 'blog-editor',
+    name: 'Blog Editor',
+    desc: 'Write, format & manage blog posts',
+    url: '/edit-blog',
+    stroke: '#f59e0b',
+    icon: `<path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>`,
+  },
+  {
+    id: 'header-builder',
+    name: 'Header Builder',
+    desc: 'Sticky, shrink, mega menu & custom headers',
+    url: '/header-builder',
+    stroke: '#38bdf8',
+    icon: `<path d="M4 6h16M4 12h16M4 18h7"/>`,
+  },
+  {
+    id: 'footer-builder',
+    name: 'Footer Builder',
+    desc: 'Multi-column, newsletter & responsive footers',
+    url: '/footer-builder',
+    stroke: '#a855f7',
+    icon: `<rect x="3" y="14" width="18" height="7" rx="2"/><path d="M4 10h16M4 6h7"/>`,
+  },
+  {
+    id: 'menu-builder',
+    name: 'Menu Builder',
+    desc: 'Create & manage navigation menus & styles',
+    url: '/menu-builder',
+    stroke: '#ec4899',
+    icon: `<line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line>`,
+  },
+  {
+    id: 'popup-builder',
+    name: 'Popup Builder',
+    desc: 'Targeted popups & conversion triggers',
+    url: '/popup-editor',
+    stroke: '#ff5e3a',
+    icon: `<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>`,
+  },
+  {
+    id: 'blog-layouts',
+    name: 'Blog Layouts',
+    desc: 'Standard layouts & template designer',
+    url: '/blog-layout-editor',
+    stroke: '#10b981',
+    icon: `<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>`,
+  },
+  {
+    id: 'template-builder',
+    name: 'Template Builder',
+    desc: 'Reusable global & individual templates',
+    url: '/template-editor',
+    stroke: '#8b5cf6',
+    icon: `<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>`,
+  },
+  {
+    id: 'form-builder',
+    name: 'Form Builder',
+    desc: 'Gravity style forms, anti-spam & Google Sheets',
+    url: '/form-builder',
+    stroke: '#2563eb',
+    icon: `<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8h10M7 12h7M7 16h4"/>`,
+  },
+  {
+    id: 'product-studio',
+    name: 'Product Studio',
+    desc: 'Manage apparel products, standard/blank layout & buy links',
+    url: '/edit-product',
+    stroke: '#ff5e3a',
+    icon: `<path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>`,
+  },
+  {
+    id: 'product-layouts',
+    name: 'Product Layouts',
+    desc: 'Standard single product templates & builder',
+    url: '/product-layout-editor',
+    stroke: '#f59e0b',
+    icon: `<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>`,
+  },
+];
+
+const currentApp =
+  workspaceApps.find((app) => app.id === activeApp || app.url === activeApp) ||
+  (activeApp === 'robots'
+    ? {
+        id: 'robots',
+        name: 'Robots.txt & SEO',
+        desc: 'Crawler Rules & Sitemap Directing',
+        url: '/robots-editor',
+        stroke: '#10b981',
+        icon: `<rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/>`,
+      }
+    : workspaceApps[0]);
+---
+
+<div class={`workspace-switcher-component ${className}`} style={`position: relative; ${style}`}>
+  <!-- Trigger Button -->
+  <button
+    type="button"
+    class="ws-switcher-btn"
+    title="Switch workspace tool"
+    aria-haspopup="true"
+    aria-expanded="false"
+  >
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={currentApp.stroke}
+      stroke-width="2.2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      set:html={currentApp.icon}
+    />
+    <span class="ws-current-name">{currentApp.name}</span>
+    <svg class="ws-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="6 9 12 15 18 9"></polyline>
+    </svg>
+  </button>
+
+  <!-- Flyout Menu with Auto-Scroll & Viewport Screen Containment -->
+  <div class="ws-switcher-menu" role="menu">
+    <div class="ws-menu-header">Workspace Apps</div>
+
+    <div class="ws-apps-list">
+      {workspaceApps.map((app) => {
+        const isActive = app.id === activeApp || app.url === activeApp;
+        return (
+          <a
+            href={app.url}
+            class={`ws-menu-item ${isActive ? 'is-active' : ''}`}
+            role="menuitem"
+          >
+            <div class="ws-item-icon-box">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={app.stroke}
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                set:html={app.icon}
+              />
+            </div>
+            <div class="ws-item-text">
+              <div class="ws-item-title">{app.name}</div>
+              <div class="ws-item-desc">{app.desc}</div>
+            </div>
+          </a>
+        );
+      })}
+    </div>
+
+    <div class="ws-divider"></div>
+    <div class="ws-menu-header">Website Configuration</div>
+
+    <button type="button" class="ws-menu-item ws-custom-code-btn btn-open-custom-code" data-open="web-config" role="menuitem">
+      <div class="ws-item-icon-box ws-emoji-icon">
+        ⚙️
+      </div>
+      <div class="ws-item-text">
+        <div class="ws-item-title">Web Config &amp; Global Scripts</div>
+        <div class="ws-item-desc">Favicon, Web Logo, Brand &amp; Analytics</div>
+      </div>
+    </button>
+
+    <button type="button" class="ws-menu-item ws-custom-code-btn" data-open="themes" role="menuitem">
+      <div class="ws-item-icon-box ws-emoji-icon">
+        🎨
+      </div>
+      <div class="ws-item-text">
+        <div class="ws-item-title">Themes &amp; Styling</div>
+        <div class="ws-item-desc">Switch Active Theme &amp; Live Preview</div>
+      </div>
+    </button>
+
+    <a
+      href="/robots-editor"
+      class={`ws-menu-item ${activeApp === 'robots' ? 'is-active' : ''}`}
+      role="menuitem"
+    >
+      <div class="ws-item-icon-box ws-emoji-icon">
+        🤖
+      </div>
+      <div class="ws-item-text">
+        <div class="ws-item-title">Robots.txt &amp; SEO</div>
+        <div class="ws-item-desc">Crawler Rules &amp; Sitemap Directing</div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<style>
+  .workspace-switcher-component {
+    display: inline-flex;
+    align-items: center;
+    position: relative;
+    z-index: 9999;
+  }
+
+  .ws-switcher-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    background: #1c212b;
+    border: 1px solid #2d3342;
+    color: #f3f4f6;
+    padding: 5px 11px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    white-space: nowrap;
+    user-select: none;
+  }
+
+  .ws-switcher-btn:hover {
+    background: #252b38;
+    border-color: #3b4354;
+    color: #ffffff;
+  }
+
+  .ws-current-name {
+    display: inline-block;
+  }
+
+  .ws-chevron {
+    transition: transform 0.2s ease;
+    color: #9ca3af;
+  }
+
+  .workspace-switcher-component.open .ws-chevron {
+    transform: rotate(180deg);
+  }
+
+  /* Dropdown Menu Container */
+  .ws-switcher-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    width: 265px;
+    max-height: calc(100vh - 70px) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior: contain;
+    background: #141822;
+    border: 1px solid #2a3242;
+    border-radius: 10px;
+    box-shadow: 0 14px 35px rgba(0, 0, 0, 0.75);
+    padding: 6px;
+    display: none;
+    z-index: 10000;
+    scrollbar-width: thin;
+    scrollbar-color: #374151 #141822;
+  }
+
+  .workspace-switcher-component.open .ws-switcher-menu {
+    display: block;
+    animation: wsFadeDown 0.15s ease-out;
+  }
+
+  @keyframes wsFadeDown {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .ws-switcher-menu::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .ws-switcher-menu::-webkit-scrollbar-track {
+    background: #141822;
+    border-radius: 4px;
+  }
+
+  .ws-switcher-menu::-webkit-scrollbar-thumb {
+    background: #2f3849;
+    border-radius: 4px;
+  }
+
+  .ws-switcher-menu::-webkit-scrollbar-thumb:hover {
+    background: #4b5563;
+  }
+
+  .ws-menu-header {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #6b7280;
+    padding: 6px 10px 4px 10px;
+  }
+
+  .ws-apps-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .ws-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    text-decoration: none;
+    color: #d1d5db;
+    transition: background 0.15s ease, color 0.15s ease;
+    border: none;
+    background: transparent;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    box-sizing: border-box;
+  }
+
+  .ws-menu-item:hover {
+    background: #1c212b;
+    color: #ffffff;
+  }
+
+  .ws-menu-item.is-active {
+    color: #ff5e3a;
+    background: rgba(255, 94, 58, 0.12);
+    font-weight: 600;
+  }
+
+  .ws-item-icon-box {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1c212b;
+    flex-shrink: 0;
+  }
+
+  .ws-menu-item.is-active .ws-item-icon-box {
+    background: rgba(255, 94, 58, 0.2);
+  }
+
+  .ws-emoji-icon {
+    font-size: 0.95rem;
+  }
+
+  .ws-item-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ws-item-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ws-item-desc {
+    font-size: 0.68rem;
+    color: #9ca3af;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ws-menu-item.is-active .ws-item-desc {
+    color: #fdba74;
+  }
+
+  .ws-divider {
+    height: 1px;
+    background: #262e3d;
+    margin: 6px 4px;
+  }
+</style>
+
+<script is:inline>
+  (() => {
+    function initWorkspaceSwitchers() {
+      document.querySelectorAll('.workspace-switcher-component').forEach((wrap) => {
+        if (wrap.dataset.wsInitialized === 'true') return;
+        wrap.dataset.wsInitialized = 'true';
+
+        const btn = wrap.querySelector('.ws-switcher-btn');
+        if (!btn) return;
+
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const isOpen = wrap.classList.contains('open');
+          document.querySelectorAll('.workspace-switcher-component.open').forEach((w) => {
+            if (w !== wrap) {
+              w.classList.remove('open');
+              w.querySelector('.ws-switcher-btn')?.setAttribute('aria-expanded', 'false');
+            }
+          });
+          wrap.classList.toggle('open', !isOpen);
+          btn.setAttribute('aria-expanded', !isOpen ? 'true' : 'false');
+        });
+
+        // Custom Code / Themes modal trigger support
+        wrap.querySelectorAll('.ws-custom-code-btn').forEach((customBtn) => {
+          customBtn.addEventListener('click', () => {
+            wrap.classList.remove('open');
+            btn.setAttribute('aria-expanded', 'false');
+
+            const tab = customBtn.getAttribute('data-open') || 'web-config';
+            if (window.FastPressCustomCode) {
+              window.FastPressCustomCode.open({ scope: 'global', initialTab: tab });
+            } else {
+              const localModalBtn = document.getElementById('btnOpenCustomCodeModal');
+              if (localModalBtn) {
+                localModalBtn.click();
+              } else {
+                window.location.href = `/editor?openModal=customCode&tab=${tab}`;
+              }
+            }
+          });
+        });
+      });
+    }
+
+    // Dismiss on click outside or escape key
+    document.addEventListener('click', (e) => {
+      document.querySelectorAll('.workspace-switcher-component.open').forEach((wrap) => {
+        if (!wrap.contains(e.target)) {
+          wrap.classList.remove('open');
+          wrap.querySelector('.ws-switcher-btn')?.setAttribute('aria-expanded', 'false');
+        }
+      });
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.workspace-switcher-component.open').forEach((wrap) => {
+          wrap.classList.remove('open');
+          wrap.querySelector('.ws-switcher-btn')?.setAttribute('aria-expanded', 'false');
+        });
+      }
+    });
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initWorkspaceSwitchers);
+    } else {
+      initWorkspaceSwitchers();
+    }
+    document.addEventListener('astro:page-load', initWorkspaceSwitchers);
+  })();
+</script>

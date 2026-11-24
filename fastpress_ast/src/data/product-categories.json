@@ -1,0 +1,98 @@
+[
+  {
+    "id": "uncategorized",
+    "name": "Uncategorized",
+    "slug": "uncategorized",
+    "description": "Default category for uncategorized products"
+  },
+  {
+    "id": "living-room",
+    "name": "Living Room",
+    "slug": "living-room",
+    "description": "Lounge chairs, coffee tables and living room decor"
+  },
+  {
+    "id": "dining",
+    "name": "Dining",
+    "slug": "dining",
+    "description": "Dining benches, dining tables and seating"
+  },
+  {
+    "id": "bedroom",
+    "name": "Bedroom",
+    "slug": "bedroom",
+    "description": "Dressers, nightstands and bedframes"
+  },
+  {
+    "id": "lighting",
+    "name": "Lighting",
+    "slug": "lighting",
+    "description": "Rattan pendants, table lamps and ambient fixtures"
+  },
+  {
+    "id": "storage",
+    "name": "Storage",
+    "slug": "storage",
+    "description": "Bookshelves, sideboards and drawer units"
+  },
+  {
+    "id": "chairs",
+    "name": "Chairs",
+    "slug": "chairs",
+    "description": "Woven accent armchairs and lounge chairs"
+  },
+  {
+    "id": "tables",
+    "name": "Tables",
+    "slug": "tables",
+    "description": "Round coffee tables and sculptural side tables"
+  },
+  {
+    "id": "t-shirts",
+    "name": "T-Shirts",
+    "slug": "t-shirts",
+    "description": "Heavyweight & graphic tees"
+  },
+  {
+    "id": "hoodies",
+    "name": "Hoodies",
+    "slug": "hoodies",
+    "description": "French terry & fleece pullovers"
+  },
+  {
+    "id": "jackets",
+    "name": "Jackets",
+    "slug": "jackets",
+    "description": "Denim, canvas & structured jackets"
+  },
+  {
+    "id": "outerwear",
+    "name": "Outerwear",
+    "slug": "outerwear",
+    "description": "Technical windbreakers & shells"
+  },
+  {
+    "id": "pants",
+    "name": "Pants",
+    "slug": "pants",
+    "description": "Cargo pants & tailored trousers"
+  },
+  {
+    "id": "shirts",
+    "name": "Shirts",
+    "slug": "shirts",
+    "description": "Camp shirts & overshirts"
+  },
+  {
+    "id": "sweatshirts",
+    "name": "Sweatshirts",
+    "slug": "sweatshirts",
+    "description": "Crewnecks & washed pullovers"
+  },
+  {
+    "id": "accessories",
+    "name": "Accessories",
+    "slug": "accessories",
+    "description": "Headwear, scarves & essentials"
+  }
+]

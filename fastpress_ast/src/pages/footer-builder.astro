@@ -1,0 +1,3077 @@
+---
+import DeviceSwitcher from '../components/admin/DeviceSwitcher.astro';
+import WorkspaceSwitcher from '../components/admin/WorkspaceSwitcher.astro';
+// src/pages/footer-builder.astro
+// Visual Footer Builder for FastPress CMS
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { readFootersData, defaultSampleFooters, type FooterConfig } from '../data/footers';
+import { getTemplates } from '../data/templates';
+
+import { getActiveThemeName, getThemePages } from '../core/theme';
+
+export const prerender = false;
+
+const activeTheme = getActiveThemeName();
+const footersStore = readFootersData();
+const initialTemplates = getTemplates();
+const activeFooterId = footersStore.activeFooterId || footersStore.footers[0]?.id || 'footer-saas-pro';
+
+// Load Pages and Posts for Link Picker
+const POSTS_FILE = path.join(process.cwd(), 'src', 'data', 'posts.json');
+
+let availablePages: Array<{ slug: string; title: string; url: string }> = [];
+let availablePosts: Array<{ slug: string; title: string; category?: string; url: string }> = [];
+
+try {
+  const themePages = getThemePages(activeTheme);
+  availablePages = Object.entries(themePages).map(([slug, p]: [string, any]) => ({
+    slug,
+    title: p.title || (slug === 'home' ? 'Home' : slug),
+    url: slug === 'home' ? '/' : `/${slug}`,
+  }));
+  if (!availablePages.some(p => p.slug === 'home')) {
+    availablePages.unshift({ slug: 'home', title: 'Home', url: '/' });
+  }
+} catch {
+  availablePages = [
+    { slug: 'home', title: 'Home', url: '/' },
+    { slug: 'about', title: 'About', url: '/about' },
+    { slug: 'blog', title: 'Blog', url: '/blog' },
+  ];
+}
+
+try {
+  const rawPosts = await fs.readFile(POSTS_FILE, 'utf-8');
+  const parsedPosts = JSON.parse(rawPosts);
+  if (Array.isArray(parsedPosts)) {
+    availablePosts = parsedPosts.map((post: any) => ({
+      slug: post.slug,
+      title: post.title || post.slug,
+      category: post.category || (Array.isArray(post.categories) ? post.categories.join(', ') : ''),
+      url: `/blog/${post.slug}`,
+    }));
+  }
+} catch {
+  availablePosts = [];
+}
+
+// Load Site Config for Web Logo & Brand Fallback
+const CONFIG_FILE = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
+let initialSiteConfig: any = { brandName: 'Better SaaS', tagline: 'Modern Platform', logoUrl: '', faviconUrl: '/favicon.svg' };
+try {
+  const rawConfig = await fs.readFile(CONFIG_FILE, 'utf-8');
+  initialSiteConfig = JSON.parse(rawConfig);
+} catch {}
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Footer Builder - FastPress Studio</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style is:global>
+      :root {
+        color-scheme: dark;
+        --fb-bg-dark: #0a0d14;
+        --fb-sidebar-bg: #11141e;
+        --fb-card-bg: #161b26;
+        --fb-card-hover: #1c2333;
+        --fb-border: #232a3b;
+        --fb-accent: #ff5e3a;
+        --fb-accent-glow: rgba(255, 94, 58, 0.25);
+        --fb-text: #f3f4f6;
+        --fb-text-muted: #9ca3af;
+        --fb-success: #10b981;
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body, html {
+        height: 100%;
+        overflow: hidden;
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        background: var(--fb-bg-dark);
+        color: var(--fb-text);
+      }
+
+      /* App Shell */
+      .builder-app {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+
+      /* Top Header Toolbar */
+      .builder-topbar {
+        height: 58px;
+        background: #0f121b;
+        border-bottom: 1px solid var(--fb-border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 16px;
+        z-index: 100;
+        gap: 12px;
+      }
+
+      .topbar-left {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .back-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--fb-text-muted);
+        text-decoration: none;
+        font-size: 0.8rem;
+        font-weight: 600;
+        padding: 6px 10px;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--fb-border);
+        transition: all 0.2s;
+      }
+      .back-btn:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      /* Studio Switcher */
+      .studio-switcher-wrap {
+        position: relative;
+      }
+      .studio-switcher-btn {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #141824;
+        border: 1px solid var(--fb-border);
+        color: #f3f4f6;
+        font-size: 0.82rem;
+        font-weight: 700;
+        padding: 6px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .studio-switcher-btn:hover {
+        background: #1c2233;
+        border-color: #333d52;
+      }
+      .studio-badge {
+        font-size: 0.65rem;
+        font-weight: 800;
+        background: rgba(168, 85, 247, 0.2);
+        color: #c084fc;
+        padding: 1px 6px;
+        border-radius: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .studio-menu-flyout {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        width: 250px;
+        background: #141824;
+        border: 1px solid var(--fb-border);
+        border-radius: 8px;
+        padding: 6px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+        display: none;
+        flex-direction: column;
+        gap: 2px;
+        z-index: 200;
+      }
+      .studio-menu-flyout.is-open {
+        display: flex;
+      }
+      .studio-menu-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        text-decoration: none;
+        color: #d1d5db;
+        font-size: 0.8rem;
+        font-weight: 600;
+        transition: background 0.15s;
+      }
+      .studio-menu-item:hover, .studio-menu-item.active {
+        background: #1f2738;
+        color: #fff;
+      }
+
+      /* Footer Selector */
+      .footer-selector-wrap {
+        display: flex;
+        align-items: center;
+      }
+      .footer-select-input {
+        background: #141824;
+        border: 1px solid var(--fb-border);
+        color: #f3f4f6;
+        font-size: 0.82rem;
+        font-weight: 600;
+        padding: 6px 10px;
+        border-radius: 6px;
+        outline: none;
+        cursor: pointer;
+        min-width: 210px;
+      }
+      .footer-select-input:focus {
+        border-color: var(--fb-accent);
+      }
+
+      /* Topbar Center: Viewport Switcher */
+      .topbar-center {
+        display: flex;
+        align-items: center;
+        background: #141824;
+        border: 1px solid var(--fb-border);
+        padding: 3px;
+        border-radius: 8px;
+        gap: 2px;
+      }
+      .viewport-btn {
+        background: transparent;
+        border: none;
+        color: var(--fb-text-muted);
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 0.76rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        transition: all 0.2s;
+      }
+      .viewport-btn:hover {
+        color: #fff;
+      }
+      .viewport-btn.active {
+        background: var(--fb-accent);
+        color: #fff;
+        box-shadow: 0 2px 8px var(--fb-accent-glow);
+      }
+
+      /* Topbar Right Actions */
+      .topbar-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .tb-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        border-radius: 6px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .tb-btn-subtle {
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--fb-text-muted);
+        border-color: var(--fb-border);
+      }
+      .tb-btn-subtle:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+      }
+      .tb-btn-activate {
+        background: rgba(16, 185, 129, 0.15);
+        color: #34d399;
+        border-color: rgba(16, 185, 129, 0.3);
+      }
+      .tb-btn-activate:hover {
+        background: rgba(16, 185, 129, 0.25);
+      }
+      .tb-btn-activate.is-active {
+        background: #10b981;
+        color: #fff;
+        border-color: #10b981;
+        cursor: default;
+      }
+      .tb-btn-save {
+        background: var(--fb-accent);
+        color: #fff;
+        box-shadow: 0 2px 8px var(--fb-accent-glow);
+      }
+      .tb-btn-save:hover {
+        opacity: 0.92;
+        transform: translateY(-1px);
+      }
+
+      /* Builder Main Body */
+      .builder-body {
+        display: flex;
+        flex: 1;
+        height: calc(100vh - 58px);
+        overflow: hidden;
+      }
+
+      /* Left Sidebar */
+      .builder-sidebar {
+        width: 440px;
+        background: var(--fb-sidebar-bg);
+        border-right: 1px solid var(--fb-border);
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+        z-index: 50;
+      }
+
+      /* Sidebar Tab Strip */
+      .sidebar-tabs {
+        display: flex;
+        background: #0d1017;
+        border-bottom: 1px solid var(--fb-border);
+        overflow-x: auto;
+        padding: 4px;
+        gap: 3px;
+        scrollbar-width: none;
+      }
+      .sidebar-tabs::-webkit-scrollbar { display: none; }
+
+      .tab-btn {
+        background: transparent;
+        border: none;
+        color: var(--fb-text-muted);
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 8px 11px;
+        border-radius: 6px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+        transition: all 0.15s;
+      }
+      .tab-btn:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.04);
+      }
+      .tab-btn.active {
+        background: #19202e;
+        color: #fff;
+        font-weight: 700;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      }
+
+      /* Sidebar Content Panels */
+      .sidebar-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 18px;
+      }
+      .sidebar-content::-webkit-scrollbar {
+        width: 6px;
+      }
+      .sidebar-content::-webkit-scrollbar-thumb {
+        background: #232c3d;
+        border-radius: 3px;
+      }
+
+      .control-panel {
+        display: none;
+      }
+      .control-panel.active {
+        display: block;
+      }
+
+      /* Control Groups & Fields */
+      .control-group {
+        margin-bottom: 22px;
+      }
+      .control-group-title {
+        font-size: 0.72rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: #94a3b8;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .field-row {
+        margin-bottom: 14px;
+      }
+      .field-row-horizontal {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 14px;
+        gap: 12px;
+      }
+      .field-label {
+        display: block;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #e2e8f0;
+        margin-bottom: 6px;
+      }
+      .field-desc {
+        font-size: 0.7rem;
+        color: #94a3b8;
+        margin-top: 4px;
+        line-height: 1.4;
+      }
+
+      .text-input, .select-input, .textarea-input {
+        width: 100%;
+        background: #0d1017;
+        border: 1px solid var(--fb-border);
+        color: #fff;
+        font-size: 0.82rem;
+        padding: 8px 12px;
+        border-radius: 6px;
+        outline: none;
+        transition: border-color 0.2s;
+        box-sizing: border-box;
+      }
+      .text-input:focus, .select-input:focus, .textarea-input:focus {
+        border-color: var(--fb-accent);
+      }
+      .textarea-input {
+        resize: vertical;
+        min-height: 80px;
+        font-family: inherit;
+      }
+
+      .input-with-button {
+        display: flex;
+        gap: 6px;
+      }
+      .input-with-button .text-input {
+        flex: 1;
+      }
+      .pick-resource-btn, .pick-media-btn {
+        background: #1c2233;
+        border: 1px solid var(--fb-border);
+        color: #e2e8f0;
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 6px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.15s;
+        white-space: nowrap;
+      }
+      .pick-resource-btn:hover, .pick-media-btn:hover {
+        background: #252e42;
+        color: #fff;
+      }
+
+      /* Switch Toggles */
+      .switch-toggle {
+        position: relative;
+        display: inline-block;
+        width: 36px;
+        height: 20px;
+        flex-shrink: 0;
+      }
+      .switch-toggle input { opacity: 0; width: 0; height: 0; }
+      .switch-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background-color: #232c3d;
+        transition: .2s;
+        border-radius: 20px;
+      }
+      .switch-slider:before {
+        position: absolute;
+        content: "";
+        height: 14px;
+        width: 14px;
+        left: 3px;
+        bottom: 3px;
+        background-color: #fff;
+        transition: .2s;
+        border-radius: 50%;
+      }
+      input:checked + .switch-slider {
+        background-color: var(--fb-accent);
+      }
+      input:checked + .switch-slider:before {
+        transform: translateX(16px);
+      }
+
+      /* Preset Cards */
+      .preset-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+      .preset-card {
+        background: #141824;
+        border: 1px solid var(--fb-border);
+        border-radius: 8px;
+        padding: 12px;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .preset-card:hover {
+        border-color: #38455e;
+        transform: translateY(-1px);
+        background: #19202f;
+      }
+      .preset-card.active {
+        border-color: var(--fb-accent);
+        box-shadow: 0 0 0 1px var(--fb-accent);
+      }
+      .preset-card-title {
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: #f3f4f6;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .preset-card-desc {
+        font-size: 0.72rem;
+        color: #94a3b8;
+        line-height: 1.35;
+      }
+
+      /* Logo Source Switcher Buttons */
+      .logo-source-btn {
+        flex: 1;
+        padding: 8px 12px;
+        font-size: 0.76rem;
+        font-weight: 600;
+        border-radius: 6px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: #94a3b8;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        transition: all 0.15s ease;
+      }
+      .logo-source-btn:hover {
+        color: #f8fafc;
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .logo-source-btn.active {
+        background: #1f2738 !important;
+        color: #f8fafc !important;
+        border-color: #333d52 !important;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+      }
+
+      /* Radio Cards */
+      .radio-cards-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        margin-top: 6px;
+      }
+      .radio-card-btn {
+        background: #0d1017;
+        border: 1px solid var(--fb-border);
+        border-radius: 6px;
+        padding: 10px;
+        cursor: pointer;
+        text-align: center;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #94a3b8;
+        transition: all 0.15s;
+      }
+      .radio-card-btn:hover {
+        color: #fff;
+        border-color: #333d52;
+      }
+      .radio-card-btn.active {
+        background: #182030;
+        border-color: var(--fb-accent);
+        color: #fff;
+      }
+
+      /* Multi-Column Links Item Cards */
+      .col-item-card {
+        background: #141824;
+        border: 1px solid var(--fb-border);
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 14px;
+      }
+      .col-item-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+      }
+      .col-item-title {
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: #f3f4f6;
+      }
+      .col-links-container {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .link-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: #0b0e14;
+        padding: 6px 8px;
+        border-radius: 6px;
+        border: 1px solid #1c2333;
+      }
+      .link-row .text-input {
+        padding: 5px 8px;
+        font-size: 0.75rem;
+      }
+
+      /* Canvas & Live Preview */
+      .builder-canvas-wrap {
+        flex: 1;
+        background: #07090f;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .canvas-viewport-bar {
+        height: 36px;
+        background: #0d1017;
+        border-bottom: 1px solid var(--fb-border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 16px;
+        font-size: 0.72rem;
+        color: #64748b;
+      }
+
+      .canvas-scroll-container {
+        flex: 1;
+        overflow-y: auto;
+        padding: 24px;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+      }
+
+      .canvas-viewport-frame {
+        width: 100%;
+        min-height: 600px;
+        background: #0b0e14;
+        border: 1px solid #1c2333;
+        border-radius: 12px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+        transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .canvas-viewport-frame.is-tablet {
+        width: 768px;
+      }
+      .canvas-viewport-frame.is-mobile {
+        width: 375px;
+      }
+
+      /* Mock Page Content before footer */
+      .mock-page-content {
+        padding: 60px 30px;
+        text-align: center;
+        background: linear-gradient(180deg, #101420 0%, #0d1017 100%);
+        border-bottom: 1px solid #1a2233;
+      }
+      .mock-page-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        background: rgba(255, 94, 58, 0.15);
+        color: #ff5e3a;
+        font-size: 0.72rem;
+        font-weight: 700;
+        border-radius: 20px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 12px;
+      }
+      .mock-page-content h2 {
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: #f8fafc;
+        margin-bottom: 8px;
+        letter-spacing: -0.02em;
+      }
+      .mock-page-content p {
+        font-size: 0.88rem;
+        color: #94a3b8;
+        max-width: 520px;
+        margin: 0 auto;
+        line-height: 1.5;
+      }
+
+      /* Modals */
+      .fp-modal-overlay {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.75);
+        backdrop-filter: blur(8px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+      }
+      .fp-modal-overlay.is-open {
+        display: flex;
+      }
+      .fp-modal-card {
+        background: #141824;
+        border: 1px solid var(--fb-border);
+        border-radius: 12px;
+        width: 620px;
+        max-width: 90vw;
+        max-height: 85vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+      }
+      .fp-modal-header {
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--fb-border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .fp-modal-title {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #fff;
+      }
+      .fp-modal-close {
+        background: transparent;
+        border: none;
+        color: var(--fb-text-muted);
+        font-size: 1.2rem;
+        cursor: pointer;
+      }
+      .fp-modal-body {
+        padding: 20px;
+        overflow-y: auto;
+        flex: 1;
+      }
+      .fp-modal-footer {
+        padding: 14px 20px;
+        border-top: 1px solid var(--fb-border);
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+      }
+
+      /* Toast Notification */
+      .builder-toast {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        background: #10b981;
+        color: #ffffff;
+        font-size: 0.82rem;
+        font-weight: 600;
+        padding: 10px 18px;
+        border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        display: none;
+        z-index: 2000;
+        animation: toastIn 0.25s ease;
+      }
+      @keyframes toastIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="builder-app">
+      <!-- TOP TOOLBAR -->
+      <header class="builder-topbar">
+        <div class="topbar-left">
+          <a href="/editor" class="back-btn" title="Back to Page Editor">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+            <span>Editor</span>
+          </a>
+
+          <!-- FastPress Studio Menu Switcher -->
+          <WorkspaceSwitcher activeApp="footer-builder" />
+
+          <!-- Active Theme Pill -->
+          <div class="active-theme-pill" title={`Targeting active theme: ${activeTheme}`} style="display: inline-flex; align-items: center; gap: 6px; background: #191f2c; border: 1px solid #313d54; border-radius: 9999px; padding: 4px 10px; font-size: 0.72rem; color: #94a3b8;">
+            <span style="width: 7px; height: 7px; border-radius: 50%; background-color: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);"></span>
+            <span style="text-transform: uppercase; font-weight: 600; font-size: 0.66rem; color: #64748b;">Theme:</span>
+            <strong style="color: #f1f5f9; font-weight: 700; text-transform: capitalize;">{activeTheme}</strong>
+          </div>
+
+          <!-- Footer Selector Dropdown -->
+          <div class="footer-selector-wrap">
+            <select class="footer-select-input" id="footerSelect">
+              {footersStore.footers.map((f) => (
+                <option value={f.id} selected={f.id === activeFooterId}>
+                  {f.name} {f.id === footersStore.activeFooterId ? '★ (Active Site)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <!-- Center Viewport Switcher -->
+        <div class="topbar-center">
+          <DeviceSwitcher />
+        </div>
+
+        <!-- Right Action Buttons -->
+        <div class="topbar-right">
+          <a href={`/template-editor?id=${activeTheme === 'furnisite' ? 'tpl-global-furnisite-footer' : 'tpl-footer-default'}`} class="tb-btn tb-btn-subtle" title="Open Advanced GrapesJS Block Builder to drag and drop custom widgets into this footer" style="text-decoration: none; display: inline-flex; align-items: center; gap: 5px; background: rgba(99, 102, 241, 0.18); border: 1px solid rgba(99, 102, 241, 0.45); color: #c7d2fe;">
+            <span>🧱 Block Studio</span>
+          </a>
+          <button type="button" class="tb-btn tb-btn-subtle" id="newFooterBtn" title="Create a new footer">
+            <span>+ New</span>
+          </button>
+          <button type="button" class="tb-btn tb-btn-subtle" id="duplicateFooterBtn" title="Duplicate current footer">
+            <span>Duplicate</span>
+          </button>
+          <button type="button" class="tb-btn tb-btn-subtle" id="deleteFooterBtn" title="Delete current footer">
+            <span>Delete</span>
+          </button>
+          <button type="button" class="tb-btn tb-btn-activate" id="setActiveBtn" title="Set this footer active across live website">
+            <span id="activeBtnText">Set Active Site Footer</span>
+          </button>
+          <button type="button" class="tb-btn tb-btn-save" id="saveFooterBtn">
+            <span>Save Footer</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- BUILDER BODY -->
+      <div class="builder-body">
+        <!-- LEFT SIDEBAR -->
+        <aside class="builder-sidebar">
+          <!-- Sidebar Tabs -->
+          <div class="sidebar-tabs">
+            <button type="button" class="tab-btn active" data-tab="tab-presets">
+              <span>⭐</span>
+              <span>Presets</span>
+            </button>
+            <button type="button" class="tab-btn" data-tab="tab-layout">
+              <span>📐</span>
+              <span>Layout</span>
+            </button>
+            <button type="button" class="tab-btn" data-tab="tab-logo">
+              <span>🏷️</span>
+              <span>Logo & Bio</span>
+            </button>
+            <button type="button" class="tab-btn" data-tab="tab-columns">
+              <span>📑</span>
+              <span>Columns</span>
+            </button>
+            <button type="button" class="tab-btn" data-tab="tab-newsletter">
+              <span>📬</span>
+              <span>Newsletter</span>
+            </button>
+            <button type="button" class="tab-btn" data-tab="tab-social">
+              <span>🌐</span>
+              <span>Bottom Bar</span>
+            </button>
+            <button type="button" class="tab-btn" data-tab="tab-styling">
+              <span>🎨</span>
+              <span>Style</span>
+            </button>
+            <button type="button" class="tab-btn" data-tab="tab-custom-code">
+              <span>⚡</span>
+              <span>Custom Code</span>
+            </button>
+          </div>
+
+          <!-- Pinned Template Selection Card -->
+          <div class="template-toggle-card" style="margin: 14px 18px 0; padding: 14px; background: #161b26; border: 1px solid #232a3b; border-radius: 10px;">
+            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; user-select: none;">
+              <input type="checkbox" id="chkUseFooterTemplate" style="margin-top: 3px; width: 16px; height: 16px; accent-color: #ff5e3a; cursor: pointer;" />
+              <div>
+                <div style="font-weight: 700; font-size: 0.88rem; color: #f3f4f6;">Use Footer from Template</div>
+                <div style="font-size: 0.74rem; color: #9ca3af; line-height: 1.4; margin-top: 2px;">
+                  Render this footer using a reusable block template from Template Studio.
+                </div>
+              </div>
+            </label>
+
+            <div id="footerTemplateDropdownWrap" style="display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid #232a3b;">
+              <label style="display: block; font-size: 0.75rem; font-weight: 600; color: #94a3b8; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">Choose Footer Template</label>
+              <select id="selectFooterTemplate" style="width: 100%; padding: 8px 10px; background: #0f1219; border: 1px solid #2d3748; border-radius: 6px; color: #f3f4f6; font-size: 0.82rem; outline: none; cursor: pointer;">
+                <!-- Populated dynamically via JS -->
+              </select>
+              <div style="margin-top: 10px; display: flex; align-items: center; justify-content: space-between;">
+                <a id="btnOpenSelectedFooterTemplateStudio" href="#" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 600; color: #818cf8; text-decoration: none; padding: 5px 10px; background: rgba(99,102,241,0.12); border-radius: 6px; border: 1px solid rgba(99,102,241,0.3);">
+                  <span>✏️ Edit in Template Studio &rarr;</span>
+                </a>
+                <span style="font-size: 0.7rem; color: #10b981; font-weight: 600;">● Synced</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sidebar Content -->
+          <div class="sidebar-content">
+            <!-- TAB 1: PRESETS -->
+            <div class="control-panel active" id="tab-presets">
+              <div class="control-group">
+                <div class="control-group-title">
+                  <span>Starter Presets</span>
+                  <button type="button" class="tb-btn tb-btn-subtle" id="btnRestoreDefaultPresets" style="font-size: 0.7rem; padding: 2px 8px;">
+                    ↺ Restore Defaults
+                  </button>
+                </div>
+                <div class="preset-grid">
+                  <div class="preset-card active" data-preset="footer-saas-pro">
+                    <div class="preset-card-title">
+                      <span>SaaS Pro (Multi-Col + Newsletter)</span>
+                      <span style="font-size: 0.65rem; color: #ff5e3a;">★ Popular</span>
+                    </div>
+                    <div class="preset-card-desc">Brand bio, 3 navigation link columns, newsletter subscription, and full copyright bar with social icons.</div>
+                  </div>
+
+                  <div class="preset-card" data-preset="footer-minimal-clean">
+                    <div class="preset-card-title">
+                      <span>Minimal Clean (Inline Single-Row)</span>
+                    </div>
+                    <div class="preset-card-desc">Horizontal single row footer with logo, essential policy links, and social buttons. Perfect for portfolios and clean blogs.</div>
+                  </div>
+
+                  <div class="preset-card" data-preset="footer-corporate-4col">
+                    <div class="preset-card-title">
+                      <span>Corporate 4-Column</span>
+                    </div>
+                    <div class="preset-card-desc">Rich 4 navigation columns with company bio, contact info (email, phone, address), and full bottom bar.</div>
+                  </div>
+
+                  <div class="preset-card" data-preset="footer-custom-script">
+                    <div class="preset-card-title">
+                      <span>Developer Custom Code</span>
+                      <span style="font-size: 0.65rem; color: #a855f7;">HTML / CSS / JS</span>
+                    </div>
+                    <div class="preset-card-desc">Handcrafted HTML with responsive desktop, tablet, and mobile variants, plus custom CSS and JavaScript.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 2: LAYOUT -->
+            <div class="control-panel" id="tab-layout">
+              <div class="control-group">
+                <div class="control-group-title">Layout Architecture</div>
+                <div class="radio-cards-grid">
+                  <div class="radio-card-btn active" data-layout="columns-with-newsletter">
+                    <div>📬 Columns + Newsletter</div>
+                  </div>
+                  <div class="radio-card-btn" data-layout="multi-column">
+                    <div>📑 Multi-Column Links</div>
+                  </div>
+                  <div class="radio-card-btn" data-layout="simple-inline">
+                    <div>➖ Simple Inline</div>
+                  </div>
+                  <div class="radio-card-btn" data-layout="centered">
+                    <div>🎯 Centered Brand</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="control-group">
+                <div class="control-group-title">Container & Spacing</div>
+                <div class="field-row">
+                  <label class="field-label">Container Width</label>
+                  <select class="select-input" id="selectContainerType">
+                    <option value="boxed">Boxed (Max 1200px)</option>
+                    <option value="wide">Wide (Max 1440px)</option>
+                    <option value="full">Full Width (100%)</option>
+                  </select>
+                </div>
+
+                <div class="field-row">
+                  <label class="field-label">Columns Count: <span id="valColumnsCount">3</span></label>
+                  <input type="range" id="inputColumnsCount" min="2" max="5" value="3" style="width: 100%; accent-color: var(--fb-accent);" />
+                </div>
+
+                <div class="field-row">
+                  <label class="field-label">Padding Top: <span id="valPaddingTop">64px</span></label>
+                  <input type="range" id="inputPaddingTop" min="24" max="120" value="64" style="width: 100%; accent-color: var(--fb-accent);" />
+                </div>
+
+                <div class="field-row">
+                  <label class="field-label">Padding Bottom: <span id="valPaddingBottom">32px</span></label>
+                  <input type="range" id="inputPaddingBottom" min="16" max="96" value="32" style="width: 100%; accent-color: var(--fb-accent);" />
+                </div>
+
+                <div class="field-row-horizontal">
+                  <div>
+                    <div class="field-label">Show "Back to Top" Button</div>
+                    <div class="field-desc">Floating or bottom bar smooth scroll arrow to page top.</div>
+                  </div>
+                  <label class="switch-toggle">
+                    <input type="checkbox" id="checkBackToTop" checked />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 3: LOGO & BRAND BIO (Unified Selector Matching Header Builder) -->
+            <div class="control-panel" id="tab-logo">
+              <div class="control-group">
+                <div class="control-group-title">
+                  <span>Logo Selection</span>
+                  <button type="button" class="tb-btn tb-btn-subtle" id="btnOpenWebConfigFromLogo" style="font-size: 0.7rem; padding: 2px 8px;">
+                    ⚙️ Web Config
+                  </button>
+                </div>
+
+                <!-- Logo Source Selector Tabs -->
+                <div style="display: flex; gap: 6px; margin-bottom: 14px; background: #0c0f17; padding: 4px; border-radius: 8px; border: 1px solid #1c2433;">
+                  <button type="button" id="btnLogoSourceDefault" class="logo-source-btn active" style="flex: 1; padding: 6px 10px; font-size: 0.75rem; font-weight: 600; border-radius: 6px; border: none; background: #1f2738; color: #f8fafc; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.15s;">
+                    <span>🏢</span> Default Logo
+                  </button>
+                  <button type="button" id="btnLogoSourceCustom" class="logo-source-btn" style="flex: 1; padding: 6px 10px; font-size: 0.75rem; font-weight: 600; border-radius: 6px; border: none; background: transparent; color: #94a3b8; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.15s;">
+                    <span>📤</span> Upload Custom
+                  </button>
+                </div>
+
+                <!-- 1. Default Web Settings Logo Panel -->
+                <div id="secDefaultLogoPanel" style="background: #141824; border: 1px solid #232c3d; border-radius: 8px; padding: 12px; margin-bottom: 14px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 0.74rem; font-weight: 700; color: #f3f4f6;">Default Logo from Settings</span>
+                    <span id="globalLogoStatusBadge" style="font-size: 0.62rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: rgba(56, 189, 248, 0.15); color: #38bdf8;">
+                      Active on Site
+                    </span>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 10px; background: #0b0e14; border: 1px solid #1c2333; border-radius: 6px; padding: 8px 10px;">
+                    <div style="width: 48px; height: 38px; background: #161c28; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; border: 1px solid #232c3d;">
+                      <img id="imgGlobalLogoThumb" src="" alt="Web Logo" style="max-width: 100%; max-height: 100%; object-fit: contain; display: none;" />
+                      <span id="txtGlobalLogoFallback" style="font-size: 0.82rem; font-weight: 800; color: #ff5e3a;">B</span>
+                    </div>
+                    <div style="flex: 1; min-width: 0;">
+                      <div id="lblGlobalLogoBrand" style="font-size: 0.78rem; font-weight: 600; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Better SaaS</div>
+                      <div id="lblGlobalLogoStatus" style="font-size: 0.68rem; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Inherited from Web Config</div>
+                    </div>
+                  </div>
+                  <div class="field-desc" style="margin-top: 8px;">
+                    Footer automatically uses the master logo uploaded in <strong>Web Config</strong>. Updates there instantly apply everywhere.
+                  </div>
+                </div>
+
+                <!-- 2. Custom Upload Logo Panel -->
+                <div id="secCustomLogoPanel" style="display: none; background: #141824; border: 1px solid #232c3d; border-radius: 8px; padding: 12px; margin-bottom: 14px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 0.74rem; font-weight: 700; color: #f3f4f6;">Custom Uploaded Logo</span>
+                    <button type="button" class="btn-subtle-action" id="btnRevertToDefaultLogo" style="font-size: 0.68rem; padding: 3px 8px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; border-radius: 4px; cursor: pointer;">
+                      ↺ Revert to Default
+                    </button>
+                  </div>
+
+                  <!-- Upload Actions Row -->
+                  <input type="file" id="inputDirectFooterLogoFile" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif" style="display: none;" />
+                  <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+                    <button type="button" class="tb-btn tb-btn-save" id="btnUploadFooterLogoDirect" style="flex: 1; font-size: 0.75rem; padding: 6px 10px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+                      <span>⬆️</span> Upload Image
+                    </button>
+                    <button type="button" class="tb-btn tb-btn-subtle pick-media-btn" data-target="inputFooterLogoImg" style="font-size: 0.75rem; padding: 6px 10px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap;">
+                      <span>🖼️</span> Media Library
+                    </button>
+                  </div>
+
+                  <!-- Preview Wrap -->
+                  <div id="customLogoPreviewWrap" style="display: none; align-items: center; gap: 10px; background: #0b0e14; border: 1px solid #1c2333; border-radius: 6px; padding: 8px 10px; margin-bottom: 10px;">
+                    <div style="width: 48px; height: 38px; background: #161c28; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; border: 1px solid #232c3d;">
+                      <img id="imgCustomLogoThumb" src="" alt="Custom Logo" style="max-width: 100%; max-height: 100%; object-fit: contain;" />
+                    </div>
+                    <div style="flex: 1; min-width: 0;">
+                      <div id="lblCustomLogoPath" style="font-size: 0.72rem; color: #e2e8f0; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">/uploads/...</div>
+                      <div style="font-size: 0.65rem; color: #10b981;">Custom logo override active</div>
+                    </div>
+                    <button type="button" id="btnClearCustomLogoThumb" style="border: none; background: transparent; color: #ef4444; cursor: pointer; font-size: 0.85rem;" title="Remove this custom logo">✕</button>
+                  </div>
+
+                  <div class="field-row" style="margin-bottom: 0;">
+                    <label class="field-label" style="font-size: 0.72rem;">Logo Image URL</label>
+                    <input type="text" class="text-input" id="inputFooterLogoImg" value="" placeholder="e.g. /uploads/logo.svg or https://..." style="font-size: 0.76rem;" />
+                  </div>
+                </div>
+
+                <!-- Brand & Bio Details -->
+                <div class="control-group-title" style="margin-top: 10px;">Brand Identity</div>
+                <div class="field-row">
+                  <label class="field-label">Brand Name</label>
+                  <input type="text" class="text-input" id="inputBrandName" value="Better SaaS" />
+                </div>
+                <div class="field-row">
+                  <label class="field-label">Tagline / Subtitle</label>
+                  <input type="text" class="text-input" id="inputTagline" value="Modern Platform" />
+                </div>
+                <div class="field-row">
+                  <label class="field-label">Logo Link URL</label>
+                  <div class="input-with-button">
+                    <input type="text" class="text-input" id="inputLogoUrl" value="/" />
+                    <button type="button" class="pick-resource-btn" data-target="inputLogoUrl">🔗 Pick</button>
+                  </div>
+                </div>
+
+                <div class="control-group-title" style="margin-top: 14px;">About &amp; Contact Information</div>
+                <div class="field-row-horizontal">
+                  <div>
+                    <div class="field-label">Show About &amp; Contact Info</div>
+                    <div class="field-desc">Displays company description and contact details.</div>
+                  </div>
+                  <label class="switch-toggle">
+                    <input type="checkbox" id="checkAboutEnabled" checked />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+                <div class="field-row">
+                  <label class="field-label">About / Bio Description</label>
+                  <textarea class="textarea-input" id="inputAboutDesc" rows="3">The modern visual website builder and CMS for high-performance Astro web applications.</textarea>
+                </div>
+                <div class="field-row">
+                  <label class="field-label">Support Email (Optional)</label>
+                  <input type="email" class="text-input" id="inputAboutEmail" placeholder="hello@example.com" />
+                </div>
+                <div class="field-row">
+                  <label class="field-label">Phone Number (Optional)</label>
+                  <input type="text" class="text-input" id="inputAboutPhone" placeholder="+1 (555) 000-0000" />
+                </div>
+                <div class="field-row">
+                  <label class="field-label">Office Address (Optional)</label>
+                  <input type="text" class="text-input" id="inputAboutAddress" placeholder="123 Tech Blvd, Suite 400" />
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 4: COLUMNS & LINKS -->
+            <div class="control-panel" id="tab-columns">
+              <div class="control-group">
+                <div class="control-group-title">
+                  <span>Navigation Columns</span>
+                  <button type="button" class="tb-btn tb-btn-save" id="btnAddColumnBtn" style="padding: 4px 10px; font-size: 0.72rem;">
+                    + Add Column
+                  </button>
+                </div>
+                <p class="field-desc" style="margin-bottom: 12px;">Manage columns of links. Use "🔗 Pick" to select any existing page or blog post!</p>
+                <div id="columnsContainer">
+                  <!-- Dynamically Rendered via JS -->
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 5: NEWSLETTER -->
+            <div class="control-panel" id="tab-newsletter">
+              <div class="control-group">
+                <div class="control-group-title">Newsletter Subscription Box</div>
+                <div class="field-row-horizontal">
+                  <div>
+                    <div class="field-label">Enable Newsletter</div>
+                    <div class="field-desc">Adds subscription form input and subscribe button.</div>
+                  </div>
+                  <label class="switch-toggle">
+                    <input type="checkbox" id="checkNewsletterEnabled" checked />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+                <div class="field-row">
+                  <label class="field-label">Section Title</label>
+                  <input type="text" class="text-input" id="inputNewsletterTitle" value="Stay in the Loop" />
+                </div>
+                <div class="field-row">
+                  <label class="field-label">Description Text</label>
+                  <textarea class="textarea-input" id="inputNewsletterDesc" rows="2">Subscribe for the latest news, product updates, and design insights.</textarea>
+                </div>
+                <div class="field-row">
+                  <label class="field-label">Input Placeholder</label>
+                  <input type="text" class="text-input" id="inputNewsletterPlaceholder" value="Enter your email address..." />
+                </div>
+                <div class="field-row">
+                  <label class="field-label">Button Text</label>
+                  <input type="text" class="text-input" id="inputNewsletterButtonText" value="Subscribe" />
+                </div>
+                <div class="field-row">
+                  <label class="field-label">Action / Webhook URL</label>
+                  <input type="text" class="text-input" id="inputNewsletterActionUrl" value="#" placeholder="e.g. /api/newsletter or mailchimp hook" />
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 6: SOCIAL & BOTTOM BAR -->
+            <div class="control-panel" id="tab-social">
+              <div class="control-group">
+                <div class="control-group-title">Social Media Icons</div>
+                <div class="field-row-horizontal">
+                  <div>
+                    <div class="field-label">Enable Social Links</div>
+                    <div class="field-desc">Displays round social media icons.</div>
+                  </div>
+                  <label class="switch-toggle">
+                    <input type="checkbox" id="checkSocialEnabled" checked />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+                <div id="socialLinksList" style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
+                  <!-- Rendered via JS -->
+                </div>
+              </div>
+
+              <div class="control-group" style="margin-top: 20px;">
+                <div class="control-group-title">Bottom Bar &amp; Copyright</div>
+                <div class="field-row-horizontal">
+                  <div>
+                    <div class="field-label">Show Bottom Bar</div>
+                    <div class="field-desc">Displays copyright notice and legal links.</div>
+                  </div>
+                  <label class="switch-toggle">
+                    <input type="checkbox" id="checkBottomBarEnabled" checked />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+                <div class="field-row-horizontal">
+                  <div>
+                    <div class="field-label">Auto Current Year</div>
+                    <div class="field-desc">Automatically prefixes the current year.</div>
+                  </div>
+                  <label class="switch-toggle">
+                    <input type="checkbox" id="checkBottomBarYear" checked />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+                <div class="field-row">
+                  <label class="field-label">Company Name</label>
+                  <input type="text" class="text-input" id="inputBottomBarCompany" value="Better Corp Inc." />
+                </div>
+                <div class="field-row">
+                  <label class="field-label">Copyright Notice</label>
+                  <input type="text" class="text-input" id="inputBottomBarCopyright" value="All Rights Reserved." />
+                </div>
+
+                <div class="control-group-title" style="margin-top: 16px;">
+                  <span>Legal &amp; Policy Links</span>
+                  <button type="button" class="tb-btn tb-btn-subtle" id="btnAddBottomLinkBtn" style="font-size: 0.7rem; padding: 2px 8px;">
+                    + Add Link
+                  </button>
+                </div>
+                <div id="bottomLinksList" style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+                  <!-- Rendered via JS -->
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 7: STYLING -->
+            <div class="control-panel" id="tab-styling">
+              <div class="control-group">
+                <div class="control-group-title">Color Palette</div>
+
+                <div class="field-row">
+                  <label class="field-label">Background Color</label>
+                  <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="color" id="pickerBgColor" value="#0f1219" style="width: 38px; height: 38px; border: none; border-radius: 6px; cursor: pointer; background: transparent;" />
+                    <input type="text" class="text-input" id="inputBgColor" value="#0f1219" />
+                  </div>
+                </div>
+
+                <div class="field-row">
+                  <label class="field-label">Headings Color</label>
+                  <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="color" id="pickerHeadingColor" value="#f8fafc" style="width: 38px; height: 38px; border: none; border-radius: 6px; cursor: pointer; background: transparent;" />
+                    <input type="text" class="text-input" id="inputHeadingColor" value="#f8fafc" />
+                  </div>
+                </div>
+
+                <div class="field-row">
+                  <label class="field-label">Text Color</label>
+                  <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="color" id="pickerTextColor" value="#94a3b8" style="width: 38px; height: 38px; border: none; border-radius: 6px; cursor: pointer; background: transparent;" />
+                    <input type="text" class="text-input" id="inputTextColor" value="#94a3b8" />
+                  </div>
+                </div>
+
+                <div class="field-row">
+                  <label class="field-label">Accent / Hover Color</label>
+                  <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="color" id="pickerAccentColor" value="#ff5e3a" style="width: 38px; height: 38px; border: none; border-radius: 6px; cursor: pointer; background: transparent;" />
+                    <input type="text" class="text-input" id="inputAccentColor" value="#ff5e3a" />
+                  </div>
+                </div>
+
+                <div class="field-row">
+                  <label class="field-label">Muted / Border Color</label>
+                  <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="color" id="pickerBorderColor" value="#232a3b" style="width: 38px; height: 38px; border: none; border-radius: 6px; cursor: pointer; background: transparent;" />
+                    <input type="text" class="text-input" id="inputBorderColor" value="rgba(255, 255, 255, 0.08)" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="control-group">
+                <div class="control-group-title">Typography</div>
+                <div class="field-row">
+                  <label class="field-label">Font Family</label>
+                  <select class="select-input" id="selectFontFamily">
+                    <option value="Plus Jakarta Sans">Plus Jakarta Sans</option>
+                    <option value="Montserrat">Montserrat</option>
+                    <option value="Inter">Inter</option>
+                    <option value="system-ui">System Default</option>
+                  </select>
+                </div>
+                <div class="field-row">
+                  <label class="field-label">Base Font Size</label>
+                  <input type="text" class="text-input" id="inputFontSize" value="0.88rem" />
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 8: CUSTOM CODE -->
+            <div class="control-panel" id="tab-custom-code">
+              <div class="control-group">
+                <div class="control-group-title">Developer Custom Code Mode</div>
+                <div class="field-row-horizontal">
+                  <div>
+                    <div class="field-label">Enable Custom Code Mode</div>
+                    <div class="field-desc">Bypasses visual builder and renders your custom HTML/CSS/JS.</div>
+                  </div>
+                  <label class="switch-toggle">
+                    <input type="checkbox" id="checkCustomCodeEnabled" />
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Device Sub-Tabs for HTML -->
+                <div style="display: flex; gap: 4px; margin-top: 12px; margin-bottom: 8px;">
+                  <button type="button" class="tab-btn active cc-device-btn" data-cc-device="desktop">Desktop HTML</button>
+                  <button type="button" class="tab-btn cc-device-btn" data-cc-device="tablet">Tablet HTML</button>
+                  <button type="button" class="tab-btn cc-device-btn" data-cc-device="mobile">Mobile HTML</button>
+                </div>
+
+                <div class="field-row">
+                  <textarea class="textarea-input" id="inputCustomHtml" rows="10" placeholder="<div>Custom footer markup...</div>" style="font-family: monospace; font-size: 0.78rem;"></textarea>
+                </div>
+
+                <div class="field-row">
+                  <label class="field-label">Custom CSS (&lt;style&gt;)</label>
+                  <textarea class="textarea-input" id="inputCustomCss" rows="6" placeholder=".my-footer { ... }" style="font-family: monospace; font-size: 0.78rem;"></textarea>
+                </div>
+
+                <div class="field-row">
+                  <label class="field-label">Custom JavaScript (&lt;script&gt;)</label>
+                  <textarea class="textarea-input" id="inputCustomJs" rows="6" placeholder="console.log('Footer ready');" style="font-family: monospace; font-size: 0.78rem;"></textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- RIGHT CANVAS & LIVE PREVIEW -->
+        <main class="builder-canvas-wrap">
+          <div class="canvas-viewport-bar">
+            <span>LIVE INTERACTIVE FOOTER PREVIEW</span>
+            <span id="canvasViewportDimensions">Desktop View (100% fluid)</span>
+          </div>
+
+          <div class="canvas-scroll-container" id="canvasScrollContainer">
+            <div class="canvas-viewport-frame" id="canvasViewportFrame">
+              <!-- Mock Hero / Page Preview -->
+              <div class="mock-page-content">
+                <span class="mock-page-badge">Interactive Footer Sandbox</span>
+                <h2>FastPress Live Visual Canvas</h2>
+                <p>Scroll down or click the links below to test footer interactions, back-to-top button, newsletter submissions, and device layouts in real time.</p>
+              </div>
+
+              <!-- Live Rendered Footer -->
+              <div id="liveFooterRender">
+                <!-- Rendered dynamically via JS -->
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- MODAL: RESOURCE / LINK PICKER -->
+    <div class="fp-modal-overlay" id="resourcePickerModal">
+      <div class="fp-modal-card">
+        <div class="fp-modal-header">
+          <div class="fp-modal-title">Pick Workspace Page or Blog Post</div>
+          <button type="button" class="fp-modal-close" id="btnCloseResourceModal">&times;</button>
+        </div>
+        <div class="fp-modal-body">
+          <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+            <button type="button" class="tab-btn active res-tab-btn" data-res-type="pages">Pages ({availablePages.length})</button>
+            <button type="button" class="tab-btn res-tab-btn" data-res-type="posts">Blog Posts ({availablePosts.length})</button>
+          </div>
+          <input type="text" class="text-input" id="inputSearchResources" placeholder="Search pages or posts by title or URL..." style="margin-bottom: 12px;" />
+
+          <div id="resourceItemsList" style="display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto;">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+        <div class="fp-modal-footer">
+          <button type="button" class="tb-btn tb-btn-subtle" id="btnCancelResourceModal">Cancel</button>
+          <button type="button" class="tb-btn tb-btn-save" id="btnSelectResource">Select Link</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: MEDIA PICKER -->
+    <div class="fp-modal-overlay" id="mediaPickerModal">
+      <div class="fp-modal-card">
+        <div class="fp-modal-header">
+          <div class="fp-modal-title">Select or Upload Image</div>
+          <button type="button" class="fp-modal-close" id="btnCloseMediaModal">&times;</button>
+        </div>
+        <div class="fp-modal-body">
+          <input type="file" id="mediaFileInput" accept="image/*" style="display: none;" />
+          <div style="border: 2px dashed #232a3b; border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; margin-bottom: 16px; background: rgba(255,255,255,0.02);" id="mediaDropzone">
+            <div style="font-size: 1.5rem; margin-bottom: 6px;">📁</div>
+            <div style="font-size: 0.84rem; font-weight: 600; color: #f3f4f6;">Click to upload image file</div>
+            <div style="font-size: 0.72rem; color: #94a3b8; margin-top: 4px;">PNG, JPG, SVG, WebP up to 200 KB</div>
+          </div>
+          <div class="control-group-title">Existing Project Media</div>
+          <div id="mediaGrid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; max-height: 240px; overflow-y: auto;">
+            <!-- Loaded via /api/upload -->
+          </div>
+        </div>
+        <div class="fp-modal-footer">
+          <button type="button" class="tb-btn tb-btn-subtle" id="btnCancelMediaModal">Cancel</button>
+          <button type="button" class="tb-btn tb-btn-save" id="btnApplySelectedMedia">Apply Selected Image</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION -->
+    <div class="builder-toast" id="builderToast"></div>
+
+    <!-- PASS SERVER DATA TO CLIENT SCRIPT -->
+    <script is:inline define:vars={{ initialFootersStore: footersStore, initialSiteConfig, availablePages, availablePosts, initialTemplates }}>
+      window.__FP_FOOTERS_DATA__ = initialFootersStore;
+      window.__FP_SITE_CONFIG__ = initialSiteConfig;
+      window.__FP_PAGES__ = availablePages;
+      window.__FP_POSTS__ = availablePosts;
+      window.__FP_TEMPLATES__ = initialTemplates || [];
+    </script>
+
+    <!-- SCRIPTS -->
+    <script is:inline>
+      (function() {
+        const store = window.__FP_FOOTERS_DATA__ || { activeFooterId: 'footer-saas-pro', footers: [] };
+        let activeFooter = store.footers.find(f => f.id === store.activeFooterId) || store.footers[0];
+        let globalSiteConfig = window.__FP_SITE_CONFIG__ || {};
+        const availablePages = window.__FP_PAGES__ || [];
+        const availablePosts = window.__FP_POSTS__ || [];
+
+        let currentActiveTab = 'tab-presets';
+        let currentViewportMode = 'desktop';
+        let currentCcDevice = 'desktop';
+
+        // Toast Helper
+        function showToast(msg, isSuccess = true) {
+          const toast = document.getElementById('builderToast');
+          if (!toast) return;
+          toast.textContent = msg;
+          toast.style.background = isSuccess ? '#10b981' : '#ef4444';
+          toast.style.display = 'block';
+          clearTimeout(window.__toastTimeout);
+          window.__toastTimeout = setTimeout(() => {
+            toast.style.display = 'none';
+          }, 3200);
+        }
+
+        // Studio Menu Toggle
+        const studioBtn = document.getElementById('studioSwitcherBtn');
+        const studioFlyout = document.getElementById('studioMenuFlyout');
+        studioBtn?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          studioFlyout?.classList.toggle('is-open');
+        });
+        document.addEventListener('click', () => {
+          studioFlyout?.classList.remove('is-open');
+        });
+
+        // Tab Navigation
+        document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const tabId = btn.dataset.tab;
+            document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.control-panel').forEach(p => p.classList.remove('active'));
+            btn.classList.add('active');
+            const panel = document.getElementById(tabId);
+            if (panel) panel.classList.add('active');
+            currentActiveTab = tabId;
+          });
+        });
+
+        // Viewport Switcher
+        document.querySelectorAll('.viewport-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const mode = btn.dataset.mode;
+            document.querySelectorAll('.viewport-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentViewportMode = mode;
+            const frame = document.getElementById('canvasViewportFrame');
+            const dimLabel = document.getElementById('canvasViewportDimensions');
+            if (frame) {
+              frame.className = 'canvas-viewport-frame' + (mode === 'tablet' ? ' is-tablet' : (mode === 'mobile' ? ' is-mobile' : ''));
+            }
+            if (dimLabel) {
+              dimLabel.textContent = mode === 'tablet' ? 'Tablet View (768px)' : (mode === 'mobile' ? 'Mobile View (375px)' : 'Desktop View (100% fluid)');
+            }
+            renderLivePreview();
+          });
+        });
+
+        // Template Selection UI and Logic
+        const chkUseFooterTemplate = document.getElementById('chkUseFooterTemplate');
+        const footerTemplateDropdownWrap = document.getElementById('footerTemplateDropdownWrap');
+        const selectFooterTemplate = document.getElementById('selectFooterTemplate');
+        const btnOpenSelectedFooterTemplateStudio = document.getElementById('btnOpenSelectedFooterTemplateStudio');
+
+        function populateFooterTemplatesDropdown() {
+          if (!selectFooterTemplate) return;
+          const templates = window.__FP_TEMPLATES__ || [];
+          selectFooterTemplate.innerHTML = '';
+
+          const footerTemplates = templates.filter(t => t.category === 'Footer' || t.id.includes('footer'));
+          const otherTemplates = templates.filter(t => t.category !== 'Footer' && !t.id.includes('footer'));
+
+          const optGroupFooter = document.createElement('optgroup');
+          optGroupFooter.label = 'Footer Templates';
+          footerTemplates.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t.id;
+            opt.textContent = `${t.name} (${t.type === 'global' ? 'Global' : 'Individual'})`;
+            optGroupFooter.appendChild(opt);
+          });
+          selectFooterTemplate.appendChild(optGroupFooter);
+
+          if (otherTemplates.length > 0) {
+            const optGroupOther = document.createElement('optgroup');
+            optGroupOther.label = 'Other Templates';
+            otherTemplates.forEach(t => {
+              const opt = document.createElement('option');
+              opt.value = t.id;
+              opt.textContent = `${t.name} (${t.category})`;
+              optGroupOther.appendChild(opt);
+            });
+            selectFooterTemplate.appendChild(optGroupOther);
+          }
+        }
+
+        populateFooterTemplatesDropdown();
+
+        chkUseFooterTemplate?.addEventListener('change', () => {
+          activeFooter.useTemplate = chkUseFooterTemplate.checked;
+          if (activeFooter.useTemplate && !activeFooter.selectedTemplateId) {
+            activeFooter.selectedTemplateId = selectFooterTemplate?.value || 'tpl-global-furnisite-footer';
+          }
+          if (footerTemplateDropdownWrap) {
+            footerTemplateDropdownWrap.style.display = activeFooter.useTemplate ? 'block' : 'none';
+          }
+          if (btnOpenSelectedFooterTemplateStudio) {
+            btnOpenSelectedFooterTemplateStudio.href = `/template-editor?id=${activeFooter.selectedTemplateId || selectFooterTemplate?.value || 'tpl-global-furnisite-footer'}`;
+          }
+          renderLivePreview();
+        });
+
+        selectFooterTemplate?.addEventListener('change', () => {
+          activeFooter.selectedTemplateId = selectFooterTemplate.value;
+          if (btnOpenSelectedFooterTemplateStudio) {
+            btnOpenSelectedFooterTemplateStudio.href = `/template-editor?id=${activeFooter.selectedTemplateId}`;
+          }
+          renderLivePreview();
+        });
+
+        // Logo Selection UI and Logic
+        function updateLogoUI() {
+          const badge = document.getElementById('globalLogoStatusBadge');
+          const imgThumb = document.getElementById('imgGlobalLogoThumb');
+          const txtFallback = document.getElementById('txtGlobalLogoFallback');
+          const lblBrand = document.getElementById('lblGlobalLogoBrand');
+          const lblStatus = document.getElementById('lblGlobalLogoStatus');
+
+          const btnDefault = document.getElementById('btnLogoSourceDefault');
+          const btnCustom = document.getElementById('btnLogoSourceCustom');
+          const panelDefault = document.getElementById('secDefaultLogoPanel');
+          const panelCustom = document.getElementById('secCustomLogoPanel');
+          const customWrap = document.getElementById('customLogoPreviewWrap');
+          const imgCustom = document.getElementById('imgCustomLogoThumb');
+          const lblCustomPath = document.getElementById('lblCustomLogoPath');
+
+          const gLogo = (globalSiteConfig.logoUrl || '').trim();
+          const gBrand = globalSiteConfig.brandName || 'Better SaaS';
+          const isCustom = activeFooter.logo?.source === 'custom';
+          const customImg = (activeFooter.logo?.imageUrl || '').trim();
+
+          if (lblBrand) lblBrand.textContent = gBrand;
+
+          if (gLogo) {
+            if (imgThumb) {
+              imgThumb.src = gLogo;
+              imgThumb.style.display = 'block';
+            }
+            if (txtFallback) txtFallback.style.display = 'none';
+          } else {
+            if (imgThumb) {
+              imgThumb.style.display = 'none';
+              imgThumb.src = '';
+            }
+            if (txtFallback) {
+              txtFallback.style.display = 'block';
+              txtFallback.textContent = gBrand.charAt(0).toUpperCase();
+            }
+          }
+
+          if (isCustom) {
+            if (btnDefault) {
+              btnDefault.classList.remove('active');
+              btnDefault.style.background = 'transparent';
+              btnDefault.style.color = '#94a3b8';
+            }
+            if (btnCustom) {
+              btnCustom.classList.add('active');
+              btnCustom.style.background = '#1f2738';
+              btnCustom.style.color = '#f8fafc';
+            }
+            if (panelDefault) panelDefault.style.display = 'none';
+            if (panelCustom) panelCustom.style.display = 'block';
+
+            if (customImg) {
+              if (customWrap) customWrap.style.display = 'flex';
+              if (imgCustom) imgCustom.src = customImg;
+              if (lblCustomPath) lblCustomPath.textContent = customImg;
+            } else {
+              if (customWrap) customWrap.style.display = 'none';
+            }
+          } else {
+            if (btnDefault) {
+              btnDefault.classList.add('active');
+              btnDefault.style.background = '#1f2738';
+              btnDefault.style.color = '#f8fafc';
+            }
+            if (btnCustom) {
+              btnCustom.classList.remove('active');
+              btnCustom.style.background = 'transparent';
+              btnCustom.style.color = '#94a3b8';
+            }
+            if (panelDefault) panelDefault.style.display = 'block';
+            if (panelCustom) panelCustom.style.display = 'none';
+
+            if (customWrap) customWrap.style.display = 'none';
+          }
+        }
+
+        function setFooterLogoMode(mode) {
+          if (!activeFooter.logo) activeFooter.logo = { source: 'default', imageUrl: '', brandName: '', tagline: '', linkUrl: '/' };
+          activeFooter.logo.source = mode;
+          const inp = document.getElementById('inputFooterLogoImg');
+          if (mode === 'default') {
+            activeFooter.logo.imageUrl = '';
+            if (inp) inp.value = '';
+            updateLogoUI();
+            renderLivePreview();
+            showToast('✓ Using Default Logo from Web Settings');
+          } else {
+            updateLogoUI();
+            renderLivePreview();
+            if (inp && !inp.value) inp.focus();
+            showToast('✓ Custom Logo mode active. Upload or pick an image.');
+          }
+        }
+
+        document.getElementById('btnLogoSourceDefault')?.addEventListener('click', () => setFooterLogoMode('default'));
+        document.getElementById('btnLogoSourceCustom')?.addEventListener('click', () => setFooterLogoMode('custom'));
+        document.getElementById('btnRevertToDefaultLogo')?.addEventListener('click', () => setFooterLogoMode('default'));
+        document.getElementById('btnClearCustomLogoThumb')?.addEventListener('click', () => setFooterLogoMode('default'));
+
+        // Direct File Upload for Footer Logo
+        const fileInputLogo = document.getElementById('inputDirectFooterLogoFile');
+        const btnUploadLogo = document.getElementById('btnUploadFooterLogoDirect');
+
+        btnUploadLogo?.addEventListener('click', () => {
+          fileInputLogo?.click();
+        });
+
+        fileInputLogo?.addEventListener('change', async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+
+          if (file.size > 200 * 1024) {
+            showToast('⚠️ Image exceeds 200 KB limit. Please choose a smaller file.', false);
+            fileInputLogo.value = '';
+            return;
+          }
+
+          const originalBtnHtml = btnUploadLogo.innerHTML;
+          btnUploadLogo.disabled = true;
+          btnUploadLogo.innerHTML = '⏳ Uploading...';
+
+          try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const res = await fetch('/api/upload', {
+              method: 'POST',
+              body: formData,
+            });
+            const data = await res.json();
+            if (data.success && data.url) {
+              if (!activeFooter.logo) activeFooter.logo = { source: 'custom', imageUrl: '', brandName: '', tagline: '', linkUrl: '/' };
+              activeFooter.logo.source = 'custom';
+              activeFooter.logo.imageUrl = data.url;
+              const inp = document.getElementById('inputFooterLogoImg');
+              if (inp) inp.value = data.url;
+              updateLogoUI();
+              renderLivePreview();
+              showToast('✓ Footer logo uploaded successfully!');
+            } else {
+              showToast('Upload failed: ' + (data.error || 'Unknown error'), false);
+            }
+          } catch (err) {
+            showToast('Upload error: ' + err.message, false);
+          } finally {
+            btnUploadLogo.disabled = false;
+            btnUploadLogo.innerHTML = originalBtnHtml;
+            fileInputLogo.value = '';
+          }
+        });
+
+        document.getElementById('btnOpenWebConfigFromLogo')?.addEventListener('click', () => {
+          window.FastPressCustomCode?.open({ scope: 'global', initialTab: 'web-config' });
+        });
+
+        window.addEventListener('fastpress:siteConfigUpdated', (e) => {
+          if (e.detail) {
+            globalSiteConfig = Object.assign(globalSiteConfig, e.detail);
+            updateLogoUI();
+            renderLivePreview();
+            showToast('✓ Footer synced with updated Web Config');
+          }
+        });
+
+        // Populate Form from activeFooter
+        function populateForm() {
+          const f = activeFooter;
+
+          // Template Option Setting
+          if (chkUseFooterTemplate) {
+            chkUseFooterTemplate.checked = Boolean(f.useTemplate);
+          }
+          if (footerTemplateDropdownWrap) {
+            footerTemplateDropdownWrap.style.display = f.useTemplate ? 'block' : 'none';
+          }
+          if (selectFooterTemplate) {
+            if (f.selectedTemplateId) {
+              selectFooterTemplate.value = f.selectedTemplateId;
+            } else if (selectFooterTemplate.options.length > 0) {
+              selectFooterTemplate.selectedIndex = 0;
+              if (f.useTemplate) f.selectedTemplateId = selectFooterTemplate.value;
+            }
+          }
+          if (btnOpenSelectedFooterTemplateStudio) {
+            btnOpenSelectedFooterTemplateStudio.href = `/template-editor?id=${f.selectedTemplateId || selectFooterTemplate?.value || 'tpl-global-furnisite-footer'}`;
+          }
+
+          // Preset cards highlight
+          document.querySelectorAll('.preset-card').forEach(c => {
+            c.classList.toggle('active', c.dataset.preset === f.id);
+          });
+
+          // Layout
+          document.querySelectorAll('.radio-card-btn[data-layout]').forEach(b => {
+            b.classList.toggle('active', b.dataset.layout === (f.layout?.type || 'columns-with-newsletter'));
+          });
+          document.getElementById('selectContainerType').value = f.layout?.containerType || 'boxed';
+          document.getElementById('inputColumnsCount').value = f.layout?.columnsCount || 3;
+          document.getElementById('valColumnsCount').textContent = f.layout?.columnsCount || 3;
+          document.getElementById('inputPaddingTop').value = f.layout?.paddingTop || 64;
+          document.getElementById('valPaddingTop').textContent = (f.layout?.paddingTop || 64) + 'px';
+          document.getElementById('inputPaddingBottom').value = f.layout?.paddingBottom || 32;
+          document.getElementById('valPaddingBottom').textContent = (f.layout?.paddingBottom || 32) + 'px';
+          document.getElementById('checkBackToTop').checked = Boolean(f.layout?.showBackToTop !== false);
+
+          // Logo & Bio
+          if (!f.logo) f.logo = { source: 'default', imageUrl: '', brandName: 'Better SaaS', tagline: '', linkUrl: '/' };
+          if (!f.logo.source) {
+            f.logo.source = f.logo.imageUrl ? 'custom' : 'default';
+          }
+          document.getElementById('inputBrandName').value = f.logo?.brandName || 'Better SaaS';
+          document.getElementById('inputTagline').value = f.logo?.tagline || '';
+          document.getElementById('inputLogoUrl').value = f.logo?.linkUrl || '/';
+          const inpLogoImg = document.getElementById('inputFooterLogoImg');
+          if (inpLogoImg) inpLogoImg.value = f.logo?.imageUrl || '';
+          updateLogoUI();
+
+          document.getElementById('checkAboutEnabled').checked = Boolean(f.about?.enabled !== false);
+          document.getElementById('inputAboutDesc').value = f.about?.description || '';
+          document.getElementById('inputAboutEmail').value = f.about?.email || '';
+          document.getElementById('inputAboutPhone').value = f.about?.phone || '';
+          document.getElementById('inputAboutAddress').value = f.about?.address || '';
+
+          // Newsletter
+          document.getElementById('checkNewsletterEnabled').checked = Boolean(f.newsletter?.enabled);
+          document.getElementById('inputNewsletterTitle').value = f.newsletter?.title || 'Stay in the Loop';
+          document.getElementById('inputNewsletterDesc').value = f.newsletter?.description || '';
+          document.getElementById('inputNewsletterPlaceholder').value = f.newsletter?.placeholder || '';
+          document.getElementById('inputNewsletterButtonText').value = f.newsletter?.buttonText || 'Subscribe';
+          document.getElementById('inputNewsletterActionUrl').value = f.newsletter?.actionUrl || '#';
+
+          // Social & Bottom Bar
+          document.getElementById('checkSocialEnabled').checked = Boolean(f.social?.enabled !== false);
+          document.getElementById('checkBottomBarEnabled').checked = Boolean(f.bottomBar?.enabled !== false);
+          document.getElementById('checkBottomBarYear').checked = Boolean(f.bottomBar?.showYear !== false);
+          document.getElementById('inputBottomBarCompany').value = f.bottomBar?.companyName || 'Better Corp Inc.';
+          document.getElementById('inputBottomBarCopyright').value = f.bottomBar?.copyrightText || 'All Rights Reserved.';
+
+          // Styling
+          document.getElementById('inputBgColor').value = f.styling?.bgColor || '#0f1219';
+          document.getElementById('pickerBgColor').value = f.styling?.bgColor || '#0f1219';
+          document.getElementById('inputHeadingColor').value = f.styling?.headingColor || '#f8fafc';
+          document.getElementById('pickerHeadingColor').value = f.styling?.headingColor || '#f8fafc';
+          document.getElementById('inputTextColor').value = f.styling?.textColor || '#94a3b8';
+          document.getElementById('pickerTextColor').value = f.styling?.textColor || '#94a3b8';
+          document.getElementById('inputAccentColor').value = f.styling?.accentColor || '#ff5e3a';
+          document.getElementById('pickerAccentColor').value = f.styling?.accentColor || '#ff5e3a';
+          document.getElementById('inputBorderColor').value = f.styling?.borderColor || 'rgba(255, 255, 255, 0.08)';
+          document.getElementById('selectFontFamily').value = f.styling?.fontFamily || 'Plus Jakarta Sans';
+          document.getElementById('inputFontSize').value = f.styling?.fontSize || '0.88rem';
+
+          // Custom Code
+          document.getElementById('checkCustomCodeEnabled').checked = Boolean(f.builderType === 'custom-code' || f.customCode?.enabled);
+          updateCustomCodeFields();
+
+          renderColumnsEditor();
+          renderSocialEditor();
+          renderBottomLinksEditor();
+          updateActiveButtonState();
+          renderLivePreview();
+        }
+
+        function updateCustomCodeFields() {
+          const cc = activeFooter.customCode || {};
+          const htmlInp = document.getElementById('inputCustomHtml');
+          if (htmlInp) {
+            htmlInp.value = currentCcDevice === 'tablet' ? (cc.tabletHtml || cc.desktopHtml || '') :
+                            (currentCcDevice === 'mobile' ? (cc.mobileHtml || cc.desktopHtml || '') : (cc.desktopHtml || ''));
+          }
+          const cssInp = document.getElementById('inputCustomCss');
+          if (cssInp) cssInp.value = cc.customCss || '';
+          const jsInp = document.getElementById('inputCustomJs');
+          if (jsInp) jsInp.value = cc.customJs || '';
+        }
+
+        // Custom Code Device Sub-Tabs
+        document.querySelectorAll('.cc-device-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            document.querySelectorAll('.cc-device-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentCcDevice = btn.dataset.ccDevice;
+            updateCustomCodeFields();
+          });
+        });
+
+        document.getElementById('inputCustomHtml')?.addEventListener('input', (e) => {
+          if (!activeFooter.customCode) activeFooter.customCode = {};
+          if (currentCcDevice === 'tablet') activeFooter.customCode.tabletHtml = e.target.value;
+          else if (currentCcDevice === 'mobile') activeFooter.customCode.mobileHtml = e.target.value;
+          else activeFooter.customCode.desktopHtml = e.target.value;
+          renderLivePreview();
+        });
+        document.getElementById('inputCustomCss')?.addEventListener('input', (e) => {
+          if (!activeFooter.customCode) activeFooter.customCode = {};
+          activeFooter.customCode.customCss = e.target.value;
+          renderLivePreview();
+        });
+        document.getElementById('inputCustomJs')?.addEventListener('input', (e) => {
+          if (!activeFooter.customCode) activeFooter.customCode = {};
+          activeFooter.customCode.customJs = e.target.value;
+          renderLivePreview();
+        });
+
+        // Columns Editor
+        function renderColumnsEditor() {
+          const container = document.getElementById('columnsContainer');
+          if (!container) return;
+
+          container.innerHTML = (activeFooter.columns || []).map((col, colIdx) => `
+            <div class="col-item-card" data-col-idx="${colIdx}">
+              <div class="col-item-header">
+                <input type="text" class="text-input col-title-input" value="${col.title || 'Navigation'}" placeholder="Column Title" style="font-weight: 700; max-width: 180px; padding: 4px 8px;" />
+                <div style="display: flex; gap: 6px;">
+                  <button type="button" class="tb-btn tb-btn-subtle btn-add-link" data-col-idx="${colIdx}" style="font-size: 0.7rem; padding: 2px 8px;">+ Link</button>
+                  <button type="button" class="btn-del-col" data-col-idx="${colIdx}" style="background: transparent; border: none; color: #ef4444; cursor: pointer; font-size: 0.85rem;" title="Delete Column">🗑️</button>
+                </div>
+              </div>
+              <div class="col-links-container">
+                ${(col.links || []).map((link, linkIdx) => `
+                  <div class="link-row" data-col-idx="${colIdx}" data-link-idx="${linkIdx}">
+                    <input type="text" class="text-input link-label-input" value="${link.label || ''}" placeholder="Label" style="flex: 1;" />
+                    <input type="text" class="text-input link-url-input" id="linkUrl_${colIdx}_${linkIdx}" value="${link.url || '/'}" placeholder="URL" style="flex: 1.2;" />
+                    <button type="button" class="pick-resource-btn" data-target="linkUrl_${colIdx}_${linkIdx}" style="padding: 4px 6px;">🔗</button>
+                    <button type="button" class="btn-del-link" data-col-idx="${colIdx}" data-link-idx="${linkIdx}" style="background: transparent; border: none; color: #ef4444; cursor: pointer; font-size: 0.85rem;">✕</button>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `).join('');
+
+          // Wire column events
+          container.querySelectorAll('.col-title-input').forEach(inp => {
+            inp.addEventListener('input', (e) => {
+              const cIdx = parseInt(e.target.closest('.col-item-card').dataset.colIdx, 10);
+              if (activeFooter.columns[cIdx]) {
+                activeFooter.columns[cIdx].title = e.target.value;
+                renderLivePreview();
+              }
+            });
+          });
+
+          container.querySelectorAll('.btn-del-col').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const cIdx = parseInt(btn.dataset.colIdx, 10);
+              activeFooter.columns.splice(cIdx, 1);
+              renderColumnsEditor();
+              renderLivePreview();
+            });
+          });
+
+          container.querySelectorAll('.btn-add-link').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const cIdx = parseInt(btn.dataset.colIdx, 10);
+              if (!activeFooter.columns[cIdx].links) activeFooter.columns[cIdx].links = [];
+              activeFooter.columns[cIdx].links.push({
+                id: 'link-' + Date.now(),
+                label: 'New Link',
+                url: '/',
+                target: '_self'
+              });
+              renderColumnsEditor();
+              renderLivePreview();
+            });
+          });
+
+          container.querySelectorAll('.link-label-input').forEach(inp => {
+            inp.addEventListener('input', (e) => {
+              const row = e.target.closest('.link-row');
+              const cIdx = parseInt(row.dataset.colIdx, 10);
+              const lIdx = parseInt(row.dataset.linkIdx, 10);
+              if (activeFooter.columns[cIdx]?.links[lIdx]) {
+                activeFooter.columns[cIdx].links[lIdx].label = e.target.value;
+                renderLivePreview();
+              }
+            });
+          });
+
+          container.querySelectorAll('.link-url-input').forEach(inp => {
+            inp.addEventListener('input', (e) => {
+              const row = e.target.closest('.link-row');
+              const cIdx = parseInt(row.dataset.colIdx, 10);
+              const lIdx = parseInt(row.dataset.linkIdx, 10);
+              if (activeFooter.columns[cIdx]?.links[lIdx]) {
+                activeFooter.columns[cIdx].links[lIdx].url = e.target.value;
+                renderLivePreview();
+              }
+            });
+          });
+
+          container.querySelectorAll('.btn-del-link').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const cIdx = parseInt(btn.dataset.colIdx, 10);
+              const lIdx = parseInt(btn.dataset.linkIdx, 10);
+              if (activeFooter.columns[cIdx]?.links) {
+                activeFooter.columns[cIdx].links.splice(lIdx, 1);
+                renderColumnsEditor();
+                renderLivePreview();
+              }
+            });
+          });
+
+          container.querySelectorAll('.pick-resource-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              openResourceModal(btn.dataset.target);
+            });
+          });
+        }
+
+        document.getElementById('btnAddColumnBtn')?.addEventListener('click', () => {
+          if (!activeFooter.columns) activeFooter.columns = [];
+          activeFooter.columns.push({
+            id: 'col-' + Date.now(),
+            title: 'New Section',
+            links: [
+              { id: 'l1', label: 'Overview', url: '/' },
+              { id: 'l2', label: 'Features', url: '/#features' }
+            ]
+          });
+          renderColumnsEditor();
+          renderLivePreview();
+        });
+
+        // Social Links Editor
+        const defaultPlatforms = ['Facebook', 'Twitter', 'LinkedIn', 'Instagram', 'GitHub', 'YouTube', 'Dribbble', 'Discord'];
+        function renderSocialEditor() {
+          const list = document.getElementById('socialLinksList');
+          if (!list) return;
+
+          const links = activeFooter.social?.links || [];
+          const existingMap = {};
+          links.forEach(l => { existingMap[l.name] = l; });
+
+          list.innerHTML = defaultPlatforms.map(platform => {
+            const current = existingMap[platform] || { name: platform, href: '', enabled: false };
+            return `
+              <div class="link-row" style="padding: 6px 10px;">
+                <label style="display: flex; align-items: center; gap: 8px; width: 110px; font-size: 0.78rem; font-weight: 600; cursor: pointer;">
+                  <input type="checkbox" class="social-chk" data-platform="${platform}" ${current.enabled ? 'checked' : ''} />
+                  <span>${platform}</span>
+                </label>
+                <input type="text" class="text-input social-url-input" data-platform="${platform}" value="${current.href || ''}" placeholder="https://${platform.toLowerCase()}.com/..." style="flex: 1; padding: 4px 8px; font-size: 0.75rem;" />
+              </div>
+            `;
+          }).join('');
+
+          list.querySelectorAll('.social-chk').forEach(chk => {
+            chk.addEventListener('change', () => {
+              syncSocialLinksFromUI();
+            });
+          });
+          list.querySelectorAll('.social-url-input').forEach(inp => {
+            inp.addEventListener('input', () => {
+              syncSocialLinksFromUI();
+            });
+          });
+        }
+
+        function syncSocialLinksFromUI() {
+          if (!activeFooter.social) activeFooter.social = { enabled: true, links: [] };
+          const list = document.getElementById('socialLinksList');
+          const updated = [];
+          list?.querySelectorAll('.link-row').forEach(row => {
+            const chk = row.querySelector('.social-chk');
+            const inp = row.querySelector('.social-url-input');
+            if (chk && inp) {
+              updated.push({
+                name: chk.dataset.platform,
+                href: inp.value.trim(),
+                enabled: chk.checked
+              });
+            }
+          });
+          activeFooter.social.links = updated;
+          renderLivePreview();
+        }
+
+        // Bottom Bar Links Editor
+        function renderBottomLinksEditor() {
+          const list = document.getElementById('bottomLinksList');
+          if (!list) return;
+
+          list.innerHTML = (activeFooter.bottomBar?.links || []).map((link, idx) => `
+            <div class="link-row" data-idx="${idx}">
+              <input type="text" class="text-input b-link-label" value="${link.label || ''}" placeholder="Label" style="flex: 1;" />
+              <input type="text" class="text-input b-link-url" id="bLinkUrl_${idx}" value="${link.url || '/'}" placeholder="URL" style="flex: 1.2;" />
+              <button type="button" class="pick-resource-btn" data-target="bLinkUrl_${idx}" style="padding: 4px 6px;">🔗</button>
+              <button type="button" class="btn-del-b-link" data-idx="${idx}" style="background: transparent; border: none; color: #ef4444; cursor: pointer;">✕</button>
+            </div>
+          `).join('');
+
+          list.querySelectorAll('.b-link-label').forEach(inp => {
+            inp.addEventListener('input', (e) => {
+              const idx = parseInt(e.target.closest('.link-row').dataset.idx, 10);
+              if (activeFooter.bottomBar.links[idx]) {
+                activeFooter.bottomBar.links[idx].label = e.target.value;
+                renderLivePreview();
+              }
+            });
+          });
+
+          list.querySelectorAll('.b-link-url').forEach(inp => {
+            inp.addEventListener('input', (e) => {
+              const idx = parseInt(e.target.closest('.link-row').dataset.idx, 10);
+              if (activeFooter.bottomBar.links[idx]) {
+                activeFooter.bottomBar.links[idx].url = e.target.value;
+                renderLivePreview();
+              }
+            });
+          });
+
+          list.querySelectorAll('.btn-del-b-link').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const idx = parseInt(btn.dataset.idx, 10);
+              activeFooter.bottomBar.links.splice(idx, 1);
+              renderBottomLinksEditor();
+              renderLivePreview();
+            });
+          });
+
+          list.querySelectorAll('.pick-resource-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              openResourceModal(btn.dataset.target);
+            });
+          });
+        }
+
+        document.getElementById('btnAddBottomLinkBtn')?.addEventListener('click', () => {
+          if (!activeFooter.bottomBar) activeFooter.bottomBar = { enabled: true, companyName: '', copyrightText: '', showYear: true, links: [] };
+          if (!activeFooter.bottomBar.links) activeFooter.bottomBar.links = [];
+          activeFooter.bottomBar.links.push({
+            id: 'b-link-' + Date.now(),
+            label: 'Privacy Policy',
+            url: '/privacy'
+          });
+          renderBottomLinksEditor();
+          renderLivePreview();
+        });
+
+        // Event Listeners for Input Elements
+        // Layout
+        document.querySelectorAll('.radio-card-btn[data-layout]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            document.querySelectorAll('.radio-card-btn[data-layout]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            if (!activeFooter.layout) activeFooter.layout = {};
+            activeFooter.layout.type = btn.dataset.layout;
+            renderLivePreview();
+          });
+        });
+
+        document.getElementById('selectContainerType')?.addEventListener('change', (e) => {
+          activeFooter.layout.containerType = e.target.value;
+          renderLivePreview();
+        });
+        document.getElementById('inputColumnsCount')?.addEventListener('input', (e) => {
+          activeFooter.layout.columnsCount = parseInt(e.target.value, 10);
+          document.getElementById('valColumnsCount').textContent = e.target.value;
+          renderLivePreview();
+        });
+        document.getElementById('inputPaddingTop')?.addEventListener('input', (e) => {
+          activeFooter.layout.paddingTop = parseInt(e.target.value, 10);
+          document.getElementById('valPaddingTop').textContent = e.target.value + 'px';
+          renderLivePreview();
+        });
+        document.getElementById('inputPaddingBottom')?.addEventListener('input', (e) => {
+          activeFooter.layout.paddingBottom = parseInt(e.target.value, 10);
+          document.getElementById('valPaddingBottom').textContent = e.target.value + 'px';
+          renderLivePreview();
+        });
+        document.getElementById('checkBackToTop')?.addEventListener('change', (e) => {
+          activeFooter.layout.showBackToTop = e.target.checked;
+          renderLivePreview();
+        });
+
+        // Brand details
+        document.getElementById('inputBrandName')?.addEventListener('input', (e) => {
+          if (!activeFooter.logo) activeFooter.logo = {};
+          activeFooter.logo.brandName = e.target.value;
+          renderLivePreview();
+        });
+        document.getElementById('inputTagline')?.addEventListener('input', (e) => {
+          if (!activeFooter.logo) activeFooter.logo = {};
+          activeFooter.logo.tagline = e.target.value;
+          renderLivePreview();
+        });
+        document.getElementById('inputLogoUrl')?.addEventListener('input', (e) => {
+          if (!activeFooter.logo) activeFooter.logo = {};
+          activeFooter.logo.linkUrl = e.target.value;
+          renderLivePreview();
+        });
+        document.getElementById('inputFooterLogoImg')?.addEventListener('input', (e) => {
+          if (!activeFooter.logo) activeFooter.logo = {};
+          activeFooter.logo.source = 'custom';
+          activeFooter.logo.imageUrl = e.target.value.trim();
+          updateLogoUI();
+          renderLivePreview();
+        });
+
+        // About details
+        document.getElementById('checkAboutEnabled')?.addEventListener('change', (e) => {
+          if (!activeFooter.about) activeFooter.about = {};
+          activeFooter.about.enabled = e.target.checked;
+          renderLivePreview();
+        });
+        document.getElementById('inputAboutDesc')?.addEventListener('input', (e) => {
+          if (!activeFooter.about) activeFooter.about = {};
+          activeFooter.about.description = e.target.value;
+          renderLivePreview();
+        });
+        document.getElementById('inputAboutEmail')?.addEventListener('input', (e) => {
+          if (!activeFooter.about) activeFooter.about = {};
+          activeFooter.about.email = e.target.value;
+          renderLivePreview();
+        });
+        document.getElementById('inputAboutPhone')?.addEventListener('input', (e) => {
+          if (!activeFooter.about) activeFooter.about = {};
+          activeFooter.about.phone = e.target.value;
+          renderLivePreview();
+        });
+        document.getElementById('inputAboutAddress')?.addEventListener('input', (e) => {
+          if (!activeFooter.about) activeFooter.about = {};
+          activeFooter.about.address = e.target.value;
+          renderLivePreview();
+        });
+
+        // Newsletter details
+        document.getElementById('checkNewsletterEnabled')?.addEventListener('change', (e) => {
+          if (!activeFooter.newsletter) activeFooter.newsletter = {};
+          activeFooter.newsletter.enabled = e.target.checked;
+          renderLivePreview();
+        });
+        document.getElementById('inputNewsletterTitle')?.addEventListener('input', (e) => {
+          if (!activeFooter.newsletter) activeFooter.newsletter = {};
+          activeFooter.newsletter.title = e.target.value;
+          renderLivePreview();
+        });
+        document.getElementById('inputNewsletterDesc')?.addEventListener('input', (e) => {
+          if (!activeFooter.newsletter) activeFooter.newsletter = {};
+          activeFooter.newsletter.description = e.target.value;
+          renderLivePreview();
+        });
+        document.getElementById('inputNewsletterPlaceholder')?.addEventListener('input', (e) => {
+          if (!activeFooter.newsletter) activeFooter.newsletter = {};
+          activeFooter.newsletter.placeholder = e.target.value;
+          renderLivePreview();
+        });
+        document.getElementById('inputNewsletterButtonText')?.addEventListener('input', (e) => {
+          if (!activeFooter.newsletter) activeFooter.newsletter = {};
+          activeFooter.newsletter.buttonText = e.target.value;
+          renderLivePreview();
+        });
+        document.getElementById('inputNewsletterActionUrl')?.addEventListener('input', (e) => {
+          if (!activeFooter.newsletter) activeFooter.newsletter = {};
+          activeFooter.newsletter.actionUrl = e.target.value;
+          renderLivePreview();
+        });
+
+        // Social & Bottom bar
+        document.getElementById('checkSocialEnabled')?.addEventListener('change', (e) => {
+          if (!activeFooter.social) activeFooter.social = {};
+          activeFooter.social.enabled = e.target.checked;
+          renderLivePreview();
+        });
+        document.getElementById('checkBottomBarEnabled')?.addEventListener('change', (e) => {
+          if (!activeFooter.bottomBar) activeFooter.bottomBar = {};
+          activeFooter.bottomBar.enabled = e.target.checked;
+          renderLivePreview();
+        });
+        document.getElementById('checkBottomBarYear')?.addEventListener('change', (e) => {
+          if (!activeFooter.bottomBar) activeFooter.bottomBar = {};
+          activeFooter.bottomBar.showYear = e.target.checked;
+          renderLivePreview();
+        });
+        document.getElementById('inputBottomBarCompany')?.addEventListener('input', (e) => {
+          if (!activeFooter.bottomBar) activeFooter.bottomBar = {};
+          activeFooter.bottomBar.companyName = e.target.value;
+          renderLivePreview();
+        });
+        document.getElementById('inputBottomBarCopyright')?.addEventListener('input', (e) => {
+          if (!activeFooter.bottomBar) activeFooter.bottomBar = {};
+          activeFooter.bottomBar.copyrightText = e.target.value;
+          renderLivePreview();
+        });
+
+        // Styling sync
+        function bindColorPicker(pickerId, inputId, key) {
+          const picker = document.getElementById(pickerId);
+          const input = document.getElementById(inputId);
+          picker?.addEventListener('input', (e) => {
+            input.value = e.target.value;
+            if (!activeFooter.styling) activeFooter.styling = {};
+            activeFooter.styling[key] = e.target.value;
+            renderLivePreview();
+          });
+          input?.addEventListener('input', (e) => {
+            if (!activeFooter.styling) activeFooter.styling = {};
+            activeFooter.styling[key] = e.target.value;
+            if (e.target.value.startsWith('#') && e.target.value.length === 7) {
+              picker.value = e.target.value;
+            }
+            renderLivePreview();
+          });
+        }
+        bindColorPicker('pickerBgColor', 'inputBgColor', 'bgColor');
+        bindColorPicker('pickerHeadingColor', 'inputHeadingColor', 'headingColor');
+        bindColorPicker('pickerTextColor', 'inputTextColor', 'textColor');
+        bindColorPicker('pickerAccentColor', 'inputAccentColor', 'accentColor');
+        bindColorPicker('pickerBorderColor', 'inputBorderColor', 'borderColor');
+
+        document.getElementById('selectFontFamily')?.addEventListener('change', (e) => {
+          if (!activeFooter.styling) activeFooter.styling = {};
+          activeFooter.styling.fontFamily = e.target.value;
+          renderLivePreview();
+        });
+        document.getElementById('inputFontSize')?.addEventListener('input', (e) => {
+          if (!activeFooter.styling) activeFooter.styling = {};
+          activeFooter.styling.fontSize = e.target.value;
+          renderLivePreview();
+        });
+
+        // Custom code mode toggle
+        document.getElementById('checkCustomCodeEnabled')?.addEventListener('change', (e) => {
+          activeFooter.builderType = e.target.checked ? 'custom-code' : 'visual';
+          if (!activeFooter.customCode) activeFooter.customCode = {};
+          activeFooter.customCode.enabled = e.target.checked;
+          renderLivePreview();
+        });
+
+        // Preset switching
+        document.querySelectorAll('.preset-card').forEach(card => {
+          card.addEventListener('click', () => {
+            const presetId = card.dataset.preset;
+            const target = store.footers.find(f => f.id === presetId);
+            if (target) {
+              activeFooter = JSON.parse(JSON.stringify(target));
+              populateForm();
+              showToast(`✓ Loaded preset: ${target.name}`);
+            }
+          });
+        });
+
+        // ==========================================
+        // LIVE PREVIEW RENDERER
+        // ==========================================
+        const socialSvgMap = {
+          Facebook: '<path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>',
+          Twitter: '<path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"/>',
+          LinkedIn: '<path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/>',
+          Instagram: '<rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>',
+          GitHub: '<path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>',
+          YouTube: '<path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19.1c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.43z"/><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"/>',
+          Dribbble: '<circle cx="12" cy="12" r="10"/><path d="M19.13 5.09C15.22 9.14 10 10.44 2.25 10.94"/><path d="M21.75 12.84c-6.62-1.41-12.14 1-16.38 6.32"/><path d="M8.56 2.75c4.37 6 6 11.42 8 18.5"/>',
+          Discord: '<path d="M18 6h0a14.5 14.5 0 0 0-4-1.2 12.3 12.3 0 0 0-.6 1.3 13.9 13.9 0 0 0-4.8 0 12.3 12.3 0 0 0-.6-1.3 14.5 14.5 0 0 0-4 1.2A14.2 14.2 0 0 0 2 17a14.3 14.3 0 0 0 4.4 2.2 11.4 11.4 0 0 0 .9-1.5 9.3 9.3 0 0 1-1.5-.7c.1-.1.3-.2.4-.3a10.2 10.2 0 0 0 9.4 0c.1.1.3.2.4.3-.5.3-1 .5-1.5.7.3.5.6 1 .9 1.5A14.3 14.3 0 0 0 22 17a14.2 14.2 0 0 0-2-11zM8.5 14c-.8 0-1.5-.7-1.5-1.6s.7-1.6 1.5-1.6c.9 0 1.5.7 1.5 1.6s-.6 1.6-1.5 1.6zm7 0c-.8 0-1.5-.7-1.5-1.6s.7-1.6 1.5-1.6c.9 0 1.5.7 1.5 1.6s-.6 1.6-1.5 1.6z"/>',
+        };
+
+        function renderLivePreview() {
+          const container = document.getElementById('liveFooterRender');
+          if (!container) return;
+
+          const f = activeFooter;
+
+          // Branch: Template Mode (Render directly from selected GrapesJS block template)
+          if (f.useTemplate) {
+            const tplId = f.selectedTemplateId || (selectFooterTemplate ? selectFooterTemplate.value : 'tpl-global-furnisite-footer');
+            const foundTpl = (window.__FP_TEMPLATES__ || []).find(t => t.id === tplId);
+            if (foundTpl) {
+              container.innerHTML = `
+                <div class="template-footer-render-outer" style="position: relative; width: 100%;">
+                  <div style="position: absolute; top: 12px; right: 16px; z-index: 50; display: inline-flex; align-items: center; gap: 8px; background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(6px); border: 1px solid rgba(99, 102, 241, 0.45); padding: 5px 12px; border-radius: 9999px; box-shadow: 0 4px 14px rgba(0,0,0,0.35);">
+                    <span style="width: 7px; height: 7px; border-radius: 50%; background: #10b981;"></span>
+                    <span style="font-size: 0.72rem; color: #c7d2fe; font-weight: 700;">Template: ${foundTpl.name}</span>
+                    <a href="/template-editor?id=${foundTpl.id}" target="_blank" style="color: #ffffff; background: #6366f1; padding: 2px 8px; border-radius: 4px; font-size: 0.68rem; font-weight: 700; text-decoration: none; margin-left: 4px;">Edit in Studio &rarr;</a>
+                  </div>
+                  <style>${foundTpl.css || ''}</style>
+                  ${foundTpl.html}
+                </div>
+              `;
+              return;
+            } else {
+              container.innerHTML = `
+                <div style="padding: 40px; text-align: center; color: #94a3b8; background: #0f1219; border: 1px dashed #334155; border-radius: 8px; margin: 20px;">
+                  <div style="font-size: 1.1rem; font-weight: 700; color: #f8fafc; margin-bottom: 6px;">Template Not Found (${tplId})</div>
+                  <div style="font-size: 0.85rem;">Please select an available footer template from the dropdown list.</div>
+                </div>
+              `;
+              return;
+            }
+          }
+
+          const isCustomCode = (f.builderType === 'custom-code' || f.customCode?.enabled);
+
+          // Effective Logo & Brand
+          const effectiveLogo = (f.logo?.source === 'custom')
+            ? (f.logo?.imageUrl ? f.logo.imageUrl.trim() : '')
+            : (globalSiteConfig.logoUrl ? globalSiteConfig.logoUrl.trim() : (f.logo?.imageUrl ? f.logo.imageUrl.trim() : ''));
+
+          const effectiveBrand = (f.logo?.brandName && f.logo?.brandName.trim()) || globalSiteConfig.brandName || 'Better SaaS';
+          const effectiveTag = f.logo?.tagline !== undefined && f.logo?.tagline !== '' ? f.logo.tagline : (globalSiteConfig.tagline || '');
+          const currentYear = new Date().getFullYear();
+
+          const activeSocial = (f.social?.links || []).filter(s => s.enabled && s.href);
+
+          const maxW = f.layout?.containerType === 'full' ? '100%' : (f.layout?.containerType === 'wide' ? '1440px' : '1200px');
+          const colsCount = f.layout?.columnsCount || 3;
+
+          if (isCustomCode) {
+            const cc = f.customCode || {};
+            let htmlToRender = cc.desktopHtml || '<div style="padding: 40px; text-align: center; color: #64748b;">Custom Code Footer (Empty)</div>';
+            if (currentViewportMode === 'tablet' && cc.tabletHtml) htmlToRender = cc.tabletHtml;
+            if (currentViewportMode === 'mobile' && cc.mobileHtml) htmlToRender = cc.mobileHtml;
+
+            container.innerHTML = `
+              <div style="background: ${f.styling?.bgColor || '#0f1219'}; color: ${f.styling?.textColor || '#94a3b8'}; font-family: '${f.styling?.fontFamily || 'Plus Jakarta Sans'}', sans-serif;">
+                <style>${cc.customCss || ''}</style>
+                <div style="max-width: ${maxW}; margin: 0 auto; padding-inline: 1.5rem;">
+                  ${htmlToRender}
+                </div>
+              </div>
+            `;
+            return;
+          }
+
+          // Visual Layout Renderer
+          let mainContentHtml = '';
+
+          // Brand markup
+          const brandMarkup = `
+            <a href="${f.logo?.linkUrl || '/'}" style="display: inline-flex; align-items: center; gap: 0.75rem; text-decoration: none; margin-bottom: 1rem;">
+              ${effectiveLogo ? `
+                <img src="${effectiveLogo}" alt="${effectiveBrand}" style="max-height: 38px; width: auto; object-fit: contain;" />
+              ` : `
+                <span style="display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; background: linear-gradient(135deg, #ff5e3a 0%, #ff8c42 100%); color: #ffffff; font-size: 1.25rem; font-weight: 800; border-radius: 10px; box-shadow: 0 4px 12px rgba(255, 94, 58, 0.3);">${effectiveBrand.charAt(0).toUpperCase()}</span>
+              `}
+              <div style="display: flex; flex-direction: column;">
+                <span style="font-size: 1.15rem; font-weight: 800; color: ${f.styling?.headingColor || '#f8fafc'}; line-height: 1.2; letter-spacing: -0.02em;">${effectiveBrand}</span>
+                ${effectiveTag ? `<span style="font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: ${f.styling?.mutedColor || '#64748b'};">${effectiveTag}</span>` : ''}
+              </div>
+            </a>
+          `;
+
+          // Social icons markup
+          const socialMarkup = activeSocial.length > 0 ? `
+            <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
+              ${activeSocial.map(s => `
+                <a href="${s.href}" target="_blank" style="display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; color: ${f.styling?.textColor || '#94a3b8'}; background: rgba(255, 255, 255, 0.05); border: 1px solid ${f.styling?.borderColor || 'rgba(255,255,255,0.08)'}; text-decoration: none; transition: all 0.2s;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    ${socialSvgMap[s.name] || socialSvgMap.Facebook}
+                  </svg>
+                </a>
+              `).join('')}
+            </div>
+          ` : '';
+
+          if (f.layout?.type === 'centered') {
+            mainContentHtml = `
+              <div style="display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1.25rem; margin-bottom: 2.5rem;">
+                ${brandMarkup}
+                ${f.about?.enabled && f.about?.description ? `<p style="color: ${f.styling?.textColor || '#94a3b8'}; line-height: 1.6; max-width: 500px; margin: 0 auto;">${f.about.description}</p>` : ''}
+                <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 1.5rem;">
+                  ${(f.columns || []).flatMap(c => c.links || []).map(l => `
+                    <a href="${l.url}" style="color: ${f.styling?.textColor || '#94a3b8'}; text-decoration: none; font-size: 0.88rem; transition: color 0.15s;">${l.label}</a>
+                  `).join('')}
+                </div>
+                ${f.social?.enabled ? socialMarkup : ''}
+              </div>
+            `;
+          } else if (f.layout?.type === 'simple-inline') {
+            mainContentHtml = `
+              <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1.5rem; margin-bottom: 2rem;">
+                <div>${brandMarkup}</div>
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 1.5rem;">
+                  ${(f.columns || []).flatMap(c => c.links || []).map(l => `
+                    <a href="${l.url}" style="color: ${f.styling?.textColor || '#94a3b8'}; text-decoration: none; font-size: 0.88rem;">${l.label}</a>
+                  `).join('')}
+                </div>
+                <div>${f.social?.enabled ? socialMarkup : ''}</div>
+              </div>
+            `;
+          } else {
+            // Multi-Column (with or without newsletter)
+            const hasNewsletter = (f.layout?.type === 'columns-with-newsletter' && f.newsletter?.enabled);
+            const isMob = currentViewportMode === 'mobile';
+            const isTab = currentViewportMode === 'tablet';
+
+            let gridTemplate = isMob ? '1fr' : (isTab ? 'repeat(2, 1fr)' : (hasNewsletter ? `1.2fr repeat(${colsCount - 1}, 1fr) 1.4fr` : `1.4fr repeat(${colsCount}, 1fr)`));
+
+            mainContentHtml = `
+              <div style="display: grid; grid-template-columns: ${gridTemplate}; gap: 2.5rem; margin-bottom: 3rem;">
+                <!-- Brand & About -->
+                ${f.about?.enabled ? `
+                  <div>
+                    ${brandMarkup}
+                    ${f.about.description ? `<p style="color: ${f.styling?.textColor || '#94a3b8'}; line-height: 1.6; margin-bottom: 1.25rem; max-width: 340px;">${f.about.description}</p>` : ''}
+                    ${(f.about.email || f.about.phone || f.about.address) ? `
+                      <div style="display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.25rem;">
+                        ${f.about.email ? `
+                          <a href="mailto:${f.about.email}" style="display: inline-flex; align-items: center; gap: 0.6rem; color: ${f.styling?.textColor || '#94a3b8'}; text-decoration: none; font-size: 0.84rem;">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="${f.styling?.accentColor || '#ff5e3a'}" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                            <span>${f.about.email}</span>
+                          </a>
+                        ` : ''}
+                        ${f.about.phone ? `
+                          <a href="tel:${f.about.phone}" style="display: inline-flex; align-items: center; gap: 0.6rem; color: ${f.styling?.textColor || '#94a3b8'}; text-decoration: none; font-size: 0.84rem;">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="${f.styling?.accentColor || '#ff5e3a'}" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                            <span>${f.about.phone}</span>
+                          </a>
+                        ` : ''}
+                        ${f.about.address ? `
+                          <div style="display: inline-flex; align-items: center; gap: 0.6rem; color: ${f.styling?.textColor || '#94a3b8'}; font-size: 0.84rem;">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="${f.styling?.accentColor || '#ff5e3a'}" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                            <span>${f.about.address}</span>
+                          </div>
+                        ` : ''}
+                      </div>
+                    ` : ''}
+                    ${f.social?.enabled ? socialMarkup : ''}
+                  </div>
+                ` : ''}
+
+                <!-- Columns -->
+                ${(f.columns || []).map(col => `
+                  <div>
+                    <h4 style="font-size: 0.92rem; font-weight: 700; color: ${f.styling?.headingColor || '#f8fafc'}; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 1.25rem;">${col.title}</h4>
+                    <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.75rem;">
+                      ${(col.links || []).map(link => `
+                        <li>
+                          <a href="${link.url}" target="${link.target || '_self'}" style="color: ${f.styling?.textColor || '#94a3b8'}; text-decoration: none; font-size: 0.88rem; transition: color 0.15s;">
+                            ${link.label}
+                          </a>
+                        </li>
+                      `).join('')}
+                    </ul>
+                  </div>
+                `).join('')}
+
+                <!-- Newsletter Column -->
+                ${hasNewsletter ? `
+                  <div>
+                    <h4 style="font-size: 0.92rem; font-weight: 700; color: ${f.styling?.headingColor || '#f8fafc'}; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 1.25rem;">${f.newsletter.title}</h4>
+                    <p style="color: ${f.styling?.textColor || '#94a3b8'}; line-height: 1.6; margin-bottom: 1rem; font-size: 0.86rem;">${f.newsletter.description}</p>
+                    <form onsubmit="event.preventDefault(); alert('Test: Subscription submitted!');" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                      <input type="email" placeholder="${f.newsletter.placeholder || 'Enter your email...'}" required style="flex: 1; min-width: 160px; padding: 0.75rem 1rem; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid ${f.styling?.borderColor || 'rgba(255,255,255,0.1)'}; color: #fff; font-size: 0.85rem; outline: none;" />
+                      <button type="submit" style="padding: 0.75rem 1.25rem; border-radius: 8px; background: ${f.styling?.accentColor || '#ff5e3a'}; color: #fff; font-weight: 600; font-size: 0.85rem; border: none; cursor: pointer; white-space: nowrap;">
+                        ${f.newsletter.buttonText || 'Subscribe'}
+                      </button>
+                    </form>
+                  </div>
+                ` : ''}
+              </div>
+            `;
+          }
+
+          // Bottom Bar markup
+          const bottomBarHtml = f.bottomBar?.enabled ? `
+            <div style="padding-top: 1.75rem; border-top: 1px solid ${f.styling?.borderColor || 'rgba(255,255,255,0.08)'}; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; font-size: 0.8rem;">
+              <p style="color: ${f.styling?.mutedColor || '#64748b'}; margin: 0;">
+                &copy; ${f.bottomBar.showYear !== false ? currentYear : ''} ${f.bottomBar.companyName}. ${f.bottomBar.copyrightText}
+              </p>
+
+              ${f.bottomBar.links && f.bottomBar.links.length > 0 ? `
+                <div style="display: flex; flex-wrap: wrap; gap: 1.25rem;">
+                  ${f.bottomBar.links.map(l => `
+                    <a href="${l.url}" style="color: ${f.styling?.mutedColor || '#64748b'}; text-decoration: none; transition: color 0.15s;">${l.label}</a>
+                  `).join('')}
+                </div>
+              ` : ''}
+
+              ${f.layout?.showBackToTop !== false ? `
+                <a href="#canvasScrollContainer" onclick="document.getElementById('canvasScrollContainer').scrollTo({top: 0, behavior: 'smooth'}); return false;" style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 6px; color: ${f.styling?.textColor || '#94a3b8'}; background: rgba(255,255,255,0.05); border: 1px solid ${f.styling?.borderColor || 'rgba(255,255,255,0.08)'}; text-decoration: none;" title="Scroll to top">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                </a>
+              ` : ''}
+            </div>
+          ` : '';
+
+          container.innerHTML = `
+            <footer style="background-color: ${f.styling?.bgColor || '#0f1219'}; color: ${f.styling?.textColor || '#94a3b8'}; font-family: '${f.styling?.fontFamily || 'Plus Jakarta Sans'}', sans-serif; font-size: ${f.styling?.fontSize || '0.88rem'}; border-top: 1px solid ${f.styling?.borderColor || 'rgba(255,255,255,0.08)'}; padding-top: ${f.layout?.paddingTop || 64}px; padding-bottom: ${f.layout?.paddingBottom || 32}px; box-sizing: border-box;">
+              <div style="max-width: ${maxW}; margin: 0 auto; padding-inline: 1.5rem;">
+                ${mainContentHtml}
+                ${bottomBarHtml}
+              </div>
+            </footer>
+          `;
+        }
+
+        // ==========================================
+        // RESOURCE PICKER MODAL (PAGES & BLOG POSTS)
+        // ==========================================
+        let currentResourceTargetInputId = null;
+        let selectedResourceUrl = null;
+        let currentResourceType = 'pages';
+
+        const resourceModal = document.getElementById('resourcePickerModal');
+        const resList = document.getElementById('resourceItemsList');
+        const inputSearchRes = document.getElementById('inputSearchResources');
+
+        function openResourceModal(targetInputId) {
+          currentResourceTargetInputId = targetInputId;
+          selectedResourceUrl = null;
+          if (resourceModal) resourceModal.classList.add('is-open');
+          renderResourceList();
+        }
+
+        function closeResourceModal() {
+          if (resourceModal) resourceModal.classList.remove('is-open');
+          currentResourceTargetInputId = null;
+          selectedResourceUrl = null;
+        }
+
+        document.getElementById('btnCloseResourceModal')?.addEventListener('click', closeResourceModal);
+        document.getElementById('btnCancelResourceModal')?.addEventListener('click', closeResourceModal);
+        resourceModal?.addEventListener('click', (e) => {
+          if (e.target === resourceModal) closeResourceModal();
+        });
+
+        document.querySelectorAll('.res-tab-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            document.querySelectorAll('.res-tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentResourceType = btn.dataset.resType;
+            renderResourceList();
+          });
+        });
+
+        inputSearchRes?.addEventListener('input', () => {
+          renderResourceList();
+        });
+
+        function renderResourceList() {
+          if (!resList) return;
+          const q = (inputSearchRes?.value || '').toLowerCase().trim();
+          const items = currentResourceType === 'pages' ? availablePages : availablePosts;
+
+          const filtered = items.filter(it => (it.title || '').toLowerCase().includes(q) || (it.url || '').toLowerCase().includes(q));
+
+          if (filtered.length === 0) {
+            resList.innerHTML = '<div style="padding: 20px; text-align: center; color: #64748b; font-size: 0.8rem;">No items found.</div>';
+            return;
+          }
+
+          resList.innerHTML = filtered.map(item => `
+            <div class="res-item-row" data-url="${item.url}" style="padding: 8px 12px; background: #0c0f17; border: 1px solid #1c2433; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; transition: all 0.15s;">
+              <div>
+                <div style="font-size: 0.82rem; font-weight: 600; color: #f3f4f6;">${item.title}</div>
+                <div style="font-size: 0.72rem; color: #64748b; font-family: monospace;">${item.url}</div>
+              </div>
+              <span style="font-size: 0.72rem; color: #ff5e3a;">Pick ➔</span>
+            </div>
+          `).join('');
+
+          resList.querySelectorAll('.res-item-row').forEach(row => {
+            row.addEventListener('click', () => {
+              resList.querySelectorAll('.res-item-row').forEach(r => {
+                r.style.borderColor = '#1c2433';
+                r.style.background = '#0c0f17';
+              });
+              row.style.borderColor = '#ff5e3a';
+              row.style.background = '#1a2233';
+              selectedResourceUrl = row.dataset.url;
+            });
+          });
+        }
+
+        document.getElementById('btnSelectResource')?.addEventListener('click', () => {
+          if (!selectedResourceUrl) {
+            showToast('Please select a page or post first.', false);
+            return;
+          }
+          if (currentResourceTargetInputId) {
+            const input = document.getElementById(currentResourceTargetInputId);
+            if (input) {
+              input.value = selectedResourceUrl;
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          }
+          closeResourceModal();
+          showToast('✓ Link URL applied!');
+        });
+
+        // ==========================================
+        // MEDIA PICKER MODAL
+        // ==========================================
+        let currentMediaTargetInputId = null;
+        let selectedMediaUrl = null;
+
+        const mediaModal = document.getElementById('mediaPickerModal');
+        const mediaGrid = document.getElementById('mediaGrid');
+        const mediaFileInput = document.getElementById('mediaFileInput');
+        const mediaDropzone = document.getElementById('mediaDropzone');
+
+        function openMediaModal(targetInputId) {
+          currentMediaTargetInputId = targetInputId;
+          selectedMediaUrl = null;
+          if (mediaModal) mediaModal.classList.add('is-open');
+          loadMediaList();
+        }
+
+        function closeMediaModal() {
+          if (mediaModal) mediaModal.classList.remove('is-open');
+          currentMediaTargetInputId = null;
+          selectedMediaUrl = null;
+        }
+
+        document.getElementById('btnCloseMediaModal')?.addEventListener('click', closeMediaModal);
+        document.getElementById('btnCancelMediaModal')?.addEventListener('click', closeMediaModal);
+        mediaModal?.addEventListener('click', (e) => {
+          if (e.target === mediaModal) closeMediaModal();
+        });
+
+        document.querySelectorAll('.pick-media-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            openMediaModal(btn.dataset.target);
+          });
+        });
+
+        async function loadMediaList() {
+          if (!mediaGrid) return;
+          mediaGrid.innerHTML = '<div style="grid-column: 1/-1; padding: 20px; text-align: center; color: #64748b;">Loading images...</div>';
+          try {
+            const res = await fetch('/api/upload');
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+              mediaGrid.innerHTML = data.map(item => `
+                <div class="media-thumb-item" data-url="${item.url}" style="height: 80px; background: #0c0f17; border: 1px solid #1c2433; border-radius: 6px; overflow: hidden; cursor: pointer; display: flex; align-items: center; justify-content: center; position: relative;">
+                  <img src="${item.url}" alt="${item.fileName}" style="max-width: 100%; max-height: 100%; object-fit: contain;" />
+                </div>
+              `).join('');
+
+              mediaGrid.querySelectorAll('.media-thumb-item').forEach(thumb => {
+                thumb.addEventListener('click', () => {
+                  mediaGrid.querySelectorAll('.media-thumb-item').forEach(t => t.style.border = '1px solid #1c2433');
+                  thumb.style.border = '2px solid #ff5e3a';
+                  selectedMediaUrl = thumb.dataset.url;
+                });
+              });
+            } else {
+              mediaGrid.innerHTML = '<div style="grid-column: 1/-1; padding: 20px; text-align: center; color: #64748b;">No uploaded images found. Click above to upload one!</div>';
+            }
+          } catch {
+            mediaGrid.innerHTML = '<div style="grid-column: 1/-1; padding: 20px; text-align: center; color: #ef4444;">Failed to load media.</div>';
+          }
+        }
+
+        mediaDropzone?.addEventListener('click', () => mediaFileInput?.click());
+        mediaFileInput?.addEventListener('change', async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+
+          if (file.size > 200 * 1024) {
+            showToast('⚠️ Image exceeds 200 KB limit.', false);
+            mediaFileInput.value = '';
+            return;
+          }
+
+          try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const res = await fetch('/api/upload', {
+              method: 'POST',
+              body: formData,
+            });
+            const data = await res.json();
+            if (data.success && data.url) {
+              showToast('✓ Image uploaded!');
+              loadMediaList();
+              selectedMediaUrl = data.url;
+            } else {
+              showToast('Upload error: ' + (data.error || 'Failed'), false);
+            }
+          } catch (err) {
+            showToast('Error uploading image: ' + err.message, false);
+          } finally {
+            mediaFileInput.value = '';
+          }
+        });
+
+        document.getElementById('btnApplySelectedMedia')?.addEventListener('click', () => {
+          if (!selectedMediaUrl) {
+            showToast('Please select or upload an image first.', false);
+            return;
+          }
+          if (currentMediaTargetInputId) {
+            const input = document.getElementById(currentMediaTargetInputId);
+            if (input) {
+              input.value = selectedMediaUrl;
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          }
+          closeMediaModal();
+          showToast('✓ Image applied!');
+        });
+
+        // ==========================================
+        // FOOTER MANAGEMENT (SAVE, ACTIVATE, DUPLICATE, DELETE)
+        // ==========================================
+        function updateActiveButtonState() {
+          const btn = document.getElementById('setActiveBtn');
+          const btnText = document.getElementById('activeBtnText');
+          if (!btn || !btnText) return;
+
+          const isActive = store.activeFooterId === activeFooter.id;
+          btn.classList.toggle('is-active', isActive);
+          btnText.textContent = isActive ? '★ Active on Live Site' : 'Set Active Site Footer';
+        }
+
+        // Switch Footer from select
+        document.getElementById('footerSelect')?.addEventListener('change', (e) => {
+          const id = e.target.value;
+          const found = store.footers.find(f => f.id === id);
+          if (found) {
+            activeFooter = JSON.parse(JSON.stringify(found));
+            populateForm();
+            showToast(`✓ Switched to ${found.name}`);
+          }
+        });
+
+        // Save Footer
+        document.getElementById('saveFooterBtn')?.addEventListener('click', async () => {
+          const btn = document.getElementById('saveFooterBtn');
+          btn.disabled = true;
+          btn.innerHTML = '<span>Saving...</span>';
+
+          try {
+            const res = await fetch('/api/footers', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(activeFooter),
+            });
+            const data = await res.json();
+            if (data.success) {
+              store.footers = data.footers;
+              store.activeFooterId = data.activeFooterId;
+              refreshFooterSelect();
+              updateActiveButtonState();
+              showToast('✓ Footer saved successfully!');
+            } else {
+              showToast('Failed to save footer: ' + (data.error || 'Unknown error'), false);
+            }
+          } catch (err) {
+            showToast('Save error: ' + err.message, false);
+          } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<span>Save Footer</span>';
+          }
+        });
+
+        // Set Active Site Footer
+        document.getElementById('setActiveBtn')?.addEventListener('click', async () => {
+          if (store.activeFooterId === activeFooter.id) return;
+
+          try {
+            const res = await fetch('/api/footers', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ activeFooterId: activeFooter.id }),
+            });
+            const data = await res.json();
+            if (data.success) {
+              store.activeFooterId = activeFooter.id;
+              store.footers = data.footers;
+              refreshFooterSelect();
+              updateActiveButtonState();
+              showToast('★ This footer is now ACTIVE on the live website!');
+            }
+          } catch (err) {
+            showToast('Failed to activate footer: ' + err.message, false);
+          }
+        });
+
+        // Duplicate Footer
+        document.getElementById('duplicateFooterBtn')?.addEventListener('click', async () => {
+          try {
+            const res = await fetch('/api/footers', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'duplicate', id: activeFooter.id }),
+            });
+            const data = await res.json();
+            if (data.success && data.footer) {
+              store.footers.push(data.footer);
+              activeFooter = JSON.parse(JSON.stringify(data.footer));
+              refreshFooterSelect();
+              populateForm();
+              showToast(`✓ Duplicated as "${data.footer.name}"`);
+            }
+          } catch (err) {
+            showToast('Failed to duplicate: ' + err.message, false);
+          }
+        });
+
+        // Delete Footer
+        document.getElementById('deleteFooterBtn')?.addEventListener('click', async () => {
+          if (store.footers.length <= 1) {
+            showToast('Cannot delete the only remaining footer.', false);
+            return;
+          }
+          if (!confirm(`Are you sure you want to delete "${activeFooter.name}"?`)) return;
+
+          try {
+            const res = await fetch(`/api/footers?id=${encodeURIComponent(activeFooter.id)}`, {
+              method: 'DELETE',
+            });
+            const data = await res.json();
+            if (data.success) {
+              store.footers = data.footers;
+              store.activeFooterId = data.activeFooterId;
+              activeFooter = JSON.parse(JSON.stringify(store.footers.find(f => f.id === store.activeFooterId) || store.footers[0]));
+              refreshFooterSelect();
+              populateForm();
+              showToast('✓ Footer deleted successfully.');
+            } else {
+              showToast('Delete failed: ' + (data.error || 'Unknown error'), false);
+            }
+          } catch (err) {
+            showToast('Delete error: ' + err.message, false);
+          }
+        });
+
+        // New Footer
+        document.getElementById('newFooterBtn')?.addEventListener('click', () => {
+          const newId = 'footer-' + Date.now();
+          const newFooter = {
+            id: newId,
+            name: `Custom Footer ${store.footers.length + 1}`,
+            isActive: false,
+            builderType: 'visual',
+            layout: {
+              type: 'columns-with-newsletter',
+              containerType: 'boxed',
+              columnsCount: 3,
+              paddingTop: 64,
+              paddingBottom: 32,
+              showBackToTop: true,
+            },
+            styling: {
+              bgColor: '#0f1219',
+              textColor: '#94a3b8',
+              headingColor: '#f8fafc',
+              mutedColor: '#64748b',
+              accentColor: '#ff5e3a',
+              borderColor: 'rgba(255, 255, 255, 0.08)',
+              fontFamily: 'Plus Jakarta Sans',
+              fontSize: '0.88rem',
+            },
+            logo: {
+              source: 'default',
+              imageUrl: '',
+              brandName: 'Better SaaS',
+              tagline: 'Modern Platform',
+              linkUrl: '/',
+            },
+            about: {
+              enabled: true,
+              description: 'The modern visual website builder and CMS for high-performance Astro web applications.',
+              email: 'hello@example.com',
+              phone: '+1 (555) 123-4567',
+              address: '',
+            },
+            columns: [
+              {
+                id: 'col-1',
+                title: 'Company',
+                links: [
+                  { id: 'l1', label: 'Home', url: '/' },
+                  { id: 'l2', label: 'About Us', url: '/tentang-kami' },
+                  { id: 'l3', label: 'Blog', url: '/blog' },
+                ],
+              },
+              {
+                id: 'col-2',
+                title: 'Product',
+                links: [
+                  { id: 'l4', label: 'Editor', url: '/editor' },
+                  { id: 'l5', label: 'Header Builder', url: '/header-builder' },
+                  { id: 'l6', label: 'Footer Builder', url: '/footer-builder' },
+                ],
+              },
+            ],
+            newsletter: {
+              enabled: true,
+              title: 'Newsletter',
+              description: 'Subscribe to receive product updates.',
+              buttonText: 'Subscribe',
+              placeholder: 'Enter your email address...',
+              actionUrl: '#',
+            },
+            social: {
+              enabled: true,
+              links: [
+                { name: 'Facebook', href: 'https://facebook.com', enabled: true },
+                { name: 'Twitter', href: 'https://twitter.com', enabled: true },
+                { name: 'LinkedIn', href: 'https://linkedin.com', enabled: true },
+              ],
+            },
+            bottomBar: {
+              enabled: true,
+              companyName: 'Better Corp Inc.',
+              copyrightText: 'All Rights Reserved.',
+              showYear: true,
+              links: [
+                { id: 'b1', label: 'Privacy Policy', url: '/#' },
+                { id: 'b2', label: 'Terms of Service', url: '/#' },
+              ],
+            },
+            customCode: {
+              enabled: false,
+              desktopHtml: '',
+              tabletHtml: '',
+              mobileHtml: '',
+              customCss: '',
+              customJs: '',
+            },
+          };
+
+          store.footers.push(newFooter);
+          activeFooter = newFooter;
+          refreshFooterSelect();
+          populateForm();
+          showToast(`✓ Created "${newFooter.name}". Remember to click "Save Footer" to persist.`);
+        });
+
+        // Restore Presets
+        document.getElementById('btnRestoreDefaultPresets')?.addEventListener('click', async () => {
+          if (!confirm('Restore default starter presets?')) return;
+          try {
+            const res = await fetch('/api/footers', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'restore_presets' }),
+            });
+            const data = await res.json();
+            if (data.success) {
+              store.footers = data.footers;
+              refreshFooterSelect();
+              showToast('✓ Default presets restored successfully!');
+            }
+          } catch (err) {
+            showToast('Failed to restore presets: ' + err.message, false);
+          }
+        });
+
+        function refreshFooterSelect() {
+          const select = document.getElementById('footerSelect');
+          if (!select) return;
+          select.innerHTML = store.footers.map(f => `
+            <option value="${f.id}" ${f.id === activeFooter.id ? 'selected' : ''}>
+              ${f.name} ${f.id === store.activeFooterId ? '★ (Active Site)' : ''}
+            </option>
+          `).join('');
+        }
+
+        // Initialize Form on load
+        populateForm();
+      })();
+    </script>
+    <script is:inline src="/editor-custom-code.js"></script>
+  </body>
+</html>

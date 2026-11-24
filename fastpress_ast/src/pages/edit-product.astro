@@ -1,0 +1,2095 @@
+---
+import DeviceSwitcher from '../components/admin/DeviceSwitcher.astro';
+import WorkspaceSwitcher from '../components/admin/WorkspaceSwitcher.astro';
+export const prerender = false;
+
+import { getProducts, getProductCategoriesArray, type Product } from '../data/products';
+import { getProductCategories, type ProductCategory } from '../data/product-categories';
+import { getProductLayouts, type ProductLayout } from '../data/product-layouts';
+import { getTemplates } from '../data/templates';
+import { getActiveThemeName } from '../core/theme';
+
+const activeTheme = getActiveThemeName();
+const productsList: Product[] = getProducts();
+const categoriesList: ProductCategory[] = getProductCategories();
+const layoutsList: ProductLayout[] = getProductLayouts();
+const templatesList = getTemplates();
+
+const urlSlug = Astro.url.searchParams.get('slug') || Astro.url.searchParams.get('id');
+const activeProduct: Product =
+  (urlSlug ? productsList.find((p) => p.slug === urlSlug || p.id === urlSlug) : undefined) ||
+  productsList[0];
+
+const defaultLayoutId = layoutsList.find((l) => l.isDefault)?.id || layoutsList[0]?.id || 'standard-product-default';
+const activeProductCats = getProductCategoriesArray(activeProduct);
+const activeLayoutObj =
+  layoutsList.find((l) => l.id === activeProduct?.layoutId) ||
+  layoutsList.find((l) => Array.isArray(l.appliedProductSlugs) && l.appliedProductSlugs.includes(activeProduct?.slug)) ||
+  layoutsList.find((l) => l.isDefault) ||
+  layoutsList[0];
+---
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Product Studio - {activeProduct ? activeProduct.title : 'Products'} | FastPress</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Montserrat:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <link href="https://unpkg.com/grapesjs@0.23.9/dist/css/grapes.min.css" rel="stylesheet" />
+    <link href="/editor-container-layout.css" rel="stylesheet" />
+    <script src="https://unpkg.com/grapesjs@0.23.9/dist/grapes.min.js" is:inline></script>
+    <script src="/editor-container-layout.js" defer is:inline></script>
+    <script src="/editor-file-manager.js" defer is:inline></script>
+    <script src="/editor-custom-code.js" defer is:inline></script>
+
+    <style>
+      :root {
+        --bg-dark: #0f1115;
+        --bg-panel: #14161a;
+        --bg-surface: #1c1f24;
+        --bg-hover: #262b33;
+        --border-color: #2a2e39;
+        --text-primary: #f3f4f6;
+        --text-secondary: #9ca3af;
+        --accent-color: #ff5e3a;
+        --accent-hover: #ff7a59;
+        --success-color: #10b981;
+        --danger-color: #ef4444;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: var(--bg-dark);
+        color: var(--text-primary);
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        overflow: hidden;
+      }
+
+      .studio-shell {
+        display: flex;
+        flex-direction: column;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      /* Topbar */
+      .editor-topbar {
+        min-height: 52px;
+        height: auto;
+        background: var(--bg-panel);
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        padding: 6px 12px;
+        gap: 8px;
+        flex-shrink: 0;
+        z-index: 40;
+      }
+
+      .topbar-group {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .brand-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-weight: 800;
+        font-size: 0.9rem;
+        color: #fff;
+        text-decoration: none;
+        padding: 5px 8px;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .brand-dot {
+        width: 24px;
+        height: 24px;
+        border-radius: 7px;
+        background: linear-gradient(135deg, #ff5e3a, #ff8a65);
+        display: inline-grid;
+        place-items: center;
+        font-size: 0.78rem;
+        font-weight: 800;
+        color: #fff;
+      }
+
+      .studio-switcher {
+        position: relative;
+      }
+      .switcher-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        padding: 6px 10px;
+        border-radius: 7px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .switcher-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        width: 220px;
+        max-height: calc(100vh - 70px);
+        overflow-y: auto;
+        overflow-x: hidden;
+        overscroll-behavior: contain;
+        scrollbar-width: thin;
+        scrollbar-color: #374151 #161922;
+        background: #161922;
+        border: 1px solid #2d3444;
+        border-radius: 10px;
+        padding: 6px;
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+        display: none;
+        flex-direction: column;
+        gap: 2px;
+        z-index: 999;
+      }
+      .switcher-menu.open {
+        display: flex;
+      }
+      .switcher-link {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 7px 10px;
+        border-radius: 6px;
+        color: #cbd5e1;
+        text-decoration: none;
+        font-size: 0.8rem;
+        font-weight: 500;
+      }
+      .switcher-link:hover {
+        background: #232836;
+        color: #fff;
+      }
+      .switcher-link.active {
+        background: rgba(255, 94, 58, 0.16);
+        color: #ff8a65;
+        font-weight: 700;
+      }
+      .switcher-divider {
+        height: 1px;
+        background: var(--border-color);
+        margin: 4px 6px;
+      }
+
+      .product-select {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        padding: 4px 10px;
+        height: 30px;
+        border-radius: 7px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        outline: none;
+        max-width: 195px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex-shrink: 0;
+      }
+
+      .btn-tool {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        padding: 6px 10px;
+        border-radius: 7px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        white-space: nowrap;
+        transition: all 0.15s ease;
+      }
+      .btn-tool:hover {
+        background: var(--bg-hover);
+        border-color: #4b5563;
+      }
+      .btn-tool.primary {
+        background: var(--accent-color);
+        border-color: var(--accent-color);
+        color: #fff;
+      }
+      .btn-tool.primary:hover {
+        background: var(--accent-hover);
+      }
+      .btn-tool.danger:hover {
+        border-color: var(--danger-color);
+        color: #fca5a5;
+      }
+
+      .device-pills {
+        display: inline-flex;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 2px;
+      }
+      .device-btn {
+        background: transparent;
+        border: none;
+        color: var(--text-secondary);
+        padding: 5px 9px;
+        border-radius: 6px;
+        font-size: 0.74rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .device-btn.active {
+        background: var(--accent-color);
+        color: #fff;
+      }
+
+      /* Main Workspace */
+      .studio-workspace {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .sidebar-left {
+        width: 390px;
+        max-width: 390px;
+        background: var(--bg-panel);
+        border-right: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+        min-height: 0;
+        overflow-x: hidden;
+      }
+
+      .panel-tabs {
+        display: flex;
+        border-bottom: 1px solid var(--border-color);
+        background: #101218;
+      }
+      .panel-tab {
+        flex: 1;
+        background: transparent;
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: var(--text-secondary);
+        padding: 10px 6px;
+        font-size: 0.73rem;
+        font-weight: 700;
+        cursor: pointer;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+      .panel-tab.active {
+        color: #fff;
+        border-bottom-color: var(--accent-color);
+        background: var(--bg-panel);
+      }
+
+      .sidebar-scroll {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+        min-height: 0;
+        padding: 14px;
+        content-visibility: auto;
+        contain-intrinsic-size: auto 420px;
+      }
+      @supports not (content-visibility: auto) {
+        .sidebar-scroll {
+          contain: layout style paint;
+        }
+      }
+
+      .tab-pane-hidden {
+        display: none !important;
+      }
+
+      /* Form Styling */
+      .form-group {
+        margin-bottom: 14px;
+      }
+      .form-row-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .form-label {
+        display: block;
+        font-size: 0.73rem;
+        font-weight: 700;
+        color: #9ca3af;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 6px;
+      }
+      .form-control {
+        width: 100%;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        padding: 8px 10px;
+        border-radius: 7px;
+        font-size: 0.82rem;
+        outline: none;
+        font-family: inherit;
+      }
+      .form-control:focus {
+        border-color: var(--accent-color);
+      }
+
+      .input-with-btn {
+        display: flex;
+        gap: 6px;
+      }
+      .input-with-btn .form-control {
+        flex: 1;
+      }
+
+      .switch-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 9px 12px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-radius: 9px;
+      }
+      .switch-row label {
+        font-size: 0.81rem;
+        font-weight: 600;
+        color: #e5e7eb;
+        cursor: pointer;
+      }
+      input[type='checkbox'][switch] {
+        accent-color: var(--accent-color);
+        cursor: pointer;
+        width: 40px;
+        height: 22px;
+      }
+
+      .mode-toggle-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .mode-option-card {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-radius: 9px;
+        padding: 10px;
+        cursor: pointer;
+        text-align: left;
+        color: #cbd5e1;
+      }
+      .mode-option-card.active {
+        border-color: var(--accent-color);
+        background: rgba(255, 94, 58, 0.12);
+        color: #fff;
+      }
+      .mode-option-title {
+        display: block;
+        font-size: 0.8rem;
+        font-weight: 700;
+        margin-bottom: 2px;
+      }
+      .mode-option-sub {
+        display: block;
+        font-size: 0.7rem;
+        color: #9ca3af;
+      }
+
+      .layout-card-box {
+        background: #101319;
+        border: 1px solid #242b3a;
+        border-radius: 10px;
+        padding: 12px;
+        margin-top: 10px;
+      }
+
+      /* Categories Manager UI */
+      .category-item-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 10px;
+        border: 1px solid #232a36;
+        background: #101319;
+        border-radius: 8px;
+        margin-bottom: 6px;
+      }
+      .category-check-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.83rem;
+        font-weight: 600;
+        color: #e5e7eb;
+        cursor: pointer;
+        flex: 1;
+        min-width: 0;
+      }
+      .cat-mini-btn {
+        background: transparent;
+        border: 1px solid #2c3546;
+        color: #9ca3af;
+        border-radius: 5px;
+        padding: 3px 7px;
+        font-size: 0.7rem;
+        cursor: pointer;
+      }
+      .cat-mini-btn:hover {
+        color: #fff;
+        border-color: #4b5563;
+      }
+      .cat-mini-btn.danger:hover {
+        color: #fca5a5;
+        border-color: #ef4444;
+      }
+
+      /* Sidebar Image & Overflow Protection */
+      :global(.sidebar-left img),
+      :global(.sidebar-scroll img),
+      .sidebar-left img,
+      .sidebar-scroll img {
+        max-width: 100% !important;
+        box-sizing: border-box;
+      }
+
+      /* Gallery & Swatch Lists */
+      :global(.gallery-row-item),
+      :global(.color-row-item),
+      .gallery-row-item,
+      .color-row-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+        background: #141720;
+        padding: 6px 8px;
+        border-radius: 8px;
+        border: 1px solid #232938;
+      }
+
+      :global(.gallery-thumb-box),
+      .gallery-thumb-box {
+        width: 42px;
+        height: 42px;
+        min-width: 42px;
+        max-width: 42px;
+        min-height: 42px;
+        max-height: 42px;
+        border-radius: 6px;
+        overflow: hidden;
+        background: #0b0d13;
+        border: 1px solid #2d3546;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+
+      :global(.thumb-mini),
+      .thumb-mini {
+        width: 42px !important;
+        height: 42px !important;
+        max-width: 42px !important;
+        max-height: 42px !important;
+        min-width: 42px !important;
+        min-height: 42px !important;
+        border-radius: 6px;
+        object-fit: cover !important;
+        background: #0b0d13;
+        border: 1px solid #2d3546;
+        flex-shrink: 0;
+        display: block;
+      }
+
+      :global(.gallery-url-input),
+      .gallery-url-input {
+        flex: 1;
+        min-width: 0 !important;
+        font-size: 0.8rem;
+        background: #0b0e14;
+        border: 1px solid #242c3c;
+        border-radius: 6px;
+        padding: 6px 8px;
+        color: #e5e7eb;
+      }
+      :global(.gallery-url-input:focus),
+      .gallery-url-input:focus {
+        border-color: var(--accent-color);
+        outline: none;
+      }
+
+      :global(.color-hex-input),
+      .color-hex-input {
+        width: 36px;
+        height: 34px;
+        min-width: 36px;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      :global(.color-name-input),
+      .color-name-input {
+        flex: 1;
+        min-width: 0 !important;
+        font-size: 0.82rem;
+        background: #0b0e14;
+        border: 1px solid #242c3c;
+        border-radius: 6px;
+        padding: 6px 8px;
+        color: #e5e7eb;
+      }
+      :global(.color-name-input:focus),
+      .color-name-input:focus {
+        border-color: var(--accent-color);
+        outline: none;
+      }
+
+      .primary-image-preview-wrap {
+        margin-top: 8px;
+        width: 100%;
+        max-width: 100%;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #090c12;
+        border: 1px solid #232b3b;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px;
+        box-sizing: border-box;
+      }
+      .primary-image-preview-wrap img {
+        max-width: 100% !important;
+        max-height: 140px !important;
+        width: auto !important;
+        height: auto !important;
+        object-fit: contain !important;
+        display: block;
+        border-radius: 6px;
+      }
+
+      /* Center Viewport / Visual Canvas */
+      .center-stage {
+        flex: 1;
+        min-width: 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        background: #0a0c10;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .stage-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px 14px;
+        background: #11141c;
+        border-bottom: 1px solid #212736;
+        font-size: 0.78rem;
+        color: #cbd5e1;
+        flex-shrink: 0;
+      }
+
+      .preview-viewport-wrap {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        justify-content: center;
+        padding: 16px;
+        overflow: auto;
+        background: radial-gradient(circle at top, rgba(255, 94, 58, 0.05), transparent 55%);
+      }
+
+      .preview-frame-shell {
+        width: 100%;
+        height: 100%;
+        border-radius: 12px;
+        border: 1px solid #262e3d;
+        background: #090a0f;
+        overflow: hidden;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+        transition: width 0.2s ease;
+      }
+      .preview-frame-shell iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+        display: block;
+      }
+
+      /* Blank Canvas Visual GrapesJS Workspace */
+      .blank-gjs-workspace {
+        flex: 1;
+        display: flex;
+        min-height: 0;
+        overflow: hidden;
+      }
+      .blank-blocks-rail {
+        width: 240px;
+        background: var(--bg-panel);
+        border-right: 1px solid var(--border-color);
+        overflow-y: auto;
+        padding: 8px;
+        flex-shrink: 0;
+      }
+      .blank-canvas-wrap {
+        flex: 1;
+        min-width: 0;
+        min-height: 0;
+      }
+      .blank-styles-rail {
+        width: 250px;
+        background: var(--bg-panel);
+        border-left: 1px solid var(--border-color);
+        overflow-y: auto;
+        padding: 8px;
+        flex-shrink: 0;
+      }
+
+      /* GrapesJS Dark Tweaks */
+      .gjs-one-bg {
+        background-color: var(--bg-panel);
+      }
+      .gjs-two-color {
+        color: var(--text-primary);
+      }
+      .gjs-three-bg {
+        background-color: var(--bg-surface);
+      }
+      .gjs-block {
+        width: calc(50% - 6px);
+        min-height: 68px;
+        margin: 3px;
+        padding: 6px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-primary);
+      }
+
+      /* Dialogs (<dialog closedby="any">) */
+      dialog.fp-dialog {
+        background: #141821;
+        color: #f3f4f6;
+        border: 1px solid #2c3446;
+        border-radius: 14px;
+        padding: 0;
+        width: min(560px, 92vw);
+        max-height: 86vh;
+        box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7);
+      }
+      dialog.fp-dialog.wide {
+        width: min(880px, 94vw);
+      }
+      dialog.fp-dialog::backdrop {
+        background: rgba(5, 7, 12, 0.75);
+        backdrop-filter: blur(5px);
+      }
+      .dialog-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 18px;
+        border-bottom: 1px solid #262e3d;
+      }
+      .dialog-header h3 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 700;
+      }
+      .dialog-close-btn {
+        background: transparent;
+        border: none;
+        color: #9ca3af;
+        font-size: 1.35rem;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .dialog-body {
+        padding: 18px;
+        overflow-y: auto;
+        max-height: 64vh;
+      }
+      .dialog-footer {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 12px 18px;
+        border-top: 1px solid #262e3d;
+        background: #10131b;
+      }
+
+      .manager-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        border: 1px solid #242c3b;
+        border-radius: 10px;
+        background: #10131b;
+        margin-bottom: 8px;
+      }
+      .manager-row-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+      .manager-thumb {
+        width: 44px;
+        height: 52px;
+        border-radius: 7px;
+        object-fit: cover;
+        flex-shrink: 0;
+      }
+      .manager-badge {
+        display: inline-block;
+        padding: 2px 7px;
+        border-radius: 9999px;
+        font-size: 0.68rem;
+        font-weight: 700;
+        background: rgba(16, 185, 129, 0.14);
+        color: #6ee7b7;
+      }
+      .manager-badge.draft {
+        background: rgba(245, 158, 11, 0.16);
+        color: #fcd34d;
+      }
+
+      .toast-notification {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #141821;
+        border: 1px solid #10b981;
+        color: #ecfdf5;
+        padding: 11px 16px;
+        border-radius: 10px;
+        font-size: 0.84rem;
+        font-weight: 600;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+        z-index: 99999;
+        opacity: 0;
+        transform: translateY(8px);
+        pointer-events: none;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      .toast-notification.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .toast-notification.error {
+        border-color: #ef4444;
+        color: #fef2f2;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="studio-shell">
+      <!-- Top Studio Header -->
+      <header class="editor-topbar">
+        <div class="topbar-group">
+          <a href="/products" class="brand-badge" title="View Public Products Catalog">
+            <span class="brand-dot">P</span>
+            <span>Product Studio</span>
+          </a>
+
+          <WorkspaceSwitcher activeApp="product-studio" />
+
+          <!-- Active Theme Pill -->
+          <div class="active-theme-pill" title={`Active Theme: ${activeTheme}`} style="display: inline-flex; align-items: center; gap: 6px; background: #191f2c; border: 1px solid #313d54; border-radius: 9999px; padding: 4px 10px; font-size: 0.72rem; color: #94a3b8;">
+            <span style="width: 7px; height: 7px; border-radius: 50%; background-color: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);"></span>
+            <span style="text-transform: uppercase; font-weight: 600; font-size: 0.66rem; color: #64748b;">Theme:</span>
+            <strong style="color: #f1f5f9; font-weight: 700; text-transform: capitalize;">{activeTheme}</strong>
+          </div>
+
+          <select id="productSelector" class="product-select" aria-label="Switch Active Product">
+            {productsList.map((p) => (
+              <option value={p.slug} selected={p.id === activeProduct?.id}>
+                {p.title}
+              </option>
+            ))}
+          </select>
+
+          <button type="button" id="btnOpenProductsModal" class="btn-tool">All Products ({productsList.length})</button>
+          <button type="button" id="btnNewProduct" class="btn-tool primary">+ New Product</button>
+        </div>
+
+        <div class="topbar-group">
+          <DeviceSwitcher />
+        </div>
+
+        <div class="topbar-group">
+          <button type="button" data-open="media-library" class="btn-tool">Media</button>
+          <button type="button" id="btnProductScripts" class="btn-tool">Scripts</button>
+          <a
+            id="btnViewLive"
+            href={activeProduct ? `/products/${activeProduct.slug}` : '/products'}
+            target="_blank"
+            class="btn-tool"
+          >
+            Live &#8599;
+          </a>
+          <button type="button" id="btnDuplicateProduct" class="btn-tool">Duplicate</button>
+          <button type="button" id="btnDeleteProduct" class="btn-tool danger">Delete</button>
+          <button type="button" id="btnSaveProduct" class="btn-tool primary">Save Product</button>
+        </div>
+      </header>
+
+      <!-- Main Studio Split -->
+      <main class="studio-workspace">
+        <!-- Left Editor Inspector -->
+        <aside class="sidebar-left">
+          <div class="panel-tabs">
+            <button type="button" class="panel-tab active" data-tab="general">Settings</button>
+            <button type="button" class="panel-tab" data-tab="categories">Categories</button>
+            <button type="button" class="panel-tab" data-tab="commerce">Variants &amp; CTA</button>
+            <button type="button" class="panel-tab" data-tab="seo">SEO &amp; Related</button>
+          </div>
+
+          <!-- Tab 1: General & Layout Settings -->
+          <div id="tab-general" class="sidebar-scroll">
+            <div class="form-group">
+              <label class="form-label" for="fieldTitle">Product Title</label>
+              <input type="text" id="fieldTitle" class="form-control" value={activeProduct?.title || ''} />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="fieldSlug">URL Slug (/products/...)</label>
+              <input type="text" id="fieldSlug" class="form-control" value={activeProduct?.slug || ''} />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="fieldSubtitle">Subtitle</label>
+              <input type="text" id="fieldSubtitle" class="form-control" value={activeProduct?.subtitle || ''} />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="fieldDescription">Short Description</label>
+              <textarea id="fieldDescription" class="form-control" rows="2">{activeProduct?.description || ''}</textarea>
+            </div>
+
+            <div class="form-row-2 form-group">
+              <div>
+                <label class="form-label" for="fieldStatus">Status</label>
+                <select id="fieldStatus" class="form-control">
+                  <option value="published" selected={activeProduct?.status !== 'draft'}>Published</option>
+                  <option value="draft" selected={activeProduct?.status === 'draft'}>Draft</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label" for="fieldStockStatus">Inventory</label>
+                <select id="fieldStockStatus" class="form-control">
+                  <option value="in_stock" selected={activeProduct?.stockStatus === 'in_stock'}>In Stock</option>
+                  <option value="preorder" selected={activeProduct?.stockStatus === 'preorder'}>Pre-Order</option>
+                  <option value="out_of_stock" selected={activeProduct?.stockStatus === 'out_of_stock'}>Out of Stock</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <div class="switch-row">
+                <label for="fieldFeatured">Featured Bestseller Badge</label>
+                <input type="checkbox" switch id="fieldFeatured" checked={Boolean(activeProduct?.featured)} />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <span class="form-label">Single Product Layout Mode</span>
+              <div class="mode-toggle-grid">
+                <button
+                  type="button"
+                  id="btnModeStandard"
+                  class={`mode-option-card ${activeProduct?.layoutMode !== 'blank' ? 'active' : ''}`}
+                >
+                  <span class="mode-option-title">Standard Layout</span>
+                  <span class="mode-option-sub">Global Product Template</span>
+                </button>
+                <button
+                  type="button"
+                  id="btnModeBlank"
+                  class={`mode-option-card ${activeProduct?.layoutMode === 'blank' ? 'active' : ''}`}
+                >
+                  <span class="mode-option-title">Blank Canvas</span>
+                  <span class="mode-option-sub">Visual Page Designer</span>
+                </button>
+              </div>
+
+              <div id="standardLayoutPickerBox" class="layout-card-box" style={activeProduct?.layoutMode === 'blank' ? 'display: none;' : ''}>
+                <label class="form-label" for="fieldLayoutId">Assigned Standard Layout</label>
+                <select id="fieldLayoutId" class="form-control" style="margin-bottom: 10px;">
+                  {layoutsList.map((lay) => (
+                    <option value={lay.id} selected={lay.id === activeLayoutObj?.id}>
+                      {lay.name} {lay.isDefault ? '(Default)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <a
+                  id="linkEditStandardLayout"
+                  href={`/product-layout-editor?id=${encodeURIComponent(activeLayoutObj?.id || defaultLayoutId)}`}
+                  class="btn-tool"
+                  style="width: 100%; justify-content: center;"
+                >
+                  Customize in Layout Builder &#8599;
+                </a>
+              </div>
+            </div>
+
+            <div class="form-group" id="richContentGroup">
+              <label class="form-label" for="fieldContent">Product Overview &amp; Specs HTML</label>
+              <textarea id="fieldContent" class="form-control" rows="8">{activeProduct?.content || ''}</textarea>
+            </div>
+          </div>
+
+          <!-- Tab 2: Multi-Category Selection + Category CRUD -->
+          <div id="tab-categories" class="sidebar-scroll tab-pane-hidden">
+            <div class="form-group">
+              <label class="form-label" for="newCategoryNameInput">Create Product Category</label>
+              <div class="input-with-btn">
+                <input type="text" id="newCategoryNameInput" class="form-control" placeholder="e.g., Denim, Footwear..." />
+                <button type="button" id="btnAddCategory" class="btn-tool primary">+ Add</button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <input type="search" id="catFilterSearch" class="form-control" placeholder="Filter categories..." />
+            </div>
+
+            <div class="form-group">
+              <span class="form-label">Assign Categories to Product</span>
+              <div id="categoriesListContainer">
+                {categoriesList.map((cat) => {
+                  const isChecked = activeProductCats.some(
+                    (c) => c.toLowerCase() === cat.name.toLowerCase() || c.toLowerCase() === cat.slug.toLowerCase()
+                  );
+                  return (
+                    <div class="category-item-row" data-cat-name={cat.name.toLowerCase()} data-cat-slug={cat.slug}>
+                      <label class="category-check-label">
+                        <input type="checkbox" class="prod-category-checkbox" value={cat.name} checked={isChecked} />
+                        <span>{cat.name}</span>
+                      </label>
+                      {cat.slug !== 'uncategorized' && (
+                        <div style="display: flex; gap: 4px;">
+                          <button type="button" class="cat-mini-btn btn-rename-cat" data-slug={cat.slug} data-name={cat.name}>Edit</button>
+                          <button type="button" class="cat-mini-btn danger btn-delete-cat" data-slug={cat.slug} data-name={cat.name}>Del</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 3: Pricing, Gallery, Variants & Buy Buttons -->
+          <div id="tab-commerce" class="sidebar-scroll tab-pane-hidden">
+            <div class="form-row-2 form-group">
+              <div>
+                <label class="form-label" for="fieldCurrency">Currency</label>
+                <select id="fieldCurrency" class="form-control">
+                  <option value="$" selected={activeProduct?.currency === '$'}>$ (USD)</option>
+                  <option value="Rp" selected={activeProduct?.currency === 'Rp'}>Rp (IDR)</option>
+                  <option value="€" selected={activeProduct?.currency === '€'}>€ (EUR)</option>
+                  <option value="£" selected={activeProduct?.currency === '£'}>£ (GBP)</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label" for="fieldSku">SKU Code</label>
+                <input type="text" id="fieldSku" class="form-control" value={activeProduct?.sku || ''} />
+              </div>
+            </div>
+
+            <div class="form-row-2 form-group">
+              <div>
+                <label class="form-label" for="fieldPrice">Price</label>
+                <input type="number" step="0.01" id="fieldPrice" class="form-control" value={activeProduct?.price ?? 0} />
+              </div>
+              <div>
+                <label class="form-label" for="fieldComparePrice">Compare At Price</label>
+                <input type="number" step="0.01" id="fieldComparePrice" class="form-control" value={activeProduct?.compareAtPrice ?? ''} />
+              </div>
+            </div>
+
+            <div class="form-row-2 form-group">
+              <div>
+                <label class="form-label" for="fieldRating">Rating (1-5)</label>
+                <input type="number" step="0.1" min="1" max="5" id="fieldRating" class="form-control" value={activeProduct?.rating ?? 5} />
+              </div>
+              <div>
+                <label class="form-label" for="fieldReviewsCount">Reviews Count</label>
+                <input type="number" id="fieldReviewsCount" class="form-control" value={activeProduct?.reviewsCount ?? 0} />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="fieldPrimaryImage">Primary Featured Image</label>
+              <div class="input-with-btn">
+                <input type="url" id="fieldPrimaryImage" class="form-control" value={activeProduct?.image || ''} />
+                <button type="button" id="btnPickPrimaryImage" class="btn-tool">Browse</button>
+              </div>
+              <div class="primary-image-preview-wrap" id="primaryImagePreviewWrap" style={activeProduct?.image ? '' : 'display: none;'}>
+                <img id="primaryImagePreviewImg" src={activeProduct?.image || ''} alt="Primary image preview" onerror="this.parentElement.style.display='none'" onload="this.parentElement.style.display='flex'" />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                <span class="form-label" style="margin: 0;">Gallery Images</span>
+                <button type="button" id="btnAddGalleryImage" class="cat-mini-btn">+ Add URL</button>
+              </div>
+              <div id="galleryListContainer"></div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="fieldSizes">Available Sizes (comma separated)</label>
+              <input type="text" id="fieldSizes" class="form-control" value={(activeProduct?.sizes || []).join(', ')} placeholder="S, M, L, XL" />
+            </div>
+
+            <div class="form-group">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                <span class="form-label" style="margin: 0;">Color Variants</span>
+                <button type="button" id="btnAddColorRow" class="cat-mini-btn">+ Add Color</button>
+              </div>
+              <div id="colorsListContainer"></div>
+            </div>
+
+            <div class="layout-card-box">
+              <span class="form-label">Primary Buy Button CTA</span>
+              <div class="form-row-2 form-group">
+                <div>
+                  <label class="form-label" for="fieldBuyType">Action Type</label>
+                  <select id="fieldBuyType" class="form-control">
+                    <option value="whatsapp" selected={activeProduct?.buyButton?.type !== 'custom_url'}>WhatsApp Order</option>
+                    <option value="custom_url" selected={activeProduct?.buyButton?.type === 'custom_url'}>Checkout URL</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label" for="fieldBuyLabel">Button Label</label>
+                  <input type="text" id="fieldBuyLabel" class="form-control" value={activeProduct?.buyButton?.label || 'Order Now'} />
+                </div>
+              </div>
+              <div class="form-group" id="buyWhatsappGroup" style={activeProduct?.buyButton?.type === 'custom_url' ? 'display: none;' : ''}>
+                <label class="form-label" for="fieldBuyWaNumber">WhatsApp Number (with Country Code)</label>
+                <input type="text" id="fieldBuyWaNumber" class="form-control" value={activeProduct?.buyButton?.whatsappNumber || '6281234567890'} />
+                <label class="form-label" for="fieldBuyWaMsg" style="margin-top: 8px;">Default Message</label>
+                <textarea id="fieldBuyWaMsg" class="form-control" rows="2">{activeProduct?.buyButton?.whatsappMessage || ''}</textarea>
+              </div>
+              <div class="form-group" id="buyCustomUrlGroup" style={activeProduct?.buyButton?.type === 'custom_url' ? '' : 'display: none;'}>
+                <label class="form-label" for="fieldBuyCustomUrl">Checkout URL</label>
+                <input type="url" id="fieldBuyCustomUrl" class="form-control" value={activeProduct?.buyButton?.url || ''} />
+              </div>
+              <div class="form-row-2">
+                <div>
+                  <label class="form-label" for="fieldBuyBg">Button Color</label>
+                  <input type="color" id="fieldBuyBg" class="form-control" style="height: 36px; padding: 3px;" value={activeProduct?.buyButton?.buttonBg || '#ff5e3a'} />
+                </div>
+                <div>
+                  <label class="form-label" for="fieldBuyTextColor">Text Color</label>
+                  <input type="color" id="fieldBuyTextColor" class="form-control" style="height: 36px; padding: 3px;" value={activeProduct?.buyButton?.buttonColor || '#ffffff'} />
+                </div>
+              </div>
+            </div>
+
+            <div class="layout-card-box">
+              <div class="switch-row" style="margin-bottom: 10px; padding: 6px 10px;">
+                <label for="fieldSecEnabled">Show Secondary Inquiry Button</label>
+                <input
+                  type="checkbox"
+                  switch
+                  id="fieldSecEnabled"
+                  checked={activeProduct?.secondaryButton ? activeProduct.secondaryButton.enabled !== false : true}
+                />
+              </div>
+              <div class="form-group" style="margin-bottom: 8px;">
+                <label class="form-label" for="fieldSecLabel">Secondary Button Label</label>
+                <input type="text" id="fieldSecLabel" class="form-control" value={activeProduct?.secondaryButton?.label || 'Chat / Ask About Fit'} />
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="fieldSecWaNumber">Secondary WhatsApp Number</label>
+                <input
+                  type="text"
+                  id="fieldSecWaNumber"
+                  class="form-control"
+                  value={activeProduct?.secondaryButton?.whatsappNumber || activeProduct?.buyButton?.whatsappNumber || '6281234567890'}
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 4: SEO & Related Products -->
+          <div id="tab-seo" class="sidebar-scroll tab-pane-hidden">
+            <div class="form-group">
+              <label class="form-label" for="fieldTags">Product Tags (comma separated)</label>
+              <input type="text" id="fieldTags" class="form-control" value={(activeProduct?.tags || []).join(', ')} />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="fieldKeywords">SEO Meta Keywords</label>
+              <input type="text" id="fieldKeywords" class="form-control" value={activeProduct?.keywords || ''} />
+            </div>
+
+            <div class="form-group">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                <label class="form-label" for="fieldSchema" style="margin: 0;">Product JSON-LD Schema</label>
+                <button type="button" id="btnGenerateSchema" class="cat-mini-btn">Generate JSON-LD</button>
+              </div>
+              <textarea id="fieldSchema" class="form-control" rows="6" placeholder="Leave blank for automatic Product schema...">{activeProduct?.schema || ''}</textarea>
+            </div>
+
+            <div class="layout-card-box">
+              <div class="switch-row" style="margin-bottom: 12px; padding: 6px 10px;">
+                <label for="fieldShowRelated">Show Related Products Grid</label>
+                <input type="checkbox" switch id="fieldShowRelated" checked={activeProduct?.showRelated !== false} />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="fieldRelatedTagline">Section Tagline</label>
+                <input type="text" id="fieldRelatedTagline" class="form-control" value={activeProduct?.relatedTagline || 'COMPLETE THE LOOK'} />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="fieldRelatedTitle">Section Heading</label>
+                <input type="text" id="fieldRelatedTitle" class="form-control" value={activeProduct?.relatedTitle || 'You May Also Like'} />
+              </div>
+              <div class="form-row-2">
+                <div>
+                  <label class="form-label" for="fieldRelatedCategory">Source Category</label>
+                  <select id="fieldRelatedCategory" class="form-control">
+                    <option value="auto" selected={(activeProduct?.relatedCategory || 'auto') === 'auto'}>Auto (Same Category)</option>
+                    <option value="all" selected={activeProduct?.relatedCategory === 'all'}>All Products</option>
+                    {categoriesList.map((cat) => (
+                      <option value={cat.name} selected={activeProduct?.relatedCategory?.toLowerCase() === cat.name.toLowerCase()}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label" for="fieldRelatedOrderBy">Sort By</label>
+                  <select id="fieldRelatedOrderBy" class="form-control">
+                    <option value="featured" selected={(activeProduct?.relatedOrderBy || 'featured') === 'featured'}>Featured</option>
+                    <option value="price-asc" selected={activeProduct?.relatedOrderBy === 'price-asc'}>Price Low-High</option>
+                    <option value="price-desc" selected={activeProduct?.relatedOrderBy === 'price-desc'}>Price High-Low</option>
+                    <option value="rating" selected={activeProduct?.relatedOrderBy === 'rating'}>Highest Rated</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group" style="margin-top: 10px; margin-bottom: 0;">
+                <label class="form-label" for="fieldRelatedLimit">Max Products Shown</label>
+                <input type="number" min="1" max="12" id="fieldRelatedLimit" class="form-control" value={activeProduct?.relatedLimit || 4} />
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Center Stage: Standard Live Preview OR Blank Canvas GrapesJS -->
+        <section class="center-stage">
+          <!-- Standard Preview View -->
+          <div id="standardStageView" style={activeProduct?.layoutMode === 'blank' ? 'display: none;' : 'display: flex; flex-direction: column; flex: 1; min-height: 0;'}>
+            <div class="stage-banner">
+              <span>
+                Rendering with <strong id="bannerLayoutName">{activeLayoutObj?.name || 'Default Product Layout'}</strong> in Active Theme: <strong style="text-transform: capitalize;">{activeTheme}</strong>. Save changes to refresh live template preview.
+              </span>
+              <div style="display: flex; gap: 8px;">
+                <button type="button" id="btnRefreshPreview" class="btn-tool">Refresh Preview</button>
+                <a
+                  id="bannerLayoutBuilderLink"
+                  href={`/product-layout-editor?id=${encodeURIComponent(activeLayoutObj?.id || defaultLayoutId)}`}
+                  class="btn-tool"
+                >
+                  Open Layout Builder
+                </a>
+              </div>
+            </div>
+            <div class="preview-viewport-wrap">
+              <div id="previewFrameShell" class="preview-frame-shell">
+                <iframe
+                  id="productLiveIframe"
+                  src={activeProduct ? `/products/${activeProduct.slug}` : '/products'}
+                  title="Live Product Preview"
+                ></iframe>
+              </div>
+            </div>
+          </div>
+
+          <!-- Blank Canvas Visual Builder View -->
+          <div id="blankCanvasStageView" style={activeProduct?.layoutMode === 'blank' ? 'display: flex; flex-direction: column; flex: 1; min-height: 0;' : 'display: none;'}>
+            <div class="stage-banner">
+              <span><strong>Blank Canvas Visual Designer</strong> — Custom GrapesJS layout saved exclusively to this product.</span>
+              <span style="color: #9ca3af;">Drag blocks from the left rail into the canvas</span>
+            </div>
+            <div class="blank-gjs-workspace">
+              <div id="blank-blocks-container" class="blank-blocks-rail"></div>
+              <div id="gjs-blank-canvas" class="blank-canvas-wrap"></div>
+              <div id="blank-styles-container" class="blank-styles-rail"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- All Products Manager Modal -->
+    <dialog id="productsManagerDialog" class="fp-dialog wide">
+      <div class="dialog-header">
+        <h3>Products Directory ({productsList.length})</h3>
+        <button type="button" class="dialog-close-btn" data-close-dialog="productsManagerDialog" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+          <input type="search" id="managerSearchInput" class="form-control" placeholder="Search products by title, slug, SKU, or category..." />
+          <button type="button" id="btnManagerNewProduct" class="btn-tool primary">+ New Product</button>
+        </div>
+        <div id="productsManagerRows">
+          {productsList.map((p) => {
+            const pCats = getProductCategoriesArray(p);
+            const pLayout = layoutsList.find((l) => l.id === p.layoutId || l.appliedProductSlugs?.includes(p.slug)) || layoutsList.find((l) => l.isDefault);
+            return (
+              <div class="manager-row" data-search={`${p.title} ${p.slug} ${p.sku || ''} ${pCats.join(' ')}`.toLowerCase()}>
+                <div class="manager-row-left">
+                  <img src={p.image} alt={p.title} class="manager-thumb" loading="lazy" />
+                  <div>
+                    <div style="font-size: 0.88rem; font-weight: 700; color: #f8fafc;">{p.title}</div>
+                    <div style="font-size: 0.75rem; color: #9ca3af; margin-top: 2px;">
+                      /{p.slug} &bull; {pCats.join(', ')} &bull; {p.currency || '$'}{Number(p.price || 0).toFixed(2)}
+                    </div>
+                    <div style="margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap;">
+                      <span class={`manager-badge ${p.status === 'draft' ? 'draft' : ''}`}>{p.status === 'draft' ? 'Draft' : 'Published'}</span>
+                      <span style="font-size: 0.68rem; color: #9ca3af; padding: 2px 6px; border-radius: 9999px; background: #1c212c;">
+                        {p.layoutMode === 'blank' ? 'Blank Canvas' : `Layout: ${pLayout?.name || 'Standard'}`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <a href={`/edit-product?slug=${encodeURIComponent(p.slug)}`} class="btn-tool primary">Edit</a>
+                  <a href={`/products/${encodeURIComponent(p.slug)}`} target="_blank" class="btn-tool">View</a>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </dialog>
+
+    <!-- New Product Modal -->
+    <dialog id="newProductDialog" class="fp-dialog">
+      <div class="dialog-header">
+        <h3>Create New Product</h3>
+        <button type="button" class="dialog-close-btn" data-close-dialog="newProductDialog" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <div class="form-group">
+          <label class="form-label" for="newProdTitle">Product Name</label>
+          <input type="text" id="newProdTitle" class="form-control" placeholder="e.g., Acid-Wash Knit Crewneck" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="newProdSlug">URL Slug (optional)</label>
+          <input type="text" id="newProdSlug" class="form-control" placeholder="auto-generated if blank" />
+        </div>
+        <div class="form-row-2 form-group">
+          <div>
+            <label class="form-label" for="newProdPrice">Price</label>
+            <input type="number" step="0.01" id="newProdPrice" class="form-control" value="49.00" />
+          </div>
+          <div>
+            <label class="form-label" for="newProdLayout">Layout Mode</label>
+            <select id="newProdLayout" class="form-control">
+              <option value="standard">Standard Product Layout</option>
+              <option value="blank">Blank Canvas Designer</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label" for="newProdCategory">Primary Category</label>
+          <select id="newProdCategory" class="form-control">
+            {categoriesList.map((cat) => (
+              <option value={cat.name}>{cat.name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn-tool" data-close-dialog="newProductDialog">Cancel</button>
+        <button type="button" id="btnConfirmNewProduct" class="btn-tool primary">Create Product</button>
+      </div>
+    </dialog>
+
+    <!-- Rename Category Modal -->
+    <dialog id="renameCategoryDialog" class="fp-dialog">
+      <div class="dialog-header">
+        <h3>Rename Category</h3>
+        <button type="button" class="dialog-close-btn" data-close-dialog="renameCategoryDialog" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <input type="hidden" id="renameCatTargetSlug" />
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label" for="renameCatNewName">New Category Name</label>
+          <input type="text" id="renameCatNewName" class="form-control" />
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn-tool" data-close-dialog="renameCategoryDialog">Cancel</button>
+        <button type="button" id="btnConfirmRenameCategory" class="btn-tool primary">Rename Category</button>
+      </div>
+    </dialog>
+
+    <!-- Delete Category Modal -->
+    <dialog id="deleteCategoryDialog" class="fp-dialog">
+      <div class="dialog-header">
+        <h3>Delete Category?</h3>
+        <button type="button" class="dialog-close-btn" data-close-dialog="deleteCategoryDialog" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <input type="hidden" id="deleteCatTargetSlug" />
+        <p style="margin: 0; font-size: 0.9rem; color: #cbd5e1; line-height: 1.5;">
+          Remove category <strong id="deleteCatLabel"></strong>? Products in only this category will safely move to <strong>Uncategorized</strong>.
+        </p>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn-tool" data-close-dialog="deleteCategoryDialog">Cancel</button>
+        <button type="button" id="btnConfirmDeleteCategory" class="btn-tool primary" style="background: #ef4444; border-color: #ef4444;">Delete Category</button>
+      </div>
+    </dialog>
+
+    <!-- Delete Product Confirmation Modal -->
+    <dialog id="deleteProductDialog" class="fp-dialog">
+      <div class="dialog-header">
+        <h3>Delete Product?</h3>
+        <button type="button" class="dialog-close-btn" data-close-dialog="deleteProductDialog" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <p style="margin: 0; font-size: 0.9rem; color: #cbd5e1; line-height: 1.5;">
+          Are you sure you want to permanently delete <strong>{activeProduct?.title}</strong>?
+        </p>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn-tool" data-close-dialog="deleteProductDialog">Cancel</button>
+        <button type="button" id="btnConfirmDeleteProduct" class="btn-tool primary" style="background: #ef4444; border-color: #ef4444;">Delete Product</button>
+      </div>
+    </dialog>
+
+    <div id="toastNotification" class="toast-notification" role="status" aria-live="polite">
+      <span id="toastMessage">Saved!</span>
+    </div>
+
+    <script is:inline type="module">
+      if (!('switch' in HTMLInputElement.prototype)) {
+        import('https://esm.sh/input-switch-polyfill@1').catch(() => {});
+      }
+    </script>
+
+    <script
+      is:inline
+      define:vars={{
+        initialProduct: activeProduct,
+        initialLayouts: layoutsList,
+        initialTemplates: templatesList,
+      }}
+    >
+      window.currentProduct = JSON.parse(JSON.stringify(initialProduct || {}));
+      window.allLayouts = initialLayouts || [];
+      window.allTemplates = initialTemplates || [];
+      window.blankEditor = null;
+
+      function showToast(msg, isError = false) {
+        const toast = document.getElementById('toastNotification');
+        const msgEl = document.getElementById('toastMessage');
+        if (!toast || !msgEl) return;
+        msgEl.textContent = msg;
+        toast.className = `toast-notification ${isError ? 'error' : ''} show`;
+        setTimeout(() => toast.classList.remove('show'), 3200);
+      }
+
+      function wireDialogs() {
+        document.querySelectorAll('dialog.fp-dialog').forEach((d) => {
+          if (!('closedBy' in HTMLDialogElement.prototype)) {
+            d.addEventListener('click', (e) => {
+              if (e.target === d) d.close();
+            });
+          }
+        });
+        document.querySelectorAll('[data-close-dialog]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const target = document.getElementById(btn.getAttribute('data-close-dialog') || '');
+            if (target?.close) target.close();
+          });
+        });
+      }
+
+      document.addEventListener('DOMContentLoaded', () => {
+        wireDialogs();
+
+        // Studio Switcher
+        const switcherBtn = document.getElementById('btnStudioSwitcher');
+        const switcherMenu = document.getElementById('studioSwitcherMenu');
+        if (switcherBtn && switcherMenu) {
+          switcherBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const open = switcherMenu.classList.toggle('open');
+            switcherBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+          });
+          document.addEventListener('click', () => {
+            switcherMenu.classList.remove('open');
+            switcherBtn.setAttribute('aria-expanded', 'false');
+          });
+        }
+
+        // Left Panel Tabs
+        document.querySelectorAll('[data-tab]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const target = btn.getAttribute('data-tab');
+            document.querySelectorAll('[data-tab]').forEach((b) => b.classList.remove('active'));
+            btn.classList.add('active');
+            ['general', 'categories', 'commerce', 'seo'].forEach((id) => {
+              document.getElementById(`tab-${id}`)?.classList.toggle('tab-pane-hidden', id !== target);
+            });
+          });
+        });
+
+        // Switch Product Dropdown
+        document.getElementById('productSelector')?.addEventListener('change', (e) => {
+          window.location.href = `/edit-product?slug=${encodeURIComponent(e.target.value)}`;
+        });
+
+        // Device Preview Sizing
+        const previewShell = document.getElementById('previewFrameShell');
+        document.querySelectorAll('.device-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const dev = btn.getAttribute('data-device');
+            document.querySelectorAll('.device-btn').forEach((b) => b.classList.remove('active'));
+            btn.classList.add('active');
+            if (previewShell) {
+              previewShell.style.width = dev === 'tablet' ? '768px' : dev === 'mobile' ? '390px' : '100%';
+            }
+            if (window.blankEditor) {
+              window.blankEditor.setDevice(dev === 'tablet' ? 'Tablet' : dev === 'mobile' ? 'Mobile portrait' : 'Desktop');
+            }
+          });
+        });
+
+        // Refresh Preview Iframe
+        function refreshPreviewIframe() {
+          const iframe = document.getElementById('productLiveIframe');
+          if (!iframe || !window.currentProduct?.slug) return;
+          iframe.src = `/products/${encodeURIComponent(window.currentProduct.slug)}?_t=${Date.now()}`;
+        }
+        document.getElementById('btnRefreshPreview')?.addEventListener('click', refreshPreviewIframe);
+
+        // Blank Canvas GrapesJS Lazy Initialization
+        function initBlankGrapesEditor() {
+          if (window.blankEditor) return window.blankEditor;
+          const editor = grapesjs.init({
+            container: '#gjs-blank-canvas',
+            fromElement: false,
+            height: '100%',
+            width: 'auto',
+            storageManager: false,
+            panels: { defaults: [] },
+            blockManager: { appendTo: '#blank-blocks-container' },
+            styleManager: {
+              appendTo: '#blank-styles-container',
+              sectors: [
+                { name: 'Layout', open: true, buildProps: ['display', 'flex-direction', 'justify-content', 'gap', 'padding', 'margin'] },
+                { name: 'Typography', open: false, buildProps: ['font-family', 'font-size', 'font-weight', 'color', 'text-align'] },
+                { name: 'Background & Border', open: false, buildProps: ['background-color', 'border-radius', 'border'] },
+              ],
+            },
+          });
+
+          const bm = editor.BlockManager;
+          bm.add('blank-hero-split', {
+            label: 'Product Split Hero',
+            category: 'Product Sections',
+            content: `<section style="padding: 48px 24px; background: #090a0f; color: #f8fafc;"><div style="max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 36px; align-items: center;"><img src="${window.currentProduct?.image || ''}" style="width: 100%; border-radius: 14px; aspect-ratio: 4/5; object-fit: cover;" /><div><h1 style="font-size: 2.2rem; margin: 0 0 12px;">${window.currentProduct?.title || 'Product Title'}</h1><p style="color: #94a3b8; line-height: 1.65;">${window.currentProduct?.description || ''}</p><a href="#order" style="display: inline-block; margin-top: 16px; padding: 12px 24px; background: #ff5e3a; color: #fff; border-radius: 8px; text-decoration: none; font-weight: 700;">Order Now</a></div></div></section>`,
+          });
+          bm.add('blank-heading', { label: 'Heading', category: 'Basic', content: '<h2 style="color: #fff; padding: 12px 20px;">Custom Section Title</h2>' });
+          bm.add('blank-text', { label: 'Text', category: 'Basic', content: '<p style="color: #cbd5e1; padding: 8px 20px; line-height: 1.7;">Describe craftsmanship, sizing, or exclusive story details here.</p>' });
+          bm.add('blank-image', { label: 'Image', category: 'Basic', content: { type: 'image' } });
+          (window.allTemplates || []).forEach((tpl) => {
+            bm.add(`blank-tpl-${tpl.id}`, {
+              label: tpl.name,
+              category: 'Saved Templates',
+              content: tpl.html || '<div>Template</div>',
+            });
+          });
+
+          editor.on('load', () => {
+            if (window.currentProduct?.projectData) {
+              editor.loadProjectData(window.currentProduct.projectData);
+            } else {
+              const starterHtml =
+                window.currentProduct?.content && window.currentProduct.content.trim()
+                  ? window.currentProduct.content
+                  : `<section style="padding: 48px 24px; background: #090a0f; color: #f8fafc; max-width: 1120px; margin: 0 auto;"><h1>${window.currentProduct?.title || 'Custom Product'}</h1><p>${window.currentProduct?.description || ''}</p></section>`;
+              editor.setComponents(starterHtml);
+              if (window.currentProduct?.css) editor.setStyle(window.currentProduct.css);
+            }
+          });
+
+          window.blankEditor = editor;
+          window.editor = editor;
+          return editor;
+        }
+
+        if (window.currentProduct?.layoutMode === 'blank') {
+          initBlankGrapesEditor();
+        }
+
+        // Layout Mode Toggle (Standard vs Blank Canvas)
+        function setLayoutMode(mode) {
+          window.currentProduct.layoutMode = mode;
+          document.getElementById('btnModeStandard')?.classList.toggle('active', mode !== 'blank');
+          document.getElementById('btnModeBlank')?.classList.toggle('active', mode === 'blank');
+          document.getElementById('standardLayoutPickerBox').style.display = mode === 'blank' ? 'none' : '';
+          document.getElementById('standardStageView').style.display = mode === 'blank' ? 'none' : 'flex';
+          document.getElementById('blankCanvasStageView').style.display = mode === 'blank' ? 'flex' : 'none';
+          if (mode === 'blank') {
+            initBlankGrapesEditor();
+          }
+        }
+        document.getElementById('btnModeStandard')?.addEventListener('click', () => setLayoutMode('standard'));
+        document.getElementById('btnModeBlank')?.addEventListener('click', () => setLayoutMode('blank'));
+
+        // Layout ID dropdown syncs Layout Builder links
+        document.getElementById('fieldLayoutId')?.addEventListener('change', (e) => {
+          const layId = e.target.value;
+          const layObj = window.allLayouts.find((l) => l.id === layId);
+          const url = `/product-layout-editor?id=${encodeURIComponent(layId)}`;
+          document.getElementById('linkEditStandardLayout')?.setAttribute('href', url);
+          document.getElementById('bannerLayoutBuilderLink')?.setAttribute('href', url);
+          const labelEl = document.getElementById('bannerLayoutName');
+          if (labelEl && layObj) labelEl.textContent = layObj.name;
+        });
+
+        // Gallery Manager
+        let galleryState = Array.isArray(window.currentProduct?.gallery) ? [...window.currentProduct.gallery] : [];
+        const galleryContainer = document.getElementById('galleryListContainer');
+
+        function renderGalleryRows() {
+          if (!galleryContainer) return;
+          galleryContainer.innerHTML = '';
+          galleryState.forEach((url, idx) => {
+            const row = document.createElement('div');
+            row.className = 'gallery-row-item';
+            row.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 8px; width: 100%; max-width: 100%; box-sizing: border-box;';
+            row.innerHTML = `
+              <div class="gallery-thumb-box" style="width: 42px; height: 42px; min-width: 42px; max-width: 42px; min-height: 42px; max-height: 42px; border-radius: 6px; overflow: hidden; flex-shrink: 0; background: #0b0d13; border: 1px solid #2d3546; display: flex; align-items: center; justify-content: center;">
+                <img src="${url || ''}" class="thumb-mini" style="width: 42px; height: 42px; max-width: 42px; max-height: 42px; min-width: 42px; min-height: 42px; object-fit: cover; display: block;" alt="" onerror="this.style.opacity='0.2'" onload="this.style.opacity='1'" />
+              </div>
+              <input type="url" class="form-control gallery-url-input" style="flex: 1; min-width: 0;" value="${url || ''}" placeholder="https://..." />
+              <button type="button" class="cat-mini-btn btn-gal-pick" style="flex-shrink: 0;">Pick</button>
+              <button type="button" class="cat-mini-btn danger btn-gal-del" style="flex-shrink: 0;">&times;</button>
+            `;
+            const urlInput = row.querySelector('.gallery-url-input');
+            const thumbImg = row.querySelector('.thumb-mini');
+            urlInput.addEventListener('input', (e) => {
+              galleryState[idx] = e.target.value;
+              if (thumbImg) thumbImg.src = e.target.value;
+            });
+            row.querySelector('.btn-gal-pick').addEventListener('click', () => {
+              if (window.openImageChooserModal) {
+                window.openImageChooserModal('products', (pickedUrl) => {
+                  galleryState[idx] = pickedUrl;
+                  renderGalleryRows();
+                });
+              }
+            });
+            row.querySelector('.btn-gal-del').addEventListener('click', () => {
+              galleryState.splice(idx, 1);
+              renderGalleryRows();
+            });
+            galleryContainer.appendChild(row);
+          });
+        }
+        renderGalleryRows();
+        document.getElementById('btnAddGalleryImage')?.addEventListener('click', () => {
+          galleryState.push('');
+          renderGalleryRows();
+        });
+
+        // Primary Image Preview helper
+        const primaryImgInput = document.getElementById('fieldPrimaryImage');
+        const primaryImgPreviewWrap = document.getElementById('primaryImagePreviewWrap');
+        const primaryImgPreviewImg = document.getElementById('primaryImagePreviewImg');
+        function updatePrimaryPreview(url) {
+          if (primaryImgPreviewImg && primaryImgPreviewWrap) {
+            if (url && url.trim()) {
+              primaryImgPreviewImg.src = url.trim();
+              primaryImgPreviewWrap.style.display = 'flex';
+            } else {
+              primaryImgPreviewWrap.style.display = 'none';
+            }
+          }
+        }
+        primaryImgInput?.addEventListener('input', (e) => {
+          updatePrimaryPreview(e.target.value);
+        });
+
+        document.getElementById('btnPickPrimaryImage')?.addEventListener('click', () => {
+          if (window.openImageChooserModal) {
+            window.openImageChooserModal('products', (url) => {
+              if (primaryImgInput) {
+                primaryImgInput.value = url;
+                updatePrimaryPreview(url);
+              }
+            });
+          } else {
+            showToast('Media library still loading...', true);
+          }
+        });
+
+        // Color Swatches Manager
+        let colorsState = Array.isArray(window.currentProduct?.colors)
+          ? window.currentProduct.colors.map((c) => ({ ...c }))
+          : [];
+        const colorsContainer = document.getElementById('colorsListContainer');
+
+        function renderColorRows() {
+          if (!colorsContainer) return;
+          colorsContainer.innerHTML = '';
+          colorsState.forEach((clr, idx) => {
+            const row = document.createElement('div');
+            row.className = 'color-row-item';
+            row.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 8px; width: 100%; max-width: 100%; box-sizing: border-box;';
+            row.innerHTML = `
+              <input type="color" class="color-hex-input" value="${clr.hex || '#18181b'}" style="width: 36px; height: 34px; min-width: 36px; border: none; background: transparent; cursor: pointer; flex-shrink: 0;" />
+              <input type="text" class="form-control color-name-input" style="flex: 1; min-width: 0;" value="${clr.name || ''}" placeholder="Color Name" />
+              <button type="button" class="cat-mini-btn danger btn-color-del" style="flex-shrink: 0;">&times;</button>
+            `;
+            row.querySelector('.color-hex-input').addEventListener('input', (e) => {
+              colorsState[idx].hex = e.target.value;
+            });
+            row.querySelector('.color-name-input').addEventListener('input', (e) => {
+              colorsState[idx].name = e.target.value;
+            });
+            row.querySelector('.btn-color-del').addEventListener('click', () => {
+              colorsState.splice(idx, 1);
+              renderColorRows();
+            });
+            colorsContainer.appendChild(row);
+          });
+        }
+        renderColorRows();
+        document.getElementById('btnAddColorRow')?.addEventListener('click', () => {
+          colorsState.push({ name: 'New Color', hex: '#18181b' });
+          renderColorRows();
+        });
+
+        // Buy Button Type Toggle
+        document.getElementById('fieldBuyType')?.addEventListener('change', (e) => {
+          const isCustom = e.target.value === 'custom_url';
+          document.getElementById('buyWhatsappGroup').style.display = isCustom ? 'none' : '';
+          document.getElementById('buyCustomUrlGroup').style.display = isCustom ? '' : 'none';
+        });
+
+        // Category Management (CRUD wired to /api/product-categories)
+        document.getElementById('catFilterSearch')?.addEventListener('input', (e) => {
+          const q = String(e.target.value || '').toLowerCase().trim();
+          document.querySelectorAll('#categoriesListContainer .category-item-row').forEach((row) => {
+            const name = row.getAttribute('data-cat-name') || '';
+            row.style.display = !q || name.includes(q) ? 'flex' : 'none';
+          });
+        });
+
+        function attachCategoryRowHandlers(row) {
+          row.querySelector('.btn-rename-cat')?.addEventListener('click', (e) => {
+            const btn = e.currentTarget;
+            document.getElementById('renameCatTargetSlug').value = btn.getAttribute('data-slug') || '';
+            document.getElementById('renameCatNewName').value = btn.getAttribute('data-name') || '';
+            document.getElementById('renameCategoryDialog')?.showModal();
+          });
+          row.querySelector('.btn-delete-cat')?.addEventListener('click', (e) => {
+            const btn = e.currentTarget;
+            document.getElementById('deleteCatTargetSlug').value = btn.getAttribute('data-slug') || '';
+            document.getElementById('deleteCatLabel').textContent = btn.getAttribute('data-name') || '';
+            document.getElementById('deleteCategoryDialog')?.showModal();
+          });
+        }
+        document.querySelectorAll('#categoriesListContainer .category-item-row').forEach(attachCategoryRowHandlers);
+
+        document.getElementById('btnAddCategory')?.addEventListener('click', async () => {
+          const input = document.getElementById('newCategoryNameInput');
+          const name = input?.value.trim();
+          if (!name) return;
+          try {
+            const res = await fetch('/api/product-categories', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'create', name }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Failed to add category');
+
+            const cat = data.category;
+            const list = document.getElementById('categoriesListContainer');
+            if (list) {
+              const row = document.createElement('div');
+              row.className = 'category-item-row';
+              row.setAttribute('data-cat-name', cat.name.toLowerCase());
+              row.setAttribute('data-cat-slug', cat.slug);
+              row.innerHTML = `
+                <label class="category-check-label">
+                  <input type="checkbox" class="prod-category-checkbox" value="${cat.name}" checked />
+                  <span>${cat.name}</span>
+                </label>
+                <div style="display: flex; gap: 4px;">
+                  <button type="button" class="cat-mini-btn btn-rename-cat" data-slug="${cat.slug}" data-name="${cat.name}">Edit</button>
+                  <button type="button" class="cat-mini-btn danger btn-delete-cat" data-slug="${cat.slug}" data-name="${cat.name}">Del</button>
+                </div>
+              `;
+              attachCategoryRowHandlers(row);
+              list.appendChild(row);
+            }
+            if (input) input.value = '';
+            showToast(`Category "${cat.name}" created & selected!`);
+          } catch (err) {
+            showToast(err.message || 'Category error', true);
+          }
+        });
+
+        document.getElementById('btnConfirmRenameCategory')?.addEventListener('click', async () => {
+          const slug = document.getElementById('renameCatTargetSlug')?.value;
+          const newName = document.getElementById('renameCatNewName')?.value.trim();
+          if (!slug || !newName) return;
+          try {
+            const res = await fetch('/api/product-categories', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'rename', slug, newName }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Rename failed');
+            document.getElementById('renameCategoryDialog')?.close();
+            showToast(`Renamed category to "${newName}". Reloading...`);
+            setTimeout(() => window.location.reload(), 650);
+          } catch (err) {
+            showToast(err.message || 'Rename failed', true);
+          }
+        });
+
+        document.getElementById('btnConfirmDeleteCategory')?.addEventListener('click', async () => {
+          const slug = document.getElementById('deleteCatTargetSlug')?.value;
+          if (!slug) return;
+          try {
+            const res = await fetch('/api/product-categories', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'delete', slug }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Delete failed');
+            document.getElementById('deleteCategoryDialog')?.close();
+            showToast('Category deleted cleanly. Reloading...');
+            setTimeout(() => window.location.reload(), 650);
+          } catch (err) {
+            showToast(err.message || 'Delete failed', true);
+          }
+        });
+
+        // Schema Generator
+        document.getElementById('btnGenerateSchema')?.addEventListener('click', () => {
+          const schemaObj = {
+            '@context': 'https://schema.org',
+            '@type': 'Product',
+            name: document.getElementById('fieldTitle')?.value || '',
+            image: [document.getElementById('fieldPrimaryImage')?.value || ''].filter(Boolean),
+            description: document.getElementById('fieldDescription')?.value || '',
+            sku: document.getElementById('fieldSku')?.value || '',
+            offers: {
+              '@type': 'Offer',
+              priceCurrency: document.getElementById('fieldCurrency')?.value === 'Rp' ? 'IDR' : 'USD',
+              price: Number(document.getElementById('fieldPrice')?.value || 0).toFixed(2),
+              availability:
+                document.getElementById('fieldStockStatus')?.value === 'out_of_stock'
+                  ? 'https://schema.org/OutOfStock'
+                  : 'https://schema.org/InStock',
+            },
+          };
+          document.getElementById('fieldSchema').value = JSON.stringify(schemaObj, null, 2);
+          showToast('Generated Product JSON-LD Schema!');
+        });
+
+        // Custom Scripts Modal Integration
+        document.getElementById('btnProductScripts')?.addEventListener('click', () => {
+          if (window.FastPressCustomCode?.open) {
+            window.FastPressCustomCode.open({
+              scope: 'product',
+              slug: window.currentProduct.slug,
+              title: window.currentProduct.title,
+              targetType: 'product',
+              customCode: window.currentProduct.customCode || {},
+              onSave: (resObj) => {
+                window.currentProduct.customCode = resObj?.code || resObj || {};
+              },
+            });
+          }
+        });
+
+        // Save Product
+        async function saveProduct() {
+          const btn = document.getElementById('btnSaveProduct');
+          const orig = btn ? btn.textContent : 'Save Product';
+          if (btn) {
+            btn.textContent = 'Saving...';
+            btn.disabled = true;
+          }
+
+          try {
+            const selectedCategories = Array.from(document.querySelectorAll('.prod-category-checkbox:checked')).map((cb) => cb.value);
+            const sizesArr = String(document.getElementById('fieldSizes')?.value || '')
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean);
+            const tagsArr = String(document.getElementById('fieldTags')?.value || '')
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean);
+
+            const layoutMode = window.currentProduct.layoutMode === 'blank' ? 'blank' : 'standard';
+            let contentVal = document.getElementById('fieldContent')?.value || '';
+            let cssVal = window.currentProduct.css || '';
+            let projectDataVal = window.currentProduct.projectData || null;
+
+            if (layoutMode === 'blank' && window.blankEditor) {
+              contentVal = window.blankEditor.getHtml();
+              cssVal = window.blankEditor.getCss();
+              projectDataVal = window.blankEditor.getProjectData();
+            }
+
+            const newSlugInput = document.getElementById('fieldSlug')?.value.trim();
+            const payload = {
+              action: 'save',
+              id: window.currentProduct.id,
+              slug: window.currentProduct.slug,
+              newSlug: newSlugInput && newSlugInput !== window.currentProduct.slug ? newSlugInput : undefined,
+              title: document.getElementById('fieldTitle')?.value.trim() || 'Untitled Product',
+              subtitle: document.getElementById('fieldSubtitle')?.value.trim() || '',
+              description: document.getElementById('fieldDescription')?.value.trim() || '',
+              content: contentVal,
+              css: cssVal,
+              projectData: projectDataVal,
+              status: document.getElementById('fieldStatus')?.value || 'published',
+              stockStatus: document.getElementById('fieldStockStatus')?.value || 'in_stock',
+              featured: Boolean(document.getElementById('fieldFeatured')?.checked),
+              layoutMode,
+              layoutId: layoutMode === 'standard' ? document.getElementById('fieldLayoutId')?.value : undefined,
+              categories: selectedCategories.length > 0 ? selectedCategories : ['Uncategorized'],
+              currency: document.getElementById('fieldCurrency')?.value || '$',
+              sku: document.getElementById('fieldSku')?.value.trim() || '',
+              price: Number(document.getElementById('fieldPrice')?.value || 0),
+              compareAtPrice: document.getElementById('fieldComparePrice')?.value
+                ? Number(document.getElementById('fieldComparePrice').value)
+                : '',
+              rating: Number(document.getElementById('fieldRating')?.value || 5),
+              reviewsCount: Number(document.getElementById('fieldReviewsCount')?.value || 0),
+              image: document.getElementById('fieldPrimaryImage')?.value.trim() || '',
+              gallery: galleryState.map((g) => String(g).trim()).filter(Boolean),
+              sizes: sizesArr,
+              colors: colorsState.filter((c) => c.name.trim()),
+              tags: tagsArr,
+              keywords: document.getElementById('fieldKeywords')?.value.trim() || '',
+              schema: document.getElementById('fieldSchema')?.value.trim() || '',
+              customCode: window.currentProduct.customCode,
+              showRelated: Boolean(document.getElementById('fieldShowRelated')?.checked),
+              relatedTagline: document.getElementById('fieldRelatedTagline')?.value.trim() || 'COMPLETE THE LOOK',
+              relatedTitle: document.getElementById('fieldRelatedTitle')?.value.trim() || 'You May Also Like',
+              relatedCategory: document.getElementById('fieldRelatedCategory')?.value || 'auto',
+              relatedOrderBy: document.getElementById('fieldRelatedOrderBy')?.value || 'featured',
+              relatedLimit: Number(document.getElementById('fieldRelatedLimit')?.value || 4),
+              buyButton: {
+                type: document.getElementById('fieldBuyType')?.value || 'whatsapp',
+                label: document.getElementById('fieldBuyLabel')?.value.trim() || 'Order Now',
+                whatsappNumber: document.getElementById('fieldBuyWaNumber')?.value.trim() || '',
+                whatsappMessage: document.getElementById('fieldBuyWaMsg')?.value.trim() || '',
+                url: document.getElementById('fieldBuyCustomUrl')?.value.trim() || '#',
+                buttonBg: document.getElementById('fieldBuyBg')?.value || '#ff5e3a',
+                buttonColor: document.getElementById('fieldBuyTextColor')?.value || '#ffffff',
+                target: '_blank',
+              },
+              secondaryButton: {
+                enabled: Boolean(document.getElementById('fieldSecEnabled')?.checked),
+                type: 'whatsapp',
+                label: document.getElementById('fieldSecLabel')?.value.trim() || 'Chat / Ask About Fit',
+                whatsappNumber: document.getElementById('fieldSecWaNumber')?.value.trim() || '',
+              },
+            };
+
+            const res = await fetch('/api/products', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Failed to save product');
+
+            const oldSlug = window.currentProduct.slug;
+            window.currentProduct = data.product;
+            document.getElementById('btnViewLive')?.setAttribute('href', `/products/${encodeURIComponent(data.product.slug)}`);
+
+            if (oldSlug !== data.product.slug) {
+              const nextUrl = new URL(window.location.href);
+              nextUrl.searchParams.set('slug', data.product.slug);
+              window.history.replaceState({}, '', nextUrl.toString());
+            }
+
+            if (layoutMode === 'standard') {
+              refreshPreviewIframe();
+            }
+            showToast(`Product "${data.product.title}" saved!`);
+          } catch (err) {
+            showToast(err.message || 'Save failed', true);
+          } finally {
+            if (btn) {
+              btn.textContent = orig;
+              btn.disabled = false;
+            }
+          }
+        }
+
+        document.getElementById('btnSaveProduct')?.addEventListener('click', saveProduct);
+        document.addEventListener('keydown', (e) => {
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+            e.preventDefault();
+            saveProduct();
+          }
+        });
+
+        // Products Directory Manager Modal
+        const managerDialog = document.getElementById('productsManagerDialog');
+        document.getElementById('btnOpenProductsModal')?.addEventListener('click', () => managerDialog?.showModal());
+        document.getElementById('managerSearchInput')?.addEventListener('input', (e) => {
+          const q = String(e.target.value || '').toLowerCase().trim();
+          document.querySelectorAll('#productsManagerRows .manager-row').forEach((row) => {
+            const hay = row.getAttribute('data-search') || '';
+            row.style.display = !q || hay.includes(q) ? 'flex' : 'none';
+          });
+        });
+
+        // New Product Modal
+        const newProdDialog = document.getElementById('newProductDialog');
+        const openNewProd = () => {
+          if (managerDialog?.open) managerDialog.close();
+          newProdDialog?.showModal();
+        };
+        document.getElementById('btnNewProduct')?.addEventListener('click', openNewProd);
+        document.getElementById('btnManagerNewProduct')?.addEventListener('click', openNewProd);
+
+        document.getElementById('btnConfirmNewProduct')?.addEventListener('click', async () => {
+          const title = document.getElementById('newProdTitle')?.value.trim();
+          if (!title) {
+            showToast('Please enter a product name.', true);
+            return;
+          }
+          const slug = document.getElementById('newProdSlug')?.value.trim() || '';
+          const price = Number(document.getElementById('newProdPrice')?.value || 49);
+          const layoutMode = document.getElementById('newProdLayout')?.value || 'standard';
+          const category = document.getElementById('newProdCategory')?.value || 'Uncategorized';
+
+          try {
+            const res = await fetch('/api/products', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'create',
+                title,
+                slug,
+                price,
+                layoutMode,
+                categories: [category],
+              }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Failed to create product');
+            window.location.href = `/edit-product?slug=${encodeURIComponent(data.product.slug)}`;
+          } catch (err) {
+            showToast(err.message || 'Create failed', true);
+          }
+        });
+
+        // Duplicate Product
+        document.getElementById('btnDuplicateProduct')?.addEventListener('click', async () => {
+          try {
+            const res = await fetch('/api/products', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'duplicate', id: window.currentProduct.id }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Duplicate failed');
+            window.location.href = `/edit-product?slug=${encodeURIComponent(data.product.slug)}`;
+          } catch (err) {
+            showToast(err.message || 'Duplicate failed', true);
+          }
+        });
+
+        // Delete Product Modal
+        const delProdDialog = document.getElementById('deleteProductDialog');
+        document.getElementById('btnDeleteProduct')?.addEventListener('click', () => delProdDialog?.showModal());
+        document.getElementById('btnConfirmDeleteProduct')?.addEventListener('click', async () => {
+          try {
+            const res = await fetch(`/api/products?id=${encodeURIComponent(window.currentProduct.id)}`, {
+              method: 'DELETE',
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Delete failed');
+            window.location.href = '/edit-product';
+          } catch (err) {
+            showToast(err.message || 'Delete failed', true);
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

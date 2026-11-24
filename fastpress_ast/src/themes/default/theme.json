@@ -1,0 +1,10 @@
+{
+  "name": "Default",
+  "version": "1.0.0",
+  "description": "The default FastPress theme — dark-accent creative agency & SaaS design system.",
+  "author": "FastPress",
+  "accentColor": "#ff5e3a",
+  "fontHeading": "Montserrat",
+  "fontBody": "Plus Jakarta Sans",
+  "previewImage": "/themes/default-preview.svg"
+}

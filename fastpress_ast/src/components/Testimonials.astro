@@ -1,0 +1,139 @@
+---
+const testimonials = [
+  {
+    name: 'Sarah Jenkins',
+    role: 'Founder / Marketing',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=240&h=240&q=80',
+    quote: 'Lorem ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry standard dummy text ever since the 1500s.',
+  },
+  {
+    name: 'Michael Chen',
+    role: 'CEO / Digital Agency',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=240&h=240&q=80',
+    quote: 'Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore.',
+  },
+  {
+    name: 'Emily Blunt',
+    role: 'Creative Director',
+    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=240&h=240&q=80',
+    quote: 'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident.',
+  },
+];
+---
+
+<section class="testimonials-section py-section" id="testimonials" aria-label="Client Testimonials">
+  <div class="container">
+    <div class="section-center-head">
+      <h2 class="section-title section-title-line">Testimonials</h2>
+      <p class="section-subtitle">
+        What our valuable partners and creative clients say about our collaboration.
+      </p>
+    </div>
+
+    <div class="testimonials-grid">
+      {testimonials.map((item) => (
+        <div class="testimonial-card">
+          <div class="avatar-wrap">
+            <img
+              src={item.avatar}
+              alt={item.name}
+              class="avatar-img"
+              width="80"
+              height="80"
+              loading="lazy"
+            />
+          </div>
+          <blockquote class="testimonial-quote">
+            "{item.quote}"
+          </blockquote>
+          <div class="testimonial-meta">
+            <h3 class="author-name">{item.name}</h3>
+            <span class="author-role">{item.role}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .testimonials-section {
+    background-color: var(--color-white);
+  }
+
+  .testimonials-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+
+  @media (min-width: 768px) {
+    .testimonials-grid {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2.5rem;
+    }
+  }
+
+  .testimonial-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 2.5rem 1.5rem;
+    background-color: var(--color-white);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+    transition: var(--transition);
+  }
+
+  .testimonial-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.05);
+    border-color: rgba(255, 94, 58, 0.25);
+  }
+
+  .avatar-wrap {
+    margin-bottom: 1.5rem;
+    position: relative;
+  }
+
+  .avatar-img {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid var(--color-white);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  }
+
+  .testimonial-quote {
+    font-size: 0.88rem;
+    line-height: 1.75;
+    color: var(--color-text);
+    font-style: italic;
+    margin-bottom: 1.5rem;
+  }
+
+  .testimonial-meta {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .author-name {
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--color-heading);
+  }
+
+  .author-role {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--color-primary);
+  }
+</style>

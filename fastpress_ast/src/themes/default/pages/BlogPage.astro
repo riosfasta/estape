@@ -1,0 +1,497 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getPosts, type Post } from '../../../data/posts';
+import { getCategories, type Category } from '../../../data/categories';
+
+interface Props {
+  posts?: Post[];
+  masterCategories?: Category[];
+  customData?: {
+    isCustom?: boolean;
+    html?: string;
+    css?: string;
+    customCode?: any;
+  };
+}
+
+const {
+  posts = getPosts(),
+  masterCategories = getCategories(),
+  customData,
+} = Astro.props;
+
+const isCustom = customData?.isCustom && Boolean(customData?.html);
+let cleanHtml = customData?.html || '';
+if (cleanHtml) {
+  cleanHtml = cleanHtml.replace(/^<body[^>]*>/i, '').replace(/<\/body>$/i, '').trim();
+}
+---
+
+<Layout
+  title="Blog & Articles - Better Corp"
+  description="Daftar artikel, tips branding, strategi online marketing, dan inspirasi desain grafis dari tim Better."
+  activePage="blog"
+  pageCustomCode={customData?.customCode}
+>
+  {isCustom ? (
+    <>
+      <div class="custom-builder-content" set:html={cleanHtml} />
+      {customData?.css && <style is:global set:html={customData.css} />}
+    </>
+  ) : (
+    <>
+      <!-- Page Header -->
+      <section class="blog-hero py-section">
+        <div class="container blog-hero-container">
+          <span class="section-tagline">INSIGHTS & ARTICLES</span>
+          <h1 class="section-title">Semua Konten & Artikel</h1>
+          <p class="section-subtitle">
+            Jelajahi panduan praktis, studi kasus, dan tren industri digital terkini untuk memajukan bisnis Anda.
+          </p>
+        </div>
+      </section>
+
+      <!-- Filter & Sorting Controls -->
+      <section class="filter-sort-section">
+        <div class="container">
+          <div class="controls-bar">
+            <!-- Category Filter Pills -->
+            <div class="category-filters" id="categoryFilters" role="tablist" aria-label="Filter berdasarkan kategori">
+              <button type="button" class="filter-pill active" data-category="all" role="tab" aria-selected="true">
+                Semua ({posts.length})
+              </button>
+              {masterCategories.map((cat) => (
+                <button type="button" class="filter-pill" data-category={cat.name} role="tab" aria-selected="false">
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+
+            <!-- Sorting Dropdown (ASC, DESC, dsb.) -->
+            <div class="sort-wrapper">
+              <label for="sortSelect" class="sort-label">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M11 5h10"></path>
+                  <path d="M11 9h7"></path>
+                  <path d="M11 13h4"></path>
+                  <path d="M3 17l3 3 3-3"></path>
+                  <path d="M6 18V4"></path>
+                </svg>
+                <span>Urutkan:</span>
+              </label>
+              <select id="sortSelect" class="sort-select" aria-label="Pilih urutan artikel">
+                <option value="date-desc">Terbaru (DESC)</option>
+                <option value="date-asc">Terlama (ASC)</option>
+                <option value="title-asc">Judul (A - Z)</option>
+                <option value="title-desc">Judul (Z - A)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Blog Listing Grid -->
+      <section class="blog-list-section py-section">
+        <div class="container">
+          <div class="posts-grid" id="postsGrid">
+            {posts.map((post) => (
+              <article
+                class="post-card"
+                data-id={post.id}
+                data-date={post.date}
+                data-title={post.title.toLowerCase()}
+                data-category={post.category}
+                data-categories={JSON.stringify(Array.isArray(post.categories) && post.categories.length > 0 ? post.categories : [post.category])}
+              >
+                <a href={`/blog/${post.slug}`} class="post-media" tabindex="-1" aria-hidden="true">
+                  <img src={post.image} alt={post.title} loading="lazy" />
+                  <div class="post-card-categories" style="position: absolute; top: 1rem; left: 1rem; display: flex; flex-wrap: wrap; gap: 0.35rem; z-index: 2;">
+                    {(Array.isArray(post.categories) && post.categories.length > 0 ? post.categories : [post.category]).map((c) => (
+                      <span class="category-tag" style="position: static;">{c}</span>
+                    ))}
+                  </div>
+                </a>
+                <div class="post-body">
+                  <div class="post-meta">
+                    <time datetime={post.date}>{post.formattedDate}</time>
+                    <span class="meta-dot">&bull;</span>
+                    <span>{post.readTime}</span>
+                  </div>
+                  <h2 class="card-title">
+                    <a href={`/blog/${post.slug}`}>{post.title}</a>
+                  </h2>
+                  <p class="card-excerpt">{post.excerpt}</p>
+                  <div class="card-footer">
+                    <div class="card-author">
+                      <img src={post.author.avatar} alt={post.author.name} width="30" height="30" />
+                      <span>{post.author.name}</span>
+                    </div>
+                    <a href={`/blog/${post.slug}`} class="card-readmore">
+                      <span>Baca</span>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                        <polyline points="12 5 19 12 12 19"></polyline>
+                      </svg>
+                    </a>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <!-- Empty State ketika filter tidak ada hasil -->
+          <div class="empty-state" id="emptyState" style="display: none;">
+            <p>Tidak ada artikel yang sesuai dengan filter yang dipilih.</p>
+          </div>
+        </div>
+      </section>
+    </>
+  )}
+</Layout>
+
+<style>
+  /* Blog Hero */
+  .blog-hero {
+    background-color: var(--color-bg-light);
+    border-bottom: 1px solid var(--color-border);
+    text-align: center;
+    padding-block: clamp(3rem, 2.5rem + 3vw, 4.5rem);
+  }
+
+  .blog-hero-container {
+    max-width: 700px;
+  }
+
+  /* Controls Bar */
+  .filter-sort-section {
+    background-color: var(--color-white);
+    padding-block: 1.5rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .controls-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.25rem;
+  }
+
+  /* Category Filter Pills */
+  .category-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .filter-pill {
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-full);
+    font-family: var(--font-heading);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--color-text);
+    background-color: var(--color-bg-light);
+    border: 1px solid var(--color-border);
+    transition: var(--transition);
+  }
+
+  .filter-pill:hover {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+  }
+
+  .filter-pill.active {
+    background-color: var(--color-primary);
+    color: var(--color-white);
+    border-color: var(--color-primary);
+  }
+
+  /* Sorting Dropdown */
+  .sort-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+  }
+
+  .sort-label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--color-heading);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .sort-select {
+    padding: 0.5rem 1rem 0.5rem 0.75rem;
+    font-family: var(--font-heading);
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--color-heading);
+    background-color: var(--color-bg-light);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    outline: none;
+    transition: var(--transition);
+  }
+
+  .sort-select:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(255, 94, 58, 0.15);
+  }
+
+  /* Post Grid */
+  .blog-list-section {
+    background-color: var(--color-white);
+  }
+
+  .posts-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+
+  @media (min-width: 768px) {
+    .posts-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .posts-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  .post-card {
+    background-color: var(--color-white);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    transition: var(--transition);
+  }
+
+  .post-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.08);
+    border-color: rgba(255, 94, 58, 0.3);
+  }
+
+  .post-media {
+    position: relative;
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    background-color: var(--color-dark-alt);
+  }
+
+  .post-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s ease;
+  }
+
+  .post-card:hover .post-media img {
+    transform: scale(1.06);
+  }
+
+  .category-tag {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    background-color: rgba(21, 24, 30, 0.85);
+    backdrop-filter: blur(8px);
+    color: var(--color-white);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 0.3rem 0.7rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .post-body {
+    padding: 1.75rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 0.75rem;
+  }
+
+  .post-meta {
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .meta-dot {
+    color: var(--color-primary);
+  }
+
+  .card-title {
+    font-size: 1.2rem;
+    line-height: 1.4;
+    color: var(--color-heading);
+  }
+
+  .card-title a:hover {
+    color: var(--color-primary);
+  }
+
+  .card-excerpt {
+    font-size: 0.9rem;
+    line-height: 1.65;
+    color: var(--color-text);
+  }
+
+  .card-footer {
+    margin-top: auto;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .card-author {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--color-heading);
+  }
+
+  .card-author img {
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  .card-readmore {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--color-primary);
+  }
+
+  .card-readmore:hover {
+    color: var(--color-primary-hover);
+    gap: 0.55rem;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 4rem 1rem;
+    color: var(--color-text-muted);
+    font-size: 1.1rem;
+  }
+</style>
+
+<script>
+  function initBlogFiltering() {
+    const sortSelect = document.getElementById('sortSelect') as HTMLSelectElement | null;
+    const filterPills = document.querySelectorAll('.filter-pill');
+    const postsGrid = document.getElementById('postsGrid') || document.querySelector('.posts-grid');
+    const emptyState = document.getElementById('emptyState');
+
+    if (!postsGrid || filterPills.length === 0) return;
+
+    let activeCategory = 'all';
+
+    function applyFiltersAndSort() {
+      if (!postsGrid) return;
+
+      const cards = Array.from(postsGrid.querySelectorAll<HTMLElement>('.post-card, article'));
+      const sortValue = sortSelect ? sortSelect.value : 'date-desc';
+
+      let visibleCount = 0;
+      cards.forEach((card) => {
+        const rawCat = (card.dataset.category || '').toLowerCase();
+        let catsArr: string[] = [];
+        try {
+          if (card.dataset.categories) {
+            catsArr = JSON.parse(card.dataset.categories).map((c: string) => String(c).toLowerCase());
+          }
+        } catch {}
+        const active = activeCategory.toLowerCase();
+        const isMatch = active === 'all' || 
+          rawCat === active || 
+          rawCat.includes(active) || 
+          catsArr.includes(active) ||
+          catsArr.some((c: string) => c.includes(active));
+
+        if (isMatch) {
+          card.style.display = '';
+          visibleCount++;
+        } else {
+          card.style.display = 'none';
+        }
+      });
+
+      if (emptyState) {
+        emptyState.style.display = visibleCount === 0 ? 'block' : 'none';
+      }
+
+      cards.sort((a, b) => {
+        const dateA = a.dataset.date || '';
+        const dateB = b.dataset.date || '';
+        const titleA = (a.dataset.title || a.querySelector('h2, h3, a')?.textContent || '').toLowerCase();
+        const titleB = (b.dataset.title || b.querySelector('h2, h3, a')?.textContent || '').toLowerCase();
+
+        switch (sortValue) {
+          case 'date-desc':
+            return dateB.localeCompare(dateA);
+          case 'date-asc':
+            return dateA.localeCompare(dateB);
+          case 'title-asc':
+            return titleA.localeCompare(titleB);
+          case 'title-desc':
+            return titleB.localeCompare(titleA);
+          default:
+            return 0;
+        }
+      });
+
+      cards.forEach((card) => postsGrid.appendChild(card));
+    }
+
+    if (sortSelect) {
+      sortSelect.addEventListener('change', applyFiltersAndSort);
+    }
+
+    filterPills.forEach((pill) => {
+      pill.addEventListener('click', (e) => {
+        const target = e.currentTarget as HTMLElement;
+        filterPills.forEach((p) => {
+          p.classList.remove('active');
+          p.setAttribute('aria-selected', 'false');
+        });
+        target.classList.add('active');
+        target.setAttribute('aria-selected', 'true');
+        activeCategory = target.dataset.category || target.textContent?.trim().replace(/\s*\(\d+\)$/, '') || 'all';
+        applyFiltersAndSort();
+      });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initBlogFiltering);
+  } else {
+    initBlogFiltering();
+  }
+  document.addEventListener('astro:page-load', initBlogFiltering);
+</script>

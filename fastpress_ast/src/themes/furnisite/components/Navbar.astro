@@ -1,0 +1,904 @@
+---
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
+interface Props {
+  activePage?: string;
+  isPreview?: boolean;
+  previewTheme?: string;
+}
+
+const { activePage = 'home', isPreview = false, previewTheme = 'furnisite' } = Astro.props;
+
+// Load siteConfig for brand name, nav items, and drawer CTA
+let siteConfig: any = null;
+try {
+  const configFile = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
+  const raw = await fs.readFile(configFile, 'utf-8');
+  siteConfig = JSON.parse(raw);
+} catch {}
+
+const furniConfig = siteConfig?.themeConfigs?.furnisite || siteConfig;
+
+const brandName = furniConfig?.brandName || (siteConfig?.brandName && siteConfig.brandName !== 'Better SaaS' ? siteConfig.brandName : 'INFURNISH');
+const logoUrl = furniConfig?.logoUrl || siteConfig?.logoUrl || '';
+
+// Prefix helper for preview navigation
+const prefix = isPreview ? `/preview/${previewTheme}` : '';
+
+const configuredNav = furniConfig?.navItems || siteConfig?.navItems;
+const navItems = (Array.isArray(configuredNav) && configuredNav.length > 0)
+  ? configuredNav.map((item: any) => ({
+      name: item.name,
+      href: prefix ? `${prefix}${item.href}` : item.href,
+      id: item.id || item.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+    }))
+  : [
+      { name: 'Home', href: `${prefix}/` || '/', id: 'home' },
+      { name: 'About', href: `${prefix}/about`, id: 'about' },
+      { name: 'Shop', href: `${prefix}/products`, id: 'products' },
+      { name: 'Blog', href: `${prefix}/blog`, id: 'blog' },
+      { name: 'Contact', href: `${prefix}/contact`, id: 'contact' },
+    ];
+
+const drawerCtaText = furniConfig?.drawerCtaText || siteConfig?.drawerCtaText || 'Explore Catalog';
+const rawDrawerUrl = furniConfig?.drawerCtaUrl || siteConfig?.drawerCtaUrl || '/products';
+const drawerCtaUrl = prefix ? `${prefix}${rawDrawerUrl}` : rawDrawerUrl;
+
+// Check if active header in headers.json uses template mode
+let customNavbarHtml = '';
+let customNavbarCss = '';
+try {
+  let activeHeaderConfig: any = null;
+  try {
+    const headersFile = path.join(process.cwd(), 'src', 'data', 'headers.json');
+    const headersRaw = await fs.readFile(headersFile, 'utf-8');
+    const headersStore = JSON.parse(headersRaw);
+    activeHeaderConfig = headersStore.headers.find((h: any) => h.id === headersStore.activeHeaderId) || headersStore.headers[0];
+  } catch {}
+
+  const tplFile = path.join(process.cwd(), 'src', 'data', 'templates.json');
+  const tplRaw = await fs.readFile(tplFile, 'utf-8');
+  const templates = JSON.parse(tplRaw);
+
+  if (activeHeaderConfig && activeHeaderConfig.useTemplate !== undefined) {
+    if (activeHeaderConfig.useTemplate) {
+      const targetTplId = activeHeaderConfig.selectedTemplateId || 'tpl-global-furnisite-navbar';
+      const chosenTpl = templates.find((t: any) => t.id === targetTplId);
+      if (chosenTpl && chosenTpl.html) {
+        customNavbarHtml = chosenTpl.html;
+        customNavbarCss = chosenTpl.css || '';
+      }
+    }
+  } else {
+    // Fallback: check tpl-global-furnisite-navbar
+    const customTpl = templates.find((t: any) => t.id === 'tpl-global-furnisite-navbar');
+    if (customTpl && customTpl.isCustomized && customTpl.html) {
+      customNavbarHtml = customTpl.html;
+      customNavbarCss = customTpl.css || '';
+    }
+  }
+} catch {}
+
+// Resolve dynamic active page for customNavbarHtml
+const currentPath = Astro.url.pathname.replace(/\/$/, '') || '/';
+const isCurrentHome = currentPath === '/' || activePage === 'home' || activePage === 'index';
+const navIndicatorStyle = furniConfig?.navIndicatorStyle || activeHeaderConfig?.styling?.navIndicatorStyle || siteConfig?.navIndicatorStyle || 'underline';
+
+let renderedNavbarHtml = customNavbarHtml;
+if (renderedNavbarHtml) {
+  // Inject nav indicator mode data attribute
+  renderedNavbarHtml = renderedNavbarHtml.replace(/<header\s+class="([^"]*block-furnisite-navbar[^"]*)"/i, `<header class="$1" data-nav-indicator="${navIndicatorStyle}"`);
+
+  // 1. Remove old hardcoded inline style on Home or other nav links
+  renderedNavbarHtml = renderedNavbarHtml.replace(/style="[^"]*border-bottom[^"]*"/gi, '');
+
+  // 2. Remove any pre-existing is-active from nav links & drawer links
+  renderedNavbarHtml = renderedNavbarHtml.replace(/(<a\s+[^>]*class=["'])([^"']*)(\bis-active\b)([^"']*["'])/gi, (m, p1, p2, p3, p4) => {
+    return `${p1}${p2} ${p4}`.replace(/\s+/g, ' ');
+  });
+
+  // 3. Mark the active desktop navigation link
+  let activeNavFound = false;
+  renderedNavbarHtml = renderedNavbarHtml.replace(/(<a\s+[^>]*href=["']([^"']*)["'][^>]*>)/gi, (openTag, fullMatch, href) => {
+    if (activeNavFound) return openTag;
+    // Skip brand logo, action buttons, and drawer links
+    if (openTag.includes('bfn-brand') || openTag.includes('furnisite-logo') || openTag.includes('bfn-icon-btn') || openTag.includes('pop-drawer')) {
+      return openTag;
+    }
+    const cleanHref = href.replace(/\/$/, '') || '/';
+    const isMatch = isCurrentHome
+      ? (cleanHref === '/' || cleanHref === '/#' || cleanHref === '')
+      : (cleanHref === currentPath || (activePage && (cleanHref === `/${activePage}` || cleanHref === activePage)));
+
+    if (isMatch) {
+      activeNavFound = true;
+      if (openTag.includes('class="')) {
+        return openTag.replace('class="', 'class="is-active ');
+      } else if (openTag.includes("class='")) {
+        return openTag.replace("class='", "class='is-active ");
+      } else {
+        return openTag.replace('<a ', '<a class="is-active" ');
+      }
+    }
+    return openTag;
+  });
+
+  // 4. Mark active link in mobile pop drawer
+  let activeDrawerFound = false;
+  renderedNavbarHtml = renderedNavbarHtml.replace(/(<a\s+[^>]*pop-drawer-link[^>]*>)/gi, (openTag) => {
+    if (activeDrawerFound) return openTag;
+    const hrefMatch = openTag.match(/href=["']([^"']*)["']/i);
+    if (!hrefMatch) return openTag;
+    const cleanHref = hrefMatch[1].replace(/\/$/, '') || '/';
+    const isMatch = isCurrentHome
+      ? (cleanHref === '/' || cleanHref === '/#' || cleanHref === '')
+      : (cleanHref === currentPath || (activePage && (cleanHref === `/${activePage}` || cleanHref === activePage)));
+
+    if (isMatch) {
+      activeDrawerFound = true;
+      if (openTag.includes('class="')) {
+        return openTag.replace('class="', 'class="is-active ');
+      } else if (openTag.includes("class='")) {
+        return openTag.replace("class='", "class='is-active ");
+      }
+    }
+    return openTag;
+  });
+}
+---
+
+{customNavbarHtml ? (
+  <div class="furnisite-custom-navbar-wrapper" data-nav-indicator={navIndicatorStyle}>
+    {customNavbarCss && <style is:inline set:html={customNavbarCss} />}
+    <Fragment set:html={renderedNavbarHtml} />
+    {!customNavbarHtml.includes('pop-drawer-overlay') && !customNavbarHtml.includes('furnisite-mobile-drawer') && (
+      <div class="pop-drawer-overlay" id="furnisiteFallbackDrawer">
+        <div class="pop-drawer-backdrop"></div>
+        <aside class="pop-drawer-panel">
+          <div class="pop-drawer-header">
+            <span class="pop-drawer-brand">{brandName}</span>
+            <button type="button" class="pop-drawer-close-btn" aria-label="Close menu">✕</button>
+          </div>
+          <div class="pop-drawer-search">
+            <input type="text" placeholder="Search furniture, styles..." class="pop-drawer-search-input" />
+          </div>
+          <nav class="pop-drawer-nav">
+            <ul class="pop-drawer-menu">
+              {navItems.map((item: any) => (
+                <li>
+                  <a href={item.href} class:list={['pop-drawer-link', { 'is-active': activePage === item.id }]}>
+                    <span>{item.name}</span>
+                    <span class="pop-drawer-arrow">&rarr;</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <div class="pop-drawer-promo">
+            <div class="pop-drawer-promo-badge">PROMO CODE: LUXE10</div>
+            <div class="pop-drawer-promo-title">Enjoy 10% Off Your Initial Order</div>
+            <p class="pop-drawer-promo-desc">Thoughtfully crafted furniture designed to transform modern living spaces.</p>
+            <a href={drawerCtaUrl} class="pop-drawer-cta-btn">{drawerCtaText} &rarr;</a>
+          </div>
+          <div class="pop-drawer-footer">
+            <p class="pop-drawer-contact-info">Need assistance? <a href={prefix ? `${prefix}/contact` : '/contact'}>contact@infurnish.com</a></p>
+          </div>
+        </aside>
+      </div>
+    )}
+  </div>
+) : (
+<header class="furnisite-header" data-nav-indicator={navIndicatorStyle}>
+  <div class="fs-container">
+    <div class="furnisite-navbar">
+      <!-- Left: Hamburger & Brand -->
+      <div class="furnisite-brand-wrap">
+        <button type="button" class="furnisite-mobile-toggle pop-drawer-trigger-btn" id="furnisiteMobileMenuBtn" aria-label="Toggle navigation menu">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+
+        <a href={prefix ? `${prefix}/` : '/'} class="furnisite-logo">
+          {logoUrl ? (
+            <img src={logoUrl} alt={brandName} class="furnisite-logo-img" />
+          ) : (
+            <span class="furnisite-logo-text">{brandName}</span>
+          )}
+        </a>
+      </div>
+
+      <!-- Center: Desktop Navigation -->
+      <nav class="furnisite-nav" aria-label="Main Navigation">
+        <ul class="furnisite-nav-list">
+          {navItems.map((item) => (
+            <li class="furnisite-nav-item">
+              <a
+                href={item.href}
+                class:list={['furnisite-nav-link', { 'is-active': activePage === item.id }]}
+              >
+                {item.name}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      <!-- Right: Action Icons (Search & Bag) -->
+      <div class="furnisite-actions">
+        <button type="button" class="furnisite-action-btn fp-customer-btn customer-auth-trigger" aria-label="Customer account" onclick="document.getElementById('fpCustomerAuthDialog')?.showModal();" title="Account">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+        </button>
+
+        <button type="button" class="furnisite-action-btn" aria-label="Search furniture" id="furnisiteSearchTrigger">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </button>
+
+        <a href={prefix ? `${prefix}/products` : '/products'} class="furnisite-action-btn furnisite-cart-btn" aria-label="Shopping bag">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <path d="M16 10a4 4 0 0 1-8 0"></path>
+          </svg>
+          <span class="furnisite-cart-badge">0</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Drawer -->
+  <div class="furnisite-mobile-drawer pop-drawer-overlay" id="furnisiteMobileDrawer">
+    <div class="furnisite-drawer-content pop-drawer-panel">
+      <div class="furnisite-drawer-header pop-drawer-header">
+        <span class="furnisite-logo-text pop-drawer-brand">{brandName}</span>
+        <button type="button" class="furnisite-drawer-close pop-drawer-close-btn" id="furnisiteDrawerClose" aria-label="Close menu">✕</button>
+      </div>
+      <ul class="furnisite-drawer-list pop-drawer-menu">
+        {navItems.map((item) => (
+          <li>
+            <a href={item.href} class:list={['furnisite-drawer-link pop-drawer-link', { 'is-active': activePage === item.id }]}>
+              <span>{item.name}</span>
+              <span class="pop-drawer-arrow">&rarr;</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+      <div class="furnisite-drawer-footer pop-drawer-footer">
+        <a href={drawerCtaUrl} class="fs-btn fs-btn-dark pop-drawer-cta-btn" style="width: 100%; text-align: center;">
+          {drawerCtaText}
+        </a>
+      </div>
+    </div>
+    <div class="furnisite-drawer-backdrop pop-drawer-backdrop" id="furnisiteDrawerBackdrop"></div>
+  </div>
+</header>
+)}
+
+<script is:inline>
+  function setupDrawerListeners() {
+    document.addEventListener('click', function(e) {
+      var trigger = e.target.closest('#furnisiteMobileMenuBtn, .pop-drawer-trigger-btn, [data-pop-drawer-trigger]');
+      if (trigger) {
+        e.preventDefault();
+        var root = trigger.closest('.pop-drawer-component') || document;
+        var overlay = root.querySelector('.pop-drawer-overlay') || document.querySelector('.pop-drawer-overlay') || document.getElementById('furnisiteMobileDrawer');
+        if (overlay) {
+          overlay.classList.add('is-open');
+          overlay.setAttribute('data-open', 'true');
+          document.body.style.overflow = 'hidden';
+        }
+        return;
+      }
+
+      var closeBtn = e.target.closest('#furnisiteDrawerClose, .pop-drawer-close-btn, #furnisiteDrawerBackdrop, .pop-drawer-backdrop');
+      if (closeBtn) {
+        e.preventDefault();
+        var overlays = document.querySelectorAll('.pop-drawer-overlay, .furnisite-mobile-drawer');
+        overlays.forEach(function(o) {
+          o.classList.remove('is-open');
+          o.setAttribute('data-open', 'false');
+        });
+        document.body.style.overflow = '';
+        return;
+      }
+    });
+
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        var overlays = document.querySelectorAll('.pop-drawer-overlay, .furnisite-mobile-drawer');
+        overlays.forEach(function(o) {
+          o.classList.remove('is-open');
+          o.setAttribute('data-open', 'false');
+        });
+        document.body.style.overflow = '';
+      }
+    });
+  }
+
+  // Universal Active Page Underline Pointer Tracker
+  function updateActiveNavbarPointer() {
+    var currentPath = window.location.pathname.replace(/\/$/, '') || '/';
+
+    // Desktop navbar links & drawer links
+    var desktopLinks = document.querySelectorAll('.bfn-nav a, .furnisite-nav-list a, .furnisite-nav-link');
+    var drawerLinks = document.querySelectorAll('.pop-drawer-link, .furnisite-drawer-link');
+
+    function highlightGroup(links) {
+      var exactMatch = null;
+      var prefixMatch = null;
+      var homeLink = null;
+
+      links.forEach(function(link) {
+        link.classList.remove('is-active');
+        link.removeAttribute('aria-current');
+        if (link.style.borderBottom) link.style.borderBottom = '';
+        if (link.style.color && (link.getAttribute('href') === '/' || link.getAttribute('href') === '')) link.style.color = '';
+
+        var href = (link.getAttribute('href') || '').replace(/\/$/, '') || '/';
+        if (href === currentPath) {
+          exactMatch = link;
+        } else if (currentPath !== '/' && href !== '/' && currentPath.startsWith(href)) {
+          prefixMatch = link;
+        } else if (href === '/') {
+          homeLink = link;
+        }
+      });
+
+      var target = exactMatch || prefixMatch;
+      if (!target && currentPath === '/') {
+        target = homeLink;
+      }
+
+      if (target) {
+        target.classList.add('is-active');
+        target.setAttribute('aria-current', 'page');
+      }
+    }
+
+    highlightGroup(desktopLinks);
+    highlightGroup(drawerLinks);
+  }
+
+  function initNavbarRuntime() {
+    setupDrawerListeners();
+    updateActiveNavbarPointer();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initNavbarRuntime);
+  } else {
+    initNavbarRuntime();
+  }
+  window.addEventListener('popstate', updateActiveNavbarPointer);
+</script>
+
+<style>
+  /* Global active styling for custom template navbar */
+  :global(.block-furnisite-navbar .bfn-nav a),
+  :global(.block-furnisite-navbar .bfn-nav-link) {
+    font-family: var(--fs-font-heading, 'Plus Jakarta Sans', -apple-system, sans-serif) !important;
+    font-size: 0.92rem !important;
+    font-weight: 500 !important;
+    color: #4b5563 !important;
+    text-decoration: none !important;
+    position: relative !important;
+    padding: 6px 2px !important;
+    display: inline-block !important;
+    transition: color 0.18s ease !important;
+    border-bottom: none !important;
+  }
+
+  :global(.block-furnisite-navbar .bfn-nav a:hover),
+  :global(.block-furnisite-navbar .bfn-nav a.is-active),
+  :global(.block-furnisite-navbar .bfn-nav-link:hover),
+  :global(.block-furnisite-navbar .bfn-nav-link.is-active) {
+    color: #111827 !important;
+    font-weight: 600 !important;
+  }
+
+  :global(.block-furnisite-navbar .bfn-nav a::after),
+  :global(.block-furnisite-navbar .bfn-nav-link::after) {
+    content: '' !important;
+    position: absolute !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: 2px !important;
+    background-color: #111827 !important;
+    transform: scaleX(0) !important;
+    transform-origin: center !important;
+    transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease !important;
+    border-radius: 1px !important;
+  }
+
+  :global(.block-furnisite-navbar .bfn-nav a:hover::after),
+  :global(.block-furnisite-navbar .bfn-nav-link:hover::after) {
+    transform: scaleX(0.5) !important;
+    background-color: #9ca3af !important;
+  }
+
+  :global(.block-furnisite-navbar .bfn-nav a.is-active::after),
+  :global(.block-furnisite-navbar .bfn-nav-link.is-active::after) {
+    transform: scaleX(1) !important;
+    background-color: #111827 !important;
+  }
+
+  /* 1. Underline Mode (default: line at the bottom) */
+  :global([data-nav-indicator="underline"] .block-furnisite-navbar .bfn-nav a::after),
+  :global([data-nav-indicator="underline"] .block-furnisite-navbar .bfn-nav-link::after),
+  :global(.nav-indicator-underline .block-furnisite-navbar .bfn-nav a::after),
+  [data-nav-indicator="underline"] .furnisite-nav-link::after,
+  .nav-indicator-underline .furnisite-nav-link::after {
+    top: auto !important;
+    bottom: 0 !important;
+    display: block !important;
+  }
+
+  /* 2. Overline Mode (line at the top) */
+  :global([data-nav-indicator="overline"] .block-furnisite-navbar .bfn-nav a::after),
+  :global([data-nav-indicator="overline"] .block-furnisite-navbar .bfn-nav-link::after),
+  :global(.nav-indicator-overline .block-furnisite-navbar .bfn-nav a::after),
+  [data-nav-indicator="overline"] .furnisite-nav-link::after,
+  .nav-indicator-overline .furnisite-nav-link::after {
+    bottom: auto !important;
+    top: 0 !important;
+    display: block !important;
+  }
+
+  /* 3. None Mode (without any line) */
+  :global([data-nav-indicator="none"] .block-furnisite-navbar .bfn-nav a::after),
+  :global([data-nav-indicator="none"] .block-furnisite-navbar .bfn-nav-link::after),
+  :global(.nav-indicator-none .block-furnisite-navbar .bfn-nav a::after),
+  [data-nav-indicator="none"] .furnisite-nav-link::after,
+  .nav-indicator-none .furnisite-nav-link::after {
+    display: none !important;
+  }
+  .furnisite-header {
+    background-color: #ffffff;
+    border-bottom: 1px solid #f0f0f0;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+
+  .furnisite-navbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 72px;
+  }
+
+  .furnisite-brand-wrap {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .furnisite-mobile-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: #18181b;
+    padding: 6px;
+    border-radius: 4px;
+    transition: background 0.15s ease;
+  }
+
+  .furnisite-mobile-toggle:hover {
+    background-color: #f4f4f5;
+  }
+
+  .furnisite-logo {
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+  }
+
+  .furnisite-logo-img {
+    height: 32px;
+    width: auto;
+    object-fit: contain;
+  }
+
+  .furnisite-logo-text {
+    font-family: var(--fs-font-heading);
+    font-size: 1.35rem;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    color: #18181b;
+    text-transform: uppercase;
+  }
+
+  /* Desktop Nav */
+  .furnisite-nav {
+    display: none;
+  }
+
+  @media (min-width: 768px) {
+    .furnisite-nav {
+      display: block;
+    }
+  }
+
+  .furnisite-nav-list {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .furnisite-nav-link {
+    font-family: var(--fs-font-heading);
+    font-size: 0.92rem;
+    font-weight: 500;
+    color: #52525b;
+    text-decoration: none;
+    position: relative;
+    padding: 6px 0;
+    transition: color 0.18s ease;
+  }
+
+  .furnisite-nav-link:hover,
+  .furnisite-nav-link.is-active {
+    color: #18181b;
+    font-weight: 600;
+  }
+
+  .furnisite-nav-link.is-active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background-color: #18181b;
+  }
+
+  /* Actions */
+  .furnisite-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .furnisite-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: #18181b;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 50%;
+    transition: background 0.18s ease;
+    position: relative;
+    text-decoration: none;
+  }
+
+  .furnisite-action-btn:hover {
+    background-color: #f4f4f5;
+  }
+
+  .furnisite-cart-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    background-color: #18181b;
+    color: #ffffff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    min-width: 15px;
+    height: 15px;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 3px;
+  }
+
+  /* Mobile Drawer */
+  .furnisite-mobile-drawer {
+    display: none;
+  }
+
+  .furnisite-mobile-drawer.is-open {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1000;
+  }
+
+  .furnisite-drawer-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(2px);
+  }
+
+  .furnisite-drawer-content {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 300px;
+    max-width: 85vw;
+    background: #ffffff;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    z-index: 2;
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.1);
+  }
+
+  .furnisite-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #f4f4f5;
+  }
+
+  .furnisite-drawer-close {
+    background: none;
+    border: none;
+    font-size: 1.25rem;
+    cursor: pointer;
+    color: #71717a;
+    padding: 4px;
+  }
+
+  .furnisite-drawer-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    flex: 1;
+  }
+
+  .furnisite-drawer-link {
+    font-family: var(--fs-font-heading);
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: #3f3f46;
+    text-decoration: none;
+    display: block;
+    padding: 6px 0;
+  }
+
+  .furnisite-drawer-link.is-active {
+    color: #18181b;
+    font-weight: 700;
+  }
+
+  .furnisite-drawer-footer {
+    margin-top: auto;
+    padding-top: 20px;
+    border-top: 1px solid #f4f4f5;
+  }
+
+  /* Pop Navigation Drawer Styles */
+  .pop-drawer-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.25s ease, visibility 0.25s ease;
+    pointer-events: none;
+  }
+  .pop-drawer-overlay.is-open,
+  .pop-drawer-overlay[data-open="true"] {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .pop-drawer-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    cursor: pointer;
+  }
+  .pop-drawer-panel {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 340px;
+    max-width: 85vw;
+    background: #ffffff;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    z-index: 10;
+  }
+  .pop-drawer-overlay.is-open .pop-drawer-panel,
+  .pop-drawer-overlay[data-open="true"] .pop-drawer-panel {
+    transform: translateX(0);
+  }
+  .pop-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .pop-drawer-brand {
+    font-family: var(--fs-font-heading, 'Montserrat', sans-serif);
+    font-weight: 800;
+    font-size: 1.15rem;
+    letter-spacing: 0.08em;
+    color: #111827;
+    text-transform: uppercase;
+  }
+  .pop-drawer-close-btn {
+    background: #f4f4f5;
+    border: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    font-size: 0.85rem;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #4b5563;
+    transition: all 0.15s ease;
+  }
+  .pop-drawer-close-btn:hover {
+    background: #111827;
+    color: #ffffff;
+  }
+  .pop-drawer-search {
+    padding: 16px 24px 8px;
+  }
+  .pop-drawer-search-input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 0.86rem;
+    background: #f9fafb;
+    outline: none;
+    box-sizing: border-box;
+  }
+  .pop-drawer-nav {
+    padding: 8px 16px;
+    flex: 1;
+  }
+  .pop-drawer-menu {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .pop-drawer-menu li {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .pop-drawer-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #374151;
+    text-decoration: none;
+    border-radius: 6px;
+    transition: all 0.15s ease;
+  }
+  .pop-drawer-link:hover,
+  .pop-drawer-link.is-active {
+    background: #f3f4f6;
+    color: #111827;
+    padding-left: 16px;
+  }
+  .pop-drawer-arrow {
+    font-size: 0.9rem;
+    color: #9ca3af;
+    transition: transform 0.15s ease;
+  }
+  .pop-drawer-link:hover .pop-drawer-arrow {
+    transform: translateX(3px);
+    color: #111827;
+  }
+  .pop-drawer-promo {
+    margin: 16px 20px;
+    padding: 16px;
+    background: #faf9f6;
+    border: 1px solid #f0eee6;
+    border-radius: 10px;
+    box-sizing: border-box;
+  }
+  .pop-drawer-promo-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #b45309;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+  .pop-drawer-promo-title {
+    font-weight: 700;
+    font-size: 0.92rem;
+    color: #18181b;
+    margin-bottom: 4px;
+  }
+  .pop-drawer-promo-desc {
+    font-size: 0.8rem;
+    color: #71717a;
+    line-height: 1.45;
+    margin: 0 0 10px 0;
+  }
+  .pop-drawer-cta-btn {
+    display: inline-block;
+    background: #18181b;
+    color: #ffffff;
+    padding: 7px 14px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .pop-drawer-footer {
+    padding: 18px 24px;
+    border-top: 1px solid #f0f0f0;
+    background: #ffffff;
+  }
+  .pop-drawer-socials {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .pop-drawer-social-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #f4f4f5;
+    text-decoration: none;
+    font-size: 0.88rem;
+  }
+  .pop-drawer-contact-info {
+    font-size: 0.78rem;
+    color: #9ca3af;
+    margin: 0;
+  }
+  .pop-drawer-contact-info a {
+    color: #4b5563;
+    font-weight: 600;
+    text-decoration: underline;
+  }
+</style>

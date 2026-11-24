@@ -1,0 +1,174 @@
+{
+  "menus": [
+    {
+      "id": "menu-main",
+      "name": "Main Header Menu",
+      "slug": "main-header-menu",
+      "description": "Primary desktop and mobile header navigation",
+      "layout": "horizontal",
+      "alignment": "left",
+      "pointer": "underline",
+      "animation": "fade",
+      "submenuIndicator": "angle",
+      "mobileDropdown": {
+        "breakpoint": "tablet",
+        "fullWidth": true,
+        "textAlign": "aside",
+        "toggleButton": "hamburger",
+        "toggleAlign": "right"
+      },
+      "items": [
+        {
+          "id": "item-1",
+          "label": "Home",
+          "url": "/",
+          "target": "_self"
+        },
+        {
+          "id": "item-2",
+          "label": "About",
+          "url": "/about",
+          "target": "_self"
+        },
+        {
+          "id": "item-3",
+          "label": "Shop",
+          "url": "/products",
+          "target": "_self",
+          "children": [
+            {
+              "id": "item-3-1",
+              "label": "Living Room",
+              "url": "/products",
+              "target": "_self"
+            },
+            {
+              "id": "item-3-2",
+              "label": "Dining & Kitchen",
+              "url": "/products",
+              "target": "_self"
+            },
+            {
+              "id": "item-3-3",
+              "label": "Bedroom Sanctuary",
+              "url": "/products",
+              "target": "_self"
+            },
+            {
+              "id": "item-3-4",
+              "label": "Lighting & Fixtures",
+              "url": "/products",
+              "target": "_self"
+            }
+          ]
+        },
+        {
+          "id": "item-4",
+          "label": "Blog",
+          "url": "/blog",
+          "target": "_self"
+        },
+        {
+          "id": "item-5",
+          "label": "Contact",
+          "url": "/contact",
+          "target": "_self"
+        }
+      ]
+    },
+    {
+      "id": "menu-footer-explore",
+      "name": "Footer Explore Collections",
+      "slug": "footer-explore-collections",
+      "description": "Category links for furniture and collections",
+      "layout": "vertical",
+      "alignment": "left",
+      "pointer": "none",
+      "animation": "fade",
+      "submenuIndicator": "none",
+      "mobileDropdown": {
+        "breakpoint": "none",
+        "fullWidth": true,
+        "textAlign": "aside",
+        "toggleButton": "none",
+        "toggleAlign": "left"
+      },
+      "items": [
+        {
+          "id": "item-fe-1",
+          "label": "Living Room",
+          "url": "/products",
+          "target": "_self"
+        },
+        {
+          "id": "item-fe-2",
+          "label": "Dining & Kitchen",
+          "url": "/products",
+          "target": "_self"
+        },
+        {
+          "id": "item-fe-3",
+          "label": "Bedroom Sanctuary",
+          "url": "/products",
+          "target": "_self"
+        },
+        {
+          "id": "item-fe-4",
+          "label": "Lighting & Fixtures",
+          "url": "/products",
+          "target": "_self"
+        },
+        {
+          "id": "item-fe-5",
+          "label": "Storage & Shelving",
+          "url": "/products",
+          "target": "_self"
+        }
+      ]
+    },
+    {
+      "id": "menu-footer-company",
+      "name": "Footer Company Menu",
+      "slug": "footer-company-menu",
+      "description": "Company, studio and info links",
+      "layout": "vertical",
+      "alignment": "left",
+      "pointer": "none",
+      "animation": "fade",
+      "submenuIndicator": "none",
+      "mobileDropdown": {
+        "breakpoint": "none",
+        "fullWidth": true,
+        "textAlign": "aside",
+        "toggleButton": "none",
+        "toggleAlign": "left"
+      },
+      "items": [
+        {
+          "id": "item-fc-1",
+          "label": "About Our Studio",
+          "url": "/about",
+          "target": "_self"
+        },
+        {
+          "id": "item-fc-2",
+          "label": "Living Space Journal",
+          "url": "/blog",
+          "target": "_self"
+        },
+        {
+          "id": "item-fc-3",
+          "label": "Our Vision & Mission",
+          "url": "/about#vision",
+          "target": "_self"
+        },
+        {
+          "id": "item-fc-4",
+          "label": "Showrooms & Contact",
+          "url": "/contact",
+          "target": "_self"
+        }
+      ]
+    }
+  ]
+}

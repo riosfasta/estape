@@ -1,0 +1,298 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getPosts, type Post } from '../../../data/posts';
+import { getCategories } from '../../../data/categories';
+
+interface Props {
+  posts?: Post[];
+  masterCategories?: any[];
+  customData?: any;
+  isPreview?: boolean;
+  previewTheme?: string;
+}
+
+const {
+  posts: propPosts,
+  masterCategories = getCategories(),
+  customData,
+  isPreview = false,
+  previewTheme = 'furnisite',
+} = Astro.props;
+
+const prefix = isPreview ? `/preview/${previewTheme}` : '';
+
+// Fallback journal essays if no database posts exist
+const fallbackJournal = [
+  {
+    id: 'art-1',
+    slug: 'the-art-of-quiet-spaces',
+    title: 'The Art of Quiet Spaces: How Natural Oak & Rattan Anchor Modern Rooms',
+    formattedDate: 'November 12, 2026',
+    readTime: '6 min read',
+    excerpt: 'Exploring the psychological tranquility of tactile woods, warm diffused lamp fixtures, and intentionally uncrowded floorplans.',
+    image: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=900&q=80',
+    category: 'Interior Philosophy',
+  },
+  {
+    id: 'art-2',
+    slug: 'sustainable-hardwoods-guide',
+    title: 'A Craftsman’s Guide to Solid Hardwoods: Oak, Teak, and American Walnut',
+    formattedDate: 'October 28, 2026',
+    readTime: '4 min read',
+    excerpt: 'Understand how grain density, natural oil contents, and sustainable forestry certifications dictate the lifespan of heirloom furniture.',
+    image: 'https://images.unsplash.com/photo-1595428774223-ef52624120d2?auto=format&fit=crop&w=900&q=80',
+    category: 'Material Craft',
+  },
+  {
+    id: 'art-3',
+    slug: 'warm-minimalism-apartment-tour',
+    title: 'Sculptural Lighting: Transforming Evening Ambience in Small Living Spaces',
+    formattedDate: 'October 15, 2026',
+    readTime: '5 min read',
+    excerpt: 'Why single overhead illumination flattens a room, and how layered woven pendants create comforting focal points after sunset.',
+    image: 'https://images.unsplash.com/photo-1513506003901-1e6a229e2d15?auto=format&fit=crop&w=900&q=80',
+    category: 'Lighting Design',
+  },
+];
+
+const dbPosts = propPosts || getPosts();
+const posts = dbPosts && dbPosts.length > 0 ? dbPosts : fallbackJournal;
+
+const isCustom = Boolean(customData?.isCustom && customData?.html);
+const cleanHtml = customData?.html || '';
+---
+
+<Layout
+  title="The Infurnish Journal - Architecture, Materials & Living"
+  description="Curated essays and lookbooks detailing interior living, sustainable craftsmanship, and modern furniture design."
+  activePage="blog"
+  isPreview={isPreview}
+  previewTheme={previewTheme}
+>
+  {isCustom ? (
+    <>
+      <div class="custom-builder-content" set:html={cleanHtml} />
+      {customData?.css && <style is:inline set:html={customData.css} />}
+    </>
+  ) : (
+    <>
+  <!-- Journal Hero -->
+  <section class="fs-journal-hero">
+    <div class="fs-container">
+      <div class="fs-journal-hero-inner">
+        <span class="fs-badge fs-badge-neutral">The Journal</span>
+        <h1 class="fs-journal-hero-title">The Living Space Journal</h1>
+        <p class="fs-journal-hero-subtitle">
+          Thoughts on mindful interior curation, sustainable joinery, and the art of shaping peaceful sanctuaries.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Post Grid -->
+  <section class="fs-journal-main">
+    <div class="fs-container">
+      <div class="fs-journal-grid">
+        {posts.map((post) => (
+          <article class="fs-post-card">
+            <a href={`${prefix}/blog/${post.slug}`} class="fs-post-thumb-link">
+              <div class="fs-post-thumb-wrap">
+                <img
+                  src={post.image || 'https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?auto=format&fit=crop&w=800&q=80'}
+                  alt={post.title}
+                  class="fs-post-img"
+                  loading="lazy"
+                />
+              </div>
+            </a>
+            <div class="fs-post-content">
+              <div class="fs-post-meta">
+                <span class="fs-post-cat">{post.category || 'Architecture'}</span>
+                <span>·</span>
+                <span class="fs-post-date">{post.formattedDate || 'Recent'}</span>
+                {post.readTime && (
+                  <>
+                    <span>·</span>
+                    <span class="fs-post-time">{post.readTime}</span>
+                  </>
+                )}
+              </div>
+
+              <h2 class="fs-post-title">
+                <a href={`${prefix}/blog/${post.slug}`}>{post.title}</a>
+              </h2>
+
+              <p class="fs-post-excerpt">
+                {post.excerpt || 'Explore this piece in the Infurnish Living Journal.'}
+              </p>
+
+              <a href={`${prefix}/blog/${post.slug}`} class="fs-post-more-link">
+                Read Story →
+              </a>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+    </>
+  )}
+</Layout>
+
+<style>
+  .fs-journal-hero {
+    padding-top: 72px;
+    padding-bottom: 56px;
+    background-color: #faf9f6;
+    text-align: center;
+    border-bottom: 1px solid #f0eee6;
+  }
+
+  .fs-journal-hero-inner {
+    max-width: 680px;
+    margin: 0 auto;
+  }
+
+  .fs-journal-hero-title {
+    font-family: var(--fs-font-heading);
+    font-size: 2.5rem;
+    font-weight: 800;
+    color: #18181b;
+    margin: 12px 0;
+    letter-spacing: -0.5px;
+  }
+
+  @media (min-width: 768px) {
+    .fs-journal-hero-title {
+      font-size: 3.2rem;
+    }
+  }
+
+  .fs-journal-hero-subtitle {
+    font-size: 1.05rem;
+    color: #52525b;
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  .fs-journal-main {
+    padding-top: 64px;
+    padding-bottom: 96px;
+    background-color: #ffffff;
+  }
+
+  .fs-journal-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 48px;
+  }
+
+  @media (min-width: 640px) {
+    .fs-journal-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .fs-journal-grid {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 40px;
+    }
+  }
+
+  .fs-post-card {
+    display: flex;
+    flex-direction: column;
+    background-color: #ffffff;
+  }
+
+  .fs-post-thumb-link {
+    display: block;
+    text-decoration: none;
+    margin-bottom: 16px;
+  }
+
+  .fs-post-thumb-wrap {
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    border-radius: 6px;
+    background-color: #f4f4f5;
+  }
+
+  .fs-post-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s ease;
+  }
+
+  .fs-post-card:hover .fs-post-img {
+    transform: scale(1.04);
+  }
+
+  .fs-post-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+
+  .fs-post-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: #a1a1aa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+  }
+
+  .fs-post-cat {
+    color: #18181b;
+    font-weight: 600;
+  }
+
+  .fs-post-title {
+    font-family: var(--fs-font-heading);
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.35;
+    color: #18181b;
+    margin: 0 0 10px 0;
+  }
+
+  .fs-post-title a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .fs-post-title a:hover {
+    color: #71717a;
+  }
+
+  .fs-post-excerpt {
+    font-size: 0.92rem;
+    color: #71717a;
+    line-height: 1.6;
+    margin-bottom: 18px;
+    flex: 1;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .fs-post-more-link {
+    font-family: var(--fs-font-heading);
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #18181b;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .fs-post-more-link:hover {
+    color: #71717a;
+  }
+</style>
