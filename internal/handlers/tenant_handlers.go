@@ -718,8 +718,7 @@ func (s *Server) provisionTenantSSL(c *gin.Context) {
 
 	domain := strings.TrimSpace(tenant.CustomDomain)
 	if domain == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "no custom domain configured for this store"})
-		return
+		domain = fmt.Sprintf("%s.bugmega.com", tenant.Subdomain)
 	}
 
 	// 1. Trigger registration with Cloudflare Pages API for Edge SSL
@@ -774,7 +773,7 @@ func (s *Server) provisionTenantSSL(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"ssl_active": false,
 		"ssl_status": "pending",
-		"message":    fmt.Sprintf("SSL provisioning request sent to Cloudflare Edge. Current TLS handshake: %s. Edge certificates usually become active within 2-15 minutes after DNS is verified.", tlsMsg),
+		"message":    fmt.Sprintf("SSL provisioning request sent to Cloudflare Edge for %s. Handshake: %s. Note: If this store is in Draft, make sure to click 'Publish' so Cloudflare deploys the site.", domain, tlsMsg),
 		"domain":     domain,
 	})
 }
@@ -805,13 +804,7 @@ func (s *Server) getTenantSSLStatus(c *gin.Context) {
 
 	domain := strings.TrimSpace(tenant.CustomDomain)
 	if domain == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"ssl_active": false,
-			"ssl_status": "none",
-			"domain":     "",
-			"message":    "No custom domain connected",
-		})
-		return
+		domain = fmt.Sprintf("%s.bugmega.com", tenant.Subdomain)
 	}
 
 	validTLS, issuer, tlsMsg := verifyDomainTLS(domain)
