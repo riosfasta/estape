@@ -41,6 +41,10 @@ type Tenant struct {
 	CustomDomain           string              `bson:"custom_domain,omitempty" json:"custom_domain,omitempty"`
 	CustomDomainStatus     string              `bson:"custom_domain_status,omitempty" json:"custom_domain_status,omitempty"`
 	CustomDomainVerifiedAt *time.Time          `bson:"custom_domain_verified_at,omitempty" json:"custom_domain_verified_at,omitempty"`
+	SSLStatus              string              `bson:"ssl_status,omitempty" json:"ssl_status,omitempty"`
+	SSLVerifiedAt          *time.Time          `bson:"ssl_verified_at,omitempty" json:"ssl_verified_at,omitempty"`
+	SSLLastError           string              `bson:"ssl_last_error,omitempty" json:"ssl_last_error,omitempty"`
+	SSLCertIssuer          string              `bson:"ssl_cert_issuer,omitempty" json:"ssl_cert_issuer,omitempty"`
 	CloudflareProject      string              `bson:"cloudflare_project,omitempty" json:"cloudflare_project,omitempty"`
 	CloudflareURL     string              `bson:"cloudflare_url,omitempty" json:"cloudflare_url,omitempty"`
 	PublishedAt       *time.Time          `bson:"published_at,omitempty" json:"published_at,omitempty"`

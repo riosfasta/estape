@@ -13292,6 +13292,23 @@ async function renderStores(activeTab = "active") {
                       <span class="muted" style="font-size:0.85rem;">None (${esc(store.subdomain)}.${esc(baseDomain)})</span>
                     `}
                   </div>
+                  ${store.custom_domain ? `
+                    <div style="margin:6px 0; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                      <strong>SSL:</strong>
+                      ${store.ssl_status === 'active' ? `
+                        <span class="badge" style="padding:2px 6px; border-radius:999px; font-size:0.7rem; font-weight:600; background:#dcfce7; color:#15803d; display:inline-flex; align-items:center; gap:4px;">
+                          ${icon("shield-check")} SSL Active
+                        </span>
+                      ` : `
+                        <span class="badge" style="padding:2px 6px; border-radius:999px; font-size:0.7rem; font-weight:600; background:#fef3c7; color:#b45309; display:inline-flex; align-items:center; gap:4px;">
+                          ${icon("shield-alert")} SSL Inactive
+                        </span>
+                        <button class="btn compact quick-install-ssl-btn" data-store-id="${esc(store.id)}" data-store-domain="${esc(store.custom_domain)}" style="font-size:0.75rem; padding:2px 8px; height:auto; line-height:1.2; display:inline-flex; align-items:center; gap:4px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe;" title="Click to request and install SSL certificate">
+                          ${icon("zap")} Install SSL
+                        </button>
+                      `}
+                    </div>
+                  ` : ''}
                   <p style="margin:4px 0;"><strong>Live URL:</strong> <a href="${esc(liveUrl)}" target="_blank" rel="noopener">${esc(liveUrl)} ↗</a></p>
                 </div>
               </div>
@@ -13306,7 +13323,7 @@ async function renderStores(activeTab = "active") {
                   </button>
                 </div>
                 <div style="display:flex; gap:8px;">
-                  <button class="btn quiet connect-domain-btn" data-store-id="${esc(store.id)}" data-store-sub="${esc(store.subdomain)}" data-store-domain="${esc(store.custom_domain || '')}" data-store-status="${esc(domainStatus)}" style="flex:1; font-size:0.82rem; padding:6px 8px;">
+                  <button class="btn quiet connect-domain-btn" data-store-id="${esc(store.id)}" data-store-sub="${esc(store.subdomain)}" data-store-domain="${esc(store.custom_domain || '')}" data-store-status="${esc(domainStatus)}" data-store-ssl="${esc(store.ssl_status || '')}" style="flex:1; font-size:0.82rem; padding:6px 8px;">
                     ${icon("globe")} ${store.custom_domain ? (domainStatus === 'active' ? 'Custom Domain' : 'Verify Domain') : 'Connect Domain'}
                   </button>
                   <button class="btn quiet store-settings-btn" data-store-id="${esc(store.id)}" style="flex:1; font-size:0.82rem; padding:6px 8px;">
@@ -13587,6 +13604,28 @@ async function renderStores(activeTab = "active") {
           <!-- Live feedback box -->
           <div id="dnsVerificationResult" style="margin-top:12px; font-size:0.85rem;"></div>
         </div>
+
+        <!-- Step 4: SSL Certificate Status & Installation -->
+        <div id="sslCertificateCard" style="background:#fff; border:1px solid #cbd5e1; border-radius:10px; padding:16px; margin-top:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <div>
+              <strong style="font-size:0.9rem; display:flex; align-items:center; gap:6px;">
+                ${icon("shield")} SSL / HTTPS Security
+              </strong>
+              <div id="sslStatusBadge" style="margin-top:4px;">
+                <span class="badge" style="background:#fef3c7; color:#b45309; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">
+                  ⏳ SSL Pending
+                </span>
+              </div>
+            </div>
+            <button class="btn" id="installSslBtn" style="padding:8px 16px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:600; display:inline-flex; align-items:center; gap:6px;">
+              ${icon("shield-check")} Install / Verify SSL
+            </button>
+          </div>
+
+          <!-- Live SSL feedback box -->
+          <div id="sslVerificationResult" style="margin-top:12px; font-size:0.85rem;"></div>
+        </div>
       </div>
 
       <div class="toolbar" style="display:flex; justify-content:space-between; align-items:center; margin-top:20px; border-top:1px solid #e2e8f0; padding-top:16px;">
@@ -13815,11 +13854,24 @@ async function renderStores(activeTab = "active") {
         dnsCard.style.display = "block";
         removeBtn.style.display = "inline-flex";
         if (status === "active") {
-          badge.innerHTML = `<span class="badge" style="background:#dcfce7; color:#15803d; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">✓ DNS Active & Edge SSL Provisioned</span>`;
+          badge.innerHTML = `<span class="badge" style="background:#dcfce7; color:#15803d; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">✓ DNS Active</span>`;
           resultBox.innerHTML = `<div style="background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; padding:10px; border-radius:6px;">✓ <strong>Verified!</strong> Your domain <code>${esc(domain)}</code> is actively resolving to <code>${esc(targetCname)}</code> and serving via Cloudflare edge.</div>`;
         } else {
           badge.innerHTML = `<span class="badge" style="background:#fef3c7; color:#b45309; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">⏳ DNS Pending Verification</span>`;
           resultBox.innerHTML = `<div style="background:#f8fafc; border:1px solid #e2e8f0; color:#475569; padding:10px; border-radius:6px;">Click <strong>Verify Propagation</strong> to check if your DNS CNAME record is resolved worldwide.</div>`;
+        }
+
+        const sslStatus = btn.getAttribute("data-store-ssl") || "pending";
+        const sslBadge = document.getElementById("sslStatusBadge");
+        const sslResult = document.getElementById("sslVerificationResult");
+        if (sslBadge) {
+          if (sslStatus === "active") {
+            sslBadge.innerHTML = `<span class="badge" style="background:#dcfce7; color:#15803d; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">🔒 SSL Active (HTTPS Secured)</span>`;
+            sslResult.innerHTML = `<div style="background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; padding:10px; border-radius:6px;">✓ SSL certificate is active and serving traffic securely over HTTPS.</div>`;
+          } else {
+            sslBadge.innerHTML = `<span class="badge" style="background:#fef3c7; color:#b45309; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">⚠️ SSL Inactive / Pending</span>`;
+            sslResult.innerHTML = `<div style="background:#f8fafc; border:1px solid #e2e8f0; color:#475569; padding:10px; border-radius:6px;">Once DNS is verified, click <strong>Install / Verify SSL</strong> to provision Edge SSL certificates.</div>`;
+          }
         }
       } else {
         dnsCard.style.display = "none";
@@ -13864,6 +13916,12 @@ async function renderStores(activeTab = "active") {
 
       const resultBox = document.getElementById("dnsVerificationResult");
       resultBox.innerHTML = `<div style="background:#f0f9ff; border:1px solid #bae6fd; color:#0369a1; padding:10px; border-radius:6px;">Domain saved. Now add the CNAME record above in your DNS provider and click <strong>Verify Propagation</strong>.</div>`;
+
+      const sslBadge = document.getElementById("sslStatusBadge");
+      if (sslBadge) {
+        sslBadge.innerHTML = `<span class="badge" style="background:#fef3c7; color:#b45309; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">⚠️ SSL Inactive / Pending</span>`;
+        document.getElementById("sslVerificationResult").innerHTML = `<div style="background:#f8fafc; border:1px solid #e2e8f0; color:#475569; padding:10px; border-radius:6px;">Verify DNS propagation first, then click <strong>Install / Verify SSL</strong>.</div>`;
+      }
     } catch (err) {
       alert("Error saving domain: " + (err.message || err));
     } finally {
@@ -13889,12 +13947,24 @@ async function renderStores(activeTab = "active") {
       });
 
       if (res.verified) {
-        badge.innerHTML = `<span class="badge" style="background:#dcfce7; color:#15803d; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">✓ DNS Active & Edge SSL Provisioned</span>`;
+        badge.innerHTML = `<span class="badge" style="background:#dcfce7; color:#15803d; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">✓ DNS Active</span>`;
         resultBox.innerHTML = `<div style="background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; padding:12px; border-radius:6px;">
           <h4 style="margin:0 0 4px 0;">✓ Propagation Confirmed!</h4>
           <p style="margin:0 0 6px 0;">${esc(res.message)}</p>
           <code style="font-size:0.8rem;">CNAME: ${esc(res.cname || res.target)}</code>
         </div>`;
+
+        const sslBadge = document.getElementById("sslStatusBadge");
+        const sslResult = document.getElementById("sslVerificationResult");
+        if (sslBadge) {
+          if (res.ssl_active) {
+            sslBadge.innerHTML = `<span class="badge" style="background:#dcfce7; color:#15803d; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">🔒 SSL Active (HTTPS Secured)</span>`;
+            sslResult.innerHTML = `<div style="background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; padding:10px; border-radius:6px;">✓ SSL certificate is active and verified!</div>`;
+          } else {
+            sslBadge.innerHTML = `<span class="badge" style="background:#fef3c7; color:#b45309; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">⚠️ SSL Provisioning Pending</span>`;
+            sslResult.innerHTML = `<div style="background:#fffbeb; border:1px solid #fde68a; color:#92400e; padding:10px; border-radius:6px;">DNS is pointed! You can now click <strong>Install / Verify SSL</strong> below to provision and verify edge HTTPS certificates.</div>`;
+          }
+        }
         showToast("Domain verified successfully!");
         setTimeout(() => renderStores(), 2000);
       } else {
@@ -13911,6 +13981,74 @@ async function renderStores(activeTab = "active") {
       verifyBtn.disabled = false;
       verifyBtn.innerHTML = `${icon("refresh-cw")} Verify Propagation`;
     }
+  });
+
+  // Install / Refresh SSL
+  document.getElementById("installSslBtn")?.addEventListener("click", async () => {
+    const storeId = document.getElementById("domainStoreId").value;
+    const installBtn = document.getElementById("installSslBtn");
+    const resultBox = document.getElementById("sslVerificationResult");
+    const badge = document.getElementById("sslStatusBadge");
+
+    installBtn.disabled = true;
+    installBtn.innerHTML = `${icon("loader-2")} Requesting & Testing SSL...`;
+    resultBox.innerHTML = `<div style="background:#f8fafc; border:1px solid #e2e8f0; color:#475569; padding:10px; border-radius:6px;">Contacting Edge CDN & validating HTTPS TLS certificate handshake... Please wait.</div>`;
+
+    try {
+      const res = await api(`/api/tenants/${storeId}/ssl/provision`, {
+        method: "POST"
+      });
+
+      if (res.ssl_active) {
+        badge.innerHTML = `<span class="badge" style="background:#dcfce7; color:#15803d; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">🔒 SSL Active (HTTPS Secured)</span>`;
+        resultBox.innerHTML = `<div style="background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; padding:12px; border-radius:6px;">
+          <h4 style="margin:0 0 4px 0;">✓ SSL Certificate Installed & Active!</h4>
+          <p style="margin:0 0 6px 0;">${esc(res.message)}</p>
+          ${res.issuer ? `<small>Issuer: <code>${esc(res.issuer)}</code></small>` : ''}
+        </div>`;
+        showToast("SSL Certificate is active and verified!");
+        setTimeout(() => renderStores(), 2000);
+      } else {
+        badge.innerHTML = `<span class="badge" style="background:#fef3c7; color:#b45309; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">⏳ SSL Provisioning Pending</span>`;
+        resultBox.innerHTML = `<div style="background:#fffbeb; border:1px solid #fde68a; color:#92400e; padding:12px; border-radius:6px;">
+          <h4 style="margin:0 0 4px 0;">⏳ Provisioning In Progress</h4>
+          <p style="margin:0 0 6px 0;">${esc(res.message)}</p>
+          <small>DNS and certificate authority verification may take 2 to 15 minutes.</small>
+        </div>`;
+        showToast("SSL issuance requested. Please re-check in a few minutes.");
+      }
+    } catch (err) {
+      resultBox.innerHTML = `<div style="background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; padding:10px; border-radius:6px;">Error provisioning SSL: ${esc(err.message || err)}</div>`;
+    } finally {
+      installBtn.disabled = false;
+      installBtn.innerHTML = `${icon("shield-check")} Install / Verify SSL`;
+      icons();
+    }
+  });
+
+  // Quick Install SSL button on store cards
+  document.querySelectorAll(".quick-install-ssl-btn").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const storeId = btn.getAttribute("data-store-id");
+      const domain = btn.getAttribute("data-store-domain");
+      btn.disabled = true;
+      btn.innerHTML = `${icon("loader-2")} Requesting...`;
+      try {
+        const res = await api(`/api/tenants/${storeId}/ssl/provision`, { method: "POST" });
+        if (res.ssl_active) {
+          showToast(`SSL Active for ${domain}!`);
+        } else {
+          showToast(res.message || "SSL issuance requested.");
+        }
+        await renderStores();
+      } catch (err) {
+        alert("SSL provision error: " + (err.message || err));
+        btn.disabled = false;
+        btn.innerHTML = `${icon("zap")} Install SSL`;
+        icons();
+      }
+    });
   });
 
   // Copy CNAME target

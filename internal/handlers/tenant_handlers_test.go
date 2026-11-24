@@ -131,3 +131,14 @@ func TestTenantDeletionRetentionTime(t *testing.T) {
 		t.Errorf("expected 30 days retention, got %d", days)
 	}
 }
+
+func TestVerifyDomainTLSInvalid(t *testing.T) {
+	valid, issuer, msg := verifyDomainTLS("nonexistent-domain-xyz-12345.local")
+	if valid {
+		t.Errorf("expected nonexistent domain to fail TLS verification, got valid")
+	}
+	if msg == "" {
+		t.Errorf("expected error message for nonexistent domain")
+	}
+	_ = issuer
+}

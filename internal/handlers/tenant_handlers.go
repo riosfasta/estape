@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -467,6 +468,9 @@ func (s *Server) setTenantCustomDomain(c *gin.Context) {
 		"custom_domain":             domain,
 		"custom_domain_status":      "pending",
 		"custom_domain_verified_at": nil,
+		"ssl_status":                "pending",
+		"ssl_verified_at":          nil,
+		"ssl_last_error":            "",
 	}
 
 	if err := s.store.UpdateTenant(c.Request.Context(), tenant.ID, updates); err != nil {
@@ -555,10 +559,26 @@ func (s *Server) verifyTenantDomainPropagation(c *gin.Context) {
 
 	now := time.Now()
 	if verified {
+		sslStatus := "pending"
+		var sslIssuer string
+		validTLS, issuer, tlsMsg := verifyDomainTLS(domain)
+		if validTLS {
+			sslStatus = "active"
+			sslIssuer = issuer
+		}
+
 		updates := bson.M{
 			"custom_domain_status":      "active",
 			"custom_domain_verified_at": &now,
+			"ssl_status":                sslStatus,
 			"cloudflare_url":            fmt.Sprintf("https://%s", domain),
+		}
+		if validTLS {
+			updates["ssl_verified_at"] = &now
+			updates["ssl_cert_issuer"] = sslIssuer
+			updates["ssl_last_error"] = ""
+		} else {
+			updates["ssl_last_error"] = tlsMsg
 		}
 		_ = s.store.UpdateTenant(c.Request.Context(), tenant.ID, updates)
 
@@ -580,13 +600,15 @@ func (s *Server) verifyTenantDomainPropagation(c *gin.Context) {
 		go attachCloudflareCustomDomain(cfToken, cfAccount, proj, domain)
 
 		c.JSON(http.StatusOK, gin.H{
-			"verified": true,
-			"status":   "active",
-			"domain":   domain,
-			"cname":    cnameClean,
-			"target":   expectedTarget,
-			"reason":   reason,
-			"message":  "DNS propagation verified! Your custom domain is live and SSL is active.",
+			"verified":   true,
+			"status":     "active",
+			"ssl_status": sslStatus,
+			"ssl_active": validTLS,
+			"domain":     domain,
+			"cname":      cnameClean,
+			"target":     expectedTarget,
+			"reason":     reason,
+			"message":    "DNS propagation verified! Your custom domain is live.",
 		})
 		return
 	}
@@ -629,6 +651,10 @@ func (s *Server) removeTenantCustomDomain(c *gin.Context) {
 		"custom_domain":             "",
 		"custom_domain_status":      "",
 		"custom_domain_verified_at": nil,
+		"ssl_status":                "",
+		"ssl_verified_at":          nil,
+		"ssl_cert_issuer":           "",
+		"ssl_last_error":            "",
 		"cloudflare_url":            fmt.Sprintf("https://%s.bugmega.com", tenant.Subdomain),
 	}
 
@@ -638,6 +664,179 @@ func (s *Server) removeTenantCustomDomain(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Custom domain removed successfully"})
+}
+
+func verifyDomainTLS(domain string) (bool, string, string) {
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	tlsConfig := &tls.Config{
+		ServerName: domain,
+	}
+	conn, err := tls.DialWithDialer(dialer, "tcp", domain+":443", tlsConfig)
+	if err != nil {
+		return false, "", err.Error()
+	}
+	defer conn.Close()
+
+	state := conn.ConnectionState()
+	if len(state.PeerCertificates) == 0 {
+		return false, "", "no peer certificates found in TLS handshake"
+	}
+	cert := state.PeerCertificates[0]
+	now := time.Now()
+	if now.Before(cert.NotBefore) {
+		return false, cert.Issuer.CommonName, fmt.Sprintf("certificate is not valid until %s", cert.NotBefore.Format("2006-01-02"))
+	}
+	if now.After(cert.NotAfter) {
+		return false, cert.Issuer.CommonName, fmt.Sprintf("certificate expired on %s", cert.NotAfter.Format("2006-01-02"))
+	}
+	return true, cert.Issuer.CommonName, fmt.Sprintf("Valid SSL certificate issued by %s (expires %s)", cert.Issuer.CommonName, cert.NotAfter.Format("2006-01-02"))
+}
+
+func (s *Server) provisionTenantSSL(c *gin.Context) {
+	user, ok := middleware.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	tenantID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant id"})
+		return
+	}
+
+	tenant, err := s.store.GetTenantByID(c.Request.Context(), tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "tenant not found"})
+		return
+	}
+
+	if tenant.OwnerUserID != user.ID && user.Role != models.RoleOwnerAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+
+	domain := strings.TrimSpace(tenant.CustomDomain)
+	if domain == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no custom domain configured for this store"})
+		return
+	}
+
+	// 1. Trigger registration with Cloudflare Pages API for Edge SSL
+	cfToken := os.Getenv("CLOUDFLARE_API_TOKEN")
+	cfAccount := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
+	if siteSettings, err := s.loadSiteSettings(c.Request.Context()); err == nil {
+		if strings.TrimSpace(siteSettings.CloudflareAPIToken) != "" {
+			cfToken = strings.TrimSpace(siteSettings.CloudflareAPIToken)
+		}
+		if strings.TrimSpace(siteSettings.CloudflareAccountID) != "" {
+			cfAccount = strings.TrimSpace(siteSettings.CloudflareAccountID)
+		}
+	}
+	proj := tenant.CloudflareProject
+	if proj == "" {
+		proj = tenant.Subdomain
+	}
+
+	if cfToken != "" && cfAccount != "" {
+		attachCloudflareCustomDomain(cfToken, cfAccount, proj, domain)
+	}
+
+	// 2. Perform live TLS handshake test
+	validTLS, issuer, tlsMsg := verifyDomainTLS(domain)
+	now := time.Now()
+
+	if validTLS {
+		updates := bson.M{
+			"ssl_status":      "active",
+			"ssl_verified_at": &now,
+			"ssl_cert_issuer": issuer,
+			"ssl_last_error":  "",
+		}
+		_ = s.store.UpdateTenant(c.Request.Context(), tenant.ID, updates)
+		c.JSON(http.StatusOK, gin.H{
+			"ssl_active": true,
+			"ssl_status": "active",
+			"issuer":     issuer,
+			"message":    tlsMsg,
+			"domain":     domain,
+		})
+		return
+	}
+
+	// TLS dial not yet valid
+	updates := bson.M{
+		"ssl_status":     "pending",
+		"ssl_last_error": tlsMsg,
+	}
+	_ = s.store.UpdateTenant(c.Request.Context(), tenant.ID, updates)
+
+	c.JSON(http.StatusOK, gin.H{
+		"ssl_active": false,
+		"ssl_status": "pending",
+		"message":    fmt.Sprintf("SSL provisioning request sent to Cloudflare Edge. Current TLS handshake: %s. Edge certificates usually become active within 2-15 minutes after DNS is verified.", tlsMsg),
+		"domain":     domain,
+	})
+}
+
+func (s *Server) getTenantSSLStatus(c *gin.Context) {
+	user, ok := middleware.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	tenantID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant id"})
+		return
+	}
+
+	tenant, err := s.store.GetTenantByID(c.Request.Context(), tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "tenant not found"})
+		return
+	}
+
+	if tenant.OwnerUserID != user.ID && user.Role != models.RoleOwnerAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+
+	domain := strings.TrimSpace(tenant.CustomDomain)
+	if domain == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"ssl_active": false,
+			"ssl_status": "none",
+			"domain":     "",
+			"message":    "No custom domain connected",
+		})
+		return
+	}
+
+	validTLS, issuer, tlsMsg := verifyDomainTLS(domain)
+	status := tenant.SSLStatus
+	if status == "" {
+		status = "pending"
+	}
+	if validTLS {
+		status = "active"
+		now := time.Now()
+		_ = s.store.UpdateTenant(c.Request.Context(), tenant.ID, bson.M{
+			"ssl_status":      "active",
+			"ssl_verified_at": &now,
+			"ssl_cert_issuer": issuer,
+			"ssl_last_error":  "",
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"ssl_active": validTLS,
+		"ssl_status": status,
+		"issuer":     issuer,
+		"message":    tlsMsg,
+		"domain":     domain,
+	})
 }
 
 func (s *Server) deleteTenant(c *gin.Context) {

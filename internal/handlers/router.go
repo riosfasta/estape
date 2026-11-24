@@ -269,6 +269,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/tenants/:id/publish", s.publishTenant)
 	authed.POST("/tenants/:id/domain", s.setTenantCustomDomain)
 	authed.POST("/tenants/:id/domain/verify", s.verifyTenantDomainPropagation)
+	authed.POST("/tenants/:id/ssl/provision", s.provisionTenantSSL)
+	authed.GET("/tenants/:id/ssl/status", s.getTenantSSLStatus)
 	authed.DELETE("/tenants/:id/domain", s.removeTenantCustomDomain)
 	authed.DELETE("/tenants/:id", s.deleteTenant)
 	authed.POST("/tenants/:id/restore", s.restoreTenant)
