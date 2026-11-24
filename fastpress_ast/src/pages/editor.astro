@@ -4545,8 +4545,8 @@ try {
       <!-- Right: Action Tools -->
       <div class="builder-actions">
         <!-- Live Site, Preview & Code Dropdown -->
-        <div class="topbar-dropdown-wrap menu-right" id="viewActionsDropdownWrap">
-          <button type="button" class="topbar-dropdown-btn" id="btnViewActionsDropdown" title="Live Site, Preview & Code" aria-haspopup="true" aria-expanded="false">
+        <div class="nav-dropdown" id="viewActionsDropdownWrap">
+          <button type="button" class="dropdown-trigger-btn" id="btnViewActionsDropdown" title="Live Site, Preview & Code" aria-haspopup="true" aria-expanded="false">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
               <circle cx="12" cy="12" r="3"></circle>
@@ -4554,42 +4554,42 @@ try {
             <span>Preview & Code</span>
             <svg class="dropdown-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </button>
-          <div class="topbar-dropdown-menu" id="viewActionsDropdownMenu">
-            <a href={liveSiteInitialUrl} target="_blank" class="topbar-dropdown-item" id="btnViewLiveWeb" title="Open Live Site in New Tab">
-              <div class="topbar-item-icon" style="color: #60a5fa;">
+          <div class="nav-dropdown-menu" id="viewActionsDropdownMenu" style="right: 0; left: auto; min-width: 250px;">
+            <a href={liveSiteInitialUrl} target="_blank" class="dropdown-menu-item" id="btnViewLiveWeb" title="Open Live Site in New Tab" style="text-decoration: none;">
+              <span class="item-icon-wrap" style="color: #60a5fa; background: rgba(96, 165, 250, 0.1);">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
                   <polyline points="15 3 21 3 21 9"></polyline>
                   <line x1="10" y1="14" x2="21" y2="3"></line>
                 </svg>
-              </div>
-              <div class="topbar-item-text">
-                <span class="topbar-item-title">Live Site</span>
-                <span class="topbar-item-desc">Open live website in new tab</span>
+              </span>
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 0.82rem; font-weight: 600; color: #f3f4f6;">Live Site</span>
+                <span style="font-size: 0.7rem; color: #9ca3af;">Open live website in new tab</span>
               </div>
             </a>
-            <button type="button" class="topbar-dropdown-item" id="btnPreview" title="Full Screen Preview">
-              <div class="topbar-item-icon" style="color: #34d399;">
+            <button type="button" class="dropdown-menu-item" id="btnPreview" title="Full Screen Preview">
+              <span class="item-icon-wrap" style="color: #34d399; background: rgba(52, 211, 153, 0.1);">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
                   <circle cx="12" cy="12" r="3"></circle>
                 </svg>
-              </div>
-              <div class="topbar-item-text">
-                <span class="topbar-item-title">Preview Canvas</span>
-                <span class="topbar-item-desc">Fullscreen canvas view</span>
+              </span>
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 0.82rem; font-weight: 600; color: #f3f4f6;">Preview Canvas</span>
+                <span style="font-size: 0.7rem; color: #9ca3af;">Fullscreen canvas view</span>
               </div>
             </button>
-            <button type="button" class="topbar-dropdown-item" id="btnViewCode" title="View HTML/CSS Code">
-              <div class="topbar-item-icon" style="color: #f59e0b;">
+            <button type="button" class="dropdown-menu-item" id="btnViewCode" title="View HTML/CSS Code">
+              <span class="item-icon-wrap" style="color: #f59e0b; background: rgba(245, 158, 11, 0.1);">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="16 18 22 12 16 6"></polyline>
                   <polyline points="8 6 2 12 8 18"></polyline>
                 </svg>
-              </div>
-              <div class="topbar-item-text">
-                <span class="topbar-item-title">View Code</span>
-                <span class="topbar-item-desc">Inspect HTML & CSS code</span>
+              </span>
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 0.82rem; font-weight: 600; color: #f3f4f6;">View Code</span>
+                <span style="font-size: 0.7rem; color: #9ca3af;">Inspect HTML & CSS code</span>
               </div>
             </button>
           </div>
@@ -5962,6 +5962,7 @@ try {
       } catch (e) {
         allPages = {};
       }
+      window.allPages = allPages;
 
       let activeThemeName = 'default';
       try {
@@ -7292,11 +7293,29 @@ try {
         }
       }
 
-      // Inject Global Style dasar ke dalam Canvas Iframe
+      // Inject Global Style dasar & Tenant Links ke dalam Canvas Iframe
       function injectIframeStyles() {
         const iframeDoc = editor.Canvas.getDocument();
         if (iframeDoc) {
           syncFontsToCanvas();
+
+          // Sync <base> tag to tenant subdomain so relative URLs (/about, /products) resolve to tenant site, not root bugmega.com
+          try {
+            const urlParams = new URLSearchParams(window.location.search);
+            const currentTenant = urlParams.get('tenant');
+            if (currentTenant) {
+              const host = window.location.hostname.replace(/^(www\.|builder\.)/, '');
+              const proto = window.location.protocol;
+              const port = window.location.port ? `:${window.location.port}` : '';
+              const tenantOrigin = `${proto}//${currentTenant}.${host}${port}`;
+              let baseTag = iframeDoc.querySelector('base');
+              if (!baseTag) {
+                baseTag = iframeDoc.createElement('base');
+                iframeDoc.head.insertBefore(baseTag, iframeDoc.head.firstChild);
+              }
+              baseTag.href = `${tenantOrigin}/`;
+            }
+          } catch (_) {}
 
           // Ensure Furnisite Google Fonts are available in canvas
           let fontLinkTag = iframeDoc.getElementById('gjs-furnisite-google-fonts');
@@ -8103,6 +8122,41 @@ try {
             `;
             iframeDoc.head.appendChild(scriptTag);
           }
+
+          if (!iframeDoc.getElementById('gjs-tenant-link-interceptor')) {
+            const linkScript = iframeDoc.createElement('script');
+            linkScript.id = 'gjs-tenant-link-interceptor';
+            linkScript.innerHTML = `
+              document.addEventListener('click', function(e) {
+                var a = e.target.closest('a');
+                if (!a) return;
+                var href = a.getAttribute('href');
+                if (!href || href === '#' || href.startsWith('javascript:')) return;
+                if (a.classList.contains('pop-drawer-trigger-btn') || a.getAttribute('data-gjs-type')) return;
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                var cleanPath = href.replace(/^https?:\\/\\/[^\\/]+/i, '');
+                var slug = cleanPath.replace(/^\\/+/, '').split('/')[0].split('?')[0].split('#')[0];
+                if (!slug || slug === 'home') slug = 'home';
+
+                if (window.parent && typeof window.parent.switchToPage === 'function' && window.parent.allPages && window.parent.allPages[slug]) {
+                  window.parent.switchToPage(slug);
+                } else {
+                  var p = new URLSearchParams(window.parent.location.search);
+                  var t = p.get('tenant');
+                  if (t) {
+                    var h = window.parent.location.hostname.replace(/^(www\\.|builder\\.)/, '');
+                    var pr = window.parent.location.protocol;
+                    var pt = window.parent.location.port ? ':' + window.parent.location.port : '';
+                    window.open(pr + '//' + t + '.' + h + pt + (cleanPath.startsWith('/') ? cleanPath : '/' + cleanPath), '_blank');
+                  }
+                }
+              }, true);
+            `;
+            iframeDoc.head.appendChild(linkScript);
+          }
         }
       }
 
@@ -8134,60 +8188,54 @@ try {
         btnViewLiveWeb.addEventListener('mouseenter', updateLiveWebLink);
       }
 
-      // Topbar Dropdowns (.topbar-dropdown-wrap - Live Site, Preview & Code)
-      function initTopbarDropdowns() {
-        const wraps = document.querySelectorAll('.topbar-dropdown-wrap');
-        wraps.forEach((wrap) => {
-          const btn = wrap.querySelector('.topbar-dropdown-btn');
-          const menu = wrap.querySelector('.topbar-dropdown-menu');
-          if (!btn) return;
+      // Live Site, Preview & Code Dropdown
+      const viewActionsDropdown = document.getElementById('viewActionsDropdownWrap');
+      const btnViewActionsDropdown = document.getElementById('btnViewActionsDropdown');
+      const viewActionsMenu = document.getElementById('viewActionsDropdownMenu');
 
-          btn.addEventListener('mouseenter', updateLiveWebLink);
+      function toggleViewActionsDropdown() {
+        if (!viewActionsDropdown) return;
+        closePageActionsDropdown();
+        if (builderSwitcherMenu) builderSwitcherMenu.style.display = 'none';
+        updateLiveWebLink();
+        const willOpen = !viewActionsDropdown.classList.contains('open');
+        if (willOpen) {
+          viewActionsDropdown.classList.add('open');
+          btnViewActionsDropdown?.setAttribute('aria-expanded', 'true');
+        } else {
+          viewActionsDropdown.classList.remove('open');
+          btnViewActionsDropdown?.setAttribute('aria-expanded', 'false');
+        }
+      }
 
-          btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            closePageActionsDropdown();
-            updateLiveWebLink();
-            const isOpen = wrap.classList.contains('open');
-            wraps.forEach((w) => {
-              w.classList.remove('open');
-              w.querySelector('.topbar-dropdown-btn')?.setAttribute('aria-expanded', 'false');
-            });
-            if (!isOpen) {
-              wrap.classList.add('open');
-              btn.setAttribute('aria-expanded', 'true');
-            }
-          });
+      function closeViewActionsDropdown() {
+        if (!viewActionsDropdown) return;
+        viewActionsDropdown.classList.remove('open');
+        btnViewActionsDropdown?.setAttribute('aria-expanded', 'false');
+      }
 
-          if (menu) {
-            menu.addEventListener('click', (e) => {
-              if (e.target.closest('.topbar-dropdown-item')) {
-                wrap.classList.remove('open');
-                btn.setAttribute('aria-expanded', 'false');
-              }
-            });
-          }
+      if (btnViewActionsDropdown) {
+        btnViewActionsDropdown.addEventListener('mouseenter', updateLiveWebLink);
+        btnViewActionsDropdown.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          toggleViewActionsDropdown();
         });
+      }
 
-        document.addEventListener('click', (e) => {
-          if (!e.target.closest('.topbar-dropdown-wrap')) {
-            wraps.forEach((w) => {
-              w.classList.remove('open');
-              w.querySelector('.topbar-dropdown-btn')?.setAttribute('aria-expanded', 'false');
-            });
-          }
-        });
-
-        document.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape') {
-            wraps.forEach((w) => {
-              w.classList.remove('open');
-              w.querySelector('.topbar-dropdown-btn')?.setAttribute('aria-expanded', 'false');
-            });
+      if (viewActionsMenu) {
+        viewActionsMenu.addEventListener('click', (e) => {
+          if (e.target.closest('.dropdown-menu-item')) {
+            closeViewActionsDropdown();
           }
         });
       }
-      initTopbarDropdowns();
+
+      document.addEventListener('click', (e) => {
+        if (viewActionsDropdown && !viewActionsDropdown.contains(e.target)) {
+          closeViewActionsDropdown();
+        }
+      });
 
       // Actions Dropdown
       const pageActionsDropdown = document.getElementById('pageActionsDropdown');
@@ -8196,6 +8244,8 @@ try {
 
       function togglePageActionsDropdown() {
         if (!pageActionsDropdown) return;
+        closeViewActionsDropdown();
+        if (builderSwitcherMenu) builderSwitcherMenu.style.display = 'none';
         const willOpen = !pageActionsDropdown.classList.contains('open');
         if (willOpen) {
           pageActionsDropdown.classList.add('open');
@@ -9182,12 +9232,14 @@ try {
         if (typeof updateLayerSelectionUI === 'function') updateLayerSelectionUI(null);
         showToast(`Switched to page: ${allPages[slug].title}`);
       }
+      window.switchToPage = switchToPage;
 
       // ==========================================
       // SAAT KANVAS PERTAMA KALI READY
       // ==========================================
       editor.on('load', () => {
         updatePageDropdownUI();
+        if (typeof updateLiveWebLink === 'function') updateLiveWebLink();
         loadCurrentPageIntoCanvas();
         updateCanvasHeaderFooterBanners();
 
