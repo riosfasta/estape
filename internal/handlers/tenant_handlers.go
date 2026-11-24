@@ -692,6 +692,31 @@ func verifyDomainTLS(domain string) (bool, string, string) {
 	return true, cert.Issuer.CommonName, fmt.Sprintf("Valid SSL certificate issued by %s (expires %s)", cert.Issuer.CommonName, cert.NotAfter.Format("2006-01-02"))
 }
 
+func provisionVPSSubdomainSSL(domain string) (bool, string) {
+	certbotPath, err := exec.LookPath("certbot")
+	if err != nil {
+		return false, "certbot CLI is not installed on this VPS"
+	}
+
+	cmd := exec.Command(certbotPath, "certonly", "--nginx", "-d", domain, "--non-interactive", "--agree-tos", "--register-unsafely-without-email")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		cmdWebroot := exec.Command(certbotPath, "certonly", "--webroot", "-w", "/var/www/html", "-d", domain, "--non-interactive", "--agree-tos", "--register-unsafely-without-email")
+		outWebroot, errW := cmdWebroot.CombinedOutput()
+		if errW != nil {
+			return false, fmt.Sprintf("certbot error: %s (webroot: %s)", strings.TrimSpace(string(out)), strings.TrimSpace(string(outWebroot)))
+		}
+	}
+
+	if nginxPath, err := exec.LookPath("nginx"); err == nil {
+		_ = exec.Command(nginxPath, "-s", "reload").Run()
+	} else if sysctl, err := exec.LookPath("systemctl"); err == nil {
+		_ = exec.Command(sysctl, "reload", "nginx").Run()
+	}
+
+	return true, "SSL certificate provisioned on VPS and Nginx reloaded"
+}
+
 func (s *Server) provisionTenantSSL(c *gin.Context) {
 	user, ok := middleware.CurrentUser(c)
 	if !ok {
@@ -721,27 +746,35 @@ func (s *Server) provisionTenantSSL(c *gin.Context) {
 		domain = fmt.Sprintf("%s.bugmega.com", tenant.Subdomain)
 	}
 
-	// 1. Trigger registration with Cloudflare Pages API for Edge SSL
-	cfToken := os.Getenv("CLOUDFLARE_API_TOKEN")
-	cfAccount := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
-	if siteSettings, err := s.loadSiteSettings(c.Request.Context()); err == nil {
-		if strings.TrimSpace(siteSettings.CloudflareAPIToken) != "" {
-			cfToken = strings.TrimSpace(siteSettings.CloudflareAPIToken)
+	isSubdomain := strings.HasSuffix(domain, ".bugmega.com") || tenant.CustomDomain == ""
+	var vpsMsg string
+
+	if isSubdomain {
+		// Subdomain is hosted locally on the VPS - run VPS certbot provisioning
+		_, vpsMsg = provisionVPSSubdomainSSL(domain)
+	} else {
+		// External custom domain: Trigger registration with Cloudflare Pages API for Edge SSL
+		cfToken := os.Getenv("CLOUDFLARE_API_TOKEN")
+		cfAccount := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
+		if siteSettings, err := s.loadSiteSettings(c.Request.Context()); err == nil {
+			if strings.TrimSpace(siteSettings.CloudflareAPIToken) != "" {
+				cfToken = strings.TrimSpace(siteSettings.CloudflareAPIToken)
+			}
+			if strings.TrimSpace(siteSettings.CloudflareAccountID) != "" {
+				cfAccount = strings.TrimSpace(siteSettings.CloudflareAccountID)
+			}
 		}
-		if strings.TrimSpace(siteSettings.CloudflareAccountID) != "" {
-			cfAccount = strings.TrimSpace(siteSettings.CloudflareAccountID)
+		proj := tenant.CloudflareProject
+		if proj == "" {
+			proj = tenant.Subdomain
 		}
-	}
-	proj := tenant.CloudflareProject
-	if proj == "" {
-		proj = tenant.Subdomain
+
+		if cfToken != "" && cfAccount != "" {
+			attachCloudflareCustomDomain(cfToken, cfAccount, proj, domain)
+		}
 	}
 
-	if cfToken != "" && cfAccount != "" {
-		attachCloudflareCustomDomain(cfToken, cfAccount, proj, domain)
-	}
-
-	// 2. Perform live TLS handshake test
+	// 2. Perform live TLS handshake test on domain:443
 	validTLS, issuer, tlsMsg := verifyDomainTLS(domain)
 	now := time.Now()
 
@@ -770,10 +803,17 @@ func (s *Server) provisionTenantSSL(c *gin.Context) {
 	}
 	_ = s.store.UpdateTenant(c.Request.Context(), tenant.ID, updates)
 
+	var feedbackMsg string
+	if isSubdomain {
+		feedbackMsg = fmt.Sprintf("VPS SSL check for %s: %s. (%s)", domain, tlsMsg, vpsMsg)
+	} else {
+		feedbackMsg = fmt.Sprintf("SSL provisioning request sent to Cloudflare Edge for %s. Handshake: %s.", domain, tlsMsg)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"ssl_active": false,
 		"ssl_status": "pending",
-		"message":    fmt.Sprintf("SSL provisioning request sent to Cloudflare Edge for %s. Handshake: %s. Note: If this store is in Draft, make sure to click 'Publish' so Cloudflare deploys the site.", domain, tlsMsg),
+		"message":    feedbackMsg,
 		"domain":     domain,
 	})
 }
@@ -1043,6 +1083,83 @@ func deleteCloudflarePagesProject(token, accountID, project, customDomain string
 	}
 }
 
+var astroEditorAPIPrefixes = []string{
+	"/api/pages",
+	"/api/site-config",
+	"/api/fonts",
+	"/api/blog-layouts",
+	"/api/categories",
+	"/api/custom-code",
+	"/api/footers",
+	"/api/headers",
+	"/api/menus",
+	"/api/page-custom-code",
+	"/api/popups",
+	"/api/posts",
+	"/api/product-categories",
+	"/api/product-layouts",
+	"/api/products",
+	"/api/robots",
+	"/api/save-page",
+	"/api/templates",
+	"/api/themes",
+	"/api/upload",
+}
+
+func isAstroEditorAPI(path string) bool {
+	p := strings.ToLower(path)
+	for _, prefix := range astroEditorAPIPrefixes {
+		if strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func isEditorOrBuilderPath(path string) bool {
+	p := strings.ToLower(path)
+	if p == "/editor" || strings.HasPrefix(p, "/editor/") ||
+		strings.Contains(p, "builder") || strings.Contains(p, "edit-") ||
+		strings.HasSuffix(p, "-editor") || strings.HasSuffix(p, "-builder") {
+		return true
+	}
+	return false
+}
+
+func (s *Server) authenticateUserFromRequest(c *gin.Context) (*middleware.UserContext, bool) {
+	if u, ok := middleware.CurrentUser(c); ok {
+		return &u, true
+	}
+	header := strings.TrimSpace(c.GetHeader("Authorization"))
+	if header == "" {
+		if cookie, err := c.Cookie("access_token"); err == nil {
+			header = "Bearer " + cookie
+		}
+	}
+	if header == "" && strings.TrimSpace(c.Query("token")) != "" {
+		header = "Bearer " + strings.TrimSpace(c.Query("token"))
+	}
+	if !strings.HasPrefix(strings.ToLower(header), "bearer ") {
+		return nil, false
+	}
+	raw := strings.TrimSpace(header[7:])
+	claims, err := s.tokens.ParseAccessToken(raw)
+	if err != nil {
+		return nil, false
+	}
+	userID, err := primitive.ObjectIDFromHex(claims.Subject)
+	if err != nil {
+		return nil, false
+	}
+	var teamID primitive.ObjectID
+	if claims.TeamID != "" {
+		teamID, _ = primitive.ObjectIDFromHex(claims.TeamID)
+	}
+	ctx := middleware.UserContext{ID: userID, Role: models.Role(claims.Role), TeamID: teamID}
+	c.Set(middleware.UserContextKey, ctx)
+	return &ctx, true
+}
+
 func (s *Server) tenantHostMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		host := strings.ToLower(c.Request.Host)
@@ -1051,11 +1168,6 @@ func (s *Server) tenantHostMiddleware() gin.HandlerFunc {
 		}
 
 		path := c.Request.URL.Path
-		// Skip internal API endpoints, websockets, static platform assets, and builder scripts
-		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/ws/") || strings.HasPrefix(path, "/static/") || path == "/widget.js" {
-			c.Next()
-			return
-		}
 
 		baseDomain := "bugmega.com"
 		if s.cfg.AppURL != "" {
@@ -1070,15 +1182,51 @@ func (s *Server) tenantHostMiddleware() gin.HandlerFunc {
 			}
 		}
 
-		// Exact matches for the main platform
+		// Exact matches for the main platform (bugmega.com)
 		if host == baseDomain || host == "www."+baseDomain || host == "localhost" || host == "127.0.0.1" {
+			// 1. Editor and builder HTML routes: require authentication and store ownership!
+			if isEditorOrBuilderPath(path) {
+				user, ok := s.authenticateUserFromRequest(c)
+				if !ok {
+					c.Redirect(http.StatusFound, "/login?redirect="+url.QueryEscape(c.Request.RequestURI))
+					c.Abort()
+					return
+				}
+
+				tenantSlug := strings.TrimSpace(c.Query("tenant"))
+				if tenantSlug != "" {
+					tenant, err := s.store.GetTenantBySubdomain(c.Request.Context(), tenantSlug)
+					if err == nil && tenant != nil {
+						if tenant.OwnerUserID != user.ID && user.Role != models.RoleOwnerAdmin {
+							c.String(http.StatusForbidden, "403 Forbidden: You do not have permission to edit this store.")
+							c.Abort()
+							return
+						}
+					}
+				}
+
+				s.proxyToAstro(c, "http://127.0.0.1:4321", path)
+				c.Abort()
+				return
+			}
+
+			// 2. Editor static assets & editor API endpoints on bugmega.com: proxy to Astro
+			if strings.HasPrefix(path, "/editor-") || strings.HasPrefix(path, "/_astro/") ||
+				strings.HasPrefix(path, "/public/editor-") || isAstroEditorAPI(path) {
+				s.proxyToAstro(c, "http://127.0.0.1:4321", path)
+				c.Abort()
+				return
+			}
+
+			// Normal main platform routing
 			c.Next()
 			return
 		}
 
-		// Builder subdomain
+		// Builder subdomain legacy redirect: redirect to main domain editor securely
 		if host == "builder."+baseDomain {
-			s.proxyToAstro(c, "http://127.0.0.1:4321", path)
+			target := fmt.Sprintf("https://%s%s", baseDomain, c.Request.RequestURI)
+			c.Redirect(http.StatusMovedPermanently, target)
 			c.Abort()
 			return
 		}
@@ -1119,6 +1267,13 @@ func (s *Server) serveTenantWebsite(c *gin.Context, tenant *models.Tenant) {
 	reqPath := c.Request.URL.Path
 	if reqPath == "" {
 		reqPath = "/"
+	}
+
+	// CRITICAL SECURITY: Block all editor and builder routes on the public storefront!
+	if isEditorOrBuilderPath(reqPath) || isAstroEditorAPI(reqPath) {
+		c.String(http.StatusNotFound, "404 page not found")
+		c.Abort()
+		return
 	}
 
 	// 0. Auto-provision static dist from fastpress_ast if not already created

@@ -13256,9 +13256,7 @@ async function renderStores(activeTab = "active") {
           ${stores.map(store => {
             const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
             const baseDomain = window.location.hostname.replace(/^www\./, "");
-            const builderHref = isLocal
-              ? `http://localhost:4321/editor?tenant=${encodeURIComponent(store.subdomain)}`
-              : `${window.location.protocol}//builder.${baseDomain}/editor?tenant=${encodeURIComponent(store.subdomain)}`;
+            const builderHref = `/editor?tenant=${encodeURIComponent(store.subdomain)}`;
             const liveUrl = store.custom_domain
               ? `https://${store.custom_domain}`
               : (store.cloudflare_url && !store.cloudflare_url.includes(".pages.dev")
