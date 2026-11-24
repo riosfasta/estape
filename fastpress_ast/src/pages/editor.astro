@@ -4435,7 +4435,7 @@ try {
       <div class="builder-actions">
         <!-- Live Site, Preview & Code Dropdown -->
         <div class="topbar-dropdown-wrap menu-right" id="viewActionsDropdownWrap">
-          <button type="button" class="topbar-dropdown-btn" id="btnViewActionsDropdown" title="Live Site, Preview & Code">
+          <button type="button" class="topbar-dropdown-btn" id="btnViewActionsDropdown" title="Live Site, Preview & Code" onmouseenter="try{var btn=document.getElementById('btnViewLiveWeb');if(btn){var p=new URLSearchParams(window.location.search);var t=p.get('tenant');if(t){var h=window.location.hostname.replace(/^(www\.|builder\.)/,'');var s=(window.currentSlug||p.get('slug')||'home');var path=(s==='home'||!s)?'/':(s==='blog'?'/blog':'/'+s);btn.href=window.location.protocol+'//'+t+'.'+h+(window.location.port?':'+window.location.port:'')+path;}}}catch(_){}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8z"></path>
               <circle cx="12" cy="12" r="3"></circle>
@@ -4444,7 +4444,7 @@ try {
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </button>
           <div class="topbar-dropdown-menu" id="viewActionsDropdownMenu">
-            <a href="#" target="_blank" class="topbar-dropdown-item" id="btnViewLiveWeb" title="Open Live Site in New Tab">
+            <a href="/" target="_blank" class="topbar-dropdown-item" id="btnViewLiveWeb" title="Open Live Site in New Tab" onmouseenter="try{var p=new URLSearchParams(window.location.search);var t=p.get('tenant');if(t){var h=window.location.hostname.replace(/^(www\.|builder\.)/,'');var s=(window.currentSlug||p.get('slug')||'home');var path=(s==='home'||!s)?'/':(s==='blog'?'/blog':'/'+s);this.href=window.location.protocol+'//'+t+'.'+h+(window.location.port?':'+window.location.port:'')+path;}}catch(_){}" onclick="try{var p=new URLSearchParams(window.location.search);var t=p.get('tenant');if(t){var h=window.location.hostname.replace(/^(www\.|builder\.)/,'');var s=(window.currentSlug||p.get('slug')||'home');var path=(s==='home'||!s)?'/':(s==='blog'?'/blog':'/'+s);this.href=window.location.protocol+'//'+t+'.'+h+(window.location.port?':'+window.location.port:'')+path;}}catch(_){}">
               <div class="topbar-item-icon" style="color: #60a5fa;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
@@ -4464,7 +4464,7 @@ try {
                   if (!btn) return;
                   var params = new URLSearchParams(window.location.search);
                   var tenant = params.get('tenant');
-                  var slug = (typeof currentSlug !== 'undefined' && currentSlug) ? currentSlug : (params.get('slug') || 'home');
+                  var slug = (window.currentSlug) ? window.currentSlug : (params.get('slug') || 'home');
                   var path = (slug === 'home' || !slug) ? '/' : (slug === 'blog' ? '/blog' : '/' + slug);
                   if (tenant) {
                     var host = window.location.hostname.replace(/^(www\.|builder\.)/, '');
