@@ -78,6 +78,7 @@ func (s *Server) Router() *gin.Engine {
 	router.GET("/projects/:id", s.appPage)
 	router.GET("/projects/:id/sites/:websiteId", s.appPage)
 	router.GET("/websites", s.appPage)
+	router.GET("/stores", s.appPage)
 	router.GET("/websites/:id/annotate", s.appPage)
 	router.GET("/chat", s.appPage)
 	router.GET("/team/performance", s.appPage)
@@ -129,6 +130,17 @@ func (s *Server) Router() *gin.Engine {
 	api.DELETE("/widget/annotations/:annotation_id", s.deleteWidgetAnnotation)
 	api.PATCH("/widget/annotations/:annotation_id/status", s.updateWidgetAnnotationStatus)
 	api.POST("/widget/annotations/:annotation_id/comments", s.createWidgetAnnotationComment)
+
+	v1 := api.Group("/v1")
+	v1.Use(publicCORSMiddleware())
+	v1.OPTIONS("/forms/submit", func(c *gin.Context) { c.Status(http.StatusOK) })
+	v1.POST("/forms/submit", s.submitPublicTenantForm)
+	v1.OPTIONS("/store/auth/register", func(c *gin.Context) { c.Status(http.StatusOK) })
+	v1.POST("/store/auth/register", s.registerStoreCustomer)
+	v1.OPTIONS("/store/auth/login", func(c *gin.Context) { c.Status(http.StatusOK) })
+	v1.POST("/store/auth/login", s.loginStoreCustomer)
+	v1.OPTIONS("/store/auth/me", func(c *gin.Context) { c.Status(http.StatusOK) })
+	v1.GET("/store/auth/me", s.getStoreCustomerMe)
 
 	authed := api.Group("")
 	authed.Use(middleware.AuthRequired(s.tokens), s.requireActiveUser())
@@ -247,6 +259,13 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/subscriptions/:id/capture", s.capturePayPalSubscription)
 	authed.POST("/subscriptions/purchase", s.purchaseSubscription)
 	authed.GET("/subscriptions/:teamId/invoices", s.listInvoices)
+
+	authed.POST("/tenants", s.createTenant)
+	authed.GET("/tenants", s.listMyTenants)
+	authed.GET("/tenants/:id", s.getTenant)
+	authed.PUT("/tenants/:id", s.updateTenant)
+	authed.GET("/tenants/:id/submissions", s.listTenantSubmissions)
+	authed.POST("/tenants/:id/publish", s.publishTenant)
 
 	authed.GET("/integrations", middleware.RequireRoles(models.RoleTeamAdmin), s.listIntegrations)
 	authed.POST("/integrations/:provider/connect", middleware.RequireRoles(models.RoleTeamAdmin), s.connectIntegration)
@@ -709,4 +728,24 @@ func stringsOrDefault(values []string, fallback []string) []string {
 		return fallback
 	}
 	return values
+}
+
+func publicCORSMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		origin := c.GetHeader("Origin")
+		if origin != "" {
+			c.Header("Access-Control-Allow-Origin", origin)
+		} else {
+			c.Header("Access-Control-Allow-Origin", "*")
+		}
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+		c.Header("Access-Control-Allow-Credentials", "true")
+
+		if c.Request.Method == http.MethodOptions {
+			c.AbortWithStatus(http.StatusOK)
+			return
+		}
+		c.Next()
+	}
 }

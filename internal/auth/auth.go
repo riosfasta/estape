@@ -31,6 +31,44 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+type CustomerClaims struct {
+	TenantID string `json:"tenant_id"`
+	Email    string `json:"email"`
+	jwt.RegisteredClaims
+}
+
+func (tm *TokenManager) GenerateStoreCustomerToken(customerID, tenantID, email string) (string, error) {
+	claims := CustomerClaims{
+		TenantID: tenantID,
+		Email:    email,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   customerID,
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(30 * 24 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "bugmega_store",
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(tm.secret)
+}
+
+func (tm *TokenManager) ParseStoreCustomerToken(raw string) (*CustomerClaims, error) {
+	token, err := jwt.ParseWithClaims(raw, &CustomerClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if token.Method != jwt.SigningMethodHS256 {
+			return nil, errors.New("unexpected signing method")
+		}
+		return tm.secret, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	claims, ok := token.Claims.(*CustomerClaims)
+	if !ok || !token.Valid {
+		return nil, errors.New("invalid customer token")
+	}
+	return claims, nil
+}
+
 func NewTokenManager(secret string) *TokenManager {
 	return &TokenManager{secret: []byte(secret)}
 }

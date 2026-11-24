@@ -4967,6 +4967,7 @@ function shell(title, html) {
           <p class="nav-kicker project-nav-kicker"><span>Projects</span>${canCreateSidebarClient() ? `<button id="sidebarAddClientBtn" class="project-add-folder" type="button" title="Add project folder" aria-label="Add project folder">${icon("plus")}</button>` : ""}</p>
           ${sidebarProjectsHTML()}
           <p class="nav-kicker">Tools</p>
+          ${workspaceChild("/stores", "Website Builder", "layout-template")}
           ${workspaceChild("/products", "Products & Services", "package")}
           ${workspaceChild("/projects", "All projects", "folder-open")}
           ${workspaceChild("/team/performance", "Team Performance", "bar-chart-3")}
@@ -13188,6 +13189,371 @@ function bindBoardDrag(list) {
   });
 }
 
+async function renderStores() {
+  let stores = [];
+  try {
+    const res = await api("/api/tenants");
+    stores = res.tenants || [];
+  } catch (err) {
+    console.error("Failed to load stores:", err);
+  }
+
+  shell("Website Builder", `
+    <div class="page-title">
+      <div>
+        <h1>Website Builder & Stores</h1>
+        <p class="muted">Manage your client storefronts, customize themes in Astro, configure custom SMTP, and publish live to Cloudflare Pages.</p>
+      </div>
+      <button class="btn primary" id="openCreateStoreBtn">${icon("plus")} Create New Store</button>
+    </div>
+
+    ${stores.length === 0 ? `
+      <section class="panel empty-state">
+        <div class="empty-state-icon">${icon("store")}</div>
+        <h2>No stores created yet</h2>
+        <p class="muted">Create your first client storefront with an Astro theme and publish to Cloudflare Pages.</p>
+        <button class="btn primary" id="openCreateStoreEmptyBtn">${icon("plus")} Create Store</button>
+      </section>
+    ` : `
+      <div class="grid-3" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; margin-top: 20px;">
+        ${stores.map(store => `
+          <article class="panel store-card" style="display:flex; flex-direction:column; justify-content:space-between; padding:20px; border-radius:12px; border:1px solid var(--border-color, #e2e8f0);">
+            <div>
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                <div>
+                  <h3 style="margin:0 0 4px 0; font-size:1.15rem;">${esc(store.company_name)}</h3>
+                  <code style="font-size:0.85rem; color:var(--text-muted, #64748b);">${esc(store.subdomain)}.bugmega.com</code>
+                </div>
+                <span class="badge" style="padding:4px 8px; border-radius:999px; font-size:0.75rem; text-transform:uppercase; font-weight:600; background:${store.status === 'active' ? '#dcfce7; color:#15803d;' : '#f1f5f9; color:#475569;'}">
+                  ${esc(store.status)}
+                </span>
+              </div>
+
+              <div style="margin-bottom:16px; font-size:0.9rem;">
+                <p style="margin:4px 0;"><strong>Theme:</strong> <span style="text-transform:capitalize;">${esc(store.active_theme || 'default')}</span></p>
+                ${store.custom_domain ? `<p style="margin:4px 0;"><strong>Custom Domain:</strong> <code>${esc(store.custom_domain)}</code></p>` : ''}
+                ${store.cloudflare_url ? `<p style="margin:4px 0;"><strong>Live URL:</strong> <a href="${esc(store.cloudflare_url)}" target="_blank" rel="noopener">${esc(store.cloudflare_url)} ↗</a></p>` : ''}
+              </div>
+            </div>
+
+            <div style="border-top:1px solid var(--border-color, #f1f5f9); padding-top:16px; display:flex; flex-direction:column; gap:8px;">
+              <div style="display:flex; gap:8px;">
+                <a class="btn primary" href="http://localhost:4321/editor?tenant=${encodeURIComponent(store.subdomain)}" target="_blank" rel="noopener" style="flex:1; text-align:center; text-decoration:none;">
+                  ${icon("layout")} Open Builder
+                </a>
+                <button class="btn publish-store-btn" data-store-id="${esc(store.id)}" data-store-sub="${esc(store.subdomain)}" style="flex:1;">
+                  ${icon("zap")} Publish
+                </button>
+              </div>
+              <div style="display:flex; gap:8px;">
+                <button class="btn quiet store-settings-btn" data-store-id="${esc(store.id)}" style="flex:1; font-size:0.85rem;">
+                  ${icon("settings")} SMTP & Settings
+                </button>
+                <button class="btn quiet store-leads-btn" data-store-id="${esc(store.id)}" style="flex:1; font-size:0.85rem;">
+                  ${icon("mail")} View Leads
+                </button>
+              </div>
+            </div>
+          </article>
+        `).join("")}
+      </div>
+    `}
+
+    <!-- Create Store Dialog -->
+    <dialog id="createStoreDialog" class="modal client-dialog" style="max-width:580px; width:95%; border-radius:12px; border:1px solid var(--border-color, #e2e8f0); padding:24px;">
+      <form id="createStoreForm" class="form-grid">
+        <div class="modal-head" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <div>
+            <h2 style="margin:0;">Create New Store</h2>
+            <p class="muted" style="margin:4px 0 0 0;">Provision a new client website with an Astro theme.</p>
+          </div>
+          <button class="btn icon quiet" type="button" data-close-dialog="createStoreDialog">${icon("x")}</button>
+        </div>
+
+        <div class="field" style="margin-bottom:14px;">
+          <label>Company / Store Name</label>
+          <input name="company_name" placeholder="e.g. Modern Living Furniture" required style="width:100%; padding:10px; border-radius:6px; border:1px solid #cbd5e1;">
+        </div>
+
+        <div class="field" style="margin-bottom:14px;">
+          <label>Subdomain (e.g. yourbrand.bugmega.com)</label>
+          <div style="display:flex; align-items:center;">
+            <input name="subdomain" placeholder="yourbrand" required pattern="^[a-z0-9][a-z0-9\\-]{1,28}[a-z0-9]$" style="flex:1; padding:10px; border-radius:6px 0 0 6px; border:1px solid #cbd5e1;">
+            <span style="background:#f1f5f9; padding:10px 12px; border:1px solid #cbd5e1; border-left:none; border-radius:0 6px 6px 0; color:#64748b; font-size:0.9rem;">.bugmega.com</span>
+          </div>
+          <small class="muted">Lowercase letters, numbers, and hyphens only.</small>
+        </div>
+
+        <div class="field" style="margin-bottom:20px;">
+          <label>Choose Starter Theme</label>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:8px;">
+            <label style="border:2px solid #3b82f6; border-radius:8px; padding:12px; cursor:pointer; display:flex; flex-direction:column; gap:6px;">
+              <input type="radio" name="active_theme" value="furnisite" checked style="accent-color:#3b82f6;">
+              <strong style="font-size:1rem;">Furnisite</strong>
+              <small class="muted">Luxury Furniture, Interior Decor, Modern E-commerce layout.</small>
+            </label>
+            <label style="border:1px solid #cbd5e1; border-radius:8px; padding:12px; cursor:pointer; display:flex; flex-direction:column; gap:6px;">
+              <input type="radio" name="active_theme" value="default" style="accent-color:#3b82f6;">
+              <strong style="font-size:1rem;">Default (Better)</strong>
+              <small class="muted">Modern Business, SaaS & Agency Multi-purpose theme.</small>
+            </label>
+          </div>
+        </div>
+
+        <div class="toolbar" style="display:flex; justify-content:flex-end; gap:8px;">
+          <button class="btn" type="button" data-close-dialog="createStoreDialog">Cancel</button>
+          <button class="btn primary" type="submit">${icon("check")} Create Store</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Store Settings & SMTP Dialog -->
+    <dialog id="storeSettingsDialog" class="modal client-dialog" style="max-width:620px; width:95%; border-radius:12px; border:1px solid var(--border-color, #e2e8f0); padding:24px;">
+      <form id="storeSettingsForm" class="form-grid">
+        <input type="hidden" name="store_id">
+        <div class="modal-head" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <div>
+            <h2 style="margin:0;">Store Settings & Client SMTP</h2>
+            <p class="muted" style="margin:4px 0 0 0;">Configure custom email delivery and auto-responders for this client.</p>
+          </div>
+          <button class="btn icon quiet" type="button" data-close-dialog="storeSettingsDialog">${icon("x")}</button>
+        </div>
+
+        <div class="field" style="margin-bottom:12px;">
+          <label>Custom Domain (Optional)</label>
+          <input name="custom_domain" placeholder="e.g. www.clientbrand.com" style="width:100%; padding:8px 10px; border-radius:6px; border:1px solid #cbd5e1;">
+          <small class="muted">Point CNAME to client.pages.dev on Cloudflare.</small>
+        </div>
+
+        <h3 style="margin:16px 0 8px 0; font-size:1rem; border-bottom:1px solid #e2e8f0; padding-bottom:4px;">Client Custom SMTP (Optional)</h3>
+        <p class="muted" style="font-size:0.85rem; margin-bottom:10px;">Send form auto-responders directly from client's mail server (e.g. info@client.com).</p>
+
+        <div style="display:grid; grid-template-columns:2fr 1fr; gap:10px; margin-bottom:10px;">
+          <div><label style="font-size:0.85rem;">SMTP Host</label><input name="smtp_host" placeholder="smtp.gmail.com / mail.client.com" style="width:100%; padding:8px; border-radius:6px; border:1px solid #cbd5e1;"></div>
+          <div><label style="font-size:0.85rem;">Port</label><input name="smtp_port" type="number" placeholder="587" style="width:100%; padding:8px; border-radius:6px; border:1px solid #cbd5e1;"></div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+          <div><label style="font-size:0.85rem;">Username</label><input name="smtp_user" placeholder="info@client.com" style="width:100%; padding:8px; border-radius:6px; border:1px solid #cbd5e1;"></div>
+          <div><label style="font-size:0.85rem;">Password</label><input name="smtp_password" type="password" placeholder="App password" style="width:100%; padding:8px; border-radius:6px; border:1px solid #cbd5e1;"></div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
+          <div><label style="font-size:0.85rem;">Sender Name</label><input name="smtp_from_name" placeholder="Acme Store" style="width:100%; padding:8px; border-radius:6px; border:1px solid #cbd5e1;"></div>
+          <div><label style="font-size:0.85rem;">Sender Email</label><input name="smtp_from_email" placeholder="info@client.com" style="width:100%; padding:8px; border-radius:6px; border:1px solid #cbd5e1;"></div>
+        </div>
+        <label style="display:flex; align-items:center; gap:8px; margin-bottom:16px; cursor:pointer;">
+          <input type="checkbox" name="smtp_enabled"> <span>Enable Custom SMTP for this store</span>
+        </label>
+
+        <h3 style="margin:16px 0 8px 0; font-size:1rem; border-bottom:1px solid #e2e8f0; padding-bottom:4px;">Welcome / Auto-Responder Template</h3>
+        <div class="field" style="margin-bottom:10px;">
+          <label style="font-size:0.85rem;">Email Subject</label>
+          <input name="auto_subject" placeholder="Welcome to {company_name}! Thank you for reaching out" style="width:100%; padding:8px; border-radius:6px; border:1px solid #cbd5e1;">
+        </div>
+        <div class="field" style="margin-bottom:16px;">
+          <label style="font-size:0.85rem;">Email Message Body (HTML supported)</label>
+          <textarea name="auto_body" rows="3" style="width:100%; padding:8px; border-radius:6px; border:1px solid #cbd5e1;" placeholder="<p>Hi {name},</p><p>Thank you for contacting {company_name}! We received your inquiry and will be in touch shortly.</p>"></textarea>
+          <small class="muted">Tags available: {name}, {company_name}, {email}, {subdomain}</small>
+        </div>
+
+        <div class="toolbar" style="display:flex; justify-content:flex-end; gap:8px;">
+          <button class="btn" type="button" data-close-dialog="storeSettingsDialog">Cancel</button>
+          <button class="btn primary" type="submit">${icon("save")} Save Settings</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Leads / Form Submissions Dialog -->
+    <dialog id="storeLeadsDialog" class="modal client-dialog" style="max-width:750px; width:95%; border-radius:12px; border:1px solid var(--border-color, #e2e8f0); padding:24px;">
+      <div class="modal-head" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <div>
+          <h2 style="margin:0;">Customer Inquiries & Form Leads</h2>
+          <p class="muted" style="margin:4px 0 0 0;">Messages sent from this store's contact forms.</p>
+        </div>
+        <button class="btn icon quiet" type="button" data-close-dialog="storeLeadsDialog">${icon("x")}</button>
+      </div>
+      <div id="storeLeadsContainer" style="max-height:400px; overflow-y:auto; margin-bottom:16px;">
+        <p class="muted">Loading submissions...</p>
+      </div>
+      <div class="toolbar" style="display:flex; justify-content:flex-end;">
+        <button class="btn" type="button" data-close-dialog="storeLeadsDialog">Close</button>
+      </div>
+    </dialog>
+  `);
+
+  // Wire event handlers
+  const openCreateDialog = () => document.getElementById("createStoreDialog")?.showModal();
+  document.getElementById("openCreateStoreBtn")?.addEventListener("click", openCreateDialog);
+  document.getElementById("openCreateStoreEmptyBtn")?.addEventListener("click", openCreateDialog);
+
+  // Close dialog buttons
+  document.querySelectorAll("[data-close-dialog]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const dialogId = btn.getAttribute("data-close-dialog");
+      document.getElementById(dialogId)?.close();
+    });
+  });
+
+  // Create Store Submit
+  document.getElementById("createStoreForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const body = {
+      subdomain: form.subdomain.value.trim().toLowerCase(),
+      company_name: form.company_name.value.trim(),
+      active_theme: form.active_theme.value
+    };
+
+    try {
+      const res = await api("/api/tenants", {
+        method: "POST",
+        body: JSON.stringify(body)
+      });
+      document.getElementById("createStoreDialog")?.close();
+      showToast("Store created successfully!");
+      await renderStores();
+    } catch (err) {
+      alert("Error creating store: " + (err.message || err));
+    }
+  });
+
+  // Publish to Cloudflare
+  document.querySelectorAll(".publish-store-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const storeId = btn.getAttribute("data-store-id");
+      const subdomain = btn.getAttribute("data-store-sub");
+      btn.disabled = true;
+      btn.innerHTML = `${icon("loader-2")} Publishing...`;
+
+      try {
+        const res = await api(`/api/tenants/${storeId}/publish`, { method: "POST" });
+        alert(`✓ Store published successfully!\n\nLive URL: ${res.cloudflare_url || `https://${subdomain}.pages.dev`}`);
+        await renderStores();
+      } catch (err) {
+        alert("Publish error: " + (err.message || err));
+        btn.disabled = false;
+        btn.innerHTML = `${icon("zap")} Publish`;
+      }
+    });
+  });
+
+  // Settings & SMTP Modal
+  document.querySelectorAll(".store-settings-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const storeId = btn.getAttribute("data-store-id");
+      const store = stores.find(s => s.id === storeId);
+      if (!store) return;
+
+      const form = document.getElementById("storeSettingsForm");
+      if (!form) return;
+
+      form.store_id.value = store.id;
+      form.custom_domain.value = store.custom_domain || "";
+      form.smtp_host.value = store.smtp?.host || "";
+      form.smtp_port.value = store.smtp?.port || "";
+      form.smtp_user.value = store.smtp?.username || "";
+      form.smtp_password.value = store.smtp?.password || "";
+      form.smtp_from_name.value = store.smtp?.from_name || "";
+      form.smtp_from_email.value = store.smtp?.from_email || "";
+      form.smtp_enabled.checked = !!store.smtp?.enabled;
+
+      form.auto_subject.value = store.auto_responder?.subject || "";
+      form.auto_body.value = store.auto_responder?.body || "";
+
+      document.getElementById("storeSettingsDialog")?.showModal();
+    });
+  });
+
+  document.getElementById("storeSettingsForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const storeId = form.store_id.value;
+
+    const payload = {
+      custom_domain: form.custom_domain.value.trim(),
+      smtp: {
+        host: form.smtp_host.value.trim(),
+        port: parseInt(form.smtp_port.value, 10) || 587,
+        username: form.smtp_user.value.trim(),
+        password: form.smtp_password.value,
+        from_name: form.smtp_from_name.value.trim(),
+        from_email: form.smtp_from_email.value.trim(),
+        enabled: form.smtp_enabled.checked
+      },
+      auto_responder: {
+        enabled: true,
+        subject: form.auto_subject.value.trim(),
+        body: form.auto_body.value.trim()
+      }
+    };
+
+    try {
+      await api(`/api/tenants/${storeId}`, {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      });
+      document.getElementById("storeSettingsDialog")?.close();
+      showToast("Store settings saved!");
+      await renderStores();
+    } catch (err) {
+      alert("Error saving settings: " + (err.message || err));
+    }
+  });
+
+  // Leads Modal
+  document.querySelectorAll(".store-leads-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const storeId = btn.getAttribute("data-store-id");
+      const dialog = document.getElementById("storeLeadsDialog");
+      const container = document.getElementById("storeLeadsContainer");
+      if (!dialog || !container) return;
+
+      dialog.showModal();
+      container.innerHTML = `<p class="muted">Loading submissions...</p>`;
+
+      try {
+        const res = await api(`/api/tenants/${storeId}/submissions`);
+        const subs = res.submissions || [];
+        if (subs.length === 0) {
+          container.innerHTML = `<p class="muted">No form submissions received yet.</p>`;
+          return;
+        }
+
+        container.innerHTML = `
+          <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
+            <thead>
+              <tr style="border-bottom:2px solid #e2e8f0; text-align:left;">
+                <th style="padding:8px;">Date</th>
+                <th style="padding:8px;">Visitor</th>
+                <th style="padding:8px;">Form</th>
+                <th style="padding:8px;">Fields / Message</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${subs.map(sub => `
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                  <td style="padding:8px; white-space:nowrap; color:#64748b;">${new Date(sub.created_at).toLocaleDateString()}</td>
+                  <td style="padding:8px;">
+                    <strong>${esc(sub.visitor_name || 'Anonymous')}</strong><br>
+                    <small class="muted">${esc(sub.visitor_email || '-')}</small>
+                  </td>
+                  <td style="padding:8px;"><span class="badge" style="background:#f1f5f9; padding:2px 6px; border-radius:4px;">${esc(sub.form_name || 'Form')}</span></td>
+                  <td style="padding:8px;">
+                    <div style="max-height:80px; overflow-y:auto; font-size:0.85rem;">
+                      ${Object.entries(sub.fields || {}).map(([k, v]) => `<div><strong>${esc(k)}:</strong> ${esc(v)}</div>`).join("")}
+                    </div>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        `;
+      } catch (err) {
+        container.innerHTML = `<p style="color:#ef4444;">Failed to load leads: ${esc(err.message || err)}</p>`;
+      }
+    });
+  });
+}
+
 async function renderWebsites() {
   const data = await api("/api/websites");
   const websites = data.websites || [];
@@ -20178,6 +20544,7 @@ async function route(options = {}) {
       if (await guardPaidFeaturePage("website feedback")) await renderWebsites();
       return;
     }
+    if (path() === "/stores") return await renderStores();
     if (matchAnnotate) {
       if (await guardPaidFeaturePage("annotations")) await renderAnnotate(matchAnnotate[1]);
       return;

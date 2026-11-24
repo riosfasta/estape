@@ -144,6 +144,18 @@ func (s *Store) CreateIndexes(ctx context.Context) error {
 			{Keys: bson.D{{Key: "team_id", Value: 1}, {Key: "start_time", Value: -1}}},
 			{Keys: bson.D{{Key: "task_id", Value: 1}}},
 		},
+		"tenants": {
+			{Keys: bson.D{{Key: "subdomain", Value: 1}}, Options: mongomodels.Index().SetUnique(true)},
+			{Keys: bson.D{{Key: "owner_user_id", Value: 1}, {Key: "created_at", Value: -1}}},
+			{Keys: bson.D{{Key: "custom_domain", Value: 1}}, Options: mongomodels.Index().SetUnique(true).SetSparse(true)},
+		},
+		"tenant_form_submissions": {
+			{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "created_at", Value: -1}}},
+			{Keys: bson.D{{Key: "tenant_subdomain", Value: 1}, {Key: "created_at", Value: -1}}},
+		},
+		"store_customers": {
+			{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "email", Value: 1}}, Options: mongomodels.Index().SetUnique(true)},
+		},
 	}
 
 	for collection, models := range indexes {
