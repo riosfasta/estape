@@ -1381,6 +1381,11 @@ func (s *Server) proxyToAstro(c *gin.Context, targetURL, rewritePath string) {
 	proxy.Director = func(req *http.Request) {
 		origDirector(req)
 		req.Host = target.Host
+		req.Header.Set("X-Forwarded-Host", c.Request.Host)
+		req.Header.Set("X-Forwarded-Proto", "https")
+		if tenant := c.Query("tenant"); tenant != "" {
+			req.Header.Set("X-Tenant-Subdomain", tenant)
+		}
 		if rewritePath != "" {
 			req.URL.Path = rewritePath
 		}

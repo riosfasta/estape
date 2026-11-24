@@ -4444,7 +4444,7 @@ try {
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </button>
           <div class="topbar-dropdown-menu" id="viewActionsDropdownMenu">
-            <a href={liveSiteInitialUrl} target="_blank" class="topbar-dropdown-item" id="btnViewLiveWeb" title="Open Live Site in New Tab">
+            <a href="#" target="_blank" class="topbar-dropdown-item" id="btnViewLiveWeb" title="Open Live Site in New Tab">
               <div class="topbar-item-icon" style="color: #60a5fa;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
@@ -4457,6 +4457,34 @@ try {
                 <span class="topbar-item-desc">Open live website in new tab</span>
               </div>
             </a>
+            <script is:inline>
+              (function() {
+                function refreshLiveSiteUrl() {
+                  var btn = document.getElementById('btnViewLiveWeb');
+                  if (!btn) return;
+                  var params = new URLSearchParams(window.location.search);
+                  var tenant = params.get('tenant');
+                  var slug = (typeof currentSlug !== 'undefined' && currentSlug) ? currentSlug : (params.get('slug') || 'home');
+                  var path = (slug === 'home' || !slug) ? '/' : (slug === 'blog' ? '/blog' : '/' + slug);
+                  if (tenant) {
+                    var host = window.location.hostname.replace(/^(www\.|builder\.)/, '');
+                    var proto = window.location.protocol;
+                    var port = window.location.port ? ':' + window.location.port : '';
+                    btn.href = proto + '//' + tenant + '.' + host + port + path;
+                  } else {
+                    btn.href = path;
+                  }
+                }
+                refreshLiveSiteUrl();
+                document.addEventListener('DOMContentLoaded', refreshLiveSiteUrl);
+                document.addEventListener('mouseover', function(e) {
+                  if (e.target && e.target.closest('#btnViewLiveWeb, #viewActionsDropdownWrap')) {
+                    refreshLiveSiteUrl();
+                  }
+                });
+                window.refreshLiveSiteUrl = refreshLiveSiteUrl;
+              })();
+            </script>
             <button type="button" class="topbar-dropdown-item" id="btnPreview" title="Full Screen Preview">
               <div class="topbar-item-icon" style="color: #34d399;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -8489,6 +8517,7 @@ try {
         }
         const pagePath = currentSlug === 'home' ? '/' : (currentSlug === 'blog' ? '/blog' : `/${currentSlug}`);
         btnViewLiveWeb.href = liveBase ? `${liveBase}${pagePath}` : pagePath;
+        if (window.refreshLiveSiteUrl) window.refreshLiveSiteUrl();
         saveBtnLabel.textContent = 'Save';
         updateCanvasHeaderFooterBanners();
       }
