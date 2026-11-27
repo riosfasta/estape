@@ -2,11 +2,12 @@ import type { APIRoute } from 'astro';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { getDataFile } from '../../core/tenantContext';
 export const prerender = false;
 
 export const GET: APIRoute = async () => {
   try {
-    const filePath = path.join(process.cwd(), 'src', 'data', 'savedHomepage.json');
+    const filePath = getDataFile('savedHomepage.json');
     const content = await fs.readFile(filePath, 'utf-8');
     return new Response(content, {
       status: 200,
@@ -28,7 +29,7 @@ export const POST: APIRoute = async ({ request }) => {
       body = JSON.parse(text);
     }
 
-    const filePath = path.join(process.cwd(), 'src', 'data', 'savedHomepage.json');
+    const filePath = getDataFile('savedHomepage.json');
     
     await fs.writeFile(
       filePath,

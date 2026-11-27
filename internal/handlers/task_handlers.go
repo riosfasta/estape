@@ -697,7 +697,22 @@ func (s *Server) listTasks(c *gin.Context) {
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		filter["title"] = bson.M{"$regex": regexp.QuoteMeta(q), "$options": "i"}
 	}
-	cursor, err := s.store.C("tasks").Find(c.Request.Context(), filter, options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}}).SetLimit(250))
+	pag := s.parseListPagination(c)
+	total, err := s.store.C("tasks").CountDocuments(c.Request.Context(), filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count tasks"})
+		return
+	}
+	meta := buildPaginationMeta(pag.Page, pag.Limit, total)
+	skip := int64((meta.Page - 1) * meta.Limit)
+	cursor, err := s.store.C("tasks").Find(
+		c.Request.Context(),
+		filter,
+		options.Find().
+			SetSort(bson.D{{Key: "updated_at", Value: -1}, {Key: "_id", Value: -1}}).
+			SetSkip(skip).
+			SetLimit(int64(meta.Limit)),
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load tasks"})
 		return
@@ -711,7 +726,11 @@ func (s *Server) listTasks(c *gin.Context) {
 	if tasks == nil {
 		tasks = []models.Task{}
 	}
-	c.JSON(http.StatusOK, gin.H{"tasks": tasks})
+	c.JSON(http.StatusOK, gin.H{
+		"tasks":         tasks,
+		"pagination":    meta,
+		"default_limit": pag.DefaultLimit,
+	})
 }
 
 func (s *Server) getTask(c *gin.Context) {

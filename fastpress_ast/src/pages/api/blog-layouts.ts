@@ -4,14 +4,13 @@ import path from 'node:path';
 import { getBlogLayouts, type BlogLayout, defaultBlogLayouts } from '../../data/blog-layouts';
 import { getPosts, type Post } from '../../data/posts';
 
+import { getDataFile } from '../../core/tenantContext';
 export const prerender = false;
 
-const LAYOUTS_FILE = path.join(process.cwd(), 'src', 'data', 'blog-layouts.json');
-const POSTS_FILE = path.join(process.cwd(), 'src', 'data', 'posts.json');
 
 async function readLayouts(): Promise<BlogLayout[]> {
   try {
-    const raw = await fs.readFile(LAYOUTS_FILE, 'utf-8');
+    const raw = await fs.readFile(getDataFile('blog-layouts.json'), 'utf-8');
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) return parsed;
   } catch {}
@@ -19,12 +18,12 @@ async function readLayouts(): Promise<BlogLayout[]> {
 }
 
 async function writeLayouts(layouts: BlogLayout[]): Promise<void> {
-  await fs.writeFile(LAYOUTS_FILE, JSON.stringify(layouts, null, 2), 'utf-8');
+  await fs.writeFile(getDataFile('blog-layouts.json'), JSON.stringify(layouts, null, 2), 'utf-8');
 }
 
 async function readPosts(): Promise<Post[]> {
   try {
-    const raw = await fs.readFile(POSTS_FILE, 'utf-8');
+    const raw = await fs.readFile(getDataFile('posts.json'), 'utf-8');
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) return parsed;
   } catch {}
@@ -32,7 +31,7 @@ async function readPosts(): Promise<Post[]> {
 }
 
 async function writePosts(postsList: Post[]): Promise<void> {
-  await fs.writeFile(POSTS_FILE, JSON.stringify(postsList, null, 2), 'utf-8');
+  await fs.writeFile(getDataFile('posts.json'), JSON.stringify(postsList, null, 2), 'utf-8');
 }
 
 // GET: fetch layouts and post assignment status

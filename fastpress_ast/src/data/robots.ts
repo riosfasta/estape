@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { getDataDir } from '../core/tenantContext';
 import {
   createDefaultRobotsConfig,
   createUid,
@@ -9,8 +10,7 @@ import {
   type RobotsRule,
 } from '../lib/robots-utils';
 
-const DATA_DIR = path.join(process.cwd(), 'src', 'data');
-const ROBOTS_FILE = path.join(DATA_DIR, 'robots.json');
+const ROBOTS_FILE = path.join(getDataDir(), 'robots.json');
 
 export interface DiscoveredRoute {
   title: string;
@@ -112,14 +112,14 @@ export async function writeRobotsConfig(input: any): Promise<RobotsConfig> {
   if (sanitized.mode === 'visual') {
     sanitized.rawText = compileRobotsTxt(sanitized, '{SITE_URL}');
   }
-  await fs.mkdir(DATA_DIR, { recursive: true });
+  await fs.mkdir(getDataDir(), { recursive: true });
   await fs.writeFile(ROBOTS_FILE, JSON.stringify(sanitized, null, 2), 'utf-8');
   return sanitized;
 }
 
 async function safeReadJson(filename: string): Promise<any> {
   try {
-    const raw = await fs.readFile(path.join(DATA_DIR, filename), 'utf-8');
+    const raw = await fs.readFile(path.join(getDataDir(), filename), 'utf-8');
     return JSON.parse(raw);
   } catch {
     return null;

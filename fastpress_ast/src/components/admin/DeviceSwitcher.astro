@@ -281,8 +281,11 @@ const currentDevice = devices.find((d) => d.id === initialDevice) || devices[0];
       devBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const isOpen = devWrap.classList.contains('open');
-        document.querySelectorAll('.topbar-dropdown-wrap.open').forEach((w) => {
-          if (w !== devWrap) w.classList.remove('open');
+        document.querySelectorAll('.topbar-dropdown-wrap.open, .nav-dropdown.open').forEach((w) => {
+          if (w !== devWrap) {
+            w.classList.remove('open');
+            w.querySelector('[aria-expanded]')?.setAttribute('aria-expanded', 'false');
+          }
         });
         devWrap.classList.toggle('open', !isOpen);
         devBtn.setAttribute('aria-expanded', !isOpen ? 'true' : 'false');

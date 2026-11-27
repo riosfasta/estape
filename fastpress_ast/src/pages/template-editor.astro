@@ -8,6 +8,7 @@ import path from 'node:path';
 import { getTemplates, getTemplateById, type Template } from '../data/templates';
 import { getMenus, type MenuConfig } from '../data/menus';
 
+import { getDataFile } from '../core/tenantContext';
 export const prerender = false;
 
 const templatesList = getTemplates();
@@ -24,7 +25,7 @@ try {
 // Registered Fonts
 let fontsData: any[] = [];
 try {
-  const fontsPath = path.join(process.cwd(), 'src', 'data', 'fonts.json');
+  const fontsPath = getDataFile('fonts.json');
   const fontsContent = await fs.readFile(fontsPath, 'utf-8');
   fontsData = JSON.parse(fontsContent);
 } catch {
@@ -3293,6 +3294,7 @@ try {
 
         const CAT_BASIC = { id: 'basic', label: 'Basic Blocks', open: true };
         const CAT_NAV_HEADERS = { id: 'headers', label: '🧭 Navigation & Drawers', open: true };
+        const CAT_SECTIONS = { id: 'sections', label: 'Section Templates', open: false };
         const CAT_SAVED = { id: 'saved-templates', label: '🧩 Saved Templates (Global & Individual)', open: true };
 
         // --------------------------------------------------------
@@ -3918,6 +3920,70 @@ try {
                 </div>
               </div>
             </footer>
+          `
+        });
+
+        // --------------------------------------------------------
+        // SECTION TEMPLATES
+        // --------------------------------------------------------
+        bm.add('product-filters-section', {
+          label: 'Product Filters',
+          category: CAT_SECTIONS,
+          attributes: { class: 'gjs-block-section', title: 'E-Commerce Product Filters Sidebar (Categories, Price Slider, Colors & Size)' },
+          media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`,
+          content: `
+            <aside class="sc-filter-box" style="max-width: 295px; width: 100%; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 20px; padding: 20px; display: grid; gap: 18px; font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; color: #111827; box-sizing: border-box;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <strong style="font-size: 1.05rem; font-weight: 700; color: #111827;">Filters</strong>
+                <span style="color: #6b7280; display: inline-flex; align-items: center;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                </span>
+              </div>
+              <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 0;" />
+              <div style="display: grid; gap: 12px; font-size: 0.92rem; color: #6b7280;">
+                <div class="sc-filter-cat" data-filter-category="T-shirts" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;"><span>T-shirts</span><span>&rsaquo;</span></div>
+                <div class="sc-filter-cat" data-filter-category="Shorts" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;"><span>Shorts</span><span>&rsaquo;</span></div>
+                <div class="sc-filter-cat" data-filter-category="Shirts" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;"><span>Shirts</span><span>&rsaquo;</span></div>
+                <div class="sc-filter-cat" data-filter-category="Hoodie" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;"><span>Hoodie</span><span>&rsaquo;</span></div>
+                <div class="sc-filter-cat" data-filter-category="Jeans" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;"><span>Jeans</span><span>&rsaquo;</span></div>
+              </div>
+              <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 0;" />
+              <div>
+                <strong style="display: block; font-size: 1rem; font-weight: 700; margin-bottom: 12px; color: #111827;">Price</strong>
+                <input type="range" class="sc-price-range" min="50" max="250" value="200" style="width: 100%; accent-color: #000000; cursor: pointer;" />
+                <div style="display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 600; color: #111827; margin-top: 6px;"><span>$50</span><span class="sc-price-max-label">$200</span></div>
+              </div>
+              <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 0;" />
+              <div>
+                <strong style="display: block; font-size: 1rem; font-weight: 700; margin-bottom: 12px; color: #111827;">Colors</strong>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                  <span class="sc-color-dot" data-color="#00c12b" style="width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); display: inline-block; background: #00c12b; cursor: pointer;"></span>
+                  <span class="sc-color-dot" data-color="#f50606" style="width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); display: inline-block; background: #f50606; cursor: pointer;"></span>
+                  <span class="sc-color-dot" data-color="#f5dd06" style="width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); display: inline-block; background: #f5dd06; cursor: pointer;"></span>
+                  <span class="sc-color-dot" data-color="#f57906" style="width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); display: inline-block; background: #f57906; cursor: pointer;"></span>
+                  <span class="sc-color-dot" data-color="#06caf5" style="width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); display: inline-block; background: #06caf5; cursor: pointer;"></span>
+                  <span class="sc-color-dot" data-color="#063af5" style="width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); display: inline-block; background: #063af5; cursor: pointer;"></span>
+                  <span class="sc-color-dot" data-color="#7d06f5" style="width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); display: inline-block; background: #7d06f5; cursor: pointer;"></span>
+                  <span class="sc-color-dot" data-color="#f506a4" style="width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); display: inline-block; background: #f506a4; cursor: pointer;"></span>
+                  <span class="sc-color-dot" data-color="#ffffff" style="width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); display: inline-block; background: #ffffff; cursor: pointer;"></span>
+                  <span class="sc-color-dot" data-color="#000000" style="width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); display: inline-block; background: #000000; cursor: pointer;"></span>
+                </div>
+              </div>
+              <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 0;" />
+              <div>
+                <strong style="display: block; font-size: 1rem; font-weight: 700; margin-bottom: 12px; color: #111827;">Size</strong>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                  <span class="sc-chip" style="display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; border-radius: 999px; background: #f3f4f6; font-size: 0.82rem; color: #4b5563; cursor: pointer;">XX-Small</span>
+                  <span class="sc-chip" style="display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; border-radius: 999px; background: #f3f4f6; font-size: 0.82rem; color: #4b5563; cursor: pointer;">X-Small</span>
+                  <span class="sc-chip" style="display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; border-radius: 999px; background: #f3f4f6; font-size: 0.82rem; color: #4b5563; cursor: pointer;">Small</span>
+                  <span class="sc-chip" style="display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; border-radius: 999px; background: #f3f4f6; font-size: 0.82rem; color: #4b5563; cursor: pointer;">Medium</span>
+                  <span class="sc-chip active" style="display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; border-radius: 999px; background: #000000; font-size: 0.82rem; color: #ffffff; font-weight: 600; cursor: pointer;">Large</span>
+                  <span class="sc-chip" style="display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; border-radius: 999px; background: #f3f4f6; font-size: 0.82rem; color: #4b5563; cursor: pointer;">X-Large</span>
+                  <span class="sc-chip" style="display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; border-radius: 999px; background: #f3f4f6; font-size: 0.82rem; color: #4b5563; cursor: pointer;">XX-Large</span>
+                </div>
+              </div>
+              <button type="button" class="sc-btn-black sc-apply-filter-btn" style="width: 100%; padding: 12px 18px; border-radius: 999px; background: #000000; color: #ffffff; font-size: 0.88rem; font-weight: 600; border: none; cursor: pointer;">Apply Filter</button>
+            </aside>
           `
         });
 

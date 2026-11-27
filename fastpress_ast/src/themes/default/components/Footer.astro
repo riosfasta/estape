@@ -1,8 +1,10 @@
 ---
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { getActiveFooter, defaultSampleFooters, type FooterConfig } from '../../../data/footers';
+import { getActiveFooterForTheme, defaultSampleFooters, type FooterConfig } from '../../../data/footers';
+import { getTemplateById, syncGlobalTemplates, cleanLiveContent } from '../../../data/templates';
 
+import { getDataFile } from '../../../core/tenantContext';
 interface Props {
   customConfig?: FooterConfig;
   companyName?: string;
@@ -12,13 +14,13 @@ interface Props {
 
 const { customConfig, companyName: propCompanyName, year: propYear, showBackToTop: propShowBackToTop } = Astro.props;
 
-// Load Active or Custom Footer Configuration
+// Load Active or Custom Footer Configuration for default theme
 let footerConfig: FooterConfig;
 if (customConfig) {
   footerConfig = customConfig;
 } else {
   try {
-    footerConfig = getActiveFooter();
+    footerConfig = getActiveFooterForTheme('default');
   } catch {
     footerConfig = defaultSampleFooters[0];
   }
@@ -27,7 +29,7 @@ if (customConfig) {
 // Load Global siteConfig for master logo/brand fallback
 let siteConfig: any = null;
 try {
-  const configFile = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
+  const configFile = getDataFile('siteConfig.json');
   const raw = await fs.readFile(configFile, 'utf-8');
   siteConfig = JSON.parse(raw);
 } catch {}
@@ -95,16 +97,35 @@ const {
   },
 } = footerConfig;
 
+const defaultThemeConfig = siteConfig?.themeConfigs?.default || siteConfig || {};
+
 // Effective Branding Resolution
 const effectiveLogoImg = logo.source === 'custom' && logo.imageUrl
   ? logo.imageUrl.trim()
-  : (siteConfig?.logoUrl ? siteConfig.logoUrl.trim() : (logo.imageUrl ? logo.imageUrl.trim() : ''));
+  : (defaultThemeConfig?.logoUrl ? defaultThemeConfig.logoUrl.trim() : (logo.imageUrl ? logo.imageUrl.trim() : ''));
 
-const effectiveBrandName = (logo.brandName && logo.brandName.trim()) || siteConfig?.brandName || 'Better SaaS';
-const effectiveTagline = logo.tagline !== undefined && logo.tagline !== '' ? logo.tagline : (siteConfig?.tagline || '');
+const effectiveBrandName = (logo.brandName && logo.brandName.trim()) || (defaultThemeConfig?.brandName && defaultThemeConfig.brandName.trim()) || 'Better';
+const effectiveTagline = logo.tagline !== undefined && logo.tagline !== ''
+  ? logo.tagline
+  : (defaultThemeConfig?.tagline || '');
 const currentYear = propYear || new Date().getFullYear();
 const showBackToTop = propShowBackToTop !== undefined ? propShowBackToTop : (layout.showBackToTop !== false);
 const isCustomCode = footerConfig.builderType === 'custom-code' && customCode?.enabled;
+
+// Template mode support (when "Use Footer from Template" is checked in Footer Builder)
+let templateFooterHtml = '';
+let templateFooterCss = '';
+const useTemplateMode = !customConfig && Boolean((footerConfig as any).useTemplate);
+if (useTemplateMode) {
+  try {
+    const targetTplId = (footerConfig as any).selectedTemplateId || 'tpl-global-furnisite-footer';
+    const chosenTpl = getTemplateById(targetTplId);
+    if (chosenTpl && chosenTpl.html) {
+      templateFooterHtml = cleanLiveContent(syncGlobalTemplates(chosenTpl.html));
+      templateFooterCss = chosenTpl.css || '';
+    }
+  } catch {}
+}
 
 // Social Icons SVG Registry
 const socialIconMap: Record<string, string> = {
@@ -131,7 +152,12 @@ const containerClass = layout.containerType === 'full'
   : (layout.containerType === 'wide' ? 'fp-footer-container-wide' : 'fp-footer-container-boxed');
 ---
 
-{isCustomCode ? (
+{useTemplateMode && templateFooterHtml ? (
+  <div class="fp-template-footer-wrap">
+    {templateFooterCss && <style is:inline set:html={templateFooterCss} />}
+    <Fragment set:html={templateFooterHtml} />
+  </div>
+) : isCustomCode ? (
   <footer
     class="fastpress-runtime-footer fp-footer-custom-mode"
     id="siteFooter"
@@ -184,7 +210,15 @@ const containerClass = layout.containerType === 'full'
         <div class="fp-footer-centered-wrap">
           <a href={logo.linkUrl || '/'} class="fp-footer-brand-link">
             {effectiveLogoImg ? (
-              <img src={effectiveLogoImg} alt={effectiveBrandName} class="fp-footer-logo-img" />
+              <>
+                <img
+                  src={effectiveLogoImg}
+                  alt={effectiveBrandName}
+                  class="fp-footer-logo-img"
+                  onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='flex';"
+                />
+                <span class="fp-footer-logo-badge" style="display:none;">{effectiveBrandName.charAt(0).toUpperCase()}</span>
+              </>
             ) : (
               <span class="fp-footer-logo-badge">{effectiveBrandName.charAt(0).toUpperCase()}</span>
             )}
@@ -222,7 +256,15 @@ const containerClass = layout.containerType === 'full'
           <div class="fp-footer-inline-left">
             <a href={logo.linkUrl || '/'} class="fp-footer-brand-link">
               {effectiveLogoImg ? (
-                <img src={effectiveLogoImg} alt={effectiveBrandName} class="fp-footer-logo-img" />
+                <>
+                  <img
+                    src={effectiveLogoImg}
+                    alt={effectiveBrandName}
+                    class="fp-footer-logo-img"
+                    onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='flex';"
+                  />
+                  <span class="fp-footer-logo-badge" style="display:none;">{effectiveBrandName.charAt(0).toUpperCase()}</span>
+                </>
               ) : (
                 <span class="fp-footer-logo-badge">{effectiveBrandName.charAt(0).toUpperCase()}</span>
               )}
@@ -252,7 +294,15 @@ const containerClass = layout.containerType === 'full'
             <div class="fp-footer-col fp-footer-col-about">
               <a href={logo.linkUrl || '/'} class="fp-footer-brand-link">
                 {effectiveLogoImg ? (
-                  <img src={effectiveLogoImg} alt={effectiveBrandName} class="fp-footer-logo-img" />
+                  <>
+                    <img
+                      src={effectiveLogoImg}
+                      alt={effectiveBrandName}
+                      class="fp-footer-logo-img"
+                      onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='flex';"
+                    />
+                    <span class="fp-footer-logo-badge" style="display:none;">{effectiveBrandName.charAt(0).toUpperCase()}</span>
+                  </>
                 ) : (
                   <span class="fp-footer-logo-badge">{effectiveBrandName.charAt(0).toUpperCase()}</span>
                 )}

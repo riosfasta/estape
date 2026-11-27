@@ -736,24 +736,45 @@ func (s *Server) createManualTimeEntry(c *gin.Context) {
 }
 
 func (s *Server) listTimeEntries(c *gin.Context) {
+	ctx := c.Request.Context()
 	userCtx, _ := currentUser(c)
+	pag := s.parseListPagination(c)
 	filter := s.timeEntryFilter(c, userCtx)
-	cursor, err := s.store.C("time_entries").Find(c.Request.Context(), filter, options.Find().SetSort(bson.D{{Key: "start_time", Value: -1}}).SetLimit(500))
+	total, err := s.store.C("time_entries").CountDocuments(ctx, filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count time entries"})
+		return
+	}
+	meta := buildPaginationMeta(pag.Page, pag.Limit, total)
+	skip := int64((meta.Page - 1) * meta.Limit)
+	cursor, err := s.store.C("time_entries").Find(
+		ctx,
+		filter,
+		options.Find().
+			SetSort(bson.D{{Key: "start_time", Value: -1}, {Key: "_id", Value: -1}}).
+			SetSkip(skip).
+			SetLimit(int64(meta.Limit)),
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load time entries"})
 		return
 	}
-	defer cursor.Close(c.Request.Context())
+	defer cursor.Close(ctx)
 	var entries []models.TimeEntry
-	if err := cursor.All(c.Request.Context(), &entries); err != nil {
+	if err := cursor.All(ctx, &entries); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not decode time entries"})
 		return
 	}
 	if entries == nil {
 		entries = []models.TimeEntry{}
 	}
-	usersMap := s.populateTimeEntryUsers(c.Request.Context(), entries)
-	c.JSON(http.StatusOK, gin.H{"entries": entries, "users": usersMap})
+	usersMap := s.populateTimeEntryUsers(ctx, entries)
+	c.JSON(http.StatusOK, gin.H{
+		"entries":       entries,
+		"users":         usersMap,
+		"pagination":    meta,
+		"default_limit": pag.DefaultLimit,
+	})
 }
 
 func (s *Server) updateTimeEntry(c *gin.Context) {

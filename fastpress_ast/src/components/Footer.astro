@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getActiveFooter, defaultSampleFooters, type FooterConfig } from '../data/footers';
 
+import { getDataFile } from '../core/tenantContext';
 interface Props {
   customConfig?: FooterConfig;
   companyName?: string;
@@ -27,7 +28,7 @@ if (customConfig) {
 // Load Global siteConfig for master logo/brand fallback
 let siteConfig: any = null;
 try {
-  const configFile = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
+  const configFile = getDataFile('siteConfig.json');
   const raw = await fs.readFile(configFile, 'utf-8');
   siteConfig = JSON.parse(raw);
 } catch {}
@@ -184,7 +185,15 @@ const containerClass = layout.containerType === 'full'
         <div class="fp-footer-centered-wrap">
           <a href={logo.linkUrl || '/'} class="fp-footer-brand-link">
             {effectiveLogoImg ? (
-              <img src={effectiveLogoImg} alt={effectiveBrandName} class="fp-footer-logo-img" />
+              <>
+                <img
+                  src={effectiveLogoImg}
+                  alt={effectiveBrandName}
+                  class="fp-footer-logo-img"
+                  onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='flex';"
+                />
+                <span class="fp-footer-logo-badge" style="display:none;">{effectiveBrandName.charAt(0).toUpperCase()}</span>
+              </>
             ) : (
               <span class="fp-footer-logo-badge">{effectiveBrandName.charAt(0).toUpperCase()}</span>
             )}
@@ -222,7 +231,15 @@ const containerClass = layout.containerType === 'full'
           <div class="fp-footer-inline-left">
             <a href={logo.linkUrl || '/'} class="fp-footer-brand-link">
               {effectiveLogoImg ? (
-                <img src={effectiveLogoImg} alt={effectiveBrandName} class="fp-footer-logo-img" />
+                <>
+                  <img
+                    src={effectiveLogoImg}
+                    alt={effectiveBrandName}
+                    class="fp-footer-logo-img"
+                    onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='flex';"
+                  />
+                  <span class="fp-footer-logo-badge" style="display:none;">{effectiveBrandName.charAt(0).toUpperCase()}</span>
+                </>
               ) : (
                 <span class="fp-footer-logo-badge">{effectiveBrandName.charAt(0).toUpperCase()}</span>
               )}
@@ -252,7 +269,15 @@ const containerClass = layout.containerType === 'full'
             <div class="fp-footer-col fp-footer-col-about">
               <a href={logo.linkUrl || '/'} class="fp-footer-brand-link">
                 {effectiveLogoImg ? (
-                  <img src={effectiveLogoImg} alt={effectiveBrandName} class="fp-footer-logo-img" />
+                  <>
+                    <img
+                      src={effectiveLogoImg}
+                      alt={effectiveBrandName}
+                      class="fp-footer-logo-img"
+                      onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='flex';"
+                    />
+                    <span class="fp-footer-logo-badge" style="display:none;">{effectiveBrandName.charAt(0).toUpperCase()}</span>
+                  </>
                 ) : (
                   <span class="fp-footer-logo-badge">{effectiveBrandName.charAt(0).toUpperCase()}</span>
                 )}

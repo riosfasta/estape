@@ -15,26 +15,46 @@ import (
 )
 
 func (s *Server) listWebsites(c *gin.Context) {
+	ctx := c.Request.Context()
 	userCtx, _ := currentUser(c)
+	pag := s.parseListPagination(c)
 	filter := bson.M{}
 	if userCtx.Role != models.RoleOwnerAdmin {
 		filter["team_id"] = userCtx.TeamID
 	}
-	cursor, err := s.store.C("websites").Find(c.Request.Context(), filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
+	total, err := s.store.C("websites").CountDocuments(ctx, filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count websites"})
+		return
+	}
+	meta := buildPaginationMeta(pag.Page, pag.Limit, total)
+	skip := int64((meta.Page - 1) * meta.Limit)
+	cursor, err := s.store.C("websites").Find(
+		ctx,
+		filter,
+		options.Find().
+			SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}).
+			SetSkip(skip).
+			SetLimit(int64(meta.Limit)),
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load websites"})
 		return
 	}
-	defer cursor.Close(c.Request.Context())
+	defer cursor.Close(ctx)
 	var websites []models.Website
-	if err := cursor.All(c.Request.Context(), &websites); err != nil {
+	if err := cursor.All(ctx, &websites); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not decode websites"})
 		return
 	}
 	if websites == nil {
 		websites = []models.Website{}
 	}
-	c.JSON(http.StatusOK, gin.H{"websites": websites})
+	c.JSON(http.StatusOK, gin.H{
+		"websites":      websites,
+		"pagination":    meta,
+		"default_limit": pag.DefaultLimit,
+	})
 }
 
 func (s *Server) getWebsite(c *gin.Context) {
@@ -111,7 +131,22 @@ func (s *Server) listBugs(c *gin.Context) {
 	if status := strings.TrimSpace(c.Query("status")); status != "" {
 		filter["status"] = status
 	}
-	cursor, err := s.store.C("bugs").Find(c.Request.Context(), filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
+	pag := s.parseListPagination(c)
+	total, err := s.store.C("bugs").CountDocuments(c.Request.Context(), filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count bugs"})
+		return
+	}
+	meta := buildPaginationMeta(pag.Page, pag.Limit, total)
+	skip := int64((meta.Page - 1) * meta.Limit)
+	cursor, err := s.store.C("bugs").Find(
+		c.Request.Context(),
+		filter,
+		options.Find().
+			SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}).
+			SetSkip(skip).
+			SetLimit(int64(meta.Limit)),
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load bugs"})
 		return
@@ -125,7 +160,11 @@ func (s *Server) listBugs(c *gin.Context) {
 	if bugs == nil {
 		bugs = []models.Bug{}
 	}
-	c.JSON(http.StatusOK, gin.H{"bugs": bugs})
+	c.JSON(http.StatusOK, gin.H{
+		"bugs":          bugs,
+		"pagination":    meta,
+		"default_limit": pag.DefaultLimit,
+	})
 }
 
 func (s *Server) createBug(c *gin.Context) {

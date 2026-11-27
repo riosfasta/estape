@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { getDataFile } from '../core/tenantContext';
 export interface Category {
   id: string;
   name: string;
@@ -15,12 +16,11 @@ export const defaultCategories: Category[] = [
   { id: 'graphic-design', name: 'Graphic Design', slug: 'graphic-design' }
 ];
 
-const CATEGORIES_FILE = path.join(process.cwd(), 'src', 'data', 'categories.json');
 
 export function getCategories(): Category[] {
   try {
-    if (fs.existsSync(CATEGORIES_FILE)) {
-      const data = fs.readFileSync(CATEGORIES_FILE, 'utf-8');
+    if (fs.existsSync(getDataFile('categories.json'))) {
+      const data = fs.readFileSync(getDataFile('categories.json'), 'utf-8');
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
@@ -31,5 +31,5 @@ export function getCategories(): Category[] {
 }
 
 export function writeCategoriesSync(list: Category[]): void {
-  fs.writeFileSync(CATEGORIES_FILE, JSON.stringify(list, null, 2), 'utf-8');
+  fs.writeFileSync(getDataFile('categories.json'), JSON.stringify(list, null, 2), 'utf-8');
 }

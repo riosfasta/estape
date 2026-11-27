@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { getDataFile } from '../core/tenantContext';
 export type TemplateType = 'global' | 'individual';
 
 export interface Template {
@@ -17,7 +18,6 @@ export interface Template {
   updatedAt?: string;
 }
 
-const TEMPLATES_FILE = path.join(process.cwd(), 'src', 'data', 'templates.json');
 
 export const defaultTemplates: Template[] = [
   // --- 1. GLOBAL TEMPLATES (Same everywhere it's placed, editing it updates all instances) ---
@@ -94,7 +94,9 @@ export const defaultTemplates: Template[] = [
 </header>`,
     css: `.block-furnisite-navbar { background-color: #ffffff; border-bottom: 1px solid #f0f0f0; padding: 14px 24px; font-family: 'Plus Jakarta Sans', -apple-system, sans-serif; width: 100%; box-sizing: border-box; }
 .block-furnisite-navbar .bfn-container { max-width: 1240px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-.block-furnisite-navbar .bfn-brand { font-family: 'Montserrat', sans-serif; font-size: 1.35rem; font-weight: 800; letter-spacing: 0.08em; color: #111827; text-transform: uppercase; text-decoration: none; }
+.block-furnisite-navbar .bfn-container > div:first-child, .block-furnisite-navbar .bfn-brand-group { display: inline-flex; align-items: center; gap: 14px; }
+.block-furnisite-navbar .bfn-brand { font-family: 'Montserrat', sans-serif; font-size: 1.35rem; font-weight: 800; letter-spacing: 0.08em; color: #111827; text-transform: uppercase; text-decoration: none; display: inline-flex; align-items: center; line-height: 1; }
+.block-furnisite-navbar .pop-drawer-trigger-btn svg { display: block; }
 .block-furnisite-navbar .bfn-nav { display: flex; align-items: center; gap: 32px; list-style: none; padding: 0; margin: 0; }
 .block-furnisite-navbar .bfn-nav li { list-style: none; margin: 0; padding: 0; }
 .block-furnisite-navbar .bfn-nav a,
@@ -491,8 +493,8 @@ export const defaultTemplates: Template[] = [
 
 export function getTemplates(): Template[] {
   try {
-    if (fs.existsSync(TEMPLATES_FILE)) {
-      const data = fs.readFileSync(TEMPLATES_FILE, 'utf-8');
+    if (fs.existsSync(getDataFile('templates.json'))) {
+      const data = fs.readFileSync(getDataFile('templates.json'), 'utf-8');
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
@@ -503,7 +505,7 @@ export function getTemplates(): Template[] {
 }
 
 export function writeTemplatesSync(templates: Template[]): void {
-  fs.writeFileSync(TEMPLATES_FILE, JSON.stringify(templates, null, 2), 'utf-8');
+  fs.writeFileSync(getDataFile('templates.json'), JSON.stringify(templates, null, 2), 'utf-8');
 }
 
 export function getTemplateById(id: string): Template | undefined {
@@ -558,3 +560,152 @@ export function cleanLiveContent(html: string): string {
 
   return res;
 }
+
+function normalizeNavHref(rawHref: string): string | null {
+  const trimmed = (rawHref || '').trim();
+  if (!trimmed || trimmed === '#' || /^(?:javascript|mailto|tel):/i.test(trimmed)) return null;
+  if (/^https?:\/\//i.test(trimmed)) return null;
+  const clean = trimmed.split('#')[0].split('?')[0].replace(/\/+$/, '') || '/';
+  return clean.startsWith('/') ? clean : `/${clean}`;
+}
+
+function addActiveAttrsToAnchor(openTag: string): string {
+  let updated = openTag;
+  if (/\bclass=["'][^"']*["']/i.test(updated)) {
+    updated = updated.replace(/\bclass=(["'])([^"']*)\1/i, (_m, q, cls) => {
+      const cleaned = cls.replace(/\bis-active\b/g, '').replace(/\s+/g, ' ').trim();
+      return `class=${q}${cleaned ? `${cleaned} is-active` : 'is-active'}${q}`;
+    });
+  } else {
+    updated = updated.replace(/^<a\s+/i, '<a class="is-active" ');
+  }
+  if (!/\baria-current=/i.test(updated)) {
+    updated = updated.replace(/>$/, ' aria-current="page">');
+  }
+  return updated;
+}
+
+const SLUG_PATH_ALIASES: Record<string, string> = {
+  'tentang-kami': '/about',
+  'about-us': '/about',
+  'produk': '/products',
+  'shop': '/products',
+  'kontak': '/contact',
+  'contact-us': '/contact',
+  'home': '/',
+  'index': '/',
+};
+
+function highlightNavSection(sectionHtml: string, effectivePath: string, activeSlug: string, skipSelectorRegex: RegExp | null): string {
+  const aliasPath = SLUG_PATH_ALIASES[activeSlug] || '';
+  const isHome = effectivePath === '/' || aliasPath === '/';
+  const tags: Array<{ start: number; end: number; tag: string; cleanHref: string | null; isExact: boolean; isAlias: boolean; prefixLen: number }> = [];
+  const anchorRe = /<a\b[^>]*\bhref=["']([^"']*)["'][^>]*>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = anchorRe.exec(sectionHtml)) !== null) {
+    const tag = match[0];
+    if (skipSelectorRegex && skipSelectorRegex.test(tag)) continue;
+    const cleanHref = normalizeNavHref(match[1]);
+    if (!cleanHref) continue;
+
+    const isExact = isHome
+      ? cleanHref === '/' || cleanHref === '/#'
+      : cleanHref === effectivePath || Boolean(activeSlug && (cleanHref === `/${activeSlug}` || cleanHref === activeSlug));
+    const isAlias = !isExact && Boolean(aliasPath && cleanHref === aliasPath);
+    const prefixLen = !isExact && !isAlias && !isHome && cleanHref !== '/' && effectivePath.startsWith(`${cleanHref}/`)
+      ? cleanHref.length
+      : 0;
+    tags.push({
+      start: match.index,
+      end: match.index + tag.length,
+      tag,
+      cleanHref,
+      isExact,
+      isAlias,
+      prefixLen,
+    });
+  }
+
+  let bestPrefixLen = 0;
+  let hasExact = false;
+  let hasAlias = false;
+  for (const t of tags) {
+    if (t.isExact) hasExact = true;
+    if (t.isAlias) hasAlias = true;
+    if (t.prefixLen > bestPrefixLen) bestPrefixLen = t.prefixLen;
+  }
+
+  let out = '';
+  let cursor = 0;
+  for (const t of tags) {
+    const shouldActivate = hasExact
+      ? t.isExact
+      : hasAlias
+        ? t.isAlias
+        : (bestPrefixLen > 0 && t.prefixLen === bestPrefixLen);
+    if (!shouldActivate) continue;
+    out += sectionHtml.slice(cursor, t.start) + addActiveAttrsToAnchor(t.tag);
+    cursor = t.end;
+  }
+  out += sectionHtml.slice(cursor);
+  return out;
+}
+
+/**
+ * Resolves the active navigation link (`is-active` & `aria-current="page"`) inside
+ * rendered template header HTML based on the current request path or editor activePage slug.
+ */
+export function applyActiveNavToTemplateHtml(
+  html: string,
+  currentPath: string,
+  activePage?: string,
+  navIndicatorStyle?: string
+): string {
+  if (!html) return '';
+  const cleanReqPath = (currentPath || '/').split('#')[0].split('?')[0].replace(/\/+$/, '') || '/';
+  const activeSlug = (activePage || '').trim().replace(/^\/+|\/+$/g, '');
+  const effectivePath =
+    (cleanReqPath === '/editor' || cleanReqPath === '/editor/') && activeSlug
+      ? (activeSlug === 'home' || activeSlug === 'index' ? '/' : `/${activeSlug}`)
+      : cleanReqPath;
+
+  let res = html;
+  if (navIndicatorStyle) {
+    res = res.replace(/<header\b([^>]*class=["'][^"']*block-furnisite-navbar[^"']*["'][^>]*)>/i, (full, attrs) => {
+      if (/\bdata-nav-indicator=/i.test(attrs)) return full;
+      return `<header${attrs} data-nav-indicator="${navIndicatorStyle}">`;
+    });
+  }
+
+  // Strip hardcoded inline border-bottom underlines and stale active classes/attributes
+  res = res.replace(/\s*style=(["'])([^"']*)\1/gi, (full, q, styleVal) => {
+    if (!/border-bottom/i.test(styleVal)) return full;
+    const stripped = styleVal.replace(/border-bottom[^;]*;?/gi, '').trim();
+    return stripped ? ` style=${q}${stripped}${q}` : '';
+  });
+  res = res.replace(/(<a\b[^>]*\bclass=(["']))([^"']*)\2/gi, (_m, prefix, q, cls) => {
+    const cleaned = cls.replace(/\bis-active\b/g, '').replace(/\s+/g, ' ').trim();
+    return `${prefix}${cleaned}${q}`;
+  });
+  res = res.replace(/\s+aria-current=["']page["']/gi, '');
+
+  // Highlight links inside each <nav> block separately (desktop header nav vs pop drawer nav)
+  let navMatched = false;
+  res = res.replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, (navBlock) => {
+    navMatched = true;
+    const isDrawerNav = /\bpop-drawer-nav\b|\bfurnisite-drawer\b/i.test(navBlock);
+    return highlightNavSection(
+      navBlock,
+      effectivePath,
+      activeSlug,
+      isDrawerNav ? null : /\b(?:bfn-brand|furnisite-logo|bfn-icon-btn|pop-drawer)\b/i
+    );
+  });
+
+  // Fallback for templates whose header links sit outside a <nav> element
+  if (!navMatched) {
+    res = highlightNavSection(res, effectivePath, activeSlug, /\b(?:bfn-brand|furnisite-logo|bfn-icon-btn|pop-drawer)\b/i);
+  }
+  return res;
+}
+

@@ -2,13 +2,12 @@ import type { APIRoute } from 'astro';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { getDataDir, getUploadsDir } from '../../core/tenantContext';
 export const prerender = false;
 
-const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
 
 const ALLOWED_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg', '.avif', '.ico'];
 const MAX_IMAGE_SIZE = 200 * 1024; // 200 KB max image size
-const DATA_DIR = path.join(process.cwd(), 'src', 'data');
 
 interface ImageUsage {
   type: string;
@@ -24,7 +23,7 @@ async function scanImageUsage(files: string[]): Promise<Record<string, ImageUsag
 
   async function safeReadJSON(filename: string): Promise<any> {
     try {
-      const content = await fs.readFile(path.join(DATA_DIR, filename), 'utf8');
+      const content = await fs.readFile(path.join(getDataDir(), filename), 'utf8');
       return JSON.parse(content);
     } catch {
       return null;
@@ -149,7 +148,7 @@ async function scanImageUsage(files: string[]): Promise<Record<string, ImageUsag
 
 async function ensureUploadDir() {
   try {
-    await fs.mkdir(UPLOADS_DIR, { recursive: true });
+    await fs.mkdir(getUploadsDir(), { recursive: true });
   } catch {}
 }
 
@@ -166,7 +165,7 @@ function formatBytes(bytes: number, decimals = 1): string {
 export const GET: APIRoute = async () => {
   try {
     await ensureUploadDir();
-    const files = await fs.readdir(UPLOADS_DIR);
+    const files = await fs.readdir(getUploadsDir());
     const validImageFiles = files.filter(f => ALLOWED_EXTS.includes(path.extname(f).toLowerCase()));
 
     // Scan where each image is used across pages, posts, templates, popups
@@ -175,7 +174,7 @@ export const GET: APIRoute = async () => {
     const mediaList = [];
     for (const file of validImageFiles) {
       try {
-        const filePath = path.join(UPLOADS_DIR, file);
+        const filePath = path.join(getUploadsDir(), file);
         const stats = await fs.stat(filePath);
         if (stats.isFile()) {
           const usedIn = usageMap[file] || [];
@@ -294,7 +293,7 @@ export const POST: APIRoute = async ({ request }) => {
       .replace(/-+/g, '-')
       .substring(0, 30);
     const uniqueFileName = `${Date.now()}-${baseName}${ext}`;
-    const targetFilePath = path.join(UPLOADS_DIR, uniqueFileName);
+    const targetFilePath = path.join(getUploadsDir(), uniqueFileName);
 
     await fs.writeFile(targetFilePath, buffer);
 
@@ -331,7 +330,7 @@ export const DELETE: APIRoute = async ({ url }) => {
 
     // Protect against path traversal
     const safeFileName = path.basename(rawFileName);
-    const targetPath = path.join(UPLOADS_DIR, safeFileName);
+    const targetPath = path.join(getUploadsDir(), safeFileName);
 
     try {
       await fs.unlink(targetPath);

@@ -133,7 +133,11 @@ const currentApp =
     : workspaceApps[0]);
 
 const tenant = Astro.url.searchParams.get('tenant') || '';
-const tenantQuery = tenant ? `?tenant=${encodeURIComponent(tenant)}` : '';
+const themeParam = Astro.url.searchParams.get('theme') || Astro.request.headers.get('x-tenant-theme') || '';
+const switcherParams = new URLSearchParams();
+if (tenant) switcherParams.set('tenant', tenant);
+if (themeParam) switcherParams.set('theme', themeParam);
+const tenantQuery = switcherParams.toString() ? `?${switcherParams.toString()}` : '';
 ---
 
 <div class={`workspace-switcher-component ${className}`} style={`position: relative; ${style}`}>
@@ -440,17 +444,21 @@ const tenantQuery = tenant ? `?tenant=${encodeURIComponent(tenant)}` : '';
         const btn = wrap.querySelector('.ws-switcher-btn');
         if (!btn) return;
 
-        // Propagate current tenant to all switcher links
+        // Propagate current tenant and theme to all switcher links
         try {
           const urlParams = new URLSearchParams(window.location.search);
           const currentTenant = urlParams.get('tenant');
-          if (currentTenant) {
+          const currentTheme = urlParams.get('theme');
+          if (currentTenant || currentTheme) {
             wrap.querySelectorAll('a.ws-menu-item').forEach((link) => {
               const url = new URL(link.href, window.location.origin);
-              if (!url.searchParams.has('tenant')) {
+              if (currentTenant && !url.searchParams.has('tenant')) {
                 url.searchParams.set('tenant', currentTenant);
-                link.href = url.pathname + url.search;
               }
+              if (currentTheme && !url.searchParams.has('theme')) {
+                url.searchParams.set('theme', currentTheme);
+              }
+              link.href = url.pathname + url.search;
             });
           }
         } catch (_) {}

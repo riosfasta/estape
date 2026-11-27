@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { getDataFile } from '../core/tenantContext';
 export interface DropdownItem {
   id: string;
   label: string;
@@ -121,6 +122,7 @@ export interface HeaderConfig {
   description: string;
   isDefault: boolean;
   source: 'preset' | 'custom';
+  theme?: string;
   builderType?: 'visual' | 'custom-code';
   useTemplate?: boolean;
   selectedTemplateId?: string;
@@ -136,10 +138,10 @@ export interface HeaderConfig {
 
 export interface HeadersDataStore {
   activeHeaderId: string;
+  activeHeaderIds?: Record<string, string>;
   headers: HeaderConfig[];
 }
 
-const HEADERS_FILE = path.join(process.cwd(), 'src', 'data', 'headers.json');
 
 export const defaultSampleHeaders: HeaderConfig[] = [
   {
@@ -1116,15 +1118,15 @@ export const defaultSampleHeaders: HeaderConfig[] = [
 
 export function readHeadersData(): HeadersDataStore {
   try {
-    if (!fs.existsSync(HEADERS_FILE)) {
+    if (!fs.existsSync(getDataFile('headers.json'))) {
       const initial: HeadersDataStore = {
         activeHeaderId: defaultSampleHeaders[0].id,
         headers: defaultSampleHeaders,
       };
-      fs.writeFileSync(HEADERS_FILE, JSON.stringify(initial, null, 2), 'utf-8');
+      fs.writeFileSync(getDataFile('headers.json'), JSON.stringify(initial, null, 2), 'utf-8');
       return initial;
     }
-    const raw = fs.readFileSync(HEADERS_FILE, 'utf-8');
+    const raw = fs.readFileSync(getDataFile('headers.json'), 'utf-8');
     const parsed = JSON.parse(raw);
     if (!parsed.headers || !Array.isArray(parsed.headers) || parsed.headers.length === 0) {
       parsed.headers = defaultSampleHeaders;
@@ -1140,7 +1142,7 @@ export function readHeadersData(): HeadersDataStore {
 }
 
 export function writeHeadersData(data: HeadersDataStore): void {
-  fs.writeFileSync(HEADERS_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  fs.writeFileSync(getDataFile('headers.json'), JSON.stringify(data, null, 2), 'utf-8');
 }
 
 export function getHeaders(): HeaderConfig[] {
@@ -1152,6 +1154,26 @@ export function getActiveHeader(): HeaderConfig {
   const store = readHeadersData();
   const found = store.headers.find(h => h.id === store.activeHeaderId);
   return found || store.headers[0] || defaultSampleHeaders[0];
+}
+
+export function getActiveHeaderForTheme(themeName = 'default'): HeaderConfig {
+  const store = readHeadersData();
+  const target = (themeName || 'default').toLowerCase();
+  const mappedId = store.activeHeaderIds?.[target];
+  if (mappedId) {
+    const mapped = store.headers.find(h => h.id === mappedId);
+    if (mapped) return mapped;
+  }
+  const active = store.headers.find(h => h.id === store.activeHeaderId);
+  if (active && ((!active.theme && target === 'default') || (active.theme && active.theme.toLowerCase() === target))) {
+    return active;
+  }
+  const themed = store.headers.find(h => h.theme && h.theme.toLowerCase() === target);
+  if (themed) return themed;
+  const unthemedDefault =
+    store.headers.find(h => h.isDefault && !h.theme) ||
+    store.headers.find(h => !h.theme);
+  return unthemedDefault || defaultSampleHeaders[0];
 }
 
 export function getHeaderById(id: string): HeaderConfig | undefined {
@@ -1177,14 +1199,25 @@ export function saveHeader(header: HeaderConfig): HeadersDataStore {
   return store;
 }
 
-export function setActiveHeader(id: string): HeadersDataStore {
+export function setActiveHeader(id: string, themeName?: string): HeadersDataStore {
   const store = readHeadersData();
   if (store.headers.some(h => h.id === id)) {
-    store.activeHeaderId = id;
-    store.headers = store.headers.map(h => ({
-      ...h,
-      isDefault: h.id === id,
-    }));
+    const target = themeName ? themeName.trim().toLowerCase() : '';
+    if (target) {
+      if (!store.activeHeaderIds) store.activeHeaderIds = {};
+      store.activeHeaderIds[target] = id;
+    }
+    const targetHeader = store.headers.find(h => h.id === id);
+    if (!target || (targetHeader?.theme && targetHeader.theme.toLowerCase() === target) || target === 'furnisite') {
+      store.activeHeaderId = id;
+    }
+    if (!target) {
+      store.activeHeaderId = id;
+      store.headers = store.headers.map(h => ({
+        ...h,
+        isDefault: h.id === id,
+      }));
+    }
     writeHeadersData(store);
   }
   return store;

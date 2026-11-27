@@ -8,14 +8,13 @@ import {
 } from '../../data/product-categories';
 import { defaultProducts, getProductCategoriesArray, type Product } from '../../data/products';
 
+import { getDataFile } from '../../core/tenantContext';
 export const prerender = false;
 
-const CATEGORIES_FILE = path.join(process.cwd(), 'src', 'data', 'product-categories.json');
-const PRODUCTS_FILE = path.join(process.cwd(), 'src', 'data', 'products.json');
 
 async function readCategories(): Promise<ProductCategory[]> {
   try {
-    const raw = await fs.readFile(CATEGORIES_FILE, 'utf-8');
+    const raw = await fs.readFile(getDataFile('product-categories.json'), 'utf-8');
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
       return parsed;
@@ -25,12 +24,12 @@ async function readCategories(): Promise<ProductCategory[]> {
 }
 
 async function writeCategories(list: ProductCategory[]): Promise<void> {
-  await fs.writeFile(CATEGORIES_FILE, JSON.stringify(list, null, 2), 'utf-8');
+  await fs.writeFile(getDataFile('product-categories.json'), JSON.stringify(list, null, 2), 'utf-8');
 }
 
 async function readProducts(): Promise<Product[]> {
   try {
-    const raw = await fs.readFile(PRODUCTS_FILE, 'utf-8');
+    const raw = await fs.readFile(getDataFile('products.json'), 'utf-8');
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
       return parsed;
@@ -40,7 +39,7 @@ async function readProducts(): Promise<Product[]> {
 }
 
 async function writeProducts(list: Product[]): Promise<void> {
-  await fs.writeFile(PRODUCTS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+  await fs.writeFile(getDataFile('products.json'), JSON.stringify(list, null, 2), 'utf-8');
 }
 
 export const GET: APIRoute = async () => {

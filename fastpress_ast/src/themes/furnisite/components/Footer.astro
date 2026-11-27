@@ -2,6 +2,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { getDataFile } from '../../../core/tenantContext';
 interface Props {
   isPreview?: boolean;
   previewTheme?: string;
@@ -11,7 +12,7 @@ const { isPreview = false, previewTheme = 'furnisite' } = Astro.props;
 
 let siteConfig: any = null;
 try {
-  const configFile = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
+  const configFile = getDataFile('siteConfig.json');
   const raw = await fs.readFile(configFile, 'utf-8');
   siteConfig = JSON.parse(raw);
 } catch {}
@@ -50,13 +51,13 @@ let customFooterCss = '';
 try {
   let activeFooterConfig: any = null;
   try {
-    const footersFile = path.join(process.cwd(), 'src', 'data', 'footers.json');
+    const footersFile = getDataFile('footers.json');
     const footersRaw = await fs.readFile(footersFile, 'utf-8');
     const footersStore = JSON.parse(footersRaw);
     activeFooterConfig = footersStore.footers.find((f: any) => f.id === footersStore.activeFooterId) || footersStore.footers[0];
   } catch {}
 
-  const tplFile = path.join(process.cwd(), 'src', 'data', 'templates.json');
+  const tplFile = getDataFile('templates.json');
   const tplRaw = await fs.readFile(tplFile, 'utf-8');
   const templates = JSON.parse(tplRaw);
 

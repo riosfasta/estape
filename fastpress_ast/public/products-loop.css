@@ -42,6 +42,17 @@
   position: relative;
 }
 
+.fp-product-card[hidden] {
+  display: none !important;
+}
+
+.fs-catalog-grid-section > .fp-products-loop-widget {
+  width: 100%;
+  max-width: var(--fs-container-max, 1280px);
+  margin: 48px auto 0;
+  padding-inline: 24px;
+}
+
 .fp-product-card:hover {
   transform: translateY(-4px);
 }

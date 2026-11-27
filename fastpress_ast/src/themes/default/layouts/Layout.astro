@@ -5,6 +5,7 @@ import Footer from '../components/Footer.astro';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { getDataFile } from '../../../core/tenantContext';
 interface Props {
   title?: string;
   description?: string;
@@ -58,7 +59,7 @@ if (typeof schema === 'string' && schema.trim()) {
 
 let customFonts: any[] = [];
 try {
-  const fontsFile = path.join(process.cwd(), 'src', 'data', 'fonts.json');
+  const fontsFile = getDataFile('fonts.json');
   const raw = await fs.readFile(fontsFile, 'utf-8');
   customFonts = JSON.parse(raw);
 } catch {}
@@ -68,7 +69,7 @@ try {
 // ==========================================
 let siteConfig: any = null;
 try {
-  const configFile = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
+  const configFile = getDataFile('siteConfig.json');
   const rawConfig = await fs.readFile(configFile, 'utf-8');
   siteConfig = JSON.parse(rawConfig);
 } catch {}
@@ -92,7 +93,7 @@ let customCode: {
   customCss: '',
 };
 try {
-  const codeFile = path.join(process.cwd(), 'src', 'data', 'customCode.json');
+  const codeFile = getDataFile('customCode.json');
   const codeRaw = await fs.readFile(codeFile, 'utf-8');
   customCode = JSON.parse(codeRaw);
 } catch {}
@@ -121,7 +122,7 @@ if (!pageCustomCode || Object.keys(pageCustomCode).length === 0) {
 
   if (isPostForCode) {
     try {
-      const postsFile = path.join(process.cwd(), 'src', 'data', 'posts.json');
+      const postsFile = getDataFile('posts.json');
       const postsRaw = await fs.readFile(postsFile, 'utf-8');
       const posts = JSON.parse(postsRaw);
       const foundPost = posts.find((p: any) => p.slug === currentSlugForCode);
@@ -131,7 +132,7 @@ if (!pageCustomCode || Object.keys(pageCustomCode).length === 0) {
     } catch {}
   } else {
     try {
-      const pagesFile = path.join(process.cwd(), 'src', 'data', 'pages.json');
+      const pagesFile = getDataFile('pages.json');
       const pagesRaw = await fs.readFile(pagesFile, 'utf-8');
       const pages = JSON.parse(pagesRaw);
       const foundPage = pages[currentSlugForCode];
@@ -152,7 +153,7 @@ if (cleanPageCustomCss) {
 // ==========================================
 let matchedPopups: any[] = [];
 try {
-  const popupsFile = path.join(process.cwd(), 'src', 'data', 'popups.json');
+  const popupsFile = getDataFile('popups.json');
   const popupsRaw = await fs.readFile(popupsFile, 'utf-8');
   const allPopups = JSON.parse(popupsRaw);
 
@@ -165,7 +166,7 @@ try {
   let postCategories: string[] = [];
   if (isPost) {
     try {
-      const postsFile = path.join(process.cwd(), 'src', 'data', 'posts.json');
+      const postsFile = getDataFile('posts.json');
       const postsRaw = await fs.readFile(postsFile, 'utf-8');
       const posts = JSON.parse(postsRaw);
       const post = posts.find((p: any) => p.slug === currentSlug);
@@ -1438,5 +1439,61 @@ function getPopupRenderConfig(popup: any) {
   #mainContent {
     flex: 1 0 auto;
     width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+</style>
+
+<style is:global>
+  html, body {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+  #mainContent img {
+    max-width: 100%;
+    height: auto;
+  }
+  @media (max-width: 768px) {
+    #mainContent section {
+      padding-left: 16px !important;
+      padding-right: 16px !important;
+    }
+    #mainContent > div,
+    #mainContent section,
+    #mainContent section > div,
+    #mainContent .fp-container,
+    #mainContent .row,
+    #mainContent .fp-row,
+    #mainContent [style*="grid-template-columns"],
+    #mainContent [class*="grid"] {
+      grid-template-columns: minmax(0, 1fr) !important;
+      max-width: 100% !important;
+    }
+    #mainContent .fp-container {
+      padding-left: 14px !important;
+      padding-right: 14px !important;
+    }
+    #mainContent .fp-container .fp-container {
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+    }
+    #mainContent .fp-container > *,
+    #mainContent .row > *,
+    #mainContent .cell {
+      min-width: 0 !important;
+      max-width: 100% !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+    #mainContent .row {
+      flex-direction: column !important;
+    }
+    #mainContent h1 {
+      font-size: clamp(1.85rem, 7vw, 2.5rem) !important;
+      line-height: 1.15 !important;
+    }
+    #mainContent h2 {
+      font-size: clamp(1.45rem, 5.5vw, 2rem) !important;
+    }
   }
 </style>

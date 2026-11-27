@@ -2,12 +2,9 @@ import type { APIRoute } from 'astro';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { getDataFile } from '../../core/tenantContext';
 export const prerender = false;
 
-const POPUPS_FILE = path.join(process.cwd(), 'src', 'data', 'popups.json');
-const PAGES_FILE = path.join(process.cwd(), 'src', 'data', 'pages.json');
-const POSTS_FILE = path.join(process.cwd(), 'src', 'data', 'posts.json');
-const CATEGORIES_FILE = path.join(process.cwd(), 'src', 'data', 'categories.json');
 
 async function readJsonFile(filePath: string, fallback: any) {
   try {
@@ -19,15 +16,15 @@ async function readJsonFile(filePath: string, fallback: any) {
 }
 
 async function writePopups(popups: any[]) {
-  await fs.writeFile(POPUPS_FILE, JSON.stringify(popups, null, 2), 'utf-8');
+  await fs.writeFile(getDataFile('popups.json'), JSON.stringify(popups, null, 2), 'utf-8');
 }
 
 export const GET: APIRoute = async () => {
   try {
-    const popups = await readJsonFile(POPUPS_FILE, []);
-    const rawPages = await readJsonFile(PAGES_FILE, {});
-    const posts = await readJsonFile(POSTS_FILE, []);
-    const categories = await readJsonFile(CATEGORIES_FILE, []);
+    const popups = await readJsonFile(getDataFile('popups.json'), []);
+    const rawPages = await readJsonFile(getDataFile('pages.json'), {});
+    const posts = await readJsonFile(getDataFile('posts.json'), []);
+    const categories = await readJsonFile(getDataFile('categories.json'), []);
 
     // Format pages list for targeting selector
     const pagesList = Object.entries(rawPages).map(([slug, p]: [string, any]) => ({
@@ -81,7 +78,7 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const body = await request.json();
     const action = body.action || 'save';
-    let popups: any[] = await readJsonFile(POPUPS_FILE, []);
+    let popups: any[] = await readJsonFile(getDataFile('popups.json'), []);
 
     if (action === 'save') {
       const popupData = body.popup;

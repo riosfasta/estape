@@ -2,6 +2,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { getDataFile } from '../../../core/tenantContext';
+import { getActiveHeaderForTheme } from '../../../data/headers';
+import { applyActiveNavToTemplateHtml } from '../../../data/templates';
 interface Props {
   activePage?: string;
   isPreview?: boolean;
@@ -13,7 +16,7 @@ const { activePage = 'home', isPreview = false, previewTheme = 'furnisite' } = A
 // Load siteConfig for brand name, nav items, and drawer CTA
 let siteConfig: any = null;
 try {
-  const configFile = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
+  const configFile = getDataFile('siteConfig.json');
   const raw = await fs.readFile(configFile, 'utf-8');
   siteConfig = JSON.parse(raw);
 } catch {}
@@ -51,13 +54,10 @@ let customNavbarCss = '';
 try {
   let activeHeaderConfig: any = null;
   try {
-    const headersFile = path.join(process.cwd(), 'src', 'data', 'headers.json');
-    const headersRaw = await fs.readFile(headersFile, 'utf-8');
-    const headersStore = JSON.parse(headersRaw);
-    activeHeaderConfig = headersStore.headers.find((h: any) => h.id === headersStore.activeHeaderId) || headersStore.headers[0];
+    activeHeaderConfig = getActiveHeaderForTheme('furnisite');
   } catch {}
 
-  const tplFile = path.join(process.cwd(), 'src', 'data', 'templates.json');
+  const tplFile = getDataFile('templates.json');
   const tplRaw = await fs.readFile(tplFile, 'utf-8');
   const templates = JSON.parse(tplRaw);
 
@@ -81,71 +81,10 @@ try {
 } catch {}
 
 // Resolve dynamic active page for customNavbarHtml
-const currentPath = Astro.url.pathname.replace(/\/$/, '') || '/';
-const isCurrentHome = currentPath === '/' || activePage === 'home' || activePage === 'index';
 const navIndicatorStyle = furniConfig?.navIndicatorStyle || activeHeaderConfig?.styling?.navIndicatorStyle || siteConfig?.navIndicatorStyle || 'underline';
-
-let renderedNavbarHtml = customNavbarHtml;
-if (renderedNavbarHtml) {
-  // Inject nav indicator mode data attribute
-  renderedNavbarHtml = renderedNavbarHtml.replace(/<header\s+class="([^"]*block-furnisite-navbar[^"]*)"/i, `<header class="$1" data-nav-indicator="${navIndicatorStyle}"`);
-
-  // 1. Remove old hardcoded inline style on Home or other nav links
-  renderedNavbarHtml = renderedNavbarHtml.replace(/style="[^"]*border-bottom[^"]*"/gi, '');
-
-  // 2. Remove any pre-existing is-active from nav links & drawer links
-  renderedNavbarHtml = renderedNavbarHtml.replace(/(<a\s+[^>]*class=["'])([^"']*)(\bis-active\b)([^"']*["'])/gi, (m, p1, p2, p3, p4) => {
-    return `${p1}${p2} ${p4}`.replace(/\s+/g, ' ');
-  });
-
-  // 3. Mark the active desktop navigation link
-  let activeNavFound = false;
-  renderedNavbarHtml = renderedNavbarHtml.replace(/(<a\s+[^>]*href=["']([^"']*)["'][^>]*>)/gi, (openTag, fullMatch, href) => {
-    if (activeNavFound) return openTag;
-    // Skip brand logo, action buttons, and drawer links
-    if (openTag.includes('bfn-brand') || openTag.includes('furnisite-logo') || openTag.includes('bfn-icon-btn') || openTag.includes('pop-drawer')) {
-      return openTag;
-    }
-    const cleanHref = href.replace(/\/$/, '') || '/';
-    const isMatch = isCurrentHome
-      ? (cleanHref === '/' || cleanHref === '/#' || cleanHref === '')
-      : (cleanHref === currentPath || (activePage && (cleanHref === `/${activePage}` || cleanHref === activePage)));
-
-    if (isMatch) {
-      activeNavFound = true;
-      if (openTag.includes('class="')) {
-        return openTag.replace('class="', 'class="is-active ');
-      } else if (openTag.includes("class='")) {
-        return openTag.replace("class='", "class='is-active ");
-      } else {
-        return openTag.replace('<a ', '<a class="is-active" ');
-      }
-    }
-    return openTag;
-  });
-
-  // 4. Mark active link in mobile pop drawer
-  let activeDrawerFound = false;
-  renderedNavbarHtml = renderedNavbarHtml.replace(/(<a\s+[^>]*pop-drawer-link[^>]*>)/gi, (openTag) => {
-    if (activeDrawerFound) return openTag;
-    const hrefMatch = openTag.match(/href=["']([^"']*)["']/i);
-    if (!hrefMatch) return openTag;
-    const cleanHref = hrefMatch[1].replace(/\/$/, '') || '/';
-    const isMatch = isCurrentHome
-      ? (cleanHref === '/' || cleanHref === '/#' || cleanHref === '')
-      : (cleanHref === currentPath || (activePage && (cleanHref === `/${activePage}` || cleanHref === activePage)));
-
-    if (isMatch) {
-      activeDrawerFound = true;
-      if (openTag.includes('class="')) {
-        return openTag.replace('class="', 'class="is-active ');
-      } else if (openTag.includes("class='")) {
-        return openTag.replace("class='", "class='is-active ");
-      }
-    }
-    return openTag;
-  });
-}
+const renderedNavbarHtml = customNavbarHtml
+  ? applyActiveNavToTemplateHtml(customNavbarHtml, Astro.url.pathname, activePage, navIndicatorStyle)
+  : '';
 ---
 
 {customNavbarHtml ? (

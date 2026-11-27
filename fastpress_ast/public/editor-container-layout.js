@@ -1090,24 +1090,27 @@
 
   // Topbar Controls (Device Dropdown, View & Code Dropdown, Panel Toggle)
   function initEditorTopbarControls() {
-    // 1. Device Dropdown
+    // 1. Device Dropdown (skip if managed by DeviceSwitcher.astro)
     const devWrap = document.getElementById('deviceDropdownWrap');
     const devBtn = document.getElementById('btnDeviceDropdown');
     const devMenu = document.getElementById('deviceDropdownMenu');
     const devIcon = document.getElementById('deviceActiveIcon');
     const devLabel = document.getElementById('deviceActiveLabel');
+    const isManagedByDeviceSwitcher =
+      devWrap && (devWrap.classList.contains('device-switcher-component') || devWrap.dataset.devInitialized === 'true');
 
-    if (devBtn && devWrap) {
+    if (devBtn && devWrap && !isManagedByDeviceSwitcher) {
+      devWrap.dataset.devInitialized = 'true';
       devBtn.onclick = (e) => {
         e.stopPropagation();
-        document.querySelectorAll('.topbar-dropdown-wrap.open').forEach(w => {
+        document.querySelectorAll('.topbar-dropdown-wrap.open, .nav-dropdown.open').forEach(w => {
           if (w !== devWrap) w.classList.remove('open');
         });
         devWrap.classList.toggle('open');
       };
     }
 
-    if (devMenu) {
+    if (devMenu && !isManagedByDeviceSwitcher) {
       devMenu.querySelectorAll('.topbar-dropdown-item').forEach(item => {
         item.onclick = (e) => {
           e.stopPropagation();
@@ -1137,22 +1140,25 @@
       });
     }
 
-    // 2. View Actions Dropdown (Live Site, Preview, Code)
+    // 2. View Actions Dropdown (Live Site, Preview, Code) - skip if managed by editor.astro (.nav-dropdown)
     const viewWrap = document.getElementById('viewActionsDropdownWrap');
     const viewBtn = document.getElementById('btnViewActionsDropdown');
     const viewMenu = document.getElementById('viewActionsDropdownMenu');
+    const isManagedByEditorPage =
+      viewWrap && (!viewWrap.classList.contains('topbar-dropdown-wrap') || viewWrap.dataset.viewInitialized === 'true');
 
-    if (viewBtn && viewWrap) {
+    if (viewBtn && viewWrap && !isManagedByEditorPage) {
+      viewWrap.dataset.viewInitialized = 'true';
       viewBtn.onclick = (e) => {
         e.stopPropagation();
-        document.querySelectorAll('.topbar-dropdown-wrap.open').forEach(w => {
+        document.querySelectorAll('.topbar-dropdown-wrap.open, .nav-dropdown.open').forEach(w => {
           if (w !== viewWrap) w.classList.remove('open');
         });
         viewWrap.classList.toggle('open');
       };
     }
 
-    if (viewMenu) {
+    if (viewMenu && !isManagedByEditorPage) {
       // Delegate click to close menu after clicking an action
       viewMenu.addEventListener('click', (e) => {
         const item = e.target.closest('.topbar-dropdown-item');

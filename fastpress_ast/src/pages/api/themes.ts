@@ -1,12 +1,12 @@
 import type { APIRoute } from 'astro';
-import { getActiveThemeName, setActiveTheme, listThemes } from '../../core/theme';
+import { resolveThemeName, setActiveTheme, listThemes } from '../../core/theme';
 
 export const prerender = false;
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ url, request }) => {
   try {
-    const activeTheme = getActiveThemeName();
-    const themes = listThemes();
+    const activeTheme = resolveThemeName(url, request.headers);
+    const themes = listThemes().map((t) => ({ ...t, isActive: t.id === activeTheme }));
     return new Response(
       JSON.stringify({
         success: true,

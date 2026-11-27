@@ -1,10 +1,10 @@
 ---
 import DeviceSwitcher from '../components/admin/DeviceSwitcher.astro';
 import WorkspaceSwitcher from '../components/admin/WorkspaceSwitcher.astro';
-import { getActiveThemeName } from '../core/theme';
+import { resolveThemeName } from '../core/theme';
 export const prerender = false;
 
-const activeTheme = getActiveThemeName();
+const activeTheme = resolveThemeName(Astro.url, Astro.request.headers);
 import { getProductLayouts, type ProductLayout } from '../data/product-layouts';
 import { getProducts, getProductCategoriesArray } from '../data/products';
 import { getTemplates } from '../data/templates';

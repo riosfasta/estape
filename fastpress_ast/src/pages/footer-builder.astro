@@ -5,20 +5,26 @@ import WorkspaceSwitcher from '../components/admin/WorkspaceSwitcher.astro';
 // Visual Footer Builder for FastPress CMS
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { readFootersData, defaultSampleFooters, type FooterConfig } from '../data/footers';
+import { readFootersData, getActiveFooterForTheme, defaultSampleFooters, type FooterConfig } from '../data/footers';
 import { getTemplates } from '../data/templates';
 
-import { getActiveThemeName, getThemePages } from '../core/theme';
+import { resolveThemeName, getThemePages } from '../core/theme';
 
+import { getDataFile } from '../core/tenantContext';
 export const prerender = false;
 
-const activeTheme = getActiveThemeName();
+const activeTheme = resolveThemeName(Astro.url, Astro.request.headers);
 const footersStore = readFootersData();
 const initialTemplates = getTemplates();
-const activeFooterId = footersStore.activeFooterId || footersStore.footers[0]?.id || 'footer-saas-pro';
+const activeFooterId = getActiveFooterForTheme(activeTheme).id;
+const tenantParam = Astro.url.searchParams.get('tenant') || Astro.request.headers.get('x-tenant-subdomain') || '';
+const fbParams = new URLSearchParams();
+if (tenantParam) fbParams.set('tenant', tenantParam);
+if (activeTheme) fbParams.set('theme', activeTheme);
+const fbQueryStr = fbParams.toString();
+const appendFbQuery = (base: string) => fbQueryStr ? `${base}${base.includes('?') ? '&' : '?'}${fbQueryStr}` : base;
 
 // Load Pages and Posts for Link Picker
-const POSTS_FILE = path.join(process.cwd(), 'src', 'data', 'posts.json');
 
 let availablePages: Array<{ slug: string; title: string; url: string }> = [];
 let availablePosts: Array<{ slug: string; title: string; category?: string; url: string }> = [];
@@ -42,7 +48,7 @@ try {
 }
 
 try {
-  const rawPosts = await fs.readFile(POSTS_FILE, 'utf-8');
+  const rawPosts = await fs.readFile(getDataFile('posts.json'), 'utf-8');
   const parsedPosts = JSON.parse(rawPosts);
   if (Array.isArray(parsedPosts)) {
     availablePosts = parsedPosts.map((post: any) => ({
@@ -57,10 +63,9 @@ try {
 }
 
 // Load Site Config for Web Logo & Brand Fallback
-const CONFIG_FILE = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
 let initialSiteConfig: any = { brandName: 'Better SaaS', tagline: 'Modern Platform', logoUrl: '', faviconUrl: '/favicon.svg' };
 try {
-  const rawConfig = await fs.readFile(CONFIG_FILE, 'utf-8');
+  const rawConfig = await fs.readFile(getDataFile('siteConfig.json'), 'utf-8');
   initialSiteConfig = JSON.parse(rawConfig);
 } catch {}
 ---
@@ -823,7 +828,7 @@ try {
       <!-- TOP TOOLBAR -->
       <header class="builder-topbar">
         <div class="topbar-left">
-          <a href="/editor" class="back-btn" title="Back to Page Editor">
+          <a href={appendFbQuery('/editor')} class="back-btn" title="Back to Page Editor">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
             <span>Editor</span>
           </a>
@@ -843,7 +848,7 @@ try {
             <select class="footer-select-input" id="footerSelect">
               {footersStore.footers.map((f) => (
                 <option value={f.id} selected={f.id === activeFooterId}>
-                  {f.name} {f.id === footersStore.activeFooterId ? '★ (Active Site)' : ''}
+                  {f.name} {f.id === activeFooterId ? '★ (Active Site)' : ''}
                 </option>
               ))}
             </select>
@@ -857,7 +862,7 @@ try {
 
         <!-- Right Action Buttons -->
         <div class="topbar-right">
-          <a href={`/template-editor?id=${activeTheme === 'furnisite' ? 'tpl-global-furnisite-footer' : 'tpl-footer-default'}`} class="tb-btn tb-btn-subtle" title="Open Advanced GrapesJS Block Builder to drag and drop custom widgets into this footer" style="text-decoration: none; display: inline-flex; align-items: center; gap: 5px; background: rgba(99, 102, 241, 0.18); border: 1px solid rgba(99, 102, 241, 0.45); color: #c7d2fe;">
+          <a href={appendFbQuery(`/template-editor?id=${activeTheme === 'furnisite' ? 'tpl-global-furnisite-footer' : 'tpl-footer-default'}`)} class="tb-btn tb-btn-subtle" title="Open Advanced GrapesJS Block Builder to drag and drop custom widgets into this footer" style="text-decoration: none; display: inline-flex; align-items: center; gap: 5px; background: rgba(99, 102, 241, 0.18); border: 1px solid rgba(99, 102, 241, 0.45); color: #c7d2fe;">
             <span>🧱 Block Studio</span>
           </a>
           <button type="button" class="tb-btn tb-btn-subtle" id="newFooterBtn" title="Create a new footer">
@@ -1477,8 +1482,10 @@ try {
     <div class="builder-toast" id="builderToast"></div>
 
     <!-- PASS SERVER DATA TO CLIENT SCRIPT -->
-    <script is:inline define:vars={{ initialFootersStore: footersStore, initialSiteConfig, availablePages, availablePosts, initialTemplates }}>
+    <script is:inline define:vars={{ initialFootersStore: footersStore, initialActiveFooterId: activeFooterId, initialActiveTheme: activeTheme, initialSiteConfig, availablePages, availablePosts, initialTemplates }}>
       window.__FP_FOOTERS_DATA__ = initialFootersStore;
+      window.__FP_ACTIVE_FOOTER_ID__ = initialActiveFooterId;
+      window.__FP_ACTIVE_THEME__ = initialActiveTheme || 'default';
       window.__FP_SITE_CONFIG__ = initialSiteConfig;
       window.__FP_PAGES__ = availablePages;
       window.__FP_POSTS__ = availablePosts;
@@ -1489,6 +1496,8 @@ try {
     <script is:inline>
       (function() {
         const store = window.__FP_FOOTERS_DATA__ || { activeFooterId: 'footer-saas-pro', footers: [] };
+        const activeThemeName = window.__FP_ACTIVE_THEME__ || 'default';
+        if (window.__FP_ACTIVE_FOOTER_ID__) store.activeFooterId = window.__FP_ACTIVE_FOOTER_ID__;
         let activeFooter = store.footers.find(f => f.id === store.activeFooterId) || store.footers[0];
         let globalSiteConfig = window.__FP_SITE_CONFIG__ || {};
         const availablePages = window.__FP_PAGES__ || [];
@@ -2848,7 +2857,6 @@ try {
             const data = await res.json();
             if (data.success) {
               store.footers = data.footers;
-              store.activeFooterId = data.activeFooterId;
               refreshFooterSelect();
               updateActiveButtonState();
               showToast('✓ Footer saved successfully!');
@@ -2871,7 +2879,7 @@ try {
             const res = await fetch('/api/footers', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ activeFooterId: activeFooter.id }),
+              body: JSON.stringify({ activeFooterId: activeFooter.id, theme: activeThemeName }),
             });
             const data = await res.json();
             if (data.success) {

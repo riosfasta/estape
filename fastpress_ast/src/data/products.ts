@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { getDataFile } from '../core/tenantContext';
 export interface ProductBuyButton {
   type: 'custom_url' | 'whatsapp' | 'ecommerce';
   url: string; // e.g. Shopee, Tokopedia, Amazon, Shopify, or WhatsApp URL
@@ -588,12 +589,11 @@ export const defaultProducts: Product[] = [
   }
 ];
 
-const PRODUCTS_FILE = path.join(process.cwd(), 'src', 'data', 'products.json');
 
 export function getProducts(): Product[] {
   try {
-    if (fs.existsSync(PRODUCTS_FILE)) {
-      const data = fs.readFileSync(PRODUCTS_FILE, 'utf-8');
+    if (fs.existsSync(getDataFile('products.json'))) {
+      const data = fs.readFileSync(getDataFile('products.json'), 'utf-8');
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
@@ -609,7 +609,7 @@ export function getProductBySlug(slug: string): Product | undefined {
 }
 
 export function writeProductsSync(productsList: Product[]): void {
-  fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(productsList, null, 2), 'utf-8');
+  fs.writeFileSync(getDataFile('products.json'), JSON.stringify(productsList, null, 2), 'utf-8');
 }
 
 export const products: Product[] = getProducts();

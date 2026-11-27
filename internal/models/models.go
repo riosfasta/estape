@@ -626,11 +626,16 @@ type SiteSettings struct {
 	CustomBodyStartHTML     string             `bson:"custom_body_start_html,omitempty" json:"custom_body_start_html,omitempty"`
 	CustomBodyEndHTML       string             `bson:"custom_body_end_html,omitempty" json:"custom_body_end_html,omitempty"`
 	CustomCodeInitialized   bool               `bson:"custom_code_initialized,omitempty" json:"-"`
-	CloudflareAPIToken      string             `bson:"cloudflare_api_token,omitempty" json:"-"`
-	CloudflareAccountID     string             `bson:"cloudflare_account_id,omitempty" json:"cloudflare_account_id,omitempty"`
-	CloudflareZoneID        string             `bson:"cloudflare_zone_id,omitempty" json:"cloudflare_zone_id,omitempty"`
-	CloudflareConfigured    bool               `bson:"-" json:"cloudflare_configured"`
-	UpdatedAt               time.Time          `bson:"updated_at" json:"updated_at"`
+	CloudflareAPIToken       string             `bson:"cloudflare_api_token,omitempty" json:"-"`
+	CloudflareAccountID      string             `bson:"cloudflare_account_id,omitempty" json:"cloudflare_account_id,omitempty"`
+	CloudflareZoneID         string             `bson:"cloudflare_zone_id,omitempty" json:"cloudflare_zone_id,omitempty"`
+	CloudflareConfigured     bool               `bson:"-" json:"cloudflare_configured"`
+	CustomDomainMonthlyCents int64              `bson:"custom_domain_monthly_cents,omitempty" json:"custom_domain_monthly_cents"`
+	CustomDomainYearlyCents  int64              `bson:"custom_domain_yearly_cents,omitempty" json:"custom_domain_yearly_cents"`
+	CustomDomainPricingSet   bool               `bson:"custom_domain_pricing_set,omitempty" json:"-"`
+	DefaultListLimit         int                `bson:"default_list_limit,omitempty" json:"default_list_limit"`
+	DefaultListLimitSet      bool               `bson:"default_list_limit_set,omitempty" json:"-"`
+	UpdatedAt                time.Time          `bson:"updated_at" json:"updated_at"`
 }
 
 type SocialLink struct {

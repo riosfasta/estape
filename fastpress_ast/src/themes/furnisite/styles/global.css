@@ -1184,6 +1184,12 @@ img {
   justify-content: space-between;
   gap: 20px;
 }
+.block-furnisite-navbar .bfn-container > div:first-child,
+.block-furnisite-navbar .bfn-brand-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
 .block-furnisite-navbar .bfn-brand {
   font-family: 'Montserrat', sans-serif;
   font-size: 1.35rem;
@@ -1192,6 +1198,12 @@ img {
   color: #111827;
   text-transform: uppercase;
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+.block-furnisite-navbar .pop-drawer-trigger-btn svg {
+  display: block;
 }
 .block-furnisite-navbar .bfn-nav {
   display: flex;
@@ -1629,4 +1641,73 @@ img {
   color: #4b5563;
   font-weight: 600;
   text-decoration: underline;
+}
+
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+@media (max-width: 900px) {
+  .block-furnisite-navbar {
+    padding: 12px 16px !important;
+  }
+  .block-furnisite-navbar .bfn-container {
+    gap: 12px !important;
+  }
+  .block-furnisite-navbar nav,
+  .block-furnisite-navbar .bfn-nav {
+    display: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .block-furnisite-navbar {
+    padding: 10px 14px !important;
+  }
+  .block-furnisite-navbar .bfn-container > div:first-child,
+  .block-furnisite-navbar .bfn-brand-group {
+    gap: 8px !important;
+    min-width: 0;
+  }
+  .block-furnisite-navbar .bfn-brand {
+    font-size: 1.05rem !important;
+    letter-spacing: 0.05em !important;
+  }
+  .block-furnisite-navbar .bfn-actions {
+    gap: 8px !important;
+    flex-shrink: 0;
+  }
+  .block-furnisite-navbar .bfn-icon-btn {
+    width: 34px !important;
+    height: 34px !important;
+  }
+  .block-furnisite-navbar .bfn-actions > a:not(.bfn-icon-btn) {
+    display: none !important;
+  }
+  .furnisite-hero-actions,
+  .fs-hero-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 768px) {
+  .furnisite-main-content .fp-container,
+  .furnisite-main-content .row,
+  .furnisite-main-content .fp-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+    max-width: 100% !important;
+  }
+  .furnisite-main-content .fp-container > *,
+  .furnisite-main-content .row > *,
+  .furnisite-main-content .cell {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .furnisite-main-content .row {
+    flex-direction: column !important;
+  }
 }

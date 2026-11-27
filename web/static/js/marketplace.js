@@ -472,8 +472,37 @@ export function createMarketplace({ api, state, shell, app, esc, icons, uploadRe
     bindForm("#marketFilters", async form => { const query = new URLSearchParams(new FormData(form)); location.href = "/freelancers?" + query; });
   }
   function pagination(data, params) {
-    const link = (page, label) => { const query = new URLSearchParams(params); query.set("page", page); return `<a class="btn" href="${esc(location.pathname)}?${esc(query.toString())}">${label}</a>`; };
-    return `<div class="toolbar">${data.page > 1 ? link(data.page - 1, "Previous") : ""}${data.has_more ? link(data.page + 1, "Next") : ""}</div>`;
+    const page = Number(data?.pagination?.page || data?.page || 1);
+    const limit = Number(data?.pagination?.limit || data?.limit || params.get("limit") || state?.platformSettings?.default_list_limit || 10);
+    const total = data?.pagination?.total;
+    const totalPages = data?.pagination?.total_pages;
+    const hasPrev = Boolean(data?.pagination?.has_prev ?? page > 1);
+    const hasNext = Boolean(data?.pagination?.has_next ?? data?.has_more);
+    const link = (nextPage, label) => {
+      const query = new URLSearchParams(params);
+      query.set("page", nextPage);
+      query.set("limit", limit);
+      return `<a class="btn compact" href="${esc(location.pathname)}?${esc(query.toString())}">${label}</a>`;
+    };
+    const choices = [...new Set([5, 10, 20, 50, 100, limit].filter((n) => Number.isFinite(n) && n >= 1 && n <= 100))].sort((a, b) => a - b);
+    return `
+      <div class="list-pagination-bar" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px;padding:10px 14px;border:1px solid var(--border-color,#e2e8f0);border-radius:10px;background:var(--bg-secondary,#f8fafc);">
+        <span class="muted" style="font-size:13px;">
+          ${total != null ? `Total <strong>${total}</strong> · Page <strong>${page}</strong> of <strong>${Math.max(1, Number(totalPages || 1))}</strong>` : `Page <strong>${page}</strong>`}
+        </span>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-muted);">
+            <span>Max list</span>
+            <select onchange="(function(sel){const q=new URLSearchParams(location.search);q.set('limit',sel.value);q.set('page','1');location.href=location.pathname+'?'+q.toString();})(this)" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border-color,#cbd5e1);background:var(--bg-primary,#fff);font-size:12.5px;">
+              ${choices.map((n) => `<option value="${n}" ${n === limit ? "selected" : ""}>${n}</option>`).join("")}
+            </select>
+          </label>
+          <div class="toolbar" style="margin:0;gap:6px;">
+            ${hasPrev ? link(page - 1, "Previous") : `<span class="btn compact" style="opacity:0.45;pointer-events:none;">Previous</span>`}
+            ${hasNext ? link(page + 1, "Next") : `<span class="btn compact" style="opacity:0.45;pointer-events:none;">Next</span>`}
+          </div>
+        </div>
+      </div>`;
   }
   async function publicProfile(id) {
     const isSelf = state.me?.id === id;

@@ -37,8 +37,10 @@ type blogPostInput struct {
 }
 
 func (s *Server) adminBlogPosts(c *gin.Context) {
+	ctx := c.Request.Context()
 	userCtx, _ := currentUser(c)
-	_ = s.ensureEditableBlogPage(c.Request.Context(), userCtx.ID)
+	_ = s.ensureEditableBlogPage(ctx, userCtx.ID)
+	pag := s.parseListPagination(c)
 	filter := bson.M{}
 	if status := strings.TrimSpace(c.Query("status")); status == "draft" || status == "published" {
 		filter["status"] = status
@@ -47,18 +49,36 @@ func (s *Server) adminBlogPosts(c *gin.Context) {
 		pattern := regexp.QuoteMeta(q)
 		filter["$or"] = []bson.M{{"title": bson.M{"$regex": pattern, "$options": "i"}}, {"excerpt": bson.M{"$regex": pattern, "$options": "i"}}}
 	}
-	cursor, err := s.store.C("blog_posts").Find(c.Request.Context(), filter, options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}}).SetLimit(500))
+	total, err := s.store.C("blog_posts").CountDocuments(ctx, filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count blog posts"})
+		return
+	}
+	meta := buildPaginationMeta(pag.Page, pag.Limit, total)
+	skip := int64((meta.Page - 1) * meta.Limit)
+	cursor, err := s.store.C("blog_posts").Find(
+		ctx,
+		filter,
+		options.Find().
+			SetSort(bson.D{{Key: "updated_at", Value: -1}, {Key: "_id", Value: -1}}).
+			SetSkip(skip).
+			SetLimit(int64(meta.Limit)),
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load blog posts"})
 		return
 	}
-	defer cursor.Close(c.Request.Context())
+	defer cursor.Close(ctx)
 	posts := []models.BlogPost{}
-	if err := cursor.All(c.Request.Context(), &posts); err != nil {
+	if err := cursor.All(ctx, &posts); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not decode blog posts"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"posts": posts})
+	c.JSON(http.StatusOK, gin.H{
+		"posts":         posts,
+		"pagination":    meta,
+		"default_limit": pag.DefaultLimit,
+	})
 }
 
 func (s *Server) ensureEditableBlogPage(ctx context.Context, userID primitive.ObjectID) error {

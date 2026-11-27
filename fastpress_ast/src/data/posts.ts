@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { getDataFile } from '../core/tenantContext';
 export interface Post {
   id: string;
   slug: string;
@@ -165,12 +166,11 @@ export const defaultPosts: Post[] = [
   },
 ];
 
-const POSTS_FILE = path.join(process.cwd(), 'src', 'data', 'posts.json');
 
 export function getPosts(): Post[] {
   try {
-    if (fs.existsSync(POSTS_FILE)) {
-      const data = fs.readFileSync(POSTS_FILE, 'utf-8');
+    if (fs.existsSync(getDataFile('posts.json'))) {
+      const data = fs.readFileSync(getDataFile('posts.json'), 'utf-8');
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
@@ -186,7 +186,7 @@ export function getPostBySlug(slug: string): Post | undefined {
 }
 
 export function writePostsSync(postsList: Post[]): void {
-  fs.writeFileSync(POSTS_FILE, JSON.stringify(postsList, null, 2), 'utf-8');
+  fs.writeFileSync(getDataFile('posts.json'), JSON.stringify(postsList, null, 2), 'utf-8');
 }
 
 // Backward-compatible static export for imports like `import { posts } from ...`

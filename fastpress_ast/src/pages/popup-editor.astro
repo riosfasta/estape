@@ -1,18 +1,16 @@
 ---
 import WorkspaceSwitcher from '../components/admin/WorkspaceSwitcher.astro';
 import Layout from '../layouts/Layout.astro';
-import { getActiveThemeName, getThemePages } from '../core/theme';
+import { resolveThemeName, getThemePages } from '../core/theme';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { getDataFile } from '../core/tenantContext';
 export const prerender = false;
 
-const activeTheme = getActiveThemeName();
+const activeTheme = resolveThemeName(Astro.url, Astro.request.headers);
 
 // Load data server-side
-const POPUPS_FILE = path.join(process.cwd(), 'src', 'data', 'popups.json');
-const POSTS_FILE = path.join(process.cwd(), 'src', 'data', 'posts.json');
-const CATEGORIES_FILE = path.join(process.cwd(), 'src', 'data', 'categories.json');
 
 async function readJsonSafe(filePath: string, fallback: any) {
   try {
@@ -23,10 +21,10 @@ async function readJsonSafe(filePath: string, fallback: any) {
   }
 }
 
-const initialPopups = await readJsonSafe(POPUPS_FILE, []);
+const initialPopups = await readJsonSafe(getDataFile('popups.json'), []);
 const rawPages = getThemePages(activeTheme);
-const initialPosts = await readJsonSafe(POSTS_FILE, []);
-const initialCategories = await readJsonSafe(CATEGORIES_FILE, []);
+const initialPosts = await readJsonSafe(getDataFile('posts.json'), []);
+const initialCategories = await readJsonSafe(getDataFile('categories.json'), []);
 
 const pagesList = Object.entries(rawPages).map(([slug, p]: [string, any]) => ({
   slug,

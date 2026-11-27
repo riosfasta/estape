@@ -203,17 +203,18 @@ const cleanHtml = customProductsPage?.html || '';
         const searchClearBtn = root.querySelector('#fsSearchClear, .fs-search-clear');
         const searchSubmitBtn = root.querySelector('#fsSearchSubmit, .fs-search-submit-btn');
 
-        // 3. Product cards
+        // 3. Product cards (exclude loop-widget cards managed by products-loop.js)
+        const loopWidgets = Array.from(root.querySelectorAll('.fp-products-loop-widget'));
         const cards = root.querySelectorAll(
-          '#fsCatalogGrid .fs-catalog-card, #fsCatalogGrid .furnisite-product-card, .fs-catalog-grid .fs-catalog-card, .furnisite-product-card'
+          '#fsCatalogGrid:not(.fp-products-loop-widget) .fs-catalog-card, #fsCatalogGrid:not(.fp-products-loop-widget) .furnisite-product-card, .fs-catalog-grid:not(.fp-products-grid) .fs-catalog-card'
         );
 
         // 4. Grid container & Counter
-        const grid = root.querySelector('#fsCatalogGrid, .fs-catalog-grid');
+        const grid = root.querySelector('#fsCatalogGrid, .fs-catalog-grid, .fp-products-grid');
         let countEl = root.querySelector('#fsProductCount, .fs-product-count');
         let emptyState = root.querySelector('#fsEmptyState, .fs-empty-state');
 
-        if (!cards || cards.length === 0) return;
+        if ((!cards || cards.length === 0) && loopWidgets.length === 0) return;
 
         // Ensure empty state exists
         if (!emptyState && grid) {
@@ -324,11 +325,34 @@ const cleanHtml = customProductsPage?.html || '';
             }
           });
 
+          let loopMatchedCount = 0;
+          loopWidgets.forEach((lw) => {
+            if (typeof lw.__fpApplyFilter === 'function') {
+              loopMatchedCount += lw.__fpApplyFilter(activeCat, rawTokens);
+            } else {
+              lw.dispatchEvent(new CustomEvent('fp:catalog-filter', {
+                detail: { category: activeCat, tokens: rawTokens }
+              }));
+              const lwCards = Array.from(lw.querySelectorAll('.fp-product-card'));
+              loopMatchedCount += lwCards.filter((c) => {
+                const cats = getCardCategories(c);
+                const catOk = normActive === 'all' || normActive === '' || cats.some((cc) => {
+                  const nc = cc.toLowerCase().replace(/[-_]/g, ' ').trim();
+                  return nc === normActive || nc.includes(normActive) || normActive.includes(nc);
+                });
+                const text = getCardSearchText(c);
+                const qOk = rawTokens.length === 0 || rawTokens.every((t) => text.includes(t));
+                return catOk && qOk;
+              }).length;
+            }
+          });
+
+          const totalMatched = cards.length > 0 ? visibleCount : loopMatchedCount;
           if (countEl) {
-            countEl.textContent = `Showing ${visibleCount} piece${visibleCount === 1 ? '' : 's'}`;
+            countEl.textContent = `Showing ${totalMatched} piece${totalMatched === 1 ? '' : 's'}`;
           }
           if (emptyState) {
-            emptyState.style.display = visibleCount === 0 ? 'block' : 'none';
+            emptyState.style.display = totalMatched === 0 ? 'block' : 'none';
           }
         }
 

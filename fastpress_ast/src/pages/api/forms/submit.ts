@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getFormById, type FormConfig } from '../../../data/forms';
 
+import { getDataFile } from '../../../core/tenantContext';
 export const prerender = false;
 
-const SUBMISSIONS_FILE = path.join(process.cwd(), 'src', 'data', 'form-submissions.json');
 
 interface SubmissionRecord {
   id: string;
@@ -24,8 +24,8 @@ interface SubmissionRecord {
 
 function readLocalSubmissions(): SubmissionRecord[] {
   try {
-    if (!fs.existsSync(SUBMISSIONS_FILE)) return [];
-    const raw = fs.readFileSync(SUBMISSIONS_FILE, 'utf-8');
+    if (!fs.existsSync(getDataFile('form-submissions.json'))) return [];
+    const raw = fs.readFileSync(getDataFile('form-submissions.json'), 'utf-8');
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch (err) {
@@ -36,7 +36,7 @@ function readLocalSubmissions(): SubmissionRecord[] {
 
 function saveLocalSubmission(record: SubmissionRecord): void {
   try {
-    const dir = path.dirname(SUBMISSIONS_FILE);
+    const dir = path.dirname(getDataFile('form-submissions.json'));
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
@@ -46,7 +46,7 @@ function saveLocalSubmission(record: SubmissionRecord): void {
     if (list.length > 500) {
       list = list.slice(0, 500);
     }
-    fs.writeFileSync(SUBMISSIONS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+    fs.writeFileSync(getDataFile('form-submissions.json'), JSON.stringify(list, null, 2), 'utf-8');
   } catch (err) {
     console.error('Failed to log submission locally:', err);
   }

@@ -5,20 +5,26 @@ import WorkspaceSwitcher from '../components/admin/WorkspaceSwitcher.astro';
 // Visual Header Builder for FastPress CMS
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { readHeadersData, defaultSampleHeaders, type HeaderConfig } from '../data/headers';
+import { readHeadersData, getActiveHeaderForTheme, defaultSampleHeaders, type HeaderConfig } from '../data/headers';
 import { getTemplates } from '../data/templates';
-import { getActiveThemeName, getThemePages } from '../core/theme';
+import { resolveThemeName, getThemePages } from '../core/theme';
 import '../styles/header.css';
 
+import { getDataFile } from '../core/tenantContext';
 export const prerender = false;
 
-const activeTheme = getActiveThemeName();
+const activeTheme = resolveThemeName(Astro.url, Astro.request.headers);
 const headersStore = readHeadersData();
 const initialTemplates = getTemplates();
-const activeHeaderId = headersStore.activeHeaderId || headersStore.headers[0]?.id || 'sample-saas-sticky-mega';
+const activeHeaderId = getActiveHeaderForTheme(activeTheme).id;
+const tenantParam = Astro.url.searchParams.get('tenant') || Astro.request.headers.get('x-tenant-subdomain') || '';
+const hbParams = new URLSearchParams();
+if (tenantParam) hbParams.set('tenant', tenantParam);
+if (activeTheme) hbParams.set('theme', activeTheme);
+const hbQueryStr = hbParams.toString();
+const appendHbQuery = (base: string) => hbQueryStr ? `${base}${base.includes('?') ? '&' : '?'}${hbQueryStr}` : base;
 
 // Load Pages and Posts for Link Picker
-const POSTS_FILE = path.join(process.cwd(), 'src', 'data', 'posts.json');
 
 let availablePages: Array<{ slug: string; title: string; url: string }> = [];
 let availablePosts: Array<{ slug: string; title: string; category?: string; url: string }> = [];
@@ -42,7 +48,7 @@ try {
 }
 
 try {
-  const rawPosts = await fs.readFile(POSTS_FILE, 'utf-8');
+  const rawPosts = await fs.readFile(getDataFile('posts.json'), 'utf-8');
   const parsedPosts = JSON.parse(rawPosts);
   if (Array.isArray(parsedPosts)) {
     availablePosts = parsedPosts.map((post: any) => ({
@@ -56,10 +62,9 @@ try {
   availablePosts = [];
 }
 // Load Site Config for Web Logo & Favicon
-const CONFIG_FILE = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
 let initialSiteConfig: any = { brandName: 'Better SaaS', tagline: 'Modern Platform', logoUrl: '', faviconUrl: '/favicon.svg' };
 try {
-  const rawConfig = await fs.readFile(CONFIG_FILE, 'utf-8');
+  const rawConfig = await fs.readFile(getDataFile('siteConfig.json'), 'utf-8');
   initialSiteConfig = JSON.parse(rawConfig);
 } catch {}
 ---
@@ -1448,7 +1453,7 @@ try {
       <!-- TOP TOOLBAR -->
       <header class="builder-topbar">
         <div class="topbar-left">
-          <a href="/editor" class="back-btn" title="Back to Page Builder">
+          <a href={appendHbQuery('/editor')} class="back-btn" title="Back to Page Builder">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="m15 18-6-6 6-6"/>
             </svg>
@@ -1470,7 +1475,7 @@ try {
             <select class="header-select-input" id="headerSelect">
               {headersStore.headers.map((h) => (
                 <option value={h.id} selected={h.id === activeHeaderId}>
-                  {h.name} {h.id === headersStore.activeHeaderId ? '★ (Active Site)' : ''}
+                  {h.name} {h.id === activeHeaderId ? '★ (Active Site)' : ''}
                 </option>
               ))}
             </select>
@@ -1484,7 +1489,7 @@ try {
 
         <!-- Right Action Buttons -->
         <div class="topbar-right">
-          <a href={`/template-editor?id=${activeTheme === 'furnisite' ? 'tpl-global-furnisite-navbar' : 'tpl-header-default'}`} class="tb-btn tb-btn-subtle" title="Open Advanced GrapesJS Block Builder to drag and drop custom widgets into this header" style="text-decoration: none; display: inline-flex; align-items: center; gap: 5px; background: rgba(99, 102, 241, 0.18); border: 1px solid rgba(99, 102, 241, 0.45); color: #c7d2fe;">
+          <a href={appendHbQuery(`/template-editor?id=${activeTheme === 'furnisite' ? 'tpl-global-furnisite-navbar' : 'tpl-header-default'}`)} class="tb-btn tb-btn-subtle" title="Open Advanced GrapesJS Block Builder to drag and drop custom widgets into this header" style="text-decoration: none; display: inline-flex; align-items: center; gap: 5px; background: rgba(99, 102, 241, 0.18); border: 1px solid rgba(99, 102, 241, 0.45); color: #c7d2fe;">
             <span>🧱 Block Studio</span>
           </a>
           <button type="button" class="tb-btn tb-btn-subtle" id="newHeaderBtn" title="Create a new header">
@@ -2405,10 +2410,12 @@ try {
     </div>
 
     <!-- CLIENT SCRIPT -->
-    <script is:inline define:vars={{ initialStore: headersStore, availablePages, availablePosts, initialSiteConfig, initialTemplates }}>
+    <script is:inline define:vars={{ initialStore: headersStore, initialActiveHeaderId: activeHeaderId, initialActiveTheme: activeTheme, availablePages, availablePosts, initialSiteConfig, initialTemplates }}>
       (function() {
         // App State
         let currentStore = initialStore;
+        const activeThemeName = initialActiveTheme || 'default';
+        currentStore.activeHeaderId = initialActiveHeaderId || currentStore.activeHeaderId;
         let globalSiteConfig = initialSiteConfig || { brandName: 'Better SaaS', tagline: 'Modern Platform', logoUrl: '', faviconUrl: '/favicon.svg' };
         window.__FP_TEMPLATES__ = initialTemplates || [];
         let activeHeader = currentStore.headers.find(h => h.id === currentStore.activeHeaderId) || currentStore.headers[0];
@@ -4406,7 +4413,7 @@ if (mobToggle && mobDrawer) {
             const res = await fetch('/api/headers', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ activeHeaderId: activeHeader.id })
+              body: JSON.stringify({ activeHeaderId: activeHeader.id, theme: activeThemeName })
             });
             const data = await res.json();
             if (data.success) {

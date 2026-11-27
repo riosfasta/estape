@@ -7,6 +7,8 @@ import { getProducts, getPostBySlug, getPosts } from '../../../data/posts';
 import { getProducts as getAllProducts } from '../../../data/products';
 import { getProductCategories } from '../../../data/product-categories';
 import { getCategories } from '../../../data/categories';
+import { getThemePages } from '../../../core/theme';
+import { syncGlobalTemplates, cleanLiveContent } from '../../../data/templates';
 
 // Themes Imports
 import FurnisiteHomePage from '../../../themes/furnisite/pages/HomePage.astro';
@@ -17,6 +19,7 @@ import FurnisiteProductDetailPage from '../../../themes/furnisite/pages/ProductD
 import FurnisiteBlogPage from '../../../themes/furnisite/pages/BlogPage.astro';
 import FurnisiteBlogPostPage from '../../../themes/furnisite/pages/BlogPostPage.astro';
 
+import DefaultLayout from '../../../themes/default/layouts/Layout.astro';
 import DefaultHomePage from '../../../themes/default/pages/HomePage.astro';
 import DefaultAboutPage from '../../../themes/default/pages/AboutPage.astro';
 import DefaultContactPage from '../../../themes/default/pages/ContactPage.astro';
@@ -34,6 +37,17 @@ if (normalizedTheme !== 'furnisite' && normalizedTheme !== 'default') {
 
 const isFurnisite = normalizedTheme === 'furnisite';
 const cleanSlug = (slug || '').trim().replace(/^\/+|\/+$/g, '');
+const themePages = getThemePages(normalizedTheme);
+
+function preparePageData(rawPage: any) {
+  if (!rawPage) return undefined;
+  let html = rawPage.html || '';
+  if (html) {
+    html = html.replace(/^<body[^>]*>/i, '').replace(/<\/body>$/i, '').trim();
+    html = cleanLiveContent(syncGlobalTemplates(html));
+  }
+  return { ...rawPage, html };
+}
 
 // Fetch global content data
 const allProducts = getAllProducts().filter((p) => p.status !== 'draft');
@@ -42,7 +56,7 @@ const productCategories = getProductCategories();
 const blogCategories = getCategories();
 
 // Routing logic based on subpath
-let pageType: 'home' | 'about' | 'contact' | 'products' | 'product-detail' | 'blog' | 'blog-post' = 'home';
+let pageType: 'home' | 'about' | 'contact' | 'products' | 'product-detail' | 'blog' | 'blog-post' | 'custom' = 'home';
 let detailSlug = '';
 
 if (!cleanSlug || cleanSlug === '') {
@@ -61,7 +75,22 @@ if (!cleanSlug || cleanSlug === '') {
 } else if (cleanSlug.startsWith('blog/')) {
   pageType = 'blog-post';
   detailSlug = cleanSlug.replace(/^blog\//, '');
+} else if (!isFurnisite && themePages[cleanSlug]) {
+  pageType = 'custom';
 }
+
+const defaultHomeData = !isFurnisite ? preparePageData(themePages.home) : undefined;
+const defaultBlogData = !isFurnisite ? preparePageData(themePages.blog) : undefined;
+const defaultProductsData = !isFurnisite ? preparePageData(themePages.products) : undefined;
+const defaultAboutCustom = !isFurnisite && pageType === 'about'
+  ? preparePageData(themePages.about || themePages['tentang-kami'])
+  : undefined;
+const defaultContactCustom = !isFurnisite && pageType === 'contact'
+  ? preparePageData(themePages.contact)
+  : undefined;
+const defaultCustomPage = !isFurnisite && pageType === 'custom'
+  ? preparePageData(themePages[cleanSlug])
+  : undefined;
 
 // Find specific item for detail pages
 let selectedProduct: any = null;
@@ -106,25 +135,72 @@ if (pageType === 'blog-post') {
 {!isFurnisite && (
   <>
     {pageType === 'home' && (
-      <DefaultHomePage />
+      <DefaultHomePage customData={defaultHomeData} />
     )}
     {pageType === 'about' && (
-      <DefaultAboutPage />
+      defaultAboutCustom?.isCustom && defaultAboutCustom?.html ? (
+        <DefaultLayout
+          title={defaultAboutCustom.title || 'About Us'}
+          description={defaultAboutCustom.description || ''}
+          keywords={defaultAboutCustom.keywords || ''}
+          activePage="about"
+          showHeader={defaultAboutCustom.showHeader !== false}
+          showFooter={defaultAboutCustom.showFooter !== false}
+          schema={defaultAboutCustom.schema || ''}
+          pageCustomCode={defaultAboutCustom.customCode}
+        >
+          <div class="custom-builder-content" set:html={defaultAboutCustom.html} />
+          {defaultAboutCustom.css && <style is:inline set:html={defaultAboutCustom.css} />}
+        </DefaultLayout>
+      ) : (
+        <DefaultAboutPage />
+      )
     )}
     {pageType === 'contact' && (
-      <DefaultContactPage />
+      defaultContactCustom?.isCustom && defaultContactCustom?.html ? (
+        <DefaultLayout
+          title={defaultContactCustom.title || 'Contact'}
+          description={defaultContactCustom.description || ''}
+          keywords={defaultContactCustom.keywords || ''}
+          activePage="contact"
+          showHeader={defaultContactCustom.showHeader !== false}
+          showFooter={defaultContactCustom.showFooter !== false}
+          schema={defaultContactCustom.schema || ''}
+          pageCustomCode={defaultContactCustom.customCode}
+        >
+          <div class="custom-builder-content" set:html={defaultContactCustom.html} />
+          {defaultContactCustom.css && <style is:inline set:html={defaultContactCustom.css} />}
+        </DefaultLayout>
+      ) : (
+        <DefaultContactPage />
+      )
     )}
     {pageType === 'products' && (
-      <DefaultProductsPage products={allProducts} categories={productCategories} />
+      <DefaultProductsPage products={allProducts} categories={productCategories} customProductsPage={defaultProductsData} />
     )}
     {pageType === 'product-detail' && (
       <DefaultProductDetailPage product={selectedProduct} allProducts={allProducts} />
     )}
     {pageType === 'blog' && (
-      <DefaultBlogPage posts={allPosts} masterCategories={blogCategories} />
+      <DefaultBlogPage posts={allPosts} masterCategories={blogCategories} customData={defaultBlogData} />
     )}
     {pageType === 'blog-post' && (
       <DefaultBlogPostPage post={selectedPost} allPosts={allPosts} />
+    )}
+    {pageType === 'custom' && defaultCustomPage && (
+      <DefaultLayout
+        title={defaultCustomPage.title || cleanSlug}
+        description={defaultCustomPage.description || ''}
+        keywords={defaultCustomPage.keywords || ''}
+        activePage={cleanSlug}
+        showHeader={defaultCustomPage.showHeader !== false}
+        showFooter={defaultCustomPage.showFooter !== false}
+        schema={defaultCustomPage.schema || ''}
+        pageCustomCode={defaultCustomPage.customCode}
+      >
+        <div class="custom-builder-content" set:html={defaultCustomPage.html} />
+        {defaultCustomPage.css && <style is:inline set:html={defaultCustomPage.css} />}
+      </DefaultLayout>
     )}
   </>
 )}

@@ -142,6 +142,69 @@ function icons() {
   if (window.lucide) lucide.createIcons();
 }
 
+function defaultListLimit() {
+  const configured = Number(state.platformSettings?.default_list_limit || 10);
+  if (!Number.isFinite(configured) || configured < 1) return 10;
+  return Math.min(100, Math.max(1, Math.floor(configured)));
+}
+
+function listPaginationOptions(currentLimit, fallbackDefault = defaultListLimit()) {
+  const set = new Set([5, 10, 20, 50, 100]);
+  if (fallbackDefault >= 1 && fallbackDefault <= 100) set.add(Number(fallbackDefault));
+  if (currentLimit >= 1 && currentLimit <= 100) set.add(Number(currentLimit));
+  return [...set].sort((a, b) => a - b);
+}
+
+function listPaginationBarHTML(pagination, options = {}) {
+  const page = Number(pagination?.page || 1);
+  const limit = Number(pagination?.limit || options.limit || defaultListLimit());
+  const total = Number(pagination?.total ?? 0);
+  const totalPages = Math.max(1, Number(pagination?.total_pages || Math.ceil(total / Math.max(1, limit)) || 1));
+  const hasPrev = Boolean(pagination?.has_prev ?? page > 1);
+  const hasNext = Boolean(pagination?.has_next ?? page < totalPages);
+  const itemLabel = options.label || "items";
+  const start = total === 0 ? 0 : (page - 1) * limit + 1;
+  const end = Math.min(total, page * limit);
+  const limitChoices = listPaginationOptions(limit, options.defaultLimit || defaultListLimit());
+  return `
+    <div class="list-pagination-bar" data-list-pagination style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px;padding:10px 14px;border:1px solid var(--border-color,#e2e8f0);border-radius:10px;background:var(--bg-secondary,#f8fafc);">
+      <span class="muted" style="font-size:13px;">
+        ${total === 0 ? `0 ${esc(itemLabel)}` : `Showing <strong>${start}-${end}</strong> of <strong>${total}</strong> ${esc(itemLabel)} · Page <strong>${page}</strong> of <strong>${totalPages}</strong>`}
+      </span>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-muted);">
+          <span>Max list</span>
+          <select data-pagination-limit style="padding:4px 8px;border-radius:6px;border:1px solid var(--border-color,#cbd5e1);background:var(--bg-primary,#fff);font-size:12.5px;">
+            ${limitChoices.map((n) => `<option value="${n}" ${n === limit ? "selected" : ""}>${n}</option>`).join("")}
+          </select>
+        </label>
+        <div class="toolbar" style="margin:0;gap:6px;">
+          <button class="btn compact" type="button" data-pagination-page="${page - 1}" ${hasPrev ? "" : "disabled"}>${icon("chevron-left")} Prev</button>
+          <button class="btn compact" type="button" data-pagination-page="${page + 1}" ${hasNext ? "" : "disabled"}>Next ${icon("chevron-right")}</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function bindListPagination(container, onChange) {
+  if (!container || typeof onChange !== "function") return;
+  container.querySelectorAll("[data-pagination-page]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const nextPage = Math.max(1, Number(btn.dataset.paginationPage || 1));
+      const limitSel = container.querySelector("[data-pagination-limit]");
+      const limitVal = Math.max(1, Math.min(100, Number(limitSel?.value || defaultListLimit())));
+      onChange({ page: nextPage, limit: limitVal });
+    });
+  });
+  container.querySelectorAll("[data-pagination-limit]").forEach((sel) => {
+    sel.addEventListener("change", () => {
+      const limitVal = Math.max(1, Math.min(100, Number(sel.value || defaultListLimit())));
+      onChange({ page: 1, limit: limitVal });
+    });
+  });
+}
+
 window.addEventListener("load", icons);
 
 function syncTaskPanelOffset() {
@@ -2422,7 +2485,7 @@ function pricingCardsHTML(plans = [], options = {}) {
   return `<div class="pricing-grid app-pricing-grid">${plans.map((plan) => `<article class="${plan.featured ? "featured" : ""}" data-plan-card="${esc(plan.id)}">
     <h3>${esc(plan.name)}</h3>
     <p>${esc(planPriceSummary(plan))}</p>
-    <span>${Number(plan.seat_limit || 0)} seats · ${Number(plan.project_limit || 0)} projects · ${Number(plan.trial_days || 0) || 14} trial days</span>
+    <span>Per published domain · ${Number(plan.trial_days || 0) || 14} trial days</span>
     ${plan.description ? `<small>${esc(plan.description)}</small>` : ""}
     <div class="grid-2" style="margin-top:12px">
       <label class="field"><span>Period</span><select data-buy-period ${canPurchase ? "" : "disabled"}><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label>
@@ -2550,8 +2613,8 @@ async function renderProductsPage() {
                 <p class="plan-description">${esc(plan.description || "Complete visual feedback and delivery management.")}</p>
                 
                 <div class="plan-specs">
-                  <div><strong>${seats}</strong><span>Team seats</span></div>
-                  <div><strong>${projects}</strong><span>Projects</span></div>
+                  <div><strong>Per Domain</strong><span>Published site</span></div>
+                  <div><strong>Unlimited</strong><span>Projects &amp; seats</span></div>
                   <div><strong>${trial}d</strong><span>Free trial</span></div>
                 </div>
 
@@ -2560,8 +2623,7 @@ async function renderProductsPage() {
                   <li>${icon("check")} Kanban task boards &amp; lists</li>
                   <li>${icon("check")} Real-time team chat &amp; activity inbox</li>
                   <li>${icon("check")} Time tracking &amp; reporting</li>
-                  <li>${icon("check")} Up to ${seats} workspace members</li>
-                  <li>${icon("check")} Up to ${projects} active projects</li>
+                  <li>${icon("check")} Priced per published custom domain</li>
                   <li>${icon("check")} Secure PayPal purchase &amp; instant setup</li>
                 </ul>
 
@@ -2634,12 +2696,8 @@ async function renderProductsPage() {
                 ${plans.map(() => `<td><span class="check-icon">${icon("check")}</span> Included</td>`).join("")}
               </tr>
               <tr>
-                <td><strong>Team Seats Limit</strong></td>
-                ${plans.map(p => `<td><strong>${Number(p.seat_limit || 0)} seats</strong></td>`).join("")}
-              </tr>
-              <tr>
-                <td><strong>Active Projects</strong></td>
-                ${plans.map(p => `<td><strong>${Number(p.project_limit || 0)} projects</strong></td>`).join("")}
+                <td><strong>Pricing Scope</strong></td>
+                ${plans.map(() => `<td><strong>Per published domain</strong></td>`).join("")}
               </tr>
               <tr>
                 <td><strong>Task &amp; Kanban Boards</strong></td>
@@ -5006,6 +5064,8 @@ function shell(title, html) {
             ${workspaceChild("/admin/blogs", "Blogs", "newspaper")}
             ${workspaceChild("/admin/backup", "Database & Backup", "database")}
             ${workspaceChild("/admin/deleted-projects", "Deleted Projects", "archive-restore")}
+            ${workspaceChild("/admin/websites", "Client Websites", "globe")}
+            ${workspaceChild("/admin/themes", "Theme Market", "palette")}
             ${workspaceChild("/admin/settings", "Settings", "settings")}
           ` : ""}
         </nav>
@@ -11084,11 +11144,22 @@ async function refreshClientSidebarCache(options = {}) {
   state.clientProjectsLoadedAt = Date.now();
 }
 
-async function renderClientProjects() {
-  await refreshClientSidebarCache({ force: false });
+async function renderClientProjects(listOpts = {}) {
+  const currentPage = Math.max(1, Number(listOpts.page || 1));
+  const currentLimit = Math.max(1, Math.min(100, Number(listOpts.limit || defaultListLimit())));
+  const searchQuery = String(listOpts.q || "");
+  const qs = new URLSearchParams({
+    page: String(currentPage),
+    limit: String(currentLimit),
+  });
+  if (searchQuery.trim()) qs.set("q", searchQuery.trim());
+  const projData = await api(`/api/client-projects?${qs.toString()}`).catch(() => ({ clients: [], websites: [], pagination: { page: currentPage, limit: currentLimit, total: 0, total_pages: 1 } }));
+  const pageClients = projData.clients || [];
+  const pageWebsites = projData.websites || [];
+  const pagination = projData.pagination || { page: currentPage, limit: currentLimit, total: pageClients.length, total_pages: 1 };
   const canCreate = state.me?.role !== "client_admin";
   const workspaceTeamID = activeWorkspaceTeamID();
-  const sitesByClient = (state.clientWebsites || []).reduce((acc, site) => {
+  const sitesByClient = pageWebsites.reduce((acc, site) => {
     if (!workspaceTeamID || !site.team_id || site.team_id === workspaceTeamID) {
       (acc[site.client_id] ||= []).push(site);
     }
@@ -11096,7 +11167,7 @@ async function renderClientProjects() {
   }, {});
   const myID = state.me?.id || "";
   const isTeamOwner = state.me?.role === "owner_adm" || state.team?.owner_admin_id === myID || (isPersonalWorkspaceContext() && [state.me?.team_id, state.personalTeam?.id].filter(Boolean).includes(workspaceTeamID));
-  const visibleClients = orderedProjectClients((state.clientProjects || []).filter((client) => {
+  const visibleClients = orderedProjectClients(pageClients.filter((client) => {
     if (workspaceTeamID && client.team_id && client.team_id !== workspaceTeamID) return false;
     const sites = sitesByClient[client.id] || [];
     if (isTeamOwner && (!workspaceTeamID || client.team_id === workspaceTeamID)) return true;
@@ -11107,7 +11178,10 @@ async function renderClientProjects() {
   shell("Projects", `
     <div class="page-title">
       <div><h1>Projects</h1><p class="muted">Client folders and websites.</p></div>
-      ${canCreate ? `<button class="btn primary" id="newClientBtn">${icon("folder-plus")}Add client</button>` : ""}
+      <div class="toolbar">
+        <input type="search" id="clientProjectsSearchInput" value="${esc(searchQuery)}" placeholder="Search folders..." style="min-width:200px;">
+        ${canCreate ? `<button class="btn primary" id="newClientBtn">${icon("folder-plus")}Add client</button>` : ""}
+      </div>
     </div>
     <section class="client-grid project-client-grid">
       ${visibleClients.map((client) => {
@@ -11143,6 +11217,7 @@ async function renderClientProjects() {
       </article>`;
       }).join("") || `<section class="panel"><p class="muted">No client projects yet.</p></section>`}
     </section>
+    <div id="clientProjectsPaginationBar">${listPaginationBarHTML(pagination, { label: "projects", limit: currentLimit, defaultLimit: projData.default_limit })}</div>
     <dialog id="clientDialog" class="modal client-dialog">
       <form id="clientForm" class="form-grid" method="dialog">
         <div class="modal-head"><h2>Add client company</h2><button class="btn icon quiet" type="button" data-close-dialog="clientDialog" title="Close">${icon("x")}</button></div>
@@ -11185,11 +11260,18 @@ async function renderClientProjects() {
       setFormStatus(form, error.message, true);
     }
   });
+  let clientSearchTimer = null;
+  $("#clientProjectsSearchInput")?.addEventListener("input", (event) => {
+    const q = event.currentTarget.value || "";
+    clearTimeout(clientSearchTimer);
+    clientSearchTimer = setTimeout(() => renderClientProjects({ page: 1, limit: currentLimit, q }), 250);
+  });
+  bindListPagination($("#clientProjectsPaginationBar"), ({ page, limit }) => renderClientProjects({ page, limit, q: searchQuery }));
   document.querySelectorAll("[data-edit-project]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const clientID = btn.dataset.editProject;
-      const client = (state.clientProjects || []).find((c) => c.id === clientID);
+      const client = pageClients.find((c) => c.id === clientID) || (state.clientProjects || []).find((c) => c.id === clientID);
       if (!client) return;
       const form = $("#editProjectForm");
       if (!form) return;
@@ -12970,16 +13052,24 @@ async function renderMyTasksAndPayments() {
   icons();
 }
 
-async function renderTasks(projectID = "") {
+async function renderTasks(projectID = "", listOpts = {}) {
   const routeParams = new URLSearchParams(location.search);
   const view = routeParams.get("view") || "all";
   if (view === "my_tasks") {
     return await renderMyTasksAndPayments();
   }
   const assignedOnly = view === "assigned";
-  const data = await api(`/api/client-tasks/assigned${assignedOnly ? "?scope=assigned" : ""}`);
+  const currentPage = Math.max(1, Number(listOpts.page || routeParams.get("page") || 1));
+  const currentLimit = Math.max(1, Math.min(100, Number(listOpts.limit || routeParams.get("limit") || defaultListLimit())));
+  const qs = new URLSearchParams({
+    page: String(currentPage),
+    limit: String(currentLimit),
+  });
+  if (assignedOnly) qs.set("scope", "assigned");
+  const data = await api(`/api/client-tasks/assigned?${qs.toString()}`);
   state.liveTaskSignature = taskListLiveSignature(data);
   const tasks = data.tasks || [];
+  const pagination = data.pagination || { page: currentPage, limit: currentLimit, total: tasks.length, total_pages: 1 };
   const clients = data.clients || [];
   const websites = data.websites || [];
   const tabs = data.tabs || [];
@@ -13006,7 +13096,9 @@ async function renderTasks(projectID = "") {
         <label class="assigned-search"><span>Search</span><input type="search" data-assigned-search placeholder="Search tasks" value="${esc(initialSearch)}"></label>
       </div>
     </div>
-    ${assignedTaskGroupsHTML(tasks, context)}`);
+    ${assignedTaskGroupsHTML(tasks, context)}
+    <div id="tasksPaginationBar">${listPaginationBarHTML(pagination, { label: "tasks", limit: currentLimit, defaultLimit: data.default_limit })}</div>`);
+  bindListPagination($("#tasksPaginationBar"), ({ page, limit }) => renderTasks(projectID, { page, limit }));
   bindAssignedTaskFilters();
   bindAssignedTaskCollapsers();
   bindAssignedTaskCreation();
@@ -13210,36 +13302,90 @@ function bindBoardDrag(list) {
   });
 }
 
-async function renderStores(activeTab = "active") {
+async function renderStores(activeTab = "active", listOpts = {}) {
+  const currentPage = Math.max(1, Number(listOpts.page || 1));
+  const currentLimit = Math.max(1, Math.min(100, Number(listOpts.limit || defaultListLimit())));
   let stores = [];
   let deletedStores = [];
   let isPlatformOwner = state.me?.role === "owner_adm";
+  let websiteCount = 0;
+  let maxWebsites = 3;
+  let remainingWebsites = 3;
+  let activeTotal = 0;
+  let trashTotal = 0;
+  let activePagination = { page: 1, limit: currentLimit, total: 0, total_pages: 1 };
+  let trashPagination = { page: 1, limit: currentLimit, total: 0, total_pages: 1 };
+  let defaultLimit = currentLimit;
+  let domainPricing = { monthly_cents: 1500, yearly_cents: 20000, paypal_enabled: false };
+  let themeMarket = [
+    { slug: "default", name: "Default (Better)", description: "Modern Business, SaaS & Agency multi-purpose theme.", category: "Business & SaaS", base_theme: "default", preview_image: "/static/themes/default-preview.svg", is_default: true },
+    { slug: "furnisite", name: "Infurnish (Furnisite)", description: "Luxury Furniture, Interior Decor & Modern E-Commerce layout.", category: "E-Commerce & Furniture", base_theme: "furnisite", preview_image: "/static/themes/furnisite-preview.jpg", is_default: false }
+  ];
   try {
-    const res = await api("/api/tenants");
+    const qs = new URLSearchParams({
+      tab: activeTab,
+      page: String(currentPage),
+      limit: String(currentLimit),
+    });
+    const [res, pricingRes, marketRes] = await Promise.all([
+      api(`/api/tenants?${qs.toString()}`),
+      api("/api/tenants/domain-pricing").catch(() => null),
+      api("/api/themes/market").catch(() => null),
+    ]);
+    if (marketRes && Array.isArray(marketRes.themes) && marketRes.themes.length > 0) {
+      themeMarket = marketRes.themes;
+    }
     stores = res.tenants || [];
     deletedStores = res.deleted_tenants || [];
+    activeTotal = res.active_total ?? stores.length;
+    trashTotal = res.trash_total ?? deletedStores.length;
+    activePagination = res.active_pagination || { page: currentPage, limit: currentLimit, total: activeTotal, total_pages: 1 };
+    trashPagination = res.trash_pagination || { page: currentPage, limit: currentLimit, total: trashTotal, total_pages: 1 };
+    defaultLimit = res.default_limit || currentLimit;
     if (res.is_platform_owner !== undefined) {
       isPlatformOwner = res.is_platform_owner;
     }
+    websiteCount = res.website_count ?? (activeTotal + trashTotal);
+    maxWebsites = res.max_websites ?? 3;
+    remainingWebsites = res.remaining_websites ?? Math.max(0, maxWebsites - websiteCount);
+    if (pricingRes) domainPricing = pricingRes;
   } catch (err) {
     console.error("Failed to load stores:", err);
   }
+
+  const quotaReached = !isPlatformOwner && remainingWebsites <= 0;
+  const domainStorePaid = (store) => {
+    if ((domainPricing.monthly_cents || 0) <= 0 && (domainPricing.yearly_cents || 0) <= 0) return true;
+    if (!store?.custom_domain_paid) return false;
+    if (store.custom_domain_paid_until && new Date(store.custom_domain_paid_until).getTime() <= Date.now()) return false;
+    return true;
+  };
+  const fmtUSD = (c) => `$${(Number(c || 0) / 100).toFixed(2)}`;
 
   shell("Website Builder", `
     <div class="page-title">
       <div>
         <h1>Website Builder & Stores</h1>
-        <p class="muted">Manage your client storefronts, customize themes in Astro, configure custom SMTP, and publish live to Cloudflare Pages.</p>
+        <p class="muted">Create up to ${maxWebsites} free subdomain websites (including deleted stores in Trash). Connect a custom domain (${fmtUSD(domainPricing.monthly_cents)}/mo or ${fmtUSD(domainPricing.yearly_cents)}/yr) anytime.</p>
       </div>
-      <button class="btn primary" id="openCreateStoreBtn">${icon("plus")} Create New Store</button>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span class="pill ${quotaReached ? "danger" : ""}" title="Includes active, draft, and soft-deleted websites in Trash">${icon("layers")} ${isPlatformOwner ? `${websiteCount} stores` : `${websiteCount} / ${maxWebsites} websites used (incl. Trash)`}</span>
+        <button class="btn primary" id="openCreateStoreBtn" ${quotaReached ? "disabled title=\"Maximum 3 websites reached (including Trash). Permanently delete or wait for Trash expiration.\"" : ""}>${icon("plus")} Create New Store</button>
+      </div>
     </div>
+
+    ${quotaReached ? `
+      <div style="margin:12px 0;padding:12px 14px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:0.9rem;">
+        <strong>Website quota reached (${websiteCount} / ${maxWebsites}):</strong> Deleted websites in Trash count toward your 3-website limit until permanently purged after 30 days.
+      </div>
+    ` : ""}
 
     <div style="display:flex; gap:8px; margin:16px 0 20px 0; border-bottom:1px solid var(--border-color, #e2e8f0); padding-bottom:12px;">
       <button class="btn ${activeTab === 'active' ? 'primary' : 'quiet'}" id="tabActiveStores" style="display:inline-flex; align-items:center; gap:6px;">
-        ${icon("store")} Active Stores (${stores.length})
+        ${icon("store")} Active Stores (${activeTotal})
       </button>
       <button class="btn ${activeTab === 'trash' ? 'primary' : 'quiet'}" id="tabTrashStores" style="display:inline-flex; align-items:center; gap:6px;">
-        ${icon("trash-2")} Trash (${deletedStores.length})
+        ${icon("trash-2")} Trash (${trashTotal})
       </button>
     </div>
 
@@ -13248,15 +13394,17 @@ async function renderStores(activeTab = "active") {
         <section class="panel empty-state">
           <div class="empty-state-icon">${icon("store")}</div>
           <h2>No active stores</h2>
-          <p class="muted">Create your first client storefront with an Astro theme and publish to Cloudflare Pages.</p>
-          <button class="btn primary" id="openCreateStoreEmptyBtn">${icon("plus")} Create Store</button>
+          <p class="muted">Create up to ${maxWebsites} free subdomain websites with our Astro builder.</p>
+          <button class="btn primary" id="openCreateStoreEmptyBtn" ${quotaReached ? "disabled" : ""}>${icon("plus")} Create Store</button>
         </section>
       ` : `
         <div class="grid-3" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; margin-top: 10px;">
           ${stores.map(store => {
             const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
             const baseDomain = window.location.hostname.replace(/^www\./, "");
-            const builderHref = `/editor?tenant=${encodeURIComponent(store.subdomain)}`;
+            const storeTheme = (store.active_theme || 'default').toLowerCase();
+            const tenantThemeQuery = `tenant=${encodeURIComponent(store.subdomain)}&theme=${encodeURIComponent(storeTheme)}`;
+            const builderHref = `/editor?${tenantThemeQuery}`;
             const liveUrl = store.custom_domain
               ? `https://${store.custom_domain}`
               : (store.cloudflare_url && !store.cloudflare_url.includes(".pages.dev")
@@ -13288,42 +13436,42 @@ async function renderStores(activeTab = "active") {
                         </button>
                         <div class="store-edit-menu-panel" style="display:none; position:absolute; top:calc(100% + 4px); left:0; min-width:215px; background:#ffffff; border:1px solid #cbd5e1; border-radius:8px; box-shadow:0 10px 25px -5px rgba(0,0,0,0.15), 0 8px 10px -6px rgba(0,0,0,0.1); z-index:1050; padding:6px 0;">
                           <div style="padding:4px 12px; font-size:0.68rem; font-weight:700; text-transform:uppercase; color:#64748b; letter-spacing:0.04em;">Site Pages</div>
-                          <a href="/editor?tenant=${esc(store.subdomain)}&slug=home" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                          <a href="/editor?${tenantThemeQuery}&slug=home" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
                             ${icon("home")} <span>Home Page</span>
                           </a>
-                          <a href="/editor?tenant=${esc(store.subdomain)}&slug=about" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                          <a href="/editor?${tenantThemeQuery}&slug=about" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
                             ${icon("file-text")} <span>About Us</span>
                           </a>
-                          <a href="/editor?tenant=${esc(store.subdomain)}&slug=products" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                          <a href="/editor?${tenantThemeQuery}&slug=products" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
                             ${icon("shopping-bag")} <span>Products / Shop</span>
                           </a>
-                          <a href="/editor?tenant=${esc(store.subdomain)}&slug=blog" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                          <a href="/editor?${tenantThemeQuery}&slug=blog" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
                             ${icon("book-open")} <span>Blog Page</span>
                           </a>
-                          <a href="/editor?tenant=${esc(store.subdomain)}&slug=contact" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                          <a href="/editor?${tenantThemeQuery}&slug=contact" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
                             ${icon("mail")} <span>Contact Page</span>
                           </a>
                           <div style="border-top:1px solid #f1f5f9; margin:4px 0;"></div>
                           <div style="padding:4px 12px; font-size:0.68rem; font-weight:700; text-transform:uppercase; color:#64748b; letter-spacing:0.04em;">Theme & Layouts</div>
-                          <a href="/header-builder?tenant=${esc(store.subdomain)}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                          <a href="/header-builder?${tenantThemeQuery}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
                             ${icon("layout")} <span>Header Builder</span>
                           </a>
-                          <a href="/footer-builder?tenant=${esc(store.subdomain)}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                          <a href="/footer-builder?${tenantThemeQuery}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
                             ${icon("layout")} <span>Footer Builder</span>
                           </a>
-                          <a href="/menu-builder?tenant=${esc(store.subdomain)}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                          <a href="/menu-builder?${tenantThemeQuery}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
                             ${icon("menu")} <span>Navigation Menu</span>
                           </a>
-                          <a href="/form-builder?tenant=${esc(store.subdomain)}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                          <a href="/form-builder?${tenantThemeQuery}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
                             ${icon("check-square")} <span>Form Builder</span>
                           </a>
-                          <a href="/popup-editor?tenant=${esc(store.subdomain)}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                          <a href="/popup-editor?${tenantThemeQuery}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
                             ${icon("message-square")} <span>Popup Builder</span>
                           </a>
-                          <a href="/edit-product?tenant=${esc(store.subdomain)}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                          <a href="/edit-product?${tenantThemeQuery}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
                             ${icon("package")} <span>Product Studio</span>
                           </a>
-                          <a href="/edit-blog?tenant=${esc(store.subdomain)}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
+                          <a href="/edit-blog?${tenantThemeQuery}" target="_blank" rel="noopener" class="dropdown-item store-edit-menu-item" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='transparent'" style="display:flex; align-items:center; gap:8px; padding:6px 14px; font-size:0.82rem; color:#0f172a; text-decoration:none; transition:background 0.15s;">
                             ${icon("file-text")} <span>Blog Editor</span>
                           </a>
                         </div>
@@ -13337,25 +13485,26 @@ async function renderStores(activeTab = "active") {
                       </div>
                     ` : ''}
                   </div>
-                  <span class="badge" style="padding:4px 8px; border-radius:999px; font-size:0.75rem; text-transform:uppercase; font-weight:600; background:${store.status === 'active' ? '#dcfce7; color:#15803d;' : '#f1f5f9; color:#475569;'}">
-                    ${esc(store.status)}
+                  <span class="badge" style="padding:4px 8px; border-radius:999px; font-size:0.75rem; text-transform:uppercase; font-weight:600; background:${store.status === 'active' && store.custom_domain ? '#dcfce7; color:#15803d;' : '#eff6ff; color:#1d4ed8;'}">
+                    ${store.status === 'active' && store.custom_domain ? 'Live on Domain' : 'Subdomain Live'}
                   </span>
                 </div>
 
                 <div style="margin-bottom:16px; font-size:0.9rem;">
                   <p style="margin:4px 0;"><strong>Theme:</strong> <span style="text-transform:capitalize;">${esc(store.active_theme || 'default')}</span></p>
+                  <p style="margin:4px 0;"><strong>Subdomain URL:</strong> <a href="https://${esc(store.subdomain)}.${esc(baseDomain)}" target="_blank" rel="noopener">https://${esc(store.subdomain)}.${esc(baseDomain)} ↗</a></p>
                   <div style="margin:6px 0; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                    <strong>Domain:</strong>
+                    <strong>Custom Domain:</strong>
                     ${store.custom_domain ? `
                       <code>${esc(store.custom_domain)}</code>
                       <span class="badge" style="padding:2px 6px; border-radius:999px; font-size:0.7rem; font-weight:600; ${domainStatus === 'active' ? 'background:#dcfce7; color:#15803d;' : 'background:#fef3c7; color:#b45309;'}">
                         ${domainStatus === 'active' ? '✓ DNS Active' : '⏳ DNS Pending'}
                       </span>
                     ` : `
-                      <span class="muted" style="font-size:0.85rem;">None (${esc(store.subdomain)}.${esc(baseDomain)})</span>
+                      <span class="muted" style="font-size:0.85rem;">Not connected (connect domain to publish live)</span>
                     `}
                   </div>
-                  <p style="margin:4px 0;"><strong>Live URL:</strong> <a href="${esc(liveUrl)}" target="_blank" rel="noopener">${esc(liveUrl)} ↗</a></p>
+                  ${store.custom_domain ? `<p style="margin:4px 0;"><strong>Published Domain URL:</strong> <a href="${esc(liveUrl)}" target="_blank" rel="noopener">${esc(liveUrl)} ↗</a></p>` : ''}
                 </div>
               </div>
 
@@ -13364,8 +13513,8 @@ async function renderStores(activeTab = "active") {
                   <a class="btn primary" href="${esc(builderHref)}" target="_blank" rel="noopener" style="flex:1; text-align:center; text-decoration:none;">
                     ${icon("layout")} Open Builder
                   </a>
-                  <button class="btn publish-store-btn" data-store-id="${esc(store.id)}" data-store-sub="${esc(store.subdomain)}" style="flex:1;">
-                    ${icon("zap")} Publish
+                  <button class="btn publish-store-btn" data-store-id="${esc(store.id)}" data-store-sub="${esc(store.subdomain)}" data-has-domain="${store.custom_domain ? '1' : '0'}" data-domain-paid="${domainStorePaid(store) ? '1' : '0'}" style="flex:1;">
+                    ${icon("zap")} Publish to Domain
                   </button>
                 </div>
                 <div style="display:flex; gap:8px;">
@@ -13437,56 +13586,79 @@ async function renderStores(activeTab = "active") {
                 <button class="btn primary restore-store-btn" data-store-id="${esc(store.id)}" data-store-name="${esc(store.company_name)}" style="background:#16a34a; border-color:#16a34a; display:inline-flex; justify-content:center; align-items:center; gap:6px;">
                   ${icon("rotate-ccw")} Restore Store
                 </button>
-                ${isPlatformOwner ? `
-                  <button class="btn quiet text-danger hard-delete-store-btn" data-store-id="${esc(store.id)}" data-store-name="${esc(store.company_name)}" data-store-sub="${esc(store.subdomain)}" style="font-size:0.8rem; color:#b91c1c; padding:6px; background:#fee2e2; border-radius:6px; font-weight:600; display:inline-flex; justify-content:center; align-items:center; gap:4px;">
-                    ${icon("trash-2")} Wipe All Files & Subdomain Now
-                  </button>
-                ` : ''}
+                <button class="btn danger hard-delete-store-btn" data-store-id="${esc(store.id)}" data-store-name="${esc(store.company_name)}" data-store-sub="${esc(store.subdomain)}" style="font-size:0.82rem; padding:7px 10px; font-weight:600; display:inline-flex; justify-content:center; align-items:center; gap:6px;">
+                  ${icon("trash-2")} Delete Forever
+                </button>
               </div>
             </article>
           `;}).join("")}
         </div>
       `
     )}
+    <div id="storesPaginationBar">${listPaginationBarHTML(activeTab === "trash" ? trashPagination : activePagination, { label: activeTab === "trash" ? "deleted stores" : "stores", limit: currentLimit, defaultLimit })}</div>
 
     <!-- Create Store Dialog -->
-    <dialog id="createStoreDialog" class="modal client-dialog" style="max-width:580px; width:95%; border-radius:12px; border:1px solid var(--border-color, #e2e8f0); padding:24px;">
+    <dialog id="createStoreDialog" class="modal client-dialog" style="max-width:960px; width:95%; border-radius:14px; border:1px solid var(--border-color, #e2e8f0); padding:26px;">
       <form id="createStoreForm" class="form-grid">
         <div class="modal-head" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
           <div>
-            <h2 style="margin:0;">Create New Store</h2>
-            <p class="muted" style="margin:4px 0 0 0;">Provision a new client website with an Astro theme.</p>
+            <h2 style="margin:0;">Create New Website</h2>
+            <p class="muted" style="margin:4px 0 0 0;">Default theme is pre-selected &amp; automatically installed, or choose any theme from the Theme Market below.</p>
           </div>
           <button class="btn icon quiet" type="button" data-close-dialog="createStoreDialog">${icon("x")}</button>
         </div>
 
-        <div class="field" style="margin-bottom:14px;">
-          <label>Company / Store Name</label>
-          <input name="company_name" placeholder="e.g. Modern Living Furniture" required style="width:100%; padding:10px; border-radius:6px; border:1px solid #cbd5e1;">
-        </div>
-
-        <div class="field" style="margin-bottom:14px;">
-          <label>Subdomain (e.g. yourbrand.bugmega.com)</label>
-          <div style="display:flex; align-items:center;">
-            <input name="subdomain" placeholder="yourbrand" required pattern="^[a-z0-9][a-z0-9\\-]{1,28}[a-z0-9]$" style="flex:1; padding:10px; border-radius:6px 0 0 6px; border:1px solid #cbd5e1;">
-            <span style="background:#f1f5f9; padding:10px 12px; border:1px solid #cbd5e1; border-left:none; border-radius:0 6px 6px 0; color:#64748b; font-size:0.9rem;">.bugmega.com</span>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:16px; align-items:start; margin-bottom:18px;">
+          <div class="field" style="margin:0;">
+            <label style="display:block; margin-bottom:6px; font-weight:600; font-size:0.88rem;">Company / Store Name</label>
+            <input name="company_name" placeholder="e.g. Modern Living Furniture" required style="width:100%; height:42px; box-sizing:border-box; padding:0 12px; border-radius:8px; border:1px solid #cbd5e1; margin:0;">
+            <small class="muted" style="display:block; margin-top:5px;">Displayed as your store &amp; brand title.</small>
           </div>
-          <small class="muted">Lowercase letters, numbers, and hyphens only.</small>
+
+          <div class="field" style="margin:0;">
+            <label style="display:block; margin-bottom:6px; font-weight:600; font-size:0.88rem;">Subdomain (e.g. yourbrand.bugmega.com)</label>
+            <div style="display:flex; align-items:stretch; height:42px;">
+              <input name="subdomain" placeholder="yourbrand" required pattern="^[a-z0-9][a-z0-9\\-]{1,28}[a-z0-9]$" style="flex:1; min-width:0; height:42px; box-sizing:border-box; padding:0 12px; border-radius:8px 0 0 8px; border:1px solid #cbd5e1; margin:0;">
+              <span style="background:#f8fafc; height:42px; box-sizing:border-box; padding:0 14px; border:1px solid #cbd5e1; border-left:none; border-radius:0 8px 8px 0; color:#64748b; font-size:0.88rem; display:inline-flex; align-items:center; white-space:nowrap;">.bugmega.com</span>
+            </div>
+            <small class="muted" style="display:block; margin-top:5px;">Lowercase letters, numbers, and hyphens only.</small>
+          </div>
         </div>
 
         <div class="field" style="margin-bottom:20px;">
-          <label>Choose Starter Theme</label>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:8px;">
-            <label style="border:2px solid #3b82f6; border-radius:8px; padding:12px; cursor:pointer; display:flex; flex-direction:column; gap:6px;">
-              <input type="radio" name="active_theme" value="furnisite" checked style="accent-color:#3b82f6;">
-              <strong style="font-size:1rem;">Furnisite</strong>
-              <small class="muted">Luxury Furniture, Interior Decor, Modern E-commerce layout.</small>
-            </label>
-            <label style="border:1px solid #cbd5e1; border-radius:8px; padding:12px; cursor:pointer; display:flex; flex-direction:column; gap:6px;">
-              <input type="radio" name="active_theme" value="default" style="accent-color:#3b82f6;">
-              <strong style="font-size:1rem;">Default (Better)</strong>
-              <small class="muted">Modern Business, SaaS & Agency Multi-purpose theme.</small>
-            </label>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+            <label style="margin:0; font-weight:600; font-size:0.9rem;">Theme Market (${themeMarket.length} available)</label>
+            <span class="muted" style="font-size:0.82rem;">Default theme is automatically selected</span>
+          </div>
+          <div id="createStoreThemeGrid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:14px; max-height:400px; overflow-y:auto; padding:2px;">
+            ${themeMarket.map((t) => {
+              const slug = String(t.slug || "default").toLowerCase();
+              const isChecked = slug === "default";
+              const accent = esc(t.accent_color || "#2563eb");
+              const previewImg = t.preview_image
+                ? `<img src="${esc(t.preview_image)}" alt="${esc(t.name)}" style="width:100%; height:132px; object-fit:cover; display:block; border-radius:8px; border:1px solid #e2e8f0; background:#f8fafc;">`
+                : `<div style="width:100%; height:132px; border-radius:8px; background:linear-gradient(135deg, ${accent}22, #f1f5f9); border:1px solid #e2e8f0; display:flex; align-items:center; justify-content:center; font-weight:700; color:#475569;">${esc(t.name)}</div>`;
+              return `
+                <label class="theme-market-option" style="border:${isChecked ? "2px solid #2563eb" : "1px solid #cbd5e1"}; border-radius:12px; padding:12px; cursor:pointer; display:flex; flex-direction:column; gap:10px; background:${isChecked ? "#eff6ff66" : "#fff"}; box-shadow:${isChecked ? "0 4px 14px rgba(37,99,235,0.10)" : "none"}; transition:all 0.15s ease;">
+                  <div style="position:relative;">
+                    ${previewImg}
+                    ${isChecked
+                      ? `<span style="position:absolute; top:8px; right:8px; font-size:0.7rem; font-weight:700; background:#2563eb; color:#ffffff; padding:3px 9px; border-radius:999px; box-shadow:0 2px 6px rgba(0,0,0,0.12);">Default</span>`
+                      : (t.category ? `<span style="position:absolute; top:8px; right:8px; font-size:0.68rem; font-weight:600; background:rgba(255,255,255,0.92); color:#334155; border:1px solid #e2e8f0; padding:3px 8px; border-radius:999px; white-space:nowrap;">${esc(t.category)}</span>` : "")}
+                  </div>
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <input type="radio" name="active_theme" value="${esc(slug)}" ${isChecked ? "checked" : ""} style="width:16px; height:16px; min-height:0; margin:0; padding:0; flex-shrink:0; accent-color:#2563eb; cursor:pointer;">
+                    <strong style="font-size:0.95rem; line-height:1.25; color:#0f172a;">${esc(t.name)}</strong>
+                  </div>
+                  <small class="muted" style="line-height:1.45; margin:0; display:block; flex:1;">${esc(t.description || `Starter theme (${t.base_theme || "default"})`)}</small>
+                  <div style="display:flex; justify-content:flex-end; padding-top:6px; border-top:1px solid #f1f5f9;">
+                    <button type="button" class="btn compact preview-theme-market-btn" data-theme-slug="${esc(slug)}" data-theme-name="${esc(t.name)}" data-base-theme="${esc(t.base_theme || (slug === "furnisite" ? "furnisite" : "default"))}" style="font-size:0.78rem; padding:5px 10px;">
+                      ${icon("eye")} Preview
+                    </button>
+                  </div>
+                </label>
+              `;
+            }).join("")}
           </div>
         </div>
 
@@ -13584,8 +13756,27 @@ async function renderStores(activeTab = "active") {
       <input type="hidden" id="domainStoreId">
       <input type="hidden" id="domainStoreSub">
 
+      <!-- Step 0: Custom Domain Plan Payment Gate -->
+      <div id="domainPaymentGateCard" style="display:none; background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:16px; margin-bottom:18px;">
+        <h4 style="margin:0 0 6px 0; font-size:0.98rem; color:#92400e;">${icon("badge-dollar-sign")} Custom Domain Plan Required</h4>
+        <p class="muted" style="margin:0 0 12px 0; font-size:0.86rem;">
+          Subdomain websites (<code>&lt;subdomain&gt;.bugmega.com</code>) are free (up to ${maxWebsites} websites). To connect your own custom domain (<code>clientdomain.com</code>) with automatic VPS SSL, choose a billing plan:
+        </p>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px;">
+          <button class="btn" type="button" id="payDomainMonthlyBtn" style="justify-content:center; background:#ffffff; border:1px solid #f59e0b; color:#92400e; font-weight:700;">
+            ${icon("credit-card")} Pay ${fmtUSD(domainPricing.monthly_cents)} / Month
+          </button>
+          <button class="btn primary" type="button" id="payDomainYearlyBtn" style="justify-content:center; font-weight:700;">
+            ${icon("credit-card")} Pay ${fmtUSD(domainPricing.yearly_cents)} / Year
+          </button>
+        </div>
+        <p id="domainCheckoutStatus" class="muted" style="margin:8px 0 0 0; font-size:0.82rem;"></p>
+      </div>
+
+      <div id="domainPaidBanner" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; border-radius:10px; padding:10px 14px; margin-bottom:14px; font-size:0.86rem;"></div>
+
       <!-- Step 1: Input Domain -->
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:16px; margin-bottom:18px;">
+      <div id="customDomainInputCard" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:16px; margin-bottom:18px;">
         <label style="display:block; font-weight:600; margin-bottom:6px; font-size:0.9rem;">Store Custom Domain</label>
         <div style="display:flex; gap:8px;">
           <input id="customDomainInput" placeholder="e.g. shop.yourbrand.com or www.yourbrand.com" style="flex:1; padding:10px 12px; border-radius:6px; border:1px solid #cbd5e1; font-size:0.95rem;">
@@ -13594,7 +13785,7 @@ async function renderStores(activeTab = "active") {
           </button>
         </div>
         <small class="muted" style="display:block; margin-top:6px;">
-          Tip: Subdomains like <code>shop.domain.com</code> or <code>www.domain.com</code> are recommended for instant CNAME setup.
+          Tip: Subdomains like <code>shop.domain.com</code> or <code>www.domain.com</code> are recommended for instant CNAME setup &amp; automatic VPS SSL.
         </small>
       </div>
 
@@ -13683,6 +13874,41 @@ async function renderStores(activeTab = "active") {
         </div>
       </div>
     </dialog>
+
+    <!-- Permanent Delete Confirmation Dialog -->
+    <dialog id="permanentDeleteStoreDialog" class="modal client-dialog" style="max-width:500px; width:95%; border-radius:12px; border:1px solid #fecaca; padding:24px;">
+      <form id="permanentDeleteStoreForm" class="form-grid">
+        <div class="modal-head" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <h2 style="margin:0; color:#b91c1c; display:flex; align-items:center; gap:8px;">
+            ${icon("alert-triangle")} Delete Website Forever
+          </h2>
+          <button class="btn icon quiet" type="button" data-close-dialog="permanentDeleteStoreDialog">${icon("x")}</button>
+        </div>
+        <input type="hidden" id="permDeleteStoreId">
+        <input type="hidden" id="permDeleteStoreSub">
+        <p style="margin:0 0 8px 0;">Are you sure you want to ${isPlatformOwner ? "permanently delete" : "remove"} <strong id="permDeleteStoreName">this website</strong>? ${isPlatformOwner ? "This action cannot be undone." : "It will be unlisted from your account and Trash."}</p>
+        <ul style="margin:0 0 12px 18px; padding:0; font-size:0.88rem; color:var(--text-secondary); line-height:1.6;">
+          ${isPlatformOwner ? `
+            <li>Permanently erases all website pages, themes, and uploaded media</li>
+            <li>Removes subdomain, custom domain, and SSL settings</li>
+            <li>Deletes form submissions and customer records</li>
+          ` : `
+            <li>Unlists and removes this website from your stores and Trash</li>
+            <li>Takes the website offline and disconnects its domain</li>
+            <li>Frees 1 slot in your 3-website quota</li>
+          `}
+        </ul>
+        <div class="field">
+          <label for="permDeleteConfirmInput">To confirm, type the subdomain <code id="permDeleteExpectedSub" style="font-weight:700; color:#b91c1c;"></code> below:</label>
+          <input id="permDeleteConfirmInput" autocomplete="off" placeholder="Type subdomain here" required>
+        </div>
+        <p id="permDeleteErrorMsg" class="status-line" style="color:#b91c1c; margin:0;"></p>
+        <div class="toolbar" style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
+          <button class="btn" type="button" data-close-dialog="permanentDeleteStoreDialog">Cancel</button>
+          <button class="btn danger" id="permDeleteConfirmBtn" type="submit">${icon("trash-2")} Delete Forever</button>
+        </div>
+      </form>
+    </dialog>
   `);
 
   // Wire event handlers
@@ -13698,6 +13924,43 @@ async function renderStores(activeTab = "active") {
     });
   });
 
+  // Theme Market option highlight on selection
+  const syncThemeCardsUI = () => {
+    document.querySelectorAll("#createStoreThemeGrid .theme-market-option").forEach((card) => {
+      const input = card.querySelector('input[name="active_theme"]');
+      const active = Boolean(input?.checked);
+      card.style.border = active ? "2px solid #2563eb" : "1px solid #cbd5e1";
+      card.style.background = active ? "#eff6ff66" : "#fff";
+      card.style.boxShadow = active ? "0 4px 14px rgba(37,99,235,0.10)" : "none";
+    });
+  };
+  document.querySelectorAll('#createStoreThemeGrid input[name="active_theme"]').forEach((radio) => {
+    radio.addEventListener("change", syncThemeCardsUI);
+  });
+
+  // Preview Theme button inside Create New Website modal
+  document.querySelectorAll("#createStoreThemeGrid .preview-theme-market-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const slug = btn.getAttribute("data-theme-slug") || "default";
+      const name = btn.getAttribute("data-theme-name") || slug;
+      const baseTheme = btn.getAttribute("data-base-theme") || "default";
+      openThemePreviewModal({
+        slug,
+        name,
+        baseTheme,
+        onUseTheme: () => {
+          const targetRadio = document.querySelector(`#createStoreThemeGrid input[name="active_theme"][value="${selectorEscape(slug)}"]`);
+          if (targetRadio) {
+            targetRadio.checked = true;
+            syncThemeCardsUI();
+          }
+        },
+      });
+    });
+  });
+
   // Create Store Submit
   document.getElementById("createStoreForm")?.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -13705,7 +13968,7 @@ async function renderStores(activeTab = "active") {
     const body = {
       subdomain: form.subdomain.value.trim().toLowerCase(),
       company_name: form.company_name.value.trim(),
-      active_theme: form.active_theme.value
+      active_theme: form.active_theme?.value || "default"
     };
 
     try {
@@ -13721,24 +13984,38 @@ async function renderStores(activeTab = "active") {
     }
   });
 
-  // Publish to Cloudflare
+  // Publish to Live Custom Domain (clientdomain.com)
   document.querySelectorAll(".publish-store-btn").forEach(btn => {
     btn.addEventListener("click", async () => {
       const storeId = btn.getAttribute("data-store-id");
       const subdomain = btn.getAttribute("data-store-sub");
+      const hasDomain = btn.getAttribute("data-has-domain") === "1";
+      const domainPaid = btn.getAttribute("data-domain-paid") === "1";
+      if (!isPlatformOwner && (!hasDomain || !domainPaid)) {
+        showToast(`"${subdomain}" is already live on its subdomain. Connect & activate a custom domain (clientdomain.com) to publish live.`, "info");
+        btn.closest(".store-card")?.querySelector(".connect-domain-btn")?.click();
+        return;
+      }
+
       btn.disabled = true;
       btn.innerHTML = `${icon("loader-2")} Publishing...`;
 
       try {
         const res = await api(`/api/tenants/${storeId}/publish`, { method: "POST" });
         const baseDomain = window.location.hostname.replace(/^www\./, "");
-        const finalUrl = res.cloudflare_url || `https://${subdomain}.${baseDomain}`;
-        alert(`✓ Store published successfully!\n\nLive URL: ${finalUrl}`);
+        const finalUrl = res.live_url || res.cloudflare_url || `https://${subdomain}.${baseDomain}`;
+        alert(`✓ Store published to domain!\n\nLive URL: ${finalUrl}`);
         await renderStores();
       } catch (err) {
-        alert("Publish error: " + (err.message || err));
+        if ((err.message || "").toLowerCase().includes("custom domain")) {
+          showToast(err.message, "info");
+          btn.closest(".store-card")?.querySelector(".connect-domain-btn")?.click();
+        } else {
+          alert("Publish error: " + (err.message || err));
+        }
         btn.disabled = false;
-        btn.innerHTML = `${icon("zap")} Publish`;
+        btn.innerHTML = `${icon("zap")} Publish to Domain`;
+        icons();
       }
     });
   });
@@ -13861,73 +14138,150 @@ async function renderStores(activeTab = "active") {
   });
 
   // Connect Custom Domain Modal & DNS Propagation
+  const openConnectDomainForStore = (store) => {
+    if (!store) return;
+    const storeId = store.id;
+    const subdomain = store.subdomain;
+    const domain = store.custom_domain || "";
+    const status = store.custom_domain_status || (domain ? "pending" : "none");
+    const isPaid = domainStorePaid(store);
+
+    const dialog = document.getElementById("connectDomainDialog");
+    if (!dialog) return;
+
+    document.getElementById("domainStoreId").value = storeId;
+    document.getElementById("domainStoreSub").value = subdomain;
+    document.getElementById("customDomainInput").value = domain;
+    document.getElementById("customDomainInput").disabled = !isPaid;
+    document.getElementById("saveCustomDomainBtn").disabled = !isPaid;
+
+    const gateCard = document.getElementById("domainPaymentGateCard");
+    const paidBanner = document.getElementById("domainPaidBanner");
+    const inputCard = document.getElementById("customDomainInputCard");
+    if (gateCard && paidBanner && inputCard) {
+      gateCard.style.display = isPaid ? "none" : "block";
+      inputCard.style.opacity = isPaid ? "1" : "0.55";
+      if (isPaid && ((domainPricing.monthly_cents || 0) > 0 || (domainPricing.yearly_cents || 0) > 0)) {
+        const expText = store.custom_domain_paid_until ? ` · Active until ${fmtDate(store.custom_domain_paid_until)}` : "";
+        paidBanner.style.display = "block";
+        paidBanner.innerHTML = `✓ <strong>Custom Domain Plan Active</strong> (${esc(store.custom_domain_plan || "paid")}${esc(expText)})`;
+      } else {
+        paidBanner.style.display = "none";
+      }
+    }
+    const checkoutStatus = document.getElementById("domainCheckoutStatus");
+    if (checkoutStatus) checkoutStatus.textContent = "";
+
+    const baseDomain = window.location.hostname.replace(/^www\./, "");
+    const targetCname = `${subdomain}.${baseDomain}`;
+    document.getElementById("dnsTargetCNAME").textContent = targetCname;
+
+    let hostPart = "shop";
+    if (domain) {
+      const parts = domain.split(".");
+      hostPart = parts.length >= 3 ? parts[0] : "@";
+    }
+    document.getElementById("dnsHostName").textContent = hostPart;
+
+    const dnsCard = document.getElementById("dnsInstructionsCard");
+    const removeBtn = document.getElementById("disconnectDomainBtn");
+    const resultBox = document.getElementById("dnsVerificationResult");
+    const badge = document.getElementById("dnsStatusBadge");
+
+    if (domain) {
+      dnsCard.style.display = "block";
+      removeBtn.style.display = "inline-flex";
+      if (status === "active") {
+        badge.innerHTML = `<span class="badge" style="background:#dcfce7; color:#15803d; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">✓ DNS Active</span>`;
+        resultBox.innerHTML = `<div style="background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; padding:10px; border-radius:6px;">✓ <strong>Verified!</strong> Your domain <code>${esc(domain)}</code> is actively resolving to <code>${esc(targetCname)}</code> and served from your VPS.</div>`;
+      } else {
+        badge.innerHTML = `<span class="badge" style="background:#fef3c7; color:#b45309; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">⏳ DNS Pending Verification</span>`;
+        resultBox.innerHTML = `<div style="background:#f8fafc; border:1px solid #e2e8f0; color:#475569; padding:10px; border-radius:6px;">Click <strong>Verify Propagation</strong> to verify your DNS CNAME record and automatically configure VPS SSL.</div>`;
+      }
+
+      const sslStatus = store.ssl_status || "pending";
+      const sslBadge = document.getElementById("sslStatusBadge");
+      const sslResult = document.getElementById("sslVerificationResult");
+      if (sslBadge) {
+        if (sslStatus === "active") {
+          sslBadge.innerHTML = `<span class="badge" style="background:#dcfce7; color:#15803d; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">🔒 SSL Active (HTTPS Secured)</span>`;
+          sslResult.innerHTML = `<div style="background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; padding:10px; border-radius:6px;">✓ SSL certificate is active and serving traffic securely over HTTPS.</div>`;
+        } else {
+          sslBadge.innerHTML = `<span class="badge" style="background:#fef3c7; color:#b45309; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">⚠️ SSL Inactive / Pending</span>`;
+          sslResult.innerHTML = `<div style="background:#f8fafc; border:1px solid #e2e8f0; color:#475569; padding:10px; border-radius:6px;">Once DNS is verified, click <strong>Install / Verify SSL</strong> to provision Edge SSL certificates.</div>`;
+        }
+      }
+    } else {
+      dnsCard.style.display = "none";
+      removeBtn.style.display = "none";
+      resultBox.innerHTML = "";
+    }
+
+    dialog.showModal();
+  };
+
   document.querySelectorAll(".connect-domain-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const storeId = btn.getAttribute("data-store-id");
-      const subdomain = btn.getAttribute("data-store-sub");
-      const domain = btn.getAttribute("data-store-domain") || "";
-      const status = btn.getAttribute("data-store-status") || "pending";
-
-      const dialog = document.getElementById("connectDomainDialog");
-      if (!dialog) return;
-
-      document.getElementById("domainStoreId").value = storeId;
-      document.getElementById("domainStoreSub").value = subdomain;
-      document.getElementById("customDomainInput").value = domain;
-
-      const baseDomain = window.location.hostname.replace(/^www\./, "");
-      const targetCname = `${subdomain}.${baseDomain}`;
-      document.getElementById("dnsTargetCNAME").textContent = targetCname;
-
-      // Extract host part (e.g. "shop" if shop.brand.com, "www" if www.brand.com, or "@")
-      let hostPart = "shop";
-      if (domain) {
-        const parts = domain.split(".");
-        if (parts.length >= 3) {
-          hostPart = parts[0];
-        } else {
-          hostPart = "@";
-        }
-      }
-      document.getElementById("dnsHostName").textContent = hostPart;
-
-      const dnsCard = document.getElementById("dnsInstructionsCard");
-      const removeBtn = document.getElementById("disconnectDomainBtn");
-      const resultBox = document.getElementById("dnsVerificationResult");
-      const badge = document.getElementById("dnsStatusBadge");
-
-      if (domain) {
-        dnsCard.style.display = "block";
-        removeBtn.style.display = "inline-flex";
-        if (status === "active") {
-          badge.innerHTML = `<span class="badge" style="background:#dcfce7; color:#15803d; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">✓ DNS Active</span>`;
-          resultBox.innerHTML = `<div style="background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; padding:10px; border-radius:6px;">✓ <strong>Verified!</strong> Your domain <code>${esc(domain)}</code> is actively resolving to <code>${esc(targetCname)}</code> and serving via Cloudflare edge.</div>`;
-        } else {
-          badge.innerHTML = `<span class="badge" style="background:#fef3c7; color:#b45309; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">⏳ DNS Pending Verification</span>`;
-          resultBox.innerHTML = `<div style="background:#f8fafc; border:1px solid #e2e8f0; color:#475569; padding:10px; border-radius:6px;">Click <strong>Verify Propagation</strong> to check if your DNS CNAME record is resolved worldwide.</div>`;
-        }
-
-        const sslStatus = btn.getAttribute("data-store-ssl") || "pending";
-        const sslBadge = document.getElementById("sslStatusBadge");
-        const sslResult = document.getElementById("sslVerificationResult");
-        if (sslBadge) {
-          if (sslStatus === "active") {
-            sslBadge.innerHTML = `<span class="badge" style="background:#dcfce7; color:#15803d; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">🔒 SSL Active (HTTPS Secured)</span>`;
-            sslResult.innerHTML = `<div style="background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; padding:10px; border-radius:6px;">✓ SSL certificate is active and serving traffic securely over HTTPS.</div>`;
-          } else {
-            sslBadge.innerHTML = `<span class="badge" style="background:#fef3c7; color:#b45309; padding:3px 8px; border-radius:999px; font-size:0.8rem; font-weight:600;">⚠️ SSL Inactive / Pending</span>`;
-            sslResult.innerHTML = `<div style="background:#f8fafc; border:1px solid #e2e8f0; color:#475569; padding:10px; border-radius:6px;">Once DNS is verified, click <strong>Install / Verify SSL</strong> to provision Edge SSL certificates.</div>`;
-          }
-        }
-      } else {
-        dnsCard.style.display = "none";
-        removeBtn.style.display = "none";
-        resultBox.innerHTML = "";
-      }
-
-      dialog.showModal();
+      const store = stores.find(s => s.id === storeId);
+      openConnectDomainForStore(store);
     });
   });
+
+  const startDomainCheckout = async (period) => {
+    const storeId = document.getElementById("domainStoreId")?.value;
+    const statusEl = document.getElementById("domainCheckoutStatus");
+    const mBtn = document.getElementById("payDomainMonthlyBtn");
+    const yBtn = document.getElementById("payDomainYearlyBtn");
+    if (!storeId) return;
+    try {
+      if (mBtn) mBtn.disabled = true;
+      if (yBtn) yBtn.disabled = true;
+      if (statusEl) statusEl.textContent = "Creating PayPal checkout...";
+      const res = await api(`/api/tenants/${storeId}/domain/checkout`, {
+        method: "POST",
+        body: JSON.stringify({ billing_period: period }),
+      });
+      if (res.paid) {
+        showToast("Custom domain plan activated!");
+        document.getElementById("connectDomainDialog")?.close();
+        await renderStores(activeTab);
+        return;
+      }
+      if (res.checkout_url) {
+        window.location.href = res.checkout_url;
+        return;
+      }
+      if (statusEl) statusEl.textContent = "Checkout created, no redirect URL returned.";
+    } catch (err) {
+      if (statusEl) statusEl.textContent = err.message || "Could not start PayPal checkout.";
+    } finally {
+      if (mBtn) mBtn.disabled = false;
+      if (yBtn) yBtn.disabled = false;
+    }
+  };
+  document.getElementById("payDomainMonthlyBtn")?.addEventListener("click", () => startDomainCheckout("monthly"));
+  document.getElementById("payDomainYearlyBtn")?.addEventListener("click", () => startDomainCheckout("yearly"));
+
+  // Handle return from PayPal custom domain checkout
+  const storeParams = new URLSearchParams(window.location.search);
+  const domainPayState = storeParams.get("domain_payment");
+  if (domainPayState) {
+    const paidTenantId = storeParams.get("tenant_id");
+    const payMsg = storeParams.get("message");
+    window.history.replaceState({}, "", "/stores");
+    if (domainPayState === "success") {
+      showToast("Custom domain plan paid! You can now connect your custom domain.");
+      if (paidTenantId) {
+        const paidStore = stores.find(s => s.id === paidTenantId);
+        if (paidStore) openConnectDomainForStore(paidStore);
+      }
+    } else if (domainPayState === "cancelled") {
+      showToast("Custom domain payment was cancelled.");
+    } else if (domainPayState === "failed") {
+      alert("Custom domain payment failed: " + (payMsg || "Please try again."));
+    }
+  }
 
   // Save Custom Domain
   document.getElementById("saveCustomDomainBtn")?.addEventListener("click", async () => {
@@ -14119,9 +14473,10 @@ async function renderStores(activeTab = "active") {
     }
   });
 
-  // Store Tab Switching
-  document.getElementById("tabActiveStores")?.addEventListener("click", () => renderStores("active"));
-  document.getElementById("tabTrashStores")?.addEventListener("click", () => renderStores("trash"));
+  // Store Tab Switching & Pagination
+  document.getElementById("tabActiveStores")?.addEventListener("click", () => renderStores("active", { page: 1, limit: currentLimit }));
+  document.getElementById("tabTrashStores")?.addEventListener("click", () => renderStores("trash", { page: 1, limit: currentLimit }));
+  bindListPagination(document.getElementById("storesPaginationBar"), ({ page, limit }) => renderStores(activeTab, { page, limit }));
 
   // Soft Delete Store
   document.querySelectorAll(".delete-store-btn").forEach(btn => {
@@ -14156,34 +14511,60 @@ async function renderStores(activeTab = "active") {
     });
   });
 
-  // Hard Delete / Permanent Wipe (Platform Owner only)
+  // Permanent Delete ("Delete Forever") modal for Store Owner or Platform Owner
   document.querySelectorAll(".hard-delete-store-btn").forEach(btn => {
-    btn.addEventListener("click", async () => {
+    btn.addEventListener("click", () => {
       const storeId = btn.getAttribute("data-store-id");
-      const name = btn.getAttribute("data-store-name") || "this store";
-      const subdomain = btn.getAttribute("data-store-sub");
-      const promptVal = prompt(
-        `⚠️ DANGER: PERMANENT WIPE (Platform Owner Action)\n\nAre you sure you want to permanently delete "${name}"?\n\nThis will completely ERASE:\n• File directory: /var/www/tenants/${subdomain}\n• Cloudflare Pages project & subdomain settings\n• Contact submissions and store customers\n• Database records\n\nThis CANNOT be undone! Type "${subdomain}" to confirm:`
-      );
-      if (promptVal === null) return;
-      if (promptVal.trim().toLowerCase() !== subdomain.toLowerCase()) {
-        alert("Subdomain did not match. Permanent wipe canceled.");
-        return;
-      }
-
-      btn.disabled = true;
-      btn.innerHTML = `${icon("loader-2")} Purging...`;
-
-      try {
-        const res = await api(`/api/tenants/${storeId}?hard=true`, { method: "DELETE" });
-        showToast(`Store "${name}" and all directory files wiped completely.`);
-        await renderStores(activeTab);
-      } catch (err) {
-        alert("Error purging store: " + (err.message || err));
-        btn.disabled = false;
-        btn.innerHTML = `${icon("alert-triangle")} Wipe All`;
-      }
+      const name = btn.getAttribute("data-store-name") || "this website";
+      const subdomain = btn.getAttribute("data-store-sub") || "";
+      const dialog = document.getElementById("permanentDeleteStoreDialog");
+      if (!dialog) return;
+      document.getElementById("permDeleteStoreId").value = storeId;
+      document.getElementById("permDeleteStoreSub").value = subdomain;
+      document.getElementById("permDeleteStoreName").textContent = name;
+      document.getElementById("permDeleteExpectedSub").textContent = subdomain;
+      const input = document.getElementById("permDeleteConfirmInput");
+      input.value = "";
+      input.placeholder = subdomain;
+      document.getElementById("permDeleteErrorMsg").textContent = "";
+      dialog.showModal();
+      input.focus();
     });
+  });
+
+  document.getElementById("permanentDeleteStoreForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const storeId = document.getElementById("permDeleteStoreId").value;
+    const subdomain = document.getElementById("permDeleteStoreSub").value;
+    const name = document.getElementById("permDeleteStoreName").textContent;
+    const typed = (document.getElementById("permDeleteConfirmInput").value || "").trim();
+    const errEl = document.getElementById("permDeleteErrorMsg");
+    const submitBtn = document.getElementById("permDeleteConfirmBtn");
+
+    if (typed.toLowerCase() !== subdomain.toLowerCase()) {
+      errEl.textContent = `Please type "${subdomain}" exactly to approve permanent deletion.`;
+      return;
+    }
+
+    errEl.textContent = "";
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `${icon("loader-2")} Deleting...`;
+    try {
+      if (isPlatformOwner) {
+        await api(`/api/tenants/${storeId}?hard=true`, { method: "DELETE" });
+        showToast(`Website "${name}" permanently deleted.`);
+      } else {
+        await api(`/api/tenants/${storeId}/unlist`, { method: "POST" });
+        showToast(`Website "${name}" removed from your list.`);
+      }
+      document.getElementById("permanentDeleteStoreDialog")?.close();
+      await renderStores(activeTab);
+    } catch (err) {
+      errEl.textContent = err.message || "Error deleting website permanently.";
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = `${icon("trash-2")} Delete Forever`;
+      icons();
+    }
   });
 
   // Store Edit Page Dropdown Toggle
@@ -14208,9 +14589,12 @@ async function renderStores(activeTab = "active") {
   icons();
 }
 
-async function renderWebsites() {
-  const data = await api("/api/websites");
+async function renderWebsites(listOpts = {}) {
+  const currentPage = Math.max(1, Number(listOpts.page || 1));
+  const currentLimit = Math.max(1, Math.min(100, Number(listOpts.limit || defaultListLimit())));
+  const data = await api(`/api/websites?page=${currentPage}&limit=${currentLimit}`);
   const websites = data.websites || [];
+  const pagination = data.pagination || { page: currentPage, limit: currentLimit, total: websites.length, total_pages: 1 };
   shell("Websites", `
     <div class="page-title"><div><h1>Websites</h1><p class="muted">Tracked sites and screenshot feedback boards.</p></div></div>
     <div class="grid-2">
@@ -14225,8 +14609,13 @@ async function renderWebsites() {
           <p class="status-line"></p>
         </form>
       </section>
-      <section class="website-grid">${websites.map((site) => `<article class="panel"><h3>${esc(site.name)}</h3><p class="muted">${esc(site.url)}</p><span class="pill">${esc(site.embed_mode)}</span><p><a class="btn primary" href="/websites/${site.id}/annotate">${icon("map-pin")}Annotate</a></p></article>`).join("") || `<p class="muted">No websites yet.</p>`}</section>
+      <section>
+        <div class="website-grid">${websites.map((site) => `<article class="panel"><h3>${esc(site.name)}</h3><p class="muted">${esc(site.url)}</p><span class="pill">${esc(site.embed_mode)}</span><p><a class="btn primary" href="/websites/${site.id}/annotate">${icon("map-pin")}Annotate</a></p></article>`).join("") || `<p class="muted">No websites yet.</p>`}</div>
+        <div id="websitesPaginationBar">${listPaginationBarHTML(pagination, { label: "websites", limit: currentLimit, defaultLimit: data.default_limit })}</div>
+      </section>
     </div>`);
+  bindListPagination($("#websitesPaginationBar"), ({ page, limit }) => renderWebsites({ page, limit }));
+  icons();
   $("#websiteForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
@@ -14236,7 +14625,7 @@ async function renderWebsites() {
       if (file) values.screenshot_url = await upload(file);
       delete values.screenshot;
       await api("/api/websites", { method: "POST", body: JSON.stringify(values) });
-      renderWebsites();
+      renderWebsites({ page: 1, limit: currentLimit });
     } catch (error) {
       setStatus(error.message, true);
     }
@@ -14888,11 +15277,36 @@ function adminUserDetailHTML(data = {}) {
 }
 
 async function renderAdmin() {
+  let currentPage = 1;
+  let currentLimit = defaultListLimit();
+  let filterQuery = "";
+  let filterMembership = "";
+  let filterLevel = "";
+  let filterPayment = "";
+
+  const fetchUsersPage = async () => {
+    const params = new URLSearchParams({
+      page: String(currentPage),
+      limit: String(currentLimit),
+    });
+    if (filterQuery.trim()) params.set("q", filterQuery.trim());
+    if (filterMembership) params.set("membership", filterMembership);
+    if (filterLevel) params.set("level", filterLevel);
+    if (filterPayment) params.set("payment", filterPayment);
+    return await api(`/api/admin/users?${params.toString()}`);
+  };
+
+  let usersResult;
   let users = [];
   let plans = [];
+  let pagination = { page: 1, limit: currentLimit, total: 0, total_pages: 1 };
   try {
-    const [usersResult, plansResult] = await Promise.all([api("/api/admin/users"), api("/api/admin/plans")]);
-    users = usersResult.users || [];
+    const [uRes, plansResult] = await Promise.all([fetchUsersPage(), api("/api/admin/plans")]);
+    usersResult = uRes;
+    users = uRes.users || [];
+    pagination = uRes.pagination || { page: 1, limit: currentLimit, total: users.length, total_pages: 1 };
+    currentPage = pagination.page || 1;
+    currentLimit = pagination.limit || currentLimit;
     plans = plansResult.plans || [];
   } catch (error) {
     shell("Admin Users", `
@@ -14918,7 +15332,11 @@ async function renderAdmin() {
       <label><span>Payment</span><select data-admin-filter="payment"><option value="">All payment methods</option><option value="paypal">PayPal</option><option value="no payment method">No payment method</option></select></label>
     </div>
     <div class="owner-admin-layout">
-      <section class="panel owner-users-panel"><div class="panel-head"><h2>Users</h2><span class="pill" id="adminUserCount">${users.length} users</span></div><div class="admin-user-list">${users.map(adminUserRowHTML).join("") || `<p class="muted">No users found.</p>`}</div><p id="adminUserNoResults" class="muted" hidden>No users match the current filters.</p></section>
+      <section class="panel owner-users-panel">
+        <div class="panel-head"><h2>Users</h2><span class="pill" id="adminUserCount">${pagination.total} users</span></div>
+        <div class="admin-user-list" id="adminUserListEl">${users.map(adminUserRowHTML).join("") || `<p class="muted">No users found.</p>`}</div>
+        <div id="adminUsersPagination">${listPaginationBarHTML(pagination, { label: "users", limit: currentLimit, defaultLimit: usersResult.default_limit })}</div>
+      </section>
       <section class="panel owner-user-detail" id="ownerUserDetail"><h2>User details</h2><p class="muted">Select a user to view membership, payment, projects, domains, and tasks.</p></section>
     </div>
     <section class="panel admin-email-panel">
@@ -14930,7 +15348,7 @@ async function renderAdmin() {
       </form>
     </section>
     ${adminUserDialogsHTML(plans)}`);
-  const usersByID = Object.fromEntries(users.map((user) => [user.id, user]));
+  let usersByID = Object.fromEntries(users.map((user) => [user.id, user]));
   const loadDetail = async (userID) => {
     const panel = $("#ownerUserDetail");
     if (!panel) return;
@@ -14946,28 +15364,61 @@ async function renderAdmin() {
       panel.innerHTML = `<h2>User details</h2><p class="muted">${esc(error.message)}</p>`;
     }
   };
-  const applyAdminFilters = () => {
-    const query = String(document.querySelector("[data-admin-filter-search]")?.value || "").trim().toLowerCase();
-    const membership = document.querySelector("[data-admin-filter='membership']")?.value || "";
-    const level = document.querySelector("[data-admin-filter='level']")?.value || "";
-    const payment = document.querySelector("[data-admin-filter='payment']")?.value || "";
-    let count = 0;
-    document.querySelectorAll("[data-admin-user-row]").forEach((row) => {
-      const visible = (!query || (row.dataset.search || "").includes(query)) && (!membership || row.dataset.membership === membership) && (!level || row.dataset.level === level) && (!payment || (row.dataset.payment || "").includes(payment));
-      row.hidden = !visible;
-      if (visible) count += 1;
-    });
-    const countEl = $("#adminUserCount");
-    if (countEl) countEl.textContent = `${count} ${count === 1 ? "user" : "users"}`;
-    const empty = $("#adminUserNoResults");
-    if (empty) empty.hidden = count !== 0;
+  let reloadUsersPage;
+  const bindUserListRows = () => {
+    document.querySelectorAll("[data-admin-user-row]").forEach((row) => row.addEventListener("click", (event) => {
+      if (event.target.closest("button, a, input, select, textarea")) return;
+      loadDetail(row.dataset.userId);
+    }));
+    bindAdminUserActions(usersByID, loadDetail, plans);
+    const pagerEl = $("#adminUsersPagination");
+    if (pagerEl) {
+      pagerEl.innerHTML = listPaginationBarHTML(pagination, { label: "users", limit: currentLimit, defaultLimit: usersResult.default_limit });
+      bindListPagination(pagerEl, ({ page, limit }) => {
+        currentPage = page;
+        currentLimit = limit;
+        reloadUsersPage();
+      });
+    }
+    icons();
   };
-  document.querySelectorAll("[data-admin-filter], [data-admin-filter-search]").forEach((input) => input.addEventListener(input.tagName === "SELECT" ? "change" : "input", applyAdminFilters));
-  document.querySelectorAll("[data-admin-user-row]").forEach((row) => row.addEventListener("click", (event) => {
-    if (event.target.closest("button, a, input, select, textarea")) return;
-    loadDetail(row.dataset.userId);
-  }));
-  bindAdminUserActions(usersByID, loadDetail, plans);
+  reloadUsersPage = async () => {
+    const listEl = $("#adminUserListEl");
+    if (listEl) listEl.innerHTML = `<p class="muted">Loading users...</p>`;
+    try {
+      const next = await fetchUsersPage();
+      usersResult = next;
+      users = next.users || [];
+      pagination = next.pagination || { page: currentPage, limit: currentLimit, total: users.length, total_pages: 1 };
+      currentPage = pagination.page || 1;
+      currentLimit = pagination.limit || currentLimit;
+      usersByID = Object.fromEntries(users.map((user) => [user.id, user]));
+      if (listEl) listEl.innerHTML = users.map(adminUserRowHTML).join("") || `<p class="muted">No users match the current filters.</p>`;
+      const countEl = $("#adminUserCount");
+      if (countEl) countEl.textContent = `${pagination.total} ${pagination.total === 1 ? "user" : "users"}`;
+      bindUserListRows();
+    } catch (error) {
+      if (listEl) listEl.innerHTML = `<p class="muted">Failed to load users: ${esc(error.message)}</p>`;
+    }
+  };
+  let searchTimer = null;
+  document.querySelectorAll("[data-admin-filter], [data-admin-filter-search]").forEach((input) => {
+    const evt = input.tagName === "SELECT" ? "change" : "input";
+    input.addEventListener(evt, () => {
+      filterQuery = String(document.querySelector("[data-admin-filter-search]")?.value || "");
+      filterMembership = document.querySelector("[data-admin-filter='membership']")?.value || "";
+      filterLevel = document.querySelector("[data-admin-filter='level']")?.value || "";
+      filterPayment = document.querySelector("[data-admin-filter='payment']")?.value || "";
+      currentPage = 1;
+      if (evt === "input") {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => reloadUsersPage(), 250);
+      } else {
+        reloadUsersPage();
+      }
+    });
+  });
+  bindUserListRows();
   bindDialogCloseButtons();
   $("#newOwnerUserBtn")?.addEventListener("click", () => $("#userCreateDialog")?.showModal());
   $("#userCreateForm")?.addEventListener("submit", async (event) => {
@@ -15063,7 +15514,6 @@ async function renderAdmin() {
       setStatus(error.message, true);
     }
   });
-  applyAdminFilters();
   if (users[0]) loadDetail(users[0].id);
 }
 
@@ -15395,9 +15845,33 @@ function bindAdminUserActions(usersByID = {}, afterAction = () => {}, plans = []
 }
 
 async function renderPlansAdmin() {
-  const plans = (await api("/api/admin/plans")).plans || [];
+  const [plansRes, settingsRes] = await Promise.all([
+    api("/api/admin/plans"),
+    api("/api/admin/settings").catch(() => ({ settings: {} })),
+  ]);
+  const plans = plansRes.plans || [];
+  const settings = settingsRes.settings || {};
+  const domainMonthlyCents = settings.custom_domain_monthly_cents ?? 1500;
+  const domainYearlyCents = settings.custom_domain_yearly_cents ?? 20000;
+
   shell("Plan Pricing", `
     <div class="page-title"><div><h1>Plans</h1><p class="muted">Owner-only monthly and yearly pricing controls. Amounts are entered in USD.</p></div></div>
+    <section class="panel" style="margin-bottom:20px;">
+      <form id="customDomainPricingForm" class="form-grid">
+        <div>
+          <h2>Custom Domain Add-On (<code>clientdomain.com</code>)</h2>
+          <p class="muted">Users get up to <strong>3 free subdomain websites</strong> (including deleted stores in Trash). Connecting a custom domain requires paying this monthly or yearly fee.</p>
+        </div>
+        <div class="grid-2">
+          <div class="field"><label>Custom domain monthly price (USD)</label><input type="number" min="0" step="0.01" name="monthly_dollars" value="${dollars(domainMonthlyCents)}" required></div>
+          <div class="field"><label>Custom domain yearly price (USD)</label><input type="number" min="0" step="0.01" name="yearly_dollars" value="${dollars(domainYearlyCents)}" required></div>
+        </div>
+        <div>
+          <button class="btn primary" type="submit">${icon("save")}Save custom domain pricing</button>
+        </div>
+        <p class="status-line"></p>
+      </form>
+    </section>
     <div class="grid-3">
       ${plans.map((plan) => `
         <section class="panel">
@@ -15414,17 +15888,32 @@ async function renderPlansAdmin() {
               <div class="field"><label>Flat monthly USD</label><input type="number" min="0" step="0.01" name="price_dollars" value="${dollars(plan.price)}"></div>
               <div class="field"><label>Flat yearly USD</label><input type="number" min="0" step="0.01" name="price_yearly_dollars" value="${dollars(plan.price_yearly || (plan.price || 0) * 12)}"></div>
             </div>
-            <div class="grid-2">
-              <div class="field"><label>Trial days</label><input type="number" min="0" step="1" name="trial_days" value="${plan.trial_days || 0}"></div>
-              <div class="field"><label>Seat limit</label><input type="number" min="1" step="1" name="seat_limit" value="${plan.seat_limit || 1}"><small class="muted">Maximum people in a team, including its administrator. Pending invitations reserve seats.</small></div>
-            </div>
-            <div class="field"><label>Project limit</label><input type="number" min="1" step="1" name="project_limit" value="${plan.project_limit || 1}"></div>
+            <div class="field"><label>Trial days</label><input type="number" min="0" step="1" name="trial_days" value="${plan.trial_days || 0}"></div>
+            <p class="muted" style="margin:0;font-size:0.85rem;">Price applies <strong>per published domain</strong> (no seat limit or project limit on this package).</p>
             <label class="check-row"><input type="checkbox" name="featured" ${plan.featured ? "checked" : ""}> Featured trial plan</label>
             <button class="btn primary" type="submit">${icon("save")}Save plan</button>
             <p class="status-line"></p>
           </form>
         </section>`).join("")}
     </div>`);
+
+  $("#customDomainPricingForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = Object.fromEntries(new FormData(form).entries());
+    try {
+      await api("/api/admin/domain-pricing", {
+        method: "PATCH",
+        body: JSON.stringify({
+          custom_domain_monthly_cents: cents(data.monthly_dollars),
+          custom_domain_yearly_cents: cents(data.yearly_dollars),
+        }),
+      });
+      setFormStatus(form, "Custom domain pricing saved.");
+    } catch (error) {
+      setFormStatus(form, error.message, true);
+    }
+  });
 
   document.querySelectorAll(".plan-form").forEach((form) => form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -15438,13 +15927,11 @@ async function renderPlansAdmin() {
       price_per_seat: 0,
       price_per_seat_yearly: 0,
       trial_days: Number(data.trial_days),
-      seat_limit: Number(data.seat_limit),
-      project_limit: Number(data.project_limit),
       featured: form.featured.checked,
     };
     try {
       await api(`/api/admin/plans/${form.dataset.planId}`, { method: "PATCH", body: JSON.stringify(body) });
-      setFormStatus(form, "Plan saved. Current subscribers now use this seat limit.");
+      setFormStatus(form, "Plan saved.");
     } catch (error) {
       const line = form.querySelector(".status-line");
       if (line) {
@@ -15646,6 +16133,13 @@ async function renderSettings() {
             <div class="toolbar"><button class="btn" type="button" id="clearFrontendCacheBtn">${icon("refresh-cw")}Clear frontend cache</button></div>
             <p class="status-line" id="frontendCacheStatus" role="status"></p>
           </div>
+          <div class="grid-2" style="margin-bottom:14px;">
+            <div class="field">
+              <label>Default max items per list page</label>
+              <input type="number" min="1" max="100" step="1" name="default_list_limit" value="${esc(settings.default_list_limit || 10)}">
+              <small class="muted">Controls how many rows are loaded per page across platform lists (1–100, default 10) so large datasets never overload the server.</small>
+            </div>
+          </div>
           <div class="grid-2">
             <div class="field"><label>Site name</label><input name="site_name" value="${esc(settings.site_name || "")}"></div>
             <div class="field"><label>Slogan</label><input name="company_slogan" value="${esc(settings.company_slogan || "")}" placeholder="Your platform slogan"></div>
@@ -15730,6 +16224,14 @@ async function renderSettings() {
             <div class="grid-2">
               ${secretField("Client secret", "paypal_client_secret", "paypal_client_secret_set", "clear_paypal_client_secret")}
               <div class="field"><label>Webhook ID</label><input name="paypal_webhook_id" value="${esc(settings.paypal_webhook_id || "")}" autocomplete="off"></div>
+            </div>
+          </article>
+          <article class="settings-provider" style="margin-top:16px;">
+            <h2>Custom Domain Pricing (<code>clientdomain.com</code>)</h2>
+            <p class="muted">Users get up to 3 free subdomain websites (including Trash). Set the price to connect a custom domain.</p>
+            <div class="grid-2">
+              <div class="field"><label>Monthly price (USD)</label><input type="number" min="0" step="0.01" name="custom_domain_monthly_dollars" value="${dollars(settings.custom_domain_monthly_cents ?? 1500)}"></div>
+              <div class="field"><label>Yearly price (USD)</label><input type="number" min="0" step="0.01" name="custom_domain_yearly_dollars" value="${dollars(settings.custom_domain_yearly_cents ?? 20000)}"></div>
             </div>
           </article>
         </section>
@@ -15863,6 +16365,12 @@ async function renderSettings() {
     ].forEach((key) => {
       body[key] = Boolean(form.elements[key]?.checked);
     });
+    body.custom_domain_monthly_cents = cents(body.custom_domain_monthly_dollars ?? 15);
+    body.custom_domain_yearly_cents = cents(body.custom_domain_yearly_dollars ?? 200);
+    delete body.custom_domain_monthly_dollars;
+    delete body.custom_domain_yearly_dollars;
+    const rawLimit = Number(body.default_list_limit || 10);
+    body.default_list_limit = Number.isFinite(rawLimit) ? Math.min(100, Math.max(1, Math.floor(rawLimit))) : 10;
     body.social_links = collectSocialLinks(form);
     return body;
   };
@@ -16395,9 +16903,22 @@ async function renderAdminDeletedProjects() {
     return;
   }
 
+  let currentPage = 1;
+  let currentLimit = defaultListLimit();
+  let searchQuery = "";
+
+  const fetchDeletedPage = async () => {
+    const params = new URLSearchParams({
+      page: String(currentPage),
+      limit: String(currentLimit),
+    });
+    if (searchQuery.trim()) params.set("q", searchQuery.trim());
+    return await api(`/api/admin/deleted-projects?${params.toString()}`);
+  };
+
   let data;
   try {
-    data = await api("/api/admin/deleted-projects");
+    data = await fetchDeletedPage();
   } catch (error) {
     shell("Deleted Projects", `
       <div class="page-title">
@@ -16414,7 +16935,11 @@ async function renderAdminDeletedProjects() {
     return;
   }
 
-  const projects = data.projects || [];
+  let projects = data.projects || [];
+  let pagination = data.pagination || { page: currentPage, limit: currentLimit, total: projects.length, total_pages: 1 };
+  currentPage = pagination.page || 1;
+  currentLimit = pagination.limit || currentLimit;
+  let totalInRetention = data.total_in_retention ?? pagination.total ?? projects.length;
 
   const renderProjectRows = (list) => {
     if (!list.length) {
@@ -16424,16 +16949,19 @@ async function renderAdminDeletedProjects() {
       <div class="deleted-projects-grid" style="display:grid;gap:16px;">
         ${list.map((p) => {
           const daysPillClass = p.days_remaining <= 5 ? "pill danger" : p.days_remaining <= 15 ? "pill warn" : "pill";
+          const isWebsite = p.kind === "website";
+          const retentionDays = p.retention_days || (isWebsite ? 30 : 35);
           return `
             <article class="panel deleted-project-card" data-deleted-project-card="${esc(p.id)}" style="display:grid;gap:12px;">
               <div class="panel-head" style="margin-bottom:0;">
                 <div>
                   <h2 style="font-size:18px;">${esc(p.name)}</h2>
-                  <p class="muted" style="font-size:13px;margin:2px 0 0 0;">${esc(p.company_email || p.contact_name || "Client project")} · Workspace: <strong>${esc(p.team_name || "Default workspace")}</strong></p>
+                  <p class="muted" style="font-size:13px;margin:2px 0 0 0;">${esc(p.company_email || p.contact_name || (isWebsite ? "Client website" : "Client project"))} · ${isWebsite ? `Domain: <strong>${esc(p.team_name || p.subdomain)}</strong>` : `Workspace: <strong>${esc(p.team_name || "Default workspace")}</strong>`}</p>
                 </div>
-                <div style="display:flex;align-items:center;gap:8px;">
-                  <span class="${daysPillClass}" title="Preserved for 35 days on platform owner end.">${icon("clock")} ${p.days_remaining} ${p.days_remaining === 1 ? "day" : "days"} left</span>
-                  <span class="pill">${icon("folder")}deleted</span>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                  <span class="${daysPillClass}" title="Preserved for ${retentionDays} days before automatic purge.">${icon("clock")} ${p.days_remaining} ${p.days_remaining === 1 ? "day" : "days"} left (${retentionDays}d policy)</span>
+                  <span class="pill">${icon(isWebsite ? "globe" : "folder")}${isWebsite ? "deleted website" : "deleted project"}</span>
+                  ${p.client_hidden ? `<span class="pill warn">Unlisted by client</span>` : ""}
                 </div>
               </div>
 
@@ -16441,15 +16969,16 @@ async function renderAdminDeletedProjects() {
 
               <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:13px;color:var(--text-muted);padding:8px 12px;background:var(--bg-tertiary);border-radius:6px;">
                 <span>${icon("globe-2")} <strong>${p.domains_count}</strong> ${p.domains_count === 1 ? "domain" : "domains"}</span>
-                <span>${icon("list-checks")} <strong>${p.tasks_count}</strong> ${p.tasks_count === 1 ? "task" : "tasks"}</span>
-                <span>${icon("file-text")} <strong>${p.documents_count}</strong> ${p.documents_count === 1 ? "document" : "documents"}</span>
+                ${isWebsite
+                  ? `<span>${icon("mail")} <strong>${p.tasks_count}</strong> ${p.tasks_count === 1 ? "lead" : "leads"}</span>${p.root_dir ? `<span>${icon("folder")} <code>${esc(p.root_dir)}</code></span>` : ""}`
+                  : `<span>${icon("list-checks")} <strong>${p.tasks_count}</strong> ${p.tasks_count === 1 ? "task" : "tasks"}</span><span>${icon("file-text")} <strong>${p.documents_count}</strong> ${p.documents_count === 1 ? "document" : "documents"}</span>`}
                 <span>${icon("calendar")} Deleted on <strong>${fmtDate(p.deleted_at)}</strong>${p.deleted_by_name ? ` by <strong>${esc(p.deleted_by_name)}</strong>` : ""}</span>
                 <span>${icon("shield-alert")} Auto-purges on <strong>${fmtDate(p.expires_at)}</strong></span>
               </div>
 
               <div class="toolbar" style="display:flex;justify-content:flex-end;gap:8px;">
                 <button class="btn primary compact" type="button" data-admin-restore-project="${esc(p.id)}" data-project-name="${esc(p.name)}">
-                  ${icon("rotate-ccw")}Restore project
+                  ${icon("rotate-ccw")}Restore ${isWebsite ? "website" : "project"}
                 </button>
                 <button class="btn danger compact" type="button" data-admin-permanent-delete-project="${esc(p.id)}" data-project-name="${esc(p.name)}">
                   ${icon("trash-2")}Delete permanently
@@ -16488,12 +17017,13 @@ async function renderAdminDeletedProjects() {
         <span>Search deleted projects</span>
         <input type="search" id="deletedProjectSearchInput" placeholder="Filter by project name, email, contact, or workspace team...">
       </label>
-      <span class="pill" style="align-self:flex-end;padding:8px 14px;font-size:13px;" id="deletedProjectTotalBadge">${projects.length} in retention</span>
+      <span class="pill" style="align-self:flex-end;padding:8px 14px;font-size:13px;" id="deletedProjectTotalBadge">${totalInRetention} in retention</span>
     </div>
 
     <div id="deletedProjectsContainer">
       ${renderProjectRows(projects)}
     </div>
+    <div id="deletedProjectsPagination">${listPaginationBarHTML(pagination, { label: "deleted items", limit: currentLimit, defaultLimit: data.default_limit })}</div>
 
     <dialog id="adminRestoreProjectDialog" class="modal client-dialog">
       <form id="adminRestoreProjectForm" class="form-grid" method="dialog">
@@ -16533,24 +17063,6 @@ async function renderAdminDeletedProjects() {
     </dialog>
   `);
 
-  const searchInput = $("#deletedProjectSearchInput");
-  searchInput?.addEventListener("input", () => {
-    const q = searchInput.value.trim().toLowerCase();
-    const filtered = projects.filter((p) => {
-      if (!q) return true;
-      return (p.name || "").toLowerCase().includes(q) ||
-        (p.company_email || "").toLowerCase().includes(q) ||
-        (p.contact_name || "").toLowerCase().includes(q) ||
-        (p.team_name || "").toLowerCase().includes(q);
-    });
-    const container = $("#deletedProjectsContainer");
-    if (container) container.innerHTML = renderProjectRows(filtered);
-    const badge = $("#deletedProjectTotalBadge");
-    if (badge) badge.textContent = `${filtered.length} of ${projects.length} in retention`;
-    bindActions();
-    icons();
-  });
-
   const bindActions = () => {
     document.querySelectorAll("[data-admin-restore-project]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -16579,6 +17091,53 @@ async function renderAdminDeletedProjects() {
     });
   };
 
+  let reloadDeletedPage;
+  const renderPagination = () => {
+    const pagerEl = $("#deletedProjectsPagination");
+    if (!pagerEl) return;
+    pagerEl.innerHTML = listPaginationBarHTML(pagination, { label: "deleted items", limit: currentLimit, defaultLimit: data.default_limit });
+    bindListPagination(pagerEl, ({ page, limit }) => {
+      currentPage = page;
+      currentLimit = limit;
+      reloadDeletedPage();
+    });
+  };
+
+  reloadDeletedPage = async () => {
+    const container = $("#deletedProjectsContainer");
+    if (container) container.innerHTML = `<section class="panel"><p class="muted">Loading deleted items...</p></section>`;
+    try {
+      const next = await fetchDeletedPage();
+      data = next;
+      projects = next.projects || [];
+      pagination = next.pagination || { page: currentPage, limit: currentLimit, total: projects.length, total_pages: 1 };
+      currentPage = pagination.page || 1;
+      currentLimit = pagination.limit || currentLimit;
+      totalInRetention = next.total_in_retention ?? pagination.total ?? projects.length;
+      if (container) container.innerHTML = renderProjectRows(projects);
+      const badge = $("#deletedProjectTotalBadge");
+      if (badge) {
+        badge.textContent = searchQuery.trim()
+          ? `${pagination.total} of ${totalInRetention} in retention`
+          : `${totalInRetention} in retention`;
+      }
+      renderPagination();
+      bindActions();
+      icons();
+    } catch (err) {
+      if (container) container.innerHTML = `<section class="panel"><p class="muted">Failed to load: ${esc(err.message || err)}</p></section>`;
+    }
+  };
+
+  let searchTimer = null;
+  const searchInput = $("#deletedProjectSearchInput");
+  searchInput?.addEventListener("input", () => {
+    searchQuery = searchInput.value || "";
+    currentPage = 1;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => reloadDeletedPage(), 250);
+  });
+
   $("#adminRestoreProjectForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -16587,7 +17146,7 @@ async function renderAdminDeletedProjects() {
       await api(`/api/admin/deleted-projects/${projectID}/restore`, { method: "POST" });
       $("#adminRestoreProjectDialog")?.close();
       await refreshClientSidebarCache();
-      await renderAdminDeletedProjects();
+      await reloadDeletedPage();
     } catch (error) {
       setFormStatus(form, error.message, true);
     }
@@ -16601,15 +17160,1097 @@ async function renderAdminDeletedProjects() {
       await api(`/api/admin/deleted-projects/${projectID}/permanent`, { method: "DELETE" });
       $("#adminPermanentDeleteDialog")?.close();
       await refreshClientSidebarCache();
-      await renderAdminDeletedProjects();
+      await reloadDeletedPage();
     } catch (error) {
       setFormStatus(form, error.message, true);
     }
   });
 
-  $("#refreshDeletedProjectsBtn")?.addEventListener("click", () => renderAdminDeletedProjects());
+  $("#refreshDeletedProjectsBtn")?.addEventListener("click", () => reloadDeletedPage());
+  renderPagination();
   bindActions();
   bindDialogCloseButtons();
+  icons();
+}
+
+function formatBytesHuman(bytes = 0) {
+  const n = Number(bytes || 0);
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function openThemePreviewModal({ slug = "default", name = "Theme Preview", baseTheme = "default", onUseTheme = null } = {}) {
+  const safeSlug = String(slug || "").trim().toLowerCase();
+  const safeBase = String(baseTheme || "").toLowerCase() === "furnisite" ? "furnisite" : (String(baseTheme || "").toLowerCase() === "custom" ? "custom" : "default");
+  const previewTarget = safeSlug && safeSlug !== "default" && safeSlug !== "furnisite" ? safeSlug : safeBase;
+  const previewUrl = `/preview/${encodeURIComponent(previewTarget)}`;
+
+  let dlg = document.getElementById("themePreviewDialog");
+  if (dlg) dlg.remove();
+
+  dlg = document.createElement("dialog");
+  dlg.id = "themePreviewDialog";
+  dlg.className = "modal";
+  dlg.style.cssText = "max-width:1240px; width:96%; height:90vh; border-radius:14px; border:1px solid #cbd5e1; padding:0; overflow:hidden; display:flex; flex-direction:column; background:#0f172a;";
+  dlg.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 18px; background:#0f172a; color:#f8fafc; border-bottom:1px solid #1e293b; flex-wrap:wrap;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <strong style="font-size:1rem;">${esc(name)}</strong>
+        <span style="font-size:0.75rem; background:#1e293b; color:#94a3b8; padding:3px 8px; border-radius:999px;">Base: ${esc(safeBase)}</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <div style="display:inline-flex; background:#1e293b; padding:3px; border-radius:8px; gap:3px;">
+          <button type="button" class="btn compact tp-vp-btn" data-vp="100%" style="background:#334155; color:#fff; border:none;">Desktop</button>
+          <button type="button" class="btn compact tp-vp-btn" data-vp="768px" style="background:transparent; color:#94a3b8; border:none;">Tablet</button>
+          <button type="button" class="btn compact tp-vp-btn" data-vp="390px" style="background:transparent; color:#94a3b8; border:none;">Mobile</button>
+        </div>
+        ${typeof onUseTheme === "function" ? `<button type="button" id="tpUseThemeBtn" class="btn compact primary">${icon("check")} Use This Theme</button>` : ""}
+        <a href="${esc(previewUrl)}" target="_blank" rel="noopener" class="btn compact" style="background:#1e293b; color:#e2e8f0; border-color:#334155;">${icon("external-link")} Open Tab</a>
+        <button type="button" id="tpCloseBtn" class="btn icon quiet" style="color:#cbd5e1;" aria-label="Close preview">${icon("x")}</button>
+      </div>
+    </div>
+    <div style="flex:1; min-height:0; background:#1e293b; display:flex; justify-content:center; align-items:stretch; overflow:auto; padding:12px;">
+      <iframe id="themePreviewFrame" src="${esc(previewUrl)}" style="width:100%; height:100%; border:none; border-radius:10px; background:#ffffff; transition:width 0.2s ease; box-shadow:0 12px 32px rgba(0,0,0,0.35);"></iframe>
+    </div>
+  `;
+  document.body.appendChild(dlg);
+
+  const frame = dlg.querySelector("#themePreviewFrame");
+  dlg.querySelectorAll(".tp-vp-btn").forEach((vpBtn) => {
+    vpBtn.addEventListener("click", () => {
+      const w = vpBtn.getAttribute("data-vp") || "100%";
+      if (frame) frame.style.width = w;
+      dlg.querySelectorAll(".tp-vp-btn").forEach((b) => {
+        const active = b === vpBtn;
+        b.style.background = active ? "#334155" : "transparent";
+        b.style.color = active ? "#ffffff" : "#94a3b8";
+      });
+    });
+  });
+
+  dlg.querySelector("#tpCloseBtn")?.addEventListener("click", () => dlg.close());
+  dlg.addEventListener("close", () => dlg.remove());
+  dlg.querySelector("#tpUseThemeBtn")?.addEventListener("click", () => {
+    if (typeof onUseTheme === "function") onUseTheme();
+    dlg.close();
+  });
+
+  icons();
+  dlg.showModal();
+}
+
+async function renderAdminThemes() {
+  if (state.me?.role !== "owner_adm") {
+    shell("Theme Market", `
+      <div class="page-title"><div><h1>Theme Market</h1></div></div>
+      <section class="panel">
+        <h2>Owner admin access required</h2>
+        <p class="muted">Only the Platform Owner can add and manage themes in the Theme Market.</p>
+        <div class="toolbar"><a class="btn primary" href="/dashboard">${icon("arrow-left")}Back to dashboard</a></div>
+      </section>`);
+    return;
+  }
+
+  let themes = [];
+  try {
+    const res = await api("/api/admin/themes");
+    themes = res.themes || [];
+  } catch (err) {
+    console.error("Failed to load Theme Market:", err);
+  }
+
+  const activeCount = themes.filter((t) => t.is_active).length;
+  const githubCount = themes.filter((t) => t.github_url).length;
+
+  shell("Theme Market", `
+    <div class="page-title">
+      <div>
+        <h1>Theme Market Manager</h1>
+        <p class="muted">Pull starter themes directly from GitHub repositories, set preview artwork via File Manager, and curate themes shown when users launch a website. The <strong>default</strong> theme is always installed first.</p>
+      </div>
+      <div class="toolbar">
+        <span class="badge info">${themes.length} total</span>
+        <span class="badge ok">${activeCount} active</span>
+        <span class="badge">${githubCount} GitHub-linked</span>
+        <button type="button" class="btn" id="tmOpenAiGuideBtn">${icon("sparkles")}AI Theme Guide</button>
+        <a class="btn" href="/uploads/sample-themes/foodwagon-theme.zip" download="foodwagon-theme.zip">${icon("download")}Sample Theme (.zip)</a>
+        <a class="btn" href="/stores">${icon("globe")}Open Website Builder</a>
+      </div>
+    </div>
+
+    <section class="panel tm-panel" style="margin-bottom:20px;">
+      <div class="tm-panel-head">
+        <div>
+          <h2>Add New Theme from GitHub</h2>
+          <p class="muted">Enter a public GitHub repository URL to pull theme files &amp; <code>theme.json</code> metadata, and choose a preview image from the File Manager.</p>
+        </div>
+      </div>
+
+      <form id="addThemeMarketForm">
+        <div class="tm-form-layout">
+          <div class="tm-fields-col">
+            <div class="tm-fields-row">
+              <div class="field">
+                <label for="tmNewName">Theme Name <span style="color:#dc2626;">*</span></label>
+                <input name="name" id="tmNewName" placeholder="e.g. Nordic Studio" required>
+              </div>
+              <div class="field">
+                <label for="tmNewSlug">Slug</label>
+                <input name="slug" id="tmNewSlug" placeholder="nordic-studio">
+                <small class="muted">Auto-generated from name if left blank</small>
+              </div>
+            </div>
+
+            <div class="tm-fields-row">
+              <div class="field">
+                <label for="tmBaseTheme">Theme Engine</label>
+                <select name="base_theme" id="tmBaseTheme">
+                  <option value="custom">Unique Standalone Theme (GitHub)</option>
+                  <option value="default">Default (Better SaaS / Business)</option>
+                  <option value="furnisite">Infurnish / Furnisite (E-Commerce)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="tmCategory">Category</label>
+                <input name="category" id="tmCategory" placeholder="e.g. Agency, Portfolio, E-Commerce" value="Business">
+              </div>
+            </div>
+
+            <div class="tm-fields-row">
+              <div class="field">
+                <label for="tmAccentColorText">Accent Color</label>
+                <div class="tm-color-field">
+                  <input type="color" id="tmAccentColorPicker" value="#3b82f6" aria-label="Accent color picker">
+                  <input name="accent_color" id="tmAccentColorText" placeholder="#3b82f6" value="#3b82f6">
+                </div>
+              </div>
+              <div class="field">
+                <label for="tmSortOrder">Sort Order</label>
+                <input name="sort_order" id="tmSortOrder" type="number" value="10">
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="tmDescription">Description</label>
+              <textarea name="description" id="tmDescription" rows="3" placeholder="Describe the layout style, target industry, and ideal use case..."></textarea>
+            </div>
+          </div>
+
+          <div class="tm-media-col">
+            <div class="tm-upload-card">
+              <div class="tm-upload-card-label">
+                <span>GitHub Repository</span>
+                <span class="muted" style="font-weight:400; font-size:0.75rem;">Public Repo</span>
+              </div>
+              <div class="tm-github-row">
+                <input name="github_url" id="tmGithubUrlInput" type="url" placeholder="https://github.com/owner/theme-repo">
+                <input name="github_branch" id="tmGithubBranchInput" placeholder="main" aria-label="GitHub branch">
+              </div>
+              <div class="tm-github-actions">
+                <button type="button" class="btn compact primary" id="tmFetchGithubBtn">${icon("git-branch")}Fetch from GitHub</button>
+                <span class="muted" style="font-size:0.75rem;">Reads <code>theme.json</code> if present</span>
+              </div>
+              <div class="tm-github-pill" id="tmGithubVerifiedPill" hidden>
+                <div class="tm-github-pill-info">
+                  ${icon("check-circle-2")}
+                  <div>
+                    <strong id="tmGithubRepoLabel">owner/repo</strong>
+                    <span id="tmGithubMetaLabel">Synced</span>
+                  </div>
+                </div>
+              </div>
+              <p class="status-line" id="tmGithubStatus" role="status" style="margin:0; font-size:0.8rem;"></p>
+            </div>
+
+            <div class="tm-upload-card">
+              <div class="tm-upload-card-label">
+                <span>Preview Image</span>
+                <span class="muted" style="font-weight:400; font-size:0.75rem;">File Manager</span>
+              </div>
+              <input type="hidden" name="preview_image" id="tmPreviewImageInput" value="">
+              <div class="tm-preview-thumb" id="tmPreviewThumb">
+                <span>No preview image selected</span>
+              </div>
+              <div class="tm-preview-actions">
+                <button type="button" class="btn compact primary" id="tmChoosePreviewBtn">${icon("folder-open")}Choose from File Manager</button>
+                <button type="button" class="btn compact" id="tmClearPreviewBtn" hidden>${icon("x")}Clear</button>
+              </div>
+              <div class="tm-preview-path" id="tmPreviewPathText" hidden></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tm-form-footer">
+          <label class="tm-checkbox-label">
+            <input type="checkbox" name="is_active" checked>
+            <span>Visible in Theme Market</span>
+          </label>
+          <button class="btn primary" type="submit" id="tmSubmitBtn">${icon("plus")}Add Theme to Market</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel tm-panel">
+      <div class="tm-panel-head">
+        <div>
+          <h2>Published Themes (${themes.length})</h2>
+          <p class="muted">Pull latest updates from GitHub, preview live layouts, or manage visibility.</p>
+        </div>
+      </div>
+      ${themes.length === 0 ? `<p class="muted">No themes found.</p>` : `
+        <div class="tm-grid">
+          ${themes.map((t) => `
+            <article class="tm-card">
+              <div class="tm-card-cover">
+                ${t.preview_image
+                  ? `<img src="${esc(t.preview_image)}" alt="${esc(t.name)}">`
+                  : `<div class="tm-card-cover-fallback" style="background:linear-gradient(135deg, ${esc(t.accent_color || "#3b82f6")}22, #f1f5f9);">${esc(t.name)}</div>`}
+                <div class="tm-card-badges">
+                  <span class="tm-card-cat">${esc(t.category || "General")}</span>
+                  <span class="badge ${t.is_default ? "info" : (t.is_active ? "ok" : "")}">${t.is_default ? "Auto Default" : (t.is_active ? "Active" : "Hidden")}</span>
+                </div>
+              </div>
+              <div class="tm-card-body">
+                <div class="tm-card-title-row">
+                  <h3 class="tm-card-title">
+                    <span class="tm-accent-dot" style="background:${esc(t.accent_color || "#3b82f6")};"></span>
+                    <span>${esc(t.name)}</span>
+                  </h3>
+                </div>
+                <div class="tm-card-meta">
+                  <code>${esc(t.slug)}</code>
+                  <span>·</span>
+                  <span>Base: <strong>${esc(t.base_theme)}</strong></span>
+                  <span>·</span>
+                  <span>Order: ${Number(t.sort_order ?? 10)}</span>
+                </div>
+                ${t.github_url ? `
+                  <a class="tm-package-chip" href="${esc(t.github_url)}" target="_blank" rel="noopener">
+                    ${icon("git-branch")}
+                    <span>${esc(t.github_url.replace(/^https?:\/\/github\.com\//i, ""))}${t.github_branch ? `@${esc(t.github_branch)}` : ""}${t.last_commit_sha ? ` · ${esc(t.last_commit_sha.slice(0, 7))}` : ""}</span>
+                  </a>
+                ` : ""}
+                <p class="tm-card-desc">${esc(t.description || "No description provided.")}</p>
+              </div>
+              <div class="tm-card-actions">
+                <button type="button" class="btn compact preview-admin-theme-btn" data-theme-slug="${esc(t.slug)}" data-theme-name="${esc(t.name)}" data-base-theme="${esc(t.base_theme || "default")}">
+                  ${icon("eye")}Preview
+                </button>
+                ${t.github_url ? `
+                  <button type="button" class="btn compact sync-github-theme-btn" data-id="${esc(t.id)}" title="Pull latest from GitHub">
+                    ${icon("refresh-cw")}Pull
+                  </button>
+                ` : ""}
+                ${t.is_default ? `<span class="muted" style="font-size:0.78rem; display:inline-flex; align-items:center; margin-left:auto;">Built-in default</span>` : `
+                  <button type="button" class="btn compact edit-theme-btn" data-id="${esc(t.id)}">
+                    ${icon("pencil")}Edit
+                  </button>
+                  <button type="button" class="btn compact toggle-theme-active-btn" data-id="${esc(t.id)}" data-active="${t.is_active ? "1" : "0"}">
+                    ${t.is_active ? "Hide" : "Show"}
+                  </button>
+                  <button type="button" class="btn compact danger delete-theme-btn" data-id="${esc(t.id)}" data-name="${esc(t.name)}" style="margin-left:auto;">
+                    ${icon("trash-2")}Delete
+                  </button>
+                `}
+              </div>
+            </article>
+          `).join("")}
+        </div>
+      `}
+    </section>
+  `);
+
+  document.getElementById("tmNewName")?.addEventListener("input", (e) => {
+    const slugInput = document.getElementById("tmNewSlug");
+    if (slugInput && !slugInput.dataset.touched) {
+      slugInput.value = e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    }
+  });
+  document.getElementById("tmNewSlug")?.addEventListener("input", (e) => {
+    e.target.dataset.touched = "1";
+  });
+
+  // Sync Accent Color picker & hex input
+  const colorPicker = document.getElementById("tmAccentColorPicker");
+  const colorText = document.getElementById("tmAccentColorText");
+  colorPicker?.addEventListener("input", () => {
+    if (colorText) colorText.value = colorPicker.value;
+  });
+  colorText?.addEventListener("input", () => {
+    if (colorPicker && /^#[0-9a-fA-F]{6}$/.test(colorText.value.trim())) {
+      colorPicker.value = colorText.value.trim();
+    }
+  });
+
+  // File Manager Picker for Preview Image
+  const previewInput = document.getElementById("tmPreviewImageInput");
+  const previewThumb = document.getElementById("tmPreviewThumb");
+  const clearPreviewBtn = document.getElementById("tmClearPreviewBtn");
+  const previewPathText = document.getElementById("tmPreviewPathText");
+  const setPreviewImage = (url) => {
+    const clean = (url || "").trim();
+    if (previewInput) previewInput.value = clean;
+    if (previewThumb) {
+      previewThumb.innerHTML = clean
+        ? `<img src="${esc(clean)}" alt="Theme preview">`
+        : `<span>No preview image selected</span>`;
+    }
+    if (clearPreviewBtn) clearPreviewBtn.hidden = !clean;
+    if (previewPathText) {
+      previewPathText.hidden = !clean;
+      previewPathText.textContent = clean;
+    }
+  };
+  document.getElementById("tmChoosePreviewBtn")?.addEventListener("click", () => {
+    openMediaManagerModal({
+      currentUrl: previewInput?.value || "",
+      onSelect: (selectedUrl) => setPreviewImage(selectedUrl),
+    });
+  });
+  clearPreviewBtn?.addEventListener("click", () => setPreviewImage(""));
+
+  // Fetch & verify theme from GitHub
+  const ghUrlInput = document.getElementById("tmGithubUrlInput");
+  const ghBranchInput = document.getElementById("tmGithubBranchInput");
+  const ghFetchBtn = document.getElementById("tmFetchGithubBtn");
+  const ghPill = document.getElementById("tmGithubVerifiedPill");
+  const ghRepoLabel = document.getElementById("tmGithubRepoLabel");
+  const ghMetaLabel = document.getElementById("tmGithubMetaLabel");
+  const ghStatusEl = document.getElementById("tmGithubStatus");
+
+  ghFetchBtn?.addEventListener("click", async () => {
+    const rawUrl = (ghUrlInput?.value || "").trim();
+    const rawBranch = (ghBranchInput?.value || "").trim();
+    if (!rawUrl) {
+      if (ghStatusEl) {
+        ghStatusEl.textContent = "Please enter a GitHub repository URL.";
+        ghStatusEl.style.color = "#dc2626";
+      }
+      return;
+    }
+    ghFetchBtn.disabled = true;
+    if (ghPill) ghPill.hidden = true;
+    if (ghStatusEl) {
+      ghStatusEl.textContent = "Fetching repository from GitHub...";
+      ghStatusEl.style.color = "var(--text-secondary)";
+    }
+    try {
+      const res = await api("/api/admin/themes/fetch-github", {
+        method: "POST",
+        body: JSON.stringify({ github_url: rawUrl, github_branch: rawBranch }),
+      });
+      if (ghUrlInput && res.github_url) ghUrlInput.value = res.github_url;
+      if (ghBranchInput && res.github_branch) ghBranchInput.value = res.github_branch;
+      if (ghRepoLabel) ghRepoLabel.textContent = `${res.owner}/${res.repo}`;
+      if (ghMetaLabel) {
+        const sha = res.commit_sha ? `Commit ${res.commit_sha.slice(0, 7)} · ` : "";
+        ghMetaLabel.textContent = `${sha}${res.file_count || 0} files`;
+      }
+      if (ghPill) ghPill.hidden = false;
+      if (ghStatusEl) ghStatusEl.textContent = "";
+
+      // Auto-populate empty fields from theme.json metadata if present
+      const meta = res.metadata || {};
+      const nameInput = document.getElementById("tmNewName");
+      const slugInput = document.getElementById("tmNewSlug");
+      const descInput = document.getElementById("tmDescription");
+      const catInput = document.getElementById("tmCategory");
+      const baseSelect = document.getElementById("tmBaseTheme");
+      if (meta.name && nameInput && !nameInput.value.trim()) {
+        nameInput.value = meta.name;
+        if (slugInput && !slugInput.dataset.touched) {
+          slugInput.value = meta.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        }
+      } else if (res.repo && nameInput && !nameInput.value.trim()) {
+        nameInput.value = res.repo;
+        if (slugInput && !slugInput.dataset.touched) {
+          slugInput.value = res.repo.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        }
+      }
+      if (meta.description && descInput && !descInput.value.trim()) {
+        descInput.value = meta.description;
+      }
+      if (meta.category && catInput && catInput.value === "Business") {
+        catInput.value = meta.category;
+      }
+      if (meta.base_theme && baseSelect) {
+        baseSelect.value = meta.base_theme;
+      }
+      if (meta.accent_color && colorText && /^#[0-9a-fA-F]{6}$/.test(meta.accent_color)) {
+        colorText.value = meta.accent_color;
+        if (colorPicker) colorPicker.value = meta.accent_color;
+      }
+      if ((res.preview_image || meta.preview_image) && !previewInput?.value) {
+        setPreviewImage(res.preview_image || meta.preview_image);
+      }
+      icons();
+    } catch (err) {
+      if (ghStatusEl) {
+        ghStatusEl.textContent = err.message || "Failed to fetch repository from GitHub.";
+        ghStatusEl.style.color = "#dc2626";
+      }
+    } finally {
+      ghFetchBtn.disabled = false;
+    }
+  });
+
+  document.getElementById("addThemeMarketForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const submitBtn = document.getElementById("tmSubmitBtn");
+    if (submitBtn) submitBtn.disabled = true;
+    try {
+      await api("/api/admin/themes", {
+        method: "POST",
+        body: JSON.stringify({
+          name: form.name.value.trim(),
+          slug: form.slug.value.trim(),
+          base_theme: form.base_theme.value,
+          category: form.category.value.trim(),
+          preview_image: form.preview_image.value.trim(),
+          github_url: form.github_url.value.trim(),
+          github_branch: form.github_branch.value.trim(),
+          accent_color: form.accent_color.value.trim(),
+          sort_order: Number(form.sort_order.value || 10),
+          description: form.description.value.trim(),
+          is_active: Boolean(form.is_active.checked),
+        }),
+      });
+      showToast("Theme pulled & added to Theme Market!");
+      await renderAdminThemes();
+    } catch (err) {
+      alert("Failed to add theme: " + (err.message || err));
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
+    }
+  });
+
+  document.querySelectorAll(".sync-github-theme-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-id");
+      btn.disabled = true;
+      try {
+        const res = await api(`/api/admin/themes/${id}/sync`, { method: "POST" });
+        const sha = res.commit_sha ? ` (${res.commit_sha.slice(0, 7)})` : "";
+        showToast(`Pulled latest from GitHub${sha}!`);
+        await renderAdminThemes();
+      } catch (err) {
+        alert("Failed to pull updates: " + (err.message || err));
+        btn.disabled = false;
+      }
+    });
+  });
+
+  document.getElementById("tmOpenAiGuideBtn")?.addEventListener("click", () => {
+    const existing = document.getElementById("tmAiGuideDialog");
+    if (existing) existing.remove();
+    const masterPrompt = `Create a complete, production-ready Bugmega (FastPress Astro) unique standalone theme based on the attached design image(s).
+Match the exact color palette, typography, section order, card layouts, header, and footer from the image(s).
+
+Output all files in this exact directory structure (to push to the root of a public GitHub repo):
+- theme.json (name, version, description, category, baseTheme: "custom", author, accentColor, fontHeading, fontBody, previewImage: "preview.png")
+- preview.png (16:9 homepage screenshot preview; Bugmega auto-extracts this as the Theme Market card image)
+- assets/ (place all theme images locally inside assets/ and reference them as src="assets/<filename>")
+- styles/global.css (CSS variables matching the design image palette, responsive grids, typography, and .custom-builder-content { width: 100%; })
+- layouts/Layout.astro (accepts Props: title, description, keywords, activePage, showHeader, showFooter, schema, pageCustomCode; reads siteConfig.json via getDataFile('siteConfig.json') for favicon; conditionally renders <SiteHeader activePage={activePage} /> and <Footer />)
+- components/SiteHeader.astro (wrap header HTML inside <!-- PREVIEW_HTML --> ... <!-- /PREVIEW_HTML --> so live preview renders the exact header; support siteConfig.json brandName/logoUrl fallback)
+- components/Footer.astro (wrap footer HTML inside <!-- PREVIEW_HTML --> ... <!-- /PREVIEW_HTML --> so live preview renders the exact footer; support siteConfig.json brandName/tagline fallback)
+- pages/HomePage.astro, AboutPage.astro, ProductsPage.astro, ProductDetailPage.astro, ContactPage.astro, CartPage.astro, BlogPage.astro, BlogPostPage.astro
+
+CRITICAL PAGE EDITOR RULE:
+Every page in pages/*.astro (except BlogPostPage/ProductDetailPage) MUST accept customData in Astro.props and render:
+{customData?.isCustom && Boolean(customData?.html) ? (
+  <>
+    <div class="custom-builder-content" set:html={customData?.html || ''} />
+    {customData?.css && <style is:inline set:html={customData.css} />}
+  </>
+) : (
+  <!-- Full starter layout matching the attached design image -->
+)}
+Pass customData.title, customData.description, customData.keywords, customData.showHeader !== false, customData.showFooter !== false, and customData.customCode to <Layout>.`;
+
+    const dlg = document.createElement("dialog");
+    dlg.id = "tmAiGuideDialog";
+    dlg.className = "modal";
+    dlg.style.cssText = "max-width:780px; width:94%; border-radius:14px; border:1px solid #cbd5e1; padding:0; overflow:hidden;";
+    dlg.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid #e2e8f0; background:#f8fafc;">
+        <div>
+          <strong style="font-size:1.05rem;">AI Theme Generator Prompt Guide</strong>
+          <div class="muted" style="font-size:0.82rem;">Generate Bugmega Page Editor, Header &amp; Footer compatible themes for GitHub.</div>
+        </div>
+        <button type="button" class="btn icon quiet" id="tmAiGuideClose">${icon("x")}</button>
+      </div>
+      <div style="padding:20px; display:grid; gap:14px; max-height:75vh; overflow:auto;">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:10px;">
+          <div style="padding:12px; border:1px solid #e2e8f0; border-radius:10px; background:#fff;">
+            <strong style="font-size:0.86rem;">1. Auto Preview Image</strong>
+            <p class="muted" style="margin:4px 0 0; font-size:0.8rem;">Include <code>preview.svg</code> (or <code>.png</code>) and set <code>"previewImage": "preview.svg"</code> in <code>theme.json</code>.</p>
+          </div>
+          <div style="padding:12px; border:1px solid #e2e8f0; border-radius:10px; background:#fff;">
+            <strong style="font-size:0.86rem;">2. Page Editor Support</strong>
+            <p class="muted" style="margin:4px 0 0; font-size:0.8rem;">All <code>pages/*.astro</code> must handle <code>customData.isCustom</code>, <code>html</code>, and <code>css</code>.</p>
+          </div>
+          <div style="padding:12px; border:1px solid #e2e8f0; border-radius:10px; background:#fff;">
+            <strong style="font-size:0.86rem;">3. Header &amp; Footer</strong>
+            <p class="muted" style="margin:4px 0 0; font-size:0.8rem;">Use <code>getActiveHeaderForTheme</code> &amp; <code>getActiveFooterForTheme</code> + <code>siteConfig.json</code>.</p>
+          </div>
+        </div>
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <strong style="font-size:0.9rem;">Master AI Prompt (Copy &amp; Paste)</strong>
+            <button type="button" class="btn compact primary" id="tmCopyAiPromptBtn">${icon("copy")}Copy Prompt</button>
+          </div>
+          <textarea id="tmAiPromptTextarea" readonly rows="13" style="width:100%; font-family:monospace; font-size:0.8rem; line-height:1.45; padding:12px; border-radius:10px; border:1px solid #cbd5e1; background:#0f172a; color:#e2e8f0;">${esc(masterPrompt)}</textarea>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 20px; border-top:1px solid #e2e8f0; background:#f8fafc;">
+        <a class="btn compact" href="/uploads/sample-themes/foodwagon-theme.zip" download="foodwagon-theme.zip">${icon("download")}Download Sample Theme (.zip)</a>
+        <button type="button" class="btn" id="tmAiGuideDone">Close</button>
+      </div>
+    `;
+    document.body.appendChild(dlg);
+    dlg.querySelector("#tmAiGuideClose")?.addEventListener("click", () => dlg.close());
+    dlg.querySelector("#tmAiGuideDone")?.addEventListener("click", () => dlg.close());
+    dlg.addEventListener("close", () => dlg.remove());
+    dlg.querySelector("#tmCopyAiPromptBtn")?.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(masterPrompt);
+        showToast("AI Theme Prompt copied!");
+      } catch {
+        dlg.querySelector("#tmAiPromptTextarea")?.select();
+        document.execCommand("copy");
+        showToast("AI Theme Prompt copied!");
+      }
+    });
+    icons();
+    dlg.showModal();
+  });
+
+  document.querySelectorAll(".edit-theme-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-id");
+      const theme = themes.find((item) => item.id === id);
+      if (!theme) return;
+      const existing = document.getElementById("tmEditDialog");
+      if (existing) existing.remove();
+      const dlg = document.createElement("dialog");
+      dlg.id = "tmEditDialog";
+      dlg.className = "modal";
+      dlg.style.cssText = "max-width:620px; width:94%; border-radius:14px; border:1px solid #cbd5e1; padding:0; overflow:hidden;";
+      dlg.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid #e2e8f0; background:#f8fafc;">
+          <strong style="font-size:1.05rem;">Edit Theme: ${esc(theme.name)}</strong>
+          <button type="button" class="btn icon quiet" id="tmEditClose">${icon("x")}</button>
+        </div>
+        <form id="tmEditForm" style="padding:20px; display:grid; gap:14px; max-height:76vh; overflow:auto;">
+          <div class="tm-fields-row">
+            <div class="field">
+              <label>Theme Name</label>
+              <input name="name" value="${esc(theme.name || "")}" required>
+            </div>
+            <div class="field">
+              <label>Theme Engine</label>
+              <select name="base_theme">
+                <option value="custom" ${theme.base_theme === "custom" ? "selected" : ""}>Unique Standalone Theme (GitHub)</option>
+                <option value="default" ${theme.base_theme === "default" ? "selected" : ""}>Default (Better SaaS / Business)</option>
+                <option value="furnisite" ${theme.base_theme === "furnisite" ? "selected" : ""}>Infurnish / Furnisite (E-Commerce)</option>
+              </select>
+            </div>
+          </div>
+          <div class="tm-fields-row">
+            <div class="field">
+              <label>Category</label>
+              <input name="category" value="${esc(theme.category || "")}">
+            </div>
+            <div class="field">
+              <label>Sort Order</label>
+              <input name="sort_order" type="number" value="${Number(theme.sort_order ?? 10)}">
+            </div>
+          </div>
+          <div class="tm-fields-row">
+            <div class="field">
+              <label>GitHub Repository URL</label>
+              <input name="github_url" type="url" value="${esc(theme.github_url || "")}" placeholder="https://github.com/owner/repo">
+            </div>
+            <div class="field">
+              <label>GitHub Branch</label>
+              <input name="github_branch" value="${esc(theme.github_branch || "")}" placeholder="main">
+            </div>
+          </div>
+          <div class="tm-fields-row">
+            <div class="field">
+              <label>Accent Color</label>
+              <input name="accent_color" value="${esc(theme.accent_color || "#3b82f6")}">
+            </div>
+            <div class="field">
+              <label>Preview Image</label>
+              <div style="display:flex; gap:8px;">
+                <input name="preview_image" id="tmEditPreviewInput" value="${esc(theme.preview_image || "")}" placeholder="/uploads/...">
+                <button type="button" class="btn compact" id="tmEditChoosePreviewBtn">${icon("folder-open")}</button>
+              </div>
+            </div>
+          </div>
+          <div class="field">
+            <label>Description</label>
+            <textarea name="description" rows="2">${esc(theme.description || "")}</textarea>
+          </div>
+          <div style="display:flex; justify-content:flex-end; gap:10px; padding-top:8px; border-top:1px solid #e2e8f0;">
+            <button type="button" class="btn" id="tmEditCancel">Cancel</button>
+            <button type="submit" class="btn primary">${icon("save")}Save Changes</button>
+          </div>
+        </form>
+      `;
+      document.body.appendChild(dlg);
+      dlg.querySelector("#tmEditClose")?.addEventListener("click", () => dlg.close());
+      dlg.querySelector("#tmEditCancel")?.addEventListener("click", () => dlg.close());
+      dlg.addEventListener("close", () => dlg.remove());
+      dlg.querySelector("#tmEditChoosePreviewBtn")?.addEventListener("click", () => {
+        const inp = dlg.querySelector("#tmEditPreviewInput");
+        openMediaManagerModal({
+          currentUrl: inp?.value || "",
+          onSelect: (url) => { if (inp) inp.value = url; },
+        });
+      });
+      dlg.querySelector("#tmEditForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        try {
+          await api(`/api/admin/themes/${id}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              name: f.name.value.trim(),
+              base_theme: f.base_theme.value,
+              category: f.category.value.trim(),
+              sort_order: Number(f.sort_order.value || 10),
+              github_url: f.github_url.value.trim(),
+              github_branch: f.github_branch.value.trim(),
+              accent_color: f.accent_color.value.trim(),
+              preview_image: f.preview_image.value.trim(),
+              description: f.description.value.trim(),
+            }),
+          });
+          dlg.close();
+          showToast("Theme updated!");
+          await renderAdminThemes();
+        } catch (err) {
+          alert("Failed to update theme: " + (err.message || err));
+        }
+      });
+      icons();
+      dlg.showModal();
+    });
+  });
+
+  document.querySelectorAll(".toggle-theme-active-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-id");
+      const nextActive = btn.getAttribute("data-active") !== "1";
+      try {
+        await api(`/api/admin/themes/${id}`, {
+          method: "PUT",
+          body: JSON.stringify({ is_active: nextActive }),
+        });
+        await renderAdminThemes();
+      } catch (err) {
+        alert("Failed to update theme: " + (err.message || err));
+      }
+    });
+  });
+
+  document.querySelectorAll(".preview-admin-theme-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      openThemePreviewModal({
+        slug: btn.getAttribute("data-theme-slug") || "default",
+        name: btn.getAttribute("data-theme-name") || "Theme Preview",
+        baseTheme: btn.getAttribute("data-base-theme") || "default",
+      });
+    });
+  });
+
+  document.querySelectorAll(".delete-theme-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-id");
+      const name = btn.getAttribute("data-name") || "this theme";
+      if (!confirm(`Delete "${name}" from Theme Market?`)) return;
+      try {
+        await api(`/api/admin/themes/${id}`, { method: "DELETE" });
+        showToast("Theme deleted.");
+        await renderAdminThemes();
+      } catch (err) {
+        alert("Failed to delete theme: " + (err.message || err));
+      }
+    });
+  });
+
+  icons();
+}
+
+async function renderAdminWebsites(initialFilter = "all") {
+  if (state.me?.role !== "owner_adm") {
+    shell("Client Websites", `
+      <div class="page-title"><div><h1>Client Websites</h1></div></div>
+      <section class="panel">
+        <h2>Owner admin access required</h2>
+        <p class="muted">Only the Platform Owner can monitor all client websites and directories.</p>
+        <div class="toolbar"><a class="btn primary" href="/dashboard">${icon("arrow-left")}Back to dashboard</a></div>
+      </section>`);
+    return;
+  }
+
+  let currentFilter = initialFilter === "projects" ? "all" : initialFilter;
+  let searchQuery = "";
+  let currentPage = 1;
+  let currentLimit = defaultListLimit();
+
+  const fetchWebsitesPage = async () => {
+    const params = new URLSearchParams({
+      page: String(currentPage),
+      limit: String(currentLimit),
+      filter: currentFilter,
+    });
+    if (searchQuery.trim()) params.set("q", searchQuery.trim());
+    return await api(`/api/admin/websites?${params.toString()}`);
+  };
+
+  let data;
+  try {
+    data = await fetchWebsitesPage();
+  } catch (error) {
+    shell("Client Websites", `
+      <div class="page-title"><div><h1>Client Websites</h1><p class="muted">Monitor client stores, directories, SSL, and deleted sites in grace period.</p></div></div>
+      <section class="panel">
+        <h2>Unable to load client websites</h2>
+        <p class="muted">${esc(error.message)}</p>
+        <div class="toolbar">
+          <a class="btn primary" href="/dashboard">${icon("arrow-left")}Back to dashboard</a>
+          <button class="btn" type="button" onclick="window.location.reload()">${icon("refresh-cw")}Retry</button>
+        </div>
+      </section>`);
+    return;
+  }
+
+  let websites = data.websites || [];
+  let summary = data.summary || {};
+  let pagination = data.pagination || { page: currentPage, limit: currentLimit, total: websites.length, total_pages: 1 };
+  currentPage = pagination.page || 1;
+  currentLimit = pagination.limit || currentLimit;
+
+  const renderWebsiteCards = () => {
+    if (!websites.length) {
+      return `<section class="panel"><p class="muted">No client websites match the selected filter.</p></section>`;
+    }
+    return `<div style="display:grid;gap:16px;">${websites.map((w) => {
+      const dirs = w.directories || {};
+      const dev = dirs.dev || {};
+      const pub = dirs.published || {};
+      const statusBadge = w.is_deleted
+        ? `<span class="pill danger">${icon("trash-2")} Deleted (${w.in_grace_period ? `${w.grace_days_remaining}d grace left` : "Grace expired"})</span>`
+        : (w.status === "active"
+            ? `<span class="pill paid">${icon("check-circle-2")} Published</span>`
+            : `<span class="pill warn">${icon("file-edit")} Draft</span>`);
+      const sslBadge = w.ssl_status === "active"
+        ? `<span class="pill paid">${icon("shield-check")} SSL Active${w.ssl_cert_issuer ? ` (${esc(w.ssl_cert_issuer)})` : ""}</span>`
+        : `<span class="pill warn">${icon("shield-alert")} SSL ${esc(w.ssl_status || "pending")}</span>`;
+
+      return `
+        <article class="panel" data-owner-website-id="${esc(w.id)}" style="display:grid;gap:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+            <div>
+              <h2 style="margin:0 0 4px 0;font-size:18px;">${esc(w.company_name || w.subdomain)}</h2>
+              <p class="muted" style="margin:0;font-size:13px;">
+                Client: <strong>${esc(w.owner_name || "Unknown")}</strong> (${esc(w.owner_email || "-")})
+                · Theme: <strong>${esc(w.active_theme || "default")}</strong>
+                · Leads: <strong>${w.submissions_count || 0}</strong>
+                · Customers: <strong>${w.customers_count || 0}</strong>
+              </p>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+              ${statusBadge}
+              ${w.client_hidden ? `<span class="pill warn">Unlisted by client</span>` : ""}
+              ${sslBadge}
+            </div>
+          </div>
+
+          ${w.is_deleted ? `
+            <div style="padding:10px 12px;border-radius:8px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);font-size:13px;">
+              <strong>Grace Period Archive:</strong>
+              Deleted on <strong>${w.deleted_at ? fmtDate(w.deleted_at) : "-"}</strong>
+              ${w.deleted_by_name ? `by <strong>${esc(w.deleted_by_name)}</strong>` : ""}
+              · Auto-purge: <strong>${w.purge_at ? fmtDate(w.purge_at) : "-"}</strong>
+              (${w.in_grace_period ? `${w.grace_days_remaining} day(s) remaining` : "ready for purge"})
+            </div>
+          ` : ""}
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;font-size:13px;padding:10px 12px;background:var(--bg-tertiary);border-radius:8px;">
+            <div>
+              <div class="muted" style="font-size:11px;font-weight:700;text-transform:uppercase;">Subdomain URL</div>
+              <code>${esc(w.subdomain_url)}</code>
+            </div>
+            <div>
+              <div class="muted" style="font-size:11px;font-weight:700;text-transform:uppercase;">Custom Domain &amp; Plan</div>
+              ${w.custom_domain
+                ? `<code>${esc(w.custom_domain)}</code> <span class="muted">(${esc(w.custom_domain_status || "pending")}${dirs.nginx_vhost_ready ? " · Nginx vhost ready" : ""})</span>`
+                : `<span class="muted">None configured</span>`}
+              <div style="margin-top:4px;"><span class="pill ${w.custom_domain_paid ? "paid" : ""}">${w.custom_domain_paid ? `Domain Paid (${esc(w.custom_domain_plan || "active")})` : "Free Subdomain Only"}</span></div>
+            </div>
+            <div>
+              <div class="muted" style="font-size:11px;font-weight:700;text-transform:uppercase;">Last Published</div>
+              <span>${w.published_at ? fmtDateTime(w.published_at) : "Never published"}</span>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">
+            <div style="border:1px solid var(--border-color);border-radius:8px;padding:12px;font-size:12.5px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <strong>${icon("folder-git-2")} Development Directory (Editing)</strong>
+                <span class="pill">${dev.exists ? "Exists" : "Not initialized"}</span>
+              </div>
+              <div style="word-break:break-all;margin-bottom:6px;"><code>${esc(dev.path || "-")}</code></div>
+              <div class="muted">
+                Files: <strong>${dev.file_count || 0}</strong> (Data: ${dev.data_files_count || 0}, Uploads: ${dev.upload_files_count || 0})
+                · Size: <strong>${formatBytesHuman(dev.size_bytes)}</strong>
+                ${dev.updated_at ? ` · Modified: ${fmtDateTime(dev.updated_at)}` : ""}
+              </div>
+            </div>
+
+            <div style="border:1px solid var(--border-color);border-radius:8px;padding:12px;font-size:12.5px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <strong>${icon("globe")} Published Directory (Live Site)</strong>
+                <span class="pill ${pub.dist_exists && pub.index_html_exists ? "paid" : ""}">${pub.dist_exists ? (pub.index_html_exists ? "Ready (index.html)" : "No index.html") : "Not published"}</span>
+              </div>
+              <div style="word-break:break-all;margin-bottom:6px;"><code>${esc(pub.dist_path || pub.path || "-")}</code></div>
+              <div class="muted">
+                Files: <strong>${pub.file_count || 0}</strong>
+                · Size: <strong>${formatBytesHuman(pub.size_bytes)}</strong>
+                · Editor leaks: <strong style="color:${(pub.editor_files_found || 0) === 0 ? "#15803d" : "#b91c1c"};">${pub.editor_files_found || 0}</strong>
+                ${pub.updated_at ? ` · Built: ${fmtDateTime(pub.updated_at)}` : ""}
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;border-top:1px solid var(--border-color);padding-top:10px;">
+            <span class="muted" style="font-size:12px;">Root: <code>${esc(dirs.root_path || "-")}</code> (${dirs.total_files || 0} files · ${formatBytesHuman(dirs.total_size_bytes)})</span>
+            <div class="toolbar" style="margin:0;">
+              ${!w.is_deleted ? `
+                <a class="btn compact" href="${esc(w.primary_url)}" target="_blank" rel="noopener">${icon("external-link")}Open site</a>
+                <button class="btn compact" type="button" data-owner-publish-site="${esc(w.id)}">${icon("zap")}Publish</button>
+                <button class="btn compact" type="button" data-owner-ssl-site="${esc(w.id)}">${icon("shield-check")}Verify / Install SSL</button>
+                ${!w.custom_domain_paid ? `<button class="btn compact" type="button" data-owner-grant-domain="${esc(w.id)}">${icon("badge-dollar-sign")}Grant Custom Domain</button>` : ""}
+              ` : `
+                <button class="btn primary compact" type="button" data-owner-restore-site="${esc(w.id)}" data-site-name="${esc(w.company_name || w.subdomain)}">${icon("rotate-ccw")}Restore</button>
+              `}
+              <button class="btn danger compact" type="button" data-owner-wipe-site="${esc(w.id)}" data-site-sub="${esc(w.subdomain)}" data-site-name="${esc(w.company_name || w.subdomain)}">${icon("trash-2")}Wipe permanently</button>
+            </div>
+          </div>
+        </article>
+      `;
+    }).join("")}</div>`;
+  };
+
+  shell("Client Websites", `
+    <div class="page-title">
+      <div>
+        <h1>Client Websites Monitor</h1>
+        <p class="muted">Monitor all Website Builder sites (published, draft, unlisted, and deleted in grace period) with full directory details and VPS SSL status.</p>
+      </div>
+      <div class="toolbar">
+        <a class="btn" href="/stores">${icon("store")}My stores</a>
+        <a class="btn" href="/admin/deleted-projects">${icon("archive-restore")}Deleted projects</a>
+        <button class="btn" id="refreshOwnerWebsitesBtn" type="button">${icon("refresh-cw")}Refresh</button>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px;" id="ownerWebsitesSummary">
+      <div class="panel" style="padding:14px;"><div class="muted" style="font-size:12px;">Total Websites</div><strong style="font-size:22px;" data-summary-key="total">${summary.total || 0}</strong></div>
+      <div class="panel" style="padding:14px;"><div class="muted" style="font-size:12px;">Published</div><strong style="font-size:22px;color:#15803d;" data-summary-key="active">${summary.active || 0}</strong></div>
+      <div class="panel" style="padding:14px;"><div class="muted" style="font-size:12px;">Draft</div><strong style="font-size:22px;" data-summary-key="draft">${summary.draft || 0}</strong></div>
+      <div class="panel" style="padding:14px;"><div class="muted" style="font-size:12px;">Deleted / Unlisted</div><strong style="font-size:22px;color:#dc2626;" data-summary-key="deleted_in_grace">${summary.deleted_in_grace || 0}</strong></div>
+      <div class="panel" style="padding:14px;"><div class="muted" style="font-size:12px;">SSL Active</div><strong style="font-size:22px;" data-summary-key="ssl_active">${summary.ssl_active || 0}</strong></div>
+      <div class="panel" style="padding:14px;"><div class="muted" style="font-size:12px;">Page Disk Usage</div><strong style="font-size:22px;" data-summary-key="storage">${formatBytesHuman(summary.total_storage_bytes || 0)}</strong></div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+      <div class="toolbar" style="margin:0;">
+        <button class="btn ${currentFilter === "all" ? "primary" : "quiet"}" type="button" data-owner-website-filter="all">All (${summary.total || 0})</button>
+        <button class="btn ${currentFilter === "active" ? "primary" : "quiet"}" type="button" data-owner-website-filter="active">Published (${summary.active || 0})</button>
+        <button class="btn ${currentFilter === "draft" ? "primary" : "quiet"}" type="button" data-owner-website-filter="draft">Draft (${summary.draft || 0})</button>
+        <button class="btn ${currentFilter === "deleted" ? "primary" : "quiet"}" type="button" data-owner-website-filter="deleted">Deleted (${summary.deleted_in_grace || 0})</button>
+      </div>
+      <input type="search" id="ownerWebsitesSearch" placeholder="Search client, domain, subdomain..." style="min-width:260px;flex:1;max-width:380px;">
+    </div>
+
+    <div id="ownerWebsitesList">${renderWebsiteCards()}</div>
+    <div id="ownerWebsitesPagination">${listPaginationBarHTML(pagination, { label: "websites", limit: currentLimit, defaultLimit: data.default_limit })}</div>
+  `);
+
+  let refreshPage;
+
+  const bindWebsiteCardActions = () => {
+    document.querySelectorAll("[data-owner-publish-site]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.ownerPublishSite;
+        btn.disabled = true;
+        try {
+          await api(`/api/tenants/${id}/publish`, { method: "POST" });
+          showToast("Website published to isolated published/ directory.");
+          await refreshPage();
+        } catch (err) {
+          alert("Publish failed: " + (err.message || err));
+          btn.disabled = false;
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-owner-ssl-site]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.ownerSslSite;
+        btn.disabled = true;
+        try {
+          const res = await api(`/api/tenants/${id}/ssl/provision`, { method: "POST" });
+          showToast(res.message || (res.ssl_active ? "SSL is active!" : "SSL provisioning pending."));
+          await refreshPage();
+        } catch (err) {
+          alert("SSL check failed: " + (err.message || err));
+          btn.disabled = false;
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-owner-grant-domain]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.ownerGrantDomain;
+        btn.disabled = true;
+        try {
+          await api(`/api/admin/websites/${id}/grant-domain`, {
+            method: "POST",
+            body: JSON.stringify({ billing_period: "yearly" }),
+          });
+          showToast("Custom domain plan granted (1 year).");
+          await refreshPage();
+        } catch (err) {
+          alert("Grant failed: " + (err.message || err));
+          btn.disabled = false;
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-owner-restore-site]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.ownerRestoreSite;
+        const name = btn.dataset.siteName || "website";
+        try {
+          await api(`/api/tenants/${id}/restore`, { method: "POST" });
+          showToast(`Restored "${name}" from grace period.`);
+          await refreshPage();
+        } catch (err) {
+          alert("Restore failed: " + (err.message || err));
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-owner-wipe-site]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.ownerWipeSite;
+        const sub = btn.dataset.siteSub || "";
+        const name = btn.dataset.siteName || sub;
+        const typed = prompt(`Permanently wipe "${name}" (/var/www/tenants/${sub}, Nginx SSL vhost, and DB records)?\n\nType "${sub}" to confirm:`);
+        if (typed === null) return;
+        if (typed.trim().toLowerCase() !== sub.toLowerCase()) {
+          alert("Subdomain did not match. Canceled.");
+          return;
+        }
+        try {
+          await api(`/api/tenants/${id}?hard=true`, { method: "DELETE" });
+          showToast(`Permanently wiped "${name}".`);
+          await refreshPage();
+        } catch (err) {
+          alert("Wipe failed: " + (err.message || err));
+        }
+      });
+    });
+    icons();
+  };
+
+  const renderPagination = () => {
+    const pagerEl = $("#ownerWebsitesPagination");
+    if (!pagerEl) return;
+    pagerEl.innerHTML = listPaginationBarHTML(pagination, { label: "websites", limit: currentLimit, defaultLimit: data.default_limit });
+    bindListPagination(pagerEl, ({ page, limit }) => {
+      currentPage = page;
+      currentLimit = limit;
+      refreshPage();
+    });
+  };
+
+  const updateSummaryDOM = () => {
+    const map = {
+      total: summary.total || 0,
+      active: summary.active || 0,
+      draft: summary.draft || 0,
+      deleted_in_grace: summary.deleted_in_grace || 0,
+      ssl_active: summary.ssl_active || 0,
+      storage: formatBytesHuman(summary.total_storage_bytes || 0),
+    };
+    Object.entries(map).forEach(([k, v]) => {
+      const el = document.querySelector(`[data-summary-key="${k}"]`);
+      if (el) el.textContent = String(v);
+    });
+    const labelMap = {
+      all: `All (${summary.total || 0})`,
+      active: `Published (${summary.active || 0})`,
+      draft: `Draft (${summary.draft || 0})`,
+      deleted: `Deleted (${summary.deleted_in_grace || 0})`,
+    };
+    document.querySelectorAll("[data-owner-website-filter]").forEach((b) => {
+      const key = b.dataset.ownerWebsiteFilter;
+      if (labelMap[key]) b.textContent = labelMap[key];
+      b.className = `btn ${key === currentFilter ? "primary" : "quiet"}`;
+    });
+  };
+
+  refreshPage = async () => {
+    const listEl = $("#ownerWebsitesList");
+    if (listEl) listEl.innerHTML = `<section class="panel"><p class="muted">Loading websites...</p></section>`;
+    try {
+      const next = await fetchWebsitesPage();
+      data = next;
+      websites = next.websites || [];
+      summary = next.summary || {};
+      pagination = next.pagination || { page: currentPage, limit: currentLimit, total: websites.length, total_pages: 1 };
+      currentPage = pagination.page || 1;
+      currentLimit = pagination.limit || currentLimit;
+      if (listEl) listEl.innerHTML = renderWebsiteCards();
+      updateSummaryDOM();
+      renderPagination();
+      bindWebsiteCardActions();
+    } catch (err) {
+      if (listEl) listEl.innerHTML = `<section class="panel"><p class="muted">Failed to load websites: ${esc(err.message || err)}</p></section>`;
+    }
+  };
+
+  document.querySelectorAll("[data-owner-website-filter]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      currentFilter = btn.dataset.ownerWebsiteFilter || "all";
+      currentPage = 1;
+      updateSummaryDOM();
+      refreshPage();
+    });
+  });
+
+  let searchTimer = null;
+  $("#ownerWebsitesSearch")?.addEventListener("input", (e) => {
+    searchQuery = e.target.value || "";
+    currentPage = 1;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => refreshPage(), 250);
+  });
+
+  $("#refreshOwnerWebsitesBtn")?.addEventListener("click", () => refreshPage());
+  renderPagination();
+  bindWebsiteCardActions();
   icons();
 }
 
@@ -17007,15 +18648,22 @@ async function renderCompanySettings() {
   });
 }
 
-async function renderPages() {
-  const data = await api("/api/admin/pages");
+async function renderPages(listOpts = {}) {
+  const currentPage = Math.max(1, Number(listOpts.page || 1));
+  const currentLimit = Math.max(1, Math.min(100, Number(listOpts.limit || defaultListLimit())));
+  const data = await api(`/api/admin/pages?page=${currentPage}&limit=${currentLimit}`);
   const pages = (data.pages || []).slice().sort((a, b) => (a.slug === "home" ? -1 : b.slug === "home" ? 1 : 0));
+  const pagination = data.pagination || { page: currentPage, limit: currentLimit, total: pages.length, total_pages: 1 };
   const navItems = data.nav_items || [];
   const navSettings = data.nav_settings || {};
   shell("Pages", `
     <div class="page-title"><div><h1>Pages</h1><p class="muted">Build the home page, public pages, and the public navigation.</p></div></div>
     <div class="grid-2">
-      <section class="panel"><h2>Visual pages</h2><div class="task-list">${pages.map(pageListRowHTML).join("") || `<p class="muted">No pages yet.</p>`}</div></section>
+      <section class="panel">
+        <h2>Visual pages</h2>
+        <div class="task-list">${pages.map(pageListRowHTML).join("") || `<p class="muted">No pages yet.</p>`}</div>
+        <div id="adminPagesPaginationBar">${listPaginationBarHTML(pagination, { label: "pages", limit: currentLimit, defaultLimit: data.default_limit })}</div>
+      </section>
       <section class="panel">
         <h2>New page</h2>
         <form id="pageForm" class="form-grid"><div class="field"><label>Title</label><input name="title" required placeholder="About us"></div><div class="field"><label>Slug</label><input name="slug" required placeholder="about-us or home"></div><button class="btn primary">${icon("plus")}Create</button><p class="status-line"></p></form>
@@ -17030,6 +18678,7 @@ async function renderPages() {
         <p class="status-line"></p>
       </form>
     </section>`);
+  bindListPagination($("#adminPagesPaginationBar"), ({ page, limit }) => renderPages({ page, limit }));
   $("#pageForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
@@ -18127,20 +19776,30 @@ function pageBuilderColumnStyleCSS(props = {}) {
   return rules.length ? `${rules.join(";")};` : "";
 }
 
-async function renderBlogs() {
+async function renderBlogs(listOpts = {}) {
+  const currentPage = Math.max(1, Number(listOpts.page || 1));
+  const currentLimit = Math.max(1, Math.min(100, Number(listOpts.limit || defaultListLimit())));
   const [postData, categoryData, tagData] = await Promise.all([
-    api("/api/admin/blog/posts"), api("/api/admin/blog/categories"), api("/api/admin/blog/tags"),
+    api(`/api/admin/blog/posts?page=${currentPage}&limit=${currentLimit}`),
+    api("/api/admin/blog/categories"),
+    api("/api/admin/blog/tags"),
   ]);
   const posts = postData.posts || [];
+  const pagination = postData.pagination || { page: currentPage, limit: currentLimit, total: posts.length, total_pages: 1 };
   const categories = categoryData.categories || [];
   const tags = tagData.tags || [];
   shell("Blogs", `
     <div class="page-title"><div><h1>Blogs</h1><p class="muted">Publish articles and organize them with categories and tags.</p></div><div class="toolbar"><a class="btn" href="/admin/pages/blog/edit">${icon("layout-template")}Edit blog page</a><a class="btn" href="/blog" target="_blank" rel="noopener">${icon("external-link")}View blog</a></div></div>
     <div class="grid-2 blog-admin-top">
-      <section class="panel"><h2>Articles</h2><div class="task-list">${posts.map(blogPostRowHTML).join("") || `<p class="muted">No articles yet.</p>`}</div></section>
+      <section class="panel">
+        <h2>Articles</h2>
+        <div class="task-list">${posts.map(blogPostRowHTML).join("") || `<p class="muted">No articles yet.</p>`}</div>
+        <div id="adminBlogsPaginationBar">${listPaginationBarHTML(pagination, { label: "articles", limit: currentLimit, defaultLimit: postData.default_limit })}</div>
+      </section>
       <section class="panel"><h2>New article</h2><form id="blogPostCreateForm" class="form-grid"><div class="field"><label>Title</label><input name="title" required placeholder="Article title"></div><div class="field"><label>Slug (optional)</label><input name="slug" placeholder="article-title"></div><button class="btn primary" type="submit">${icon("plus")}Create article</button><p class="status-line"></p></form><hr><p class="muted">Use <strong>[[blog_grid]]</strong> in a rich text or HTML block to place the paginated article grid on a page.</p></section>
     </div>
     <div class="grid-2 blog-taxonomy-grid">${blogTaxonomyPanelHTML("category", categories)}${blogTaxonomyPanelHTML("tag", tags)}</div>`);
+  bindListPagination($("#adminBlogsPaginationBar"), ({ page, limit }) => renderBlogs({ page, limit }));
   $("#blogPostCreateForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -21240,6 +22899,8 @@ async function route(options = {}) {
     if (path() === "/admin" || path() === "/admin/users") return await renderAdmin();
     if (path() === "/admin/conflicts") return await renderAdminConflictHub();
     if (path() === "/admin/deleted-projects") return await renderAdminDeletedProjects();
+    if (path() === "/admin/websites") return await renderAdminWebsites();
+    if (path() === "/admin/themes") return await renderAdminThemes();
     if (path() === "/admin/settings") return await renderSettings();
     if (path() === "/admin/plans") return await renderPlansAdmin();
     if (path() === "/admin/pages") return await renderPages();

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { getProductCategoriesArray, type Product } from './products';
 import { syncGlobalTemplates, cleanLiveContent } from './templates';
 
+import { getDataFile } from '../core/tenantContext';
 export interface ProductLayout {
   id: string;
   name: string;
@@ -16,7 +17,6 @@ export interface ProductLayout {
   updatedAt?: string;
 }
 
-const PRODUCT_LAYOUTS_FILE = path.join(process.cwd(), 'src', 'data', 'product-layouts.json');
 
 const DEFAULT_STANDARD_CSS = `/* Standard E-Commerce Product Layout */
 .standard-product-layout {
@@ -872,8 +872,8 @@ export const defaultProductLayouts: ProductLayout[] = [
 
 export function getProductLayouts(): ProductLayout[] {
   try {
-    if (fs.existsSync(PRODUCT_LAYOUTS_FILE)) {
-      const raw = fs.readFileSync(PRODUCT_LAYOUTS_FILE, 'utf-8');
+    if (fs.existsSync(getDataFile('product-layouts.json'))) {
+      const raw = fs.readFileSync(getDataFile('product-layouts.json'), 'utf-8');
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
@@ -900,7 +900,7 @@ export function getProductLayoutForProduct(product: Product): ProductLayout {
 }
 
 export function writeProductLayoutsSync(layouts: ProductLayout[]): void {
-  fs.writeFileSync(PRODUCT_LAYOUTS_FILE, JSON.stringify(layouts, null, 2), 'utf-8');
+  fs.writeFileSync(getDataFile('product-layouts.json'), JSON.stringify(layouts, null, 2), 'utf-8');
 }
 
 function escapeHtml(str: string): string {

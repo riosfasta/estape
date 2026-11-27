@@ -846,28 +846,48 @@ func (s *Server) listMentionUsers(c *gin.Context) {
 }
 
 func (s *Server) listNotifications(c *gin.Context) {
+	ctx := c.Request.Context()
 	userCtx, _ := currentUser(c)
+	pag := s.parseListPagination(c)
 	filter := bson.M{"user_id": userCtx.ID}
 	if strings.EqualFold(c.Query("bin"), "1") || strings.EqualFold(c.Query("bin"), "true") {
 		filter["deleted_at"] = bson.M{"$exists": true}
 	} else {
 		filter["deleted_at"] = bson.M{"$exists": false}
 	}
-	cursor, err := s.store.C("notifications").Find(c.Request.Context(), filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(100))
+	total, err := s.store.C("notifications").CountDocuments(ctx, filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count notifications"})
+		return
+	}
+	meta := buildPaginationMeta(pag.Page, pag.Limit, total)
+	skip := int64((meta.Page - 1) * meta.Limit)
+	cursor, err := s.store.C("notifications").Find(
+		ctx,
+		filter,
+		options.Find().
+			SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}).
+			SetSkip(skip).
+			SetLimit(int64(meta.Limit)),
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load notifications"})
 		return
 	}
-	defer cursor.Close(c.Request.Context())
+	defer cursor.Close(ctx)
 	var notifications []models.Notification
-	if err := cursor.All(c.Request.Context(), &notifications); err != nil {
+	if err := cursor.All(ctx, &notifications); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not decode notifications"})
 		return
 	}
 	if notifications == nil {
 		notifications = []models.Notification{}
 	}
-	c.JSON(http.StatusOK, gin.H{"notifications": notifications})
+	c.JSON(http.StatusOK, gin.H{
+		"notifications": notifications,
+		"pagination":    meta,
+		"default_limit": pag.DefaultLimit,
+	})
 }
 
 func (s *Server) openMyNotification(c *gin.Context) {

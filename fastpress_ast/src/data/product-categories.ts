@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { getDataFile } from '../core/tenantContext';
 export interface ProductCategory {
   id: string;
   name: string;
@@ -20,7 +21,6 @@ export const defaultProductCategories: ProductCategory[] = [
   { id: 'accessories', name: 'Accessories', slug: 'accessories', description: 'Headwear, scarves & essentials' },
 ];
 
-const PRODUCT_CATEGORIES_FILE = path.join(process.cwd(), 'src', 'data', 'product-categories.json');
 
 export function slugifyCategory(input: string): string {
   const clean = String(input || '')
@@ -34,8 +34,8 @@ export function slugifyCategory(input: string): string {
 
 export function getProductCategories(): ProductCategory[] {
   try {
-    if (fs.existsSync(PRODUCT_CATEGORIES_FILE)) {
-      const data = fs.readFileSync(PRODUCT_CATEGORIES_FILE, 'utf-8');
+    if (fs.existsSync(getDataFile('product-categories.json'))) {
+      const data = fs.readFileSync(getDataFile('product-categories.json'), 'utf-8');
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
@@ -46,5 +46,5 @@ export function getProductCategories(): ProductCategory[] {
 }
 
 export function writeProductCategoriesSync(list: ProductCategory[]): void {
-  fs.writeFileSync(PRODUCT_CATEGORIES_FILE, JSON.stringify(list, null, 2), 'utf-8');
+  fs.writeFileSync(getDataFile('product-categories.json'), JSON.stringify(list, null, 2), 'utf-8');
 }

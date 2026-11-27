@@ -9,11 +9,12 @@ import { getBlogLayouts, getBlogLayoutById, type BlogLayout } from '../data/blog
 import { getPosts, type Post } from '../data/posts';
 import { getCategories } from '../data/categories';
 import { getTemplates, type Template } from '../data/templates';
-import { getActiveThemeName } from '../core/theme';
+import { resolveThemeName } from '../core/theme';
 
+import { getDataFile } from '../core/tenantContext';
 export const prerender = false;
 
-const activeTheme = getActiveThemeName();
+const activeTheme = resolveThemeName(Astro.url, Astro.request.headers);
 const layoutsList = getBlogLayouts();
 const postsList = getPosts();
 const categoriesList = getCategories();
@@ -26,7 +27,7 @@ const activeLayout = getBlogLayoutById(targetId);
 // Registered Fonts
 let fontsData: any[] = [];
 try {
-  const fontsPath = path.join(process.cwd(), 'src', 'data', 'fonts.json');
+  const fontsPath = getDataFile('fonts.json');
   const fontsContent = await fs.readFile(fontsPath, 'utf-8');
   fontsData = JSON.parse(fontsContent);
 } catch {

@@ -1,11 +1,11 @@
 import type { APIRoute } from 'astro';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { getActiveThemeName, getThemePages, saveThemePages } from '../../core/theme';
+import { getActiveThemeName, getThemePages, resolveThemeName, saveThemePages } from '../../core/theme';
 
+import { getDataFile } from '../../core/tenantContext';
 export const prerender = false;
 
-const HOMEPAGE_FILE = path.join(process.cwd(), 'src', 'data', 'savedHomepage.json');
 
 async function readPages(themeName?: string) {
   const theme = themeName || getActiveThemeName();
@@ -32,9 +32,9 @@ async function writePages(pages: any, themeName?: string) {
 }
 
 // GET: Ambil daftar halaman ATAU detail satu halaman
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = async ({ url, request }) => {
   try {
-    const theme = url.searchParams.get('theme') || getActiveThemeName();
+    const theme = resolveThemeName(url, request.headers);
     const slug = url.searchParams.get('slug');
     const pages = await readPages(theme);
 
@@ -81,7 +81,7 @@ export const GET: APIRoute = async ({ url }) => {
 };
 
 // POST: Buat halaman baru ATAU simpan perubahan halaman aktif
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, url }) => {
   try {
     const text = await request.text();
     let body: any = {};
@@ -89,7 +89,7 @@ export const POST: APIRoute = async ({ request }) => {
       body = JSON.parse(text);
     }
 
-    const theme = body.theme || getActiveThemeName();
+    const theme = resolveThemeName(url, request.headers, body.theme);
     const pages = await readPages(theme);
     const action = body.action || 'save';
 
@@ -279,12 +279,12 @@ export const POST: APIRoute = async ({ request }) => {
       try {
         let existingHome: any = {};
         try {
-          const rawHome = await fs.readFile(HOMEPAGE_FILE, 'utf-8');
+          const rawHome = await fs.readFile(getDataFile('savedHomepage.json'), 'utf-8');
           existingHome = JSON.parse(rawHome);
         } catch {}
 
         await fs.writeFile(
-          HOMEPAGE_FILE,
+          getDataFile('savedHomepage.json'),
           JSON.stringify(
             {
               ...existingHome,
@@ -327,9 +327,9 @@ export const POST: APIRoute = async ({ request }) => {
 };
 
 // DELETE: Hapus halaman kustom
-export const DELETE: APIRoute = async ({ url }) => {
+export const DELETE: APIRoute = async ({ url, request }) => {
   try {
-    const theme = url.searchParams.get('theme') || getActiveThemeName();
+    const theme = resolveThemeName(url, request.headers);
     const slug = url.searchParams.get('slug');
     if (!slug || slug === 'home' || slug === '/' || slug === 'blog') {
       return new Response(JSON.stringify({ success: false, error: 'System pages (home and blog) cannot be deleted.' }), {

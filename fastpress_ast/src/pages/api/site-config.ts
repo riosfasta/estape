@@ -1,10 +1,11 @@
 import type { APIRoute } from 'astro';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { resolveThemeName } from '../../core/theme';
 
+import { getDataFile } from '../../core/tenantContext';
 export const prerender = false;
 
-const CONFIG_FILE = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
 
 const DEFAULT_CONFIG = {
   brandName: 'Better SaaS',
@@ -37,7 +38,7 @@ const DEFAULT_CONFIG = {
 
 async function readConfig() {
   try {
-    const raw = await fs.readFile(CONFIG_FILE, 'utf-8');
+    const raw = await fs.readFile(getDataFile('siteConfig.json'), 'utf-8');
     return JSON.parse(raw);
   } catch {
     return DEFAULT_CONFIG;
@@ -45,12 +46,17 @@ async function readConfig() {
 }
 
 async function writeConfig(config: any) {
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  await fs.writeFile(getDataFile('siteConfig.json'), JSON.stringify(config, null, 2), 'utf-8');
 }
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ url, request }) => {
   try {
     const config = await readConfig();
+    const requestedTheme = url.searchParams.get('theme') || request.headers.get('x-tenant-theme');
+    const resolvedTheme = resolveThemeName(url, request.headers);
+    if (requestedTheme) {
+      config.activeTheme = resolvedTheme;
+    }
     return new Response(JSON.stringify(config), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -63,7 +69,7 @@ export const GET: APIRoute = async () => {
   }
 };
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, url }) => {
   try {
     const text = await request.text();
     let body: any = {};
@@ -72,21 +78,33 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     const currentConfig = await readConfig();
+    const targetTheme = resolveThemeName(url, request.headers, body.theme);
+    const isGlobalThemeTarget = !body.theme || targetTheme === (currentConfig.activeTheme || 'furnisite');
 
     if (body.activeTheme !== undefined) {
       currentConfig.activeTheme = String(body.activeTheme).trim();
     }
 
+    if (!currentConfig.themeConfigs) currentConfig.themeConfigs = {};
+    if (!currentConfig.themeConfigs[targetTheme]) currentConfig.themeConfigs[targetTheme] = {};
+    const tc = currentConfig.themeConfigs[targetTheme];
+
     if (body.brandName !== undefined) {
-      currentConfig.brandName = String(body.brandName).trim() || 'Better';
+      const val = String(body.brandName).trim() || 'Better';
+      tc.brandName = val;
+      if (isGlobalThemeTarget) currentConfig.brandName = val;
     }
 
     if (body.tagline !== undefined) {
-      currentConfig.tagline = String(body.tagline).trim();
+      const val = String(body.tagline).trim();
+      tc.tagline = val;
+      if (isGlobalThemeTarget) currentConfig.tagline = val;
     }
 
     if (body.logoUrl !== undefined) {
-      currentConfig.logoUrl = String(body.logoUrl).trim();
+      const val = String(body.logoUrl).trim();
+      tc.logoUrl = val;
+      if (isGlobalThemeTarget) currentConfig.logoUrl = val;
     }
 
     if (body.faviconUrl !== undefined) {
@@ -94,81 +112,74 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     if (body.drawerCtaText !== undefined) {
-      currentConfig.drawerCtaText = String(body.drawerCtaText).trim();
+      const val = String(body.drawerCtaText).trim();
+      tc.drawerCtaText = val;
+      if (isGlobalThemeTarget) currentConfig.drawerCtaText = val;
     }
 
     if (body.drawerCtaUrl !== undefined) {
-      currentConfig.drawerCtaUrl = String(body.drawerCtaUrl).trim();
+      const val = String(body.drawerCtaUrl).trim();
+      tc.drawerCtaUrl = val;
+      if (isGlobalThemeTarget) currentConfig.drawerCtaUrl = val;
     }
 
     if (body.navIndicatorStyle !== undefined) {
       const valid = ['underline', 'overline', 'none'];
       const st = String(body.navIndicatorStyle).trim().toLowerCase();
-      currentConfig.navIndicatorStyle = valid.includes(st) ? st : 'underline';
-      if (currentConfig.themeConfigs?.furnisite) {
-        currentConfig.themeConfigs.furnisite.navIndicatorStyle = currentConfig.navIndicatorStyle;
-      }
+      const val = valid.includes(st) ? st : 'underline';
+      tc.navIndicatorStyle = val;
+      if (isGlobalThemeTarget) currentConfig.navIndicatorStyle = val;
     }
 
     if (Array.isArray(body.navItems)) {
-      currentConfig.navItems = body.navItems
+      const mapped = body.navItems
         .filter((item: any) => item && typeof item.name === 'string')
         .map((item: any) => ({
           name: String(item.name).trim(),
           href: String(item.href || '#').trim(),
           id: String(item.id || item.name.toLowerCase().replace(/[^a-z0-9]/g, '-')),
         }));
+      tc.navItems = mapped;
+      if (isGlobalThemeTarget) currentConfig.navItems = mapped;
     }
 
     if (body.footer && typeof body.footer === 'object') {
+      if (!tc.footer) tc.footer = {};
       if (!currentConfig.footer) currentConfig.footer = {};
+      const nextFooter: any = { ...tc.footer };
       if (body.footer.companyName !== undefined) {
-        currentConfig.footer.companyName = String(body.footer.companyName).trim();
+        nextFooter.companyName = String(body.footer.companyName).trim();
       }
       if (body.footer.description !== undefined) {
-        currentConfig.footer.description = String(body.footer.description).trim();
+        nextFooter.description = String(body.footer.description).trim();
       }
       if (body.footer.copyrightText !== undefined) {
-        currentConfig.footer.copyrightText = String(body.footer.copyrightText).trim();
+        nextFooter.copyrightText = String(body.footer.copyrightText).trim();
       }
       if (body.footer.showBackToTop !== undefined) {
-        currentConfig.footer.showBackToTop = Boolean(body.footer.showBackToTop);
+        nextFooter.showBackToTop = Boolean(body.footer.showBackToTop);
       }
       if (Array.isArray(body.footer.collections)) {
-        currentConfig.footer.collections = body.footer.collections.map((c: any) => ({
+        nextFooter.collections = body.footer.collections.map((c: any) => ({
           name: String(c.name || '').trim(),
           href: String(c.href || '/products').trim(),
         }));
       }
       if (Array.isArray(body.footer.companyLinks)) {
-        currentConfig.footer.companyLinks = body.footer.companyLinks.map((l: any) => ({
+        nextFooter.companyLinks = body.footer.companyLinks.map((l: any) => ({
           name: String(l.name || '').trim(),
           href: String(l.href || '/about').trim(),
         }));
       }
       if (Array.isArray(body.footer.socialLinks)) {
-        currentConfig.footer.socialLinks = body.footer.socialLinks.map((s: any) => ({
+        nextFooter.socialLinks = body.footer.socialLinks.map((s: any) => ({
           name: String(s.name || '').trim(),
           href: String(s.href || '').trim(),
           enabled: Boolean(s.enabled),
         }));
       }
-    }
-
-    // Sync to themeConfigs for the target theme
-    const targetTheme = String(body.theme || currentConfig.activeTheme || 'furnisite').trim();
-    if (!currentConfig.themeConfigs) currentConfig.themeConfigs = {};
-    if (!currentConfig.themeConfigs[targetTheme]) currentConfig.themeConfigs[targetTheme] = {};
-
-    const tc = currentConfig.themeConfigs[targetTheme];
-    if (body.brandName !== undefined) tc.brandName = currentConfig.brandName;
-    if (body.tagline !== undefined) tc.tagline = currentConfig.tagline;
-    if (body.logoUrl !== undefined) tc.logoUrl = currentConfig.logoUrl;
-    if (body.drawerCtaText !== undefined) tc.drawerCtaText = currentConfig.drawerCtaText;
-    if (body.drawerCtaUrl !== undefined) tc.drawerCtaUrl = currentConfig.drawerCtaUrl;
-    if (Array.isArray(body.navItems)) tc.navItems = currentConfig.navItems;
-    if (body.footer && typeof body.footer === 'object') {
-      tc.footer = { ...currentConfig.footer };
+      tc.footer = nextFooter;
+      if (isGlobalThemeTarget) currentConfig.footer = nextFooter;
     }
 
     await writeConfig(currentConfig);

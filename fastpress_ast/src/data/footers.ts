@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { getDataFile } from '../core/tenantContext';
 export interface FooterLink {
   id: string;
   label: string;
@@ -86,6 +87,7 @@ export interface FooterConfig {
   id: string;
   name: string;
   isActive: boolean;
+  theme?: string;
   builderType: 'visual' | 'custom-code';
   useTemplate?: boolean;
   selectedTemplateId?: string;
@@ -105,10 +107,10 @@ export interface FooterConfig {
 
 export interface FootersStore {
   activeFooterId: string;
+  activeFooterIds?: Record<string, string>;
   footers: FooterConfig[];
 }
 
-const FOOTERS_FILE = path.join(process.cwd(), 'src', 'data', 'footers.json');
 
 export const defaultSampleFooters: FooterConfig[] = [
   {
@@ -492,7 +494,7 @@ export const defaultSampleFooters: FooterConfig[] = [
 
 export function readFootersData(): FootersStore {
   try {
-    if (!fs.existsSync(FOOTERS_FILE)) {
+    if (!fs.existsSync(getDataFile('footers.json'))) {
       writeFootersData({
         activeFooterId: defaultSampleFooters[0].id,
         footers: defaultSampleFooters,
@@ -502,7 +504,7 @@ export function readFootersData(): FootersStore {
         footers: defaultSampleFooters,
       };
     }
-    const raw = fs.readFileSync(FOOTERS_FILE, 'utf-8');
+    const raw = fs.readFileSync(getDataFile('footers.json'), 'utf-8');
     const data = JSON.parse(raw);
     if (!data.footers || !Array.isArray(data.footers) || data.footers.length === 0) {
       data.footers = defaultSampleFooters;
@@ -520,11 +522,11 @@ export function readFootersData(): FootersStore {
 
 export function writeFootersData(data: FootersStore): void {
   try {
-    const dir = path.dirname(FOOTERS_FILE);
+    const dir = path.dirname(getDataFile('footers.json'));
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(FOOTERS_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    fs.writeFileSync(getDataFile('footers.json'), JSON.stringify(data, null, 2), 'utf-8');
   } catch (e) {
     console.error('Failed to write footers.json:', e);
   }
@@ -538,6 +540,24 @@ export function getActiveFooter(): FooterConfig {
   const store = readFootersData();
   const active = store.footers.find(f => f.id === store.activeFooterId);
   return active || store.footers[0] || defaultSampleFooters[0];
+}
+
+export function getActiveFooterForTheme(themeName = 'default'): FooterConfig {
+  const store = readFootersData();
+  const target = (themeName || 'default').toLowerCase();
+  const mappedId = store.activeFooterIds?.[target];
+  if (mappedId) {
+    const mapped = store.footers.find(f => f.id === mappedId);
+    if (mapped) return mapped;
+  }
+  const active = store.footers.find(f => f.id === store.activeFooterId);
+  if (active && ((!active.theme && target === 'default') || (active.theme && active.theme.toLowerCase() === target))) {
+    return active;
+  }
+  const themed = store.footers.find(f => f.theme && f.theme.toLowerCase() === target);
+  if (themed) return themed;
+  const unthemedDefault = store.footers.find(f => !f.theme);
+  return unthemedDefault || defaultSampleFooters[0];
 }
 
 export function getFooterById(id: string): FooterConfig | undefined {
@@ -563,14 +583,24 @@ export function saveFooter(footer: FooterConfig): FootersStore {
   return store;
 }
 
-export function setActiveFooter(id: string): FootersStore {
+export function setActiveFooter(id: string, themeName?: string): FootersStore {
   const store = readFootersData();
-  const target = store.footers.find(f => f.id === id);
-  if (target) {
-    store.activeFooterId = id;
-    store.footers.forEach(f => {
-      f.isActive = f.id === id;
-    });
+  const targetFooter = store.footers.find(f => f.id === id);
+  if (targetFooter) {
+    const target = themeName ? themeName.trim().toLowerCase() : '';
+    if (target) {
+      if (!store.activeFooterIds) store.activeFooterIds = {};
+      store.activeFooterIds[target] = id;
+    }
+    if (!target || (targetFooter.theme && targetFooter.theme.toLowerCase() === target) || target === 'furnisite') {
+      store.activeFooterId = id;
+    }
+    if (!target) {
+      store.activeFooterId = id;
+      store.footers.forEach(f => {
+        f.isActive = f.id === id;
+      });
+    }
     writeFootersData(store);
   }
   return store;

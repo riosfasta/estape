@@ -72,6 +72,43 @@ func (s *Store) ListTenants(ctx context.Context, filter bson.M) ([]models.Tenant
 	return tenants, nil
 }
 
+func (s *Store) CountTenants(ctx context.Context, filter bson.M) (int64, error) {
+	if filter == nil {
+		filter = bson.M{}
+	}
+	return s.C("tenants").CountDocuments(ctx, filter)
+}
+
+func (s *Store) ListTenantsPaginated(ctx context.Context, filter bson.M, sort bson.D, skip, limit int64) ([]models.Tenant, error) {
+	if filter == nil {
+		filter = bson.M{}
+	}
+	if len(sort) == 0 {
+		sort = bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}
+	}
+	opts := mongomodels.Find().SetSort(sort)
+	if skip > 0 {
+		opts.SetSkip(skip)
+	}
+	if limit > 0 {
+		opts.SetLimit(limit)
+	}
+	cursor, err := s.C("tenants").Find(ctx, filter, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var tenants []models.Tenant
+	if err := cursor.All(ctx, &tenants); err != nil {
+		return nil, err
+	}
+	if tenants == nil {
+		tenants = []models.Tenant{}
+	}
+	return tenants, nil
+}
+
 func (s *Store) ListTenantsByOwner(ctx context.Context, ownerUserID primitive.ObjectID) ([]models.Tenant, error) {
 	return s.ListTenants(ctx, bson.M{"owner_user_id": ownerUserID})
 }

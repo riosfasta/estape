@@ -5,6 +5,7 @@ import Footer from '../components/Footer.astro';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { getDataFile } from '../../../core/tenantContext';
 interface Props {
   title?: string;
   description?: string;
@@ -34,7 +35,7 @@ const {
 // Load siteConfig for favicon and brand info
 let siteConfig: any = null;
 try {
-  const configFile = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
+  const configFile = getDataFile('siteConfig.json');
   const raw = await fs.readFile(configFile, 'utf-8');
   siteConfig = JSON.parse(raw);
 } catch {}
@@ -42,7 +43,7 @@ try {
 // Load custom code
 let customCode: any = null;
 try {
-  const codeFile = path.join(process.cwd(), 'src', 'data', 'customCode.json');
+  const codeFile = getDataFile('customCode.json');
   const raw = await fs.readFile(codeFile, 'utf-8');
   customCode = JSON.parse(raw);
 } catch {}
@@ -156,6 +157,7 @@ const faviconUrl = siteConfig?.faviconUrl || '/favicon.svg';
     <script is:inline>
       (function() {
         document.addEventListener('click', function(e) {
+          if (e.__fpPopDrawerHandled) return;
           var trigger = e.target.closest('.pop-drawer-trigger-btn, [data-pop-drawer-trigger]');
           if (trigger) {
             e.preventDefault();

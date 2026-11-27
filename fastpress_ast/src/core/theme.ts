@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { getDataDir, getDataFile, getTenantContext } from './tenantContext';
 
 export interface ThemeManifest {
   name: string;
@@ -13,15 +14,22 @@ export interface ThemeManifest {
 }
 
 const THEMES_DIR = path.join(process.cwd(), 'src', 'themes');
-const SITE_CONFIG_PATH = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
 
 /**
- * Get active theme name from siteConfig.json, falling back to 'default'.
+ * Get active theme name from tenant context or siteConfig.json, falling back to 'default'.
  */
 export function getActiveThemeName(): string {
+  const tenantCtx = getTenantContext();
+  if (tenantCtx?.theme) {
+    const ctxThemeDir = path.join(THEMES_DIR, tenantCtx.theme);
+    if (fs.existsSync(ctxThemeDir)) {
+      return tenantCtx.theme;
+    }
+  }
   try {
-    if (fs.existsSync(SITE_CONFIG_PATH)) {
-      const raw = fs.readFileSync(SITE_CONFIG_PATH, 'utf-8');
+    const siteConfigPath = getDataFile('siteConfig.json');
+    if (fs.existsSync(siteConfigPath)) {
+      const raw = fs.readFileSync(siteConfigPath, 'utf-8');
       const config = JSON.parse(raw);
       if (config.activeTheme && typeof config.activeTheme === 'string') {
         const themeDir = path.join(THEMES_DIR, config.activeTheme);
@@ -37,13 +45,40 @@ export function getActiveThemeName(): string {
 }
 
 /**
+ * Resolve theme name for an incoming request:
+ * explicitTheme -> ?theme= query param -> X-Tenant-Theme header -> siteConfig.activeTheme ('default' fallback).
+ */
+export function resolveThemeName(
+  url?: URL | null,
+  headers?: Headers | null,
+  explicitTheme?: string | null
+): string {
+  const candidates = [
+    explicitTheme,
+    url?.searchParams.get('theme'),
+    headers?.get('x-tenant-theme'),
+    getTenantContext()?.theme,
+  ];
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === 'string') {
+      const normalized = candidate.trim().toLowerCase();
+      if (normalized && fs.existsSync(path.join(THEMES_DIR, normalized))) {
+        return normalized;
+      }
+    }
+  }
+  return getActiveThemeName();
+}
+
+/**
  * Update the active theme in siteConfig.json.
  */
 export function setActiveTheme(themeName: string): boolean {
   try {
+    const siteConfigPath = getDataFile('siteConfig.json');
     let config: any = {};
-    if (fs.existsSync(SITE_CONFIG_PATH)) {
-      const raw = fs.readFileSync(SITE_CONFIG_PATH, 'utf-8');
+    if (fs.existsSync(siteConfigPath)) {
+      const raw = fs.readFileSync(siteConfigPath, 'utf-8');
       config = JSON.parse(raw);
     }
     const themeDir = path.join(THEMES_DIR, themeName);
@@ -51,7 +86,8 @@ export function setActiveTheme(themeName: string): boolean {
       throw new Error(`Theme "${themeName}" does not exist in ${THEMES_DIR}`);
     }
     config.activeTheme = themeName;
-    fs.writeFileSync(SITE_CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+    fs.mkdirSync(getDataDir(), { recursive: true });
+    fs.writeFileSync(siteConfigPath, JSON.stringify(config, null, 2), 'utf-8');
     return true;
   } catch (err) {
     console.error('[Core] Error setting active theme:', err);
@@ -109,12 +145,12 @@ export function listThemes(): Array<{ id: string; manifest: ThemeManifest; isAct
  */
 export function getThemePagesFilePath(themeName?: string): string {
   const theme = themeName || getActiveThemeName();
-  const themeFile = path.join(process.cwd(), 'src', 'data', `pages-${theme}.json`);
+  const themeFile = getDataFile(`pages-${theme}.json`);
   if (fs.existsSync(themeFile)) {
     return themeFile;
   }
   if (theme === 'default') {
-    return path.join(process.cwd(), 'src', 'data', 'pages.json');
+    return getDataFile('pages.json');
   }
   return themeFile;
 }
@@ -124,8 +160,8 @@ export function getThemePagesFilePath(themeName?: string): string {
  */
 export function getThemePages(themeName?: string): Record<string, any> {
   const theme = themeName || getActiveThemeName();
-  const themeFile = path.join(process.cwd(), 'src', 'data', `pages-${theme}.json`);
-  const legacyFile = path.join(process.cwd(), 'src', 'data', 'pages.json');
+  const themeFile = getDataFile(`pages-${theme}.json`);
+  const legacyFile = getDataFile('pages.json');
 
   try {
     if (fs.existsSync(themeFile)) {
@@ -154,10 +190,11 @@ export function getThemePages(themeName?: string): Record<string, any> {
  */
 export function saveThemePages(pages: Record<string, any>, themeName?: string): boolean {
   const theme = themeName || getActiveThemeName();
-  const themeFile = path.join(process.cwd(), 'src', 'data', `pages-${theme}.json`);
-  const legacyFile = path.join(process.cwd(), 'src', 'data', 'pages.json');
+  const themeFile = getDataFile(`pages-${theme}.json`);
+  const legacyFile = getDataFile('pages.json');
 
   try {
+    fs.mkdirSync(getDataDir(), { recursive: true });
     fs.writeFileSync(themeFile, JSON.stringify(pages, null, 2), 'utf-8');
     if (theme === 'default') {
       try {

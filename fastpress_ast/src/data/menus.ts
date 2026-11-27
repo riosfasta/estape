@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { getDataFile } from '../core/tenantContext';
 export interface MenuItem {
   id: string;
   label: string;
@@ -88,14 +89,13 @@ export interface MenusStore {
   menus: MenuConfig[];
 }
 
-const MENUS_FILE = path.join(process.cwd(), 'src', 'data', 'menus.json');
 
 export function readMenusData(): MenusStore {
   try {
-    if (!fs.existsSync(MENUS_FILE)) {
+    if (!fs.existsSync(getDataFile('menus.json'))) {
       return { menus: [] };
     }
-    const raw = fs.readFileSync(MENUS_FILE, 'utf-8');
+    const raw = fs.readFileSync(getDataFile('menus.json'), 'utf-8');
     return JSON.parse(raw);
   } catch (err) {
     console.error('Error reading menus.json:', err);
@@ -105,7 +105,7 @@ export function readMenusData(): MenusStore {
 
 export function writeMenusData(data: MenusStore): void {
   try {
-    fs.writeFileSync(MENUS_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    fs.writeFileSync(getDataFile('menus.json'), JSON.stringify(data, null, 2), 'utf-8');
   } catch (err) {
     console.error('Error writing menus.json:', err);
   }

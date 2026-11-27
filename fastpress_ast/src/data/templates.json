@@ -5,8 +5,1953 @@
     "type": "global",
     "category": "Header",
     "description": "Theme navigation bar with brand, desktop links, catalog search, bag counter, and mobile hamburger drawer.",
-    "html": "<header class=\"block-furnisite-navbar pop-drawer-component\" data-global-template-id=\"tpl-global-furnisite-navbar\">\n  <div class=\"bfn-container\">\n    <div style=\"display: flex; align-items: center; gap: 14px;\">\n      <button type=\"button\" class=\"pop-drawer-trigger-btn\" style=\"background: none; border: none; cursor: pointer; padding: 6px; display: inline-flex; align-items: center; justify-content: center; color: #111827; border-radius: 4px;\" aria-label=\"Toggle navigation drawer\" title=\"Click to pop out drawer\">\n        <svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><line x1=\"3\" y1=\"12\" x2=\"21\" y2=\"12\"></line><line x1=\"3\" y1=\"6\" x2=\"21\" y2=\"6\"></line><line x1=\"3\" y1=\"18\" x2=\"21\" y2=\"18\"></line></svg>\n      </button>\n      <a href=\"/\" class=\"bfn-brand\">INFURNISH</a>\n    </div>\n    <nav>\n      <ul class=\"bfn-nav\">\n        <li><a href=\"/\" class=\"bfn-nav-link is-active\">Home</a></li>\n        <li><a href=\"/about\" class=\"bfn-nav-link\">About</a></li>\n        <li><a href=\"/products\" class=\"bfn-nav-link\">Shop</a></li>\n        <li><a href=\"/blog\" class=\"bfn-nav-link\">Blog</a></li>\n        <li><a href=\"/contact\" class=\"bfn-nav-link\">Contact</a></li>\n      </ul>\n    </nav>\n    <div class=\"bfn-actions\">\n      <a href=\"/products\" class=\"bfn-icon-btn\" title=\"Search\">\n        <svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"11\" cy=\"11\" r=\"8\"></circle><line x1=\"21\" y1=\"21\" x2=\"16.65\" y2=\"16.65\"></line></svg>\n      </a>\n      <a href=\"/products\" class=\"bfn-icon-btn\" style=\"position: relative;\" title=\"Shopping Bag\">\n        <svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z\"></path><line x1=\"3\" y1=\"6\" x2=\"21\" y2=\"6\"></line><path d=\"M16 10a4 4 0 0 1-8 0\"></path></svg>\n        <span style=\"position: absolute; top: -2px; right: -4px; background: #111827; color: #ffffff; font-size: 0.65rem; font-weight: 700; width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center; justify-content: center;\">0</span>\n      </a>\n      <a href=\"/products\" style=\"background-color: #111827; color: #ffffff; padding: 9px 20px; border-radius: 9999px; font-size: 0.82rem; font-weight: 700; text-decoration: none; letter-spacing: 0.02em;\">Explore Catalog</a>\n    </div>\n  </div>\n  <div class=\"pop-drawer-overlay\">\n    <div class=\"pop-drawer-backdrop\"></div>\n    <aside class=\"pop-drawer-panel\">\n      <div class=\"pop-drawer-header\">\n        <div class=\"pop-drawer-brand\">INFURNISH</div>\n        <button type=\"button\" class=\"pop-drawer-close-btn\" aria-label=\"Close Drawer\" title=\"Close\">✕</button>\n      </div>\n      <div class=\"pop-drawer-search\">\n        <input type=\"text\" placeholder=\"Search furniture, styles...\" class=\"pop-drawer-search-input\" />\n      </div>\n      <nav class=\"pop-drawer-nav\">\n        <ul class=\"pop-drawer-menu\">\n          <li><a href=\"/\" class=\"pop-drawer-link is-active\"><span>Home</span><span class=\"pop-drawer-arrow\">&rarr;</span></a></li>\n          <li><a href=\"/about\" class=\"pop-drawer-link\"><span>About Our Studio</span><span class=\"pop-drawer-arrow\">&rarr;</span></a></li>\n          <li><a href=\"/products\" class=\"pop-drawer-link\"><span>Shop Catalog</span><span class=\"pop-drawer-arrow\">&rarr;</span></a></li>\n          <li><a href=\"/blog\" class=\"pop-drawer-link\"><span>Living Space Journal</span><span class=\"pop-drawer-arrow\">&rarr;</span></a></li>\n          <li><a href=\"/contact\" class=\"pop-drawer-link\"><span>Showrooms & Contact</span><span class=\"pop-drawer-arrow\">&rarr;</span></a></li>\n        </ul>\n      </nav>\n      <div class=\"pop-drawer-promo\">\n        <div class=\"pop-drawer-promo-badge\">PROMO CODE: LUXE10</div>\n        <div class=\"pop-drawer-promo-title\">Enjoy 10% Off Your Initial Order</div>\n        <p class=\"pop-drawer-promo-desc\">Thoughtfully crafted furniture designed to transform modern living spaces.</p>\n        <a href=\"/products\" class=\"pop-drawer-cta-btn\">Shop Collection &rarr;</a>\n      </div>\n      <div class=\"pop-drawer-footer\">\n        <div class=\"pop-drawer-socials\">\n          <a href=\"#\" class=\"pop-drawer-social-icon\" title=\"Instagram\">📸</a>\n          <a href=\"#\" class=\"pop-drawer-social-icon\" title=\"Pinterest\">📌</a>\n          <a href=\"#\" class=\"pop-drawer-social-icon\" title=\"Twitter\">🐦</a>\n          <a href=\"#\" class=\"pop-drawer-social-icon\" title=\"Facebook\">📘</a>\n        </div>\n        <p class=\"pop-drawer-contact-info\">Need assistance? <a href=\"/contact\">contact@infurnish.com</a></p>\n      </div>\n    </aside>\n  </div>\n</header>",
-    "css": ".block-furnisite-navbar { background-color: #ffffff; border-bottom: 1px solid #f0f0f0; padding: 14px 24px; font-family: 'Plus Jakarta Sans', -apple-system, sans-serif; width: 100%; box-sizing: border-box; }\n.block-furnisite-navbar .bfn-container { max-width: 1240px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; }\n.block-furnisite-navbar .bfn-brand { font-family: 'Montserrat', sans-serif; font-size: 1.35rem; font-weight: 800; letter-spacing: 0.08em; color: #111827; text-transform: uppercase; text-decoration: none; }\n.block-furnisite-navbar .bfn-nav { display: flex; gap: 28px; list-style: none; padding: 0; margin: 0; }\n.block-furnisite-navbar .bfn-nav li { list-style: none; margin: 0; padding: 0; }\n.block-furnisite-navbar .bfn-nav { display: flex; align-items: center; gap: 32px; list-style: none; padding: 0; margin: 0; }\n.block-furnisite-navbar .bfn-nav li { list-style: none; margin: 0; padding: 0; }\n.block-furnisite-navbar .bfn-nav a,\n.block-furnisite-navbar .bfn-nav-link {\n  font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;\n  font-size: 0.92rem;\n  font-weight: 500;\n  color: #4b5563;\n  text-decoration: none;\n  position: relative;\n  padding: 6px 2px;\n  display: inline-block;\n  transition: color 0.18s ease;\n}\n.block-furnisite-navbar .bfn-nav a:hover,\n.block-furnisite-navbar .bfn-nav a.is-active,\n.block-furnisite-navbar .bfn-nav-link:hover,\n.block-furnisite-navbar .bfn-nav-link.is-active {\n  color: #111827;\n  font-weight: 600;\n}\n.block-furnisite-navbar .bfn-nav a::after,\n.block-furnisite-navbar .bfn-nav-link::after {\n  content: '';\n  position: absolute;\n  bottom: 0;\n  left: 0;\n  right: 0;\n  height: 2px;\n  background-color: #111827;\n  transform: scaleX(0);\n  transform-origin: center;\n  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease;\n  border-radius: 1px;\n}\n.block-furnisite-navbar .bfn-nav a:hover::after,\n.block-furnisite-navbar .bfn-nav-link:hover::after {\n  transform: scaleX(0.5);\n  background-color: #9ca3af;\n}\n.block-furnisite-navbar .bfn-nav a.is-active::after,\n.block-furnisite-navbar .bfn-nav-link.is-active::after {\n  transform: scaleX(1);\n  background-color: #111827;\n}\n.block-furnisite-navbar .bfn-actions { display: flex; align-items: center; gap: 16px; }\n.block-furnisite-navbar .bfn-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; background: #f4f4f5; color: #18181b; text-decoration: none; font-size: 1rem; }\n.block-furnisite-navbar .pop-drawer-trigger-btn { background: transparent; border: none; cursor: pointer; padding: 6px; display: inline-flex; align-items: center; justify-content: center; color: #111827; border-radius: 4px; transition: background 0.15s ease; }\n.block-furnisite-navbar .pop-drawer-trigger-btn:hover { background: #f4f4f5; }\n.pop-drawer-overlay { position: fixed; inset: 0; z-index: 99999; visibility: hidden; opacity: 0; transition: opacity 0.25s ease, visibility 0.25s ease; pointer-events: none; }\n.pop-drawer-overlay.is-open, .pop-drawer-overlay[data-open=\"true\"] { visibility: visible; opacity: 1; pointer-events: auto; }\n.pop-drawer-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(2px); cursor: pointer; }\n.pop-drawer-panel { position: absolute; top: 0; left: 0; bottom: 0; width: 340px; max-width: 85vw; background: #ffffff; box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15); transform: translateX(-100%); transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1); display: flex; flex-direction: column; overflow-y: auto; z-index: 10; }\n.pop-drawer-overlay.is-open .pop-drawer-panel, .pop-drawer-overlay[data-open=\"true\"] .pop-drawer-panel { transform: translateX(0); }\n.pop-drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid #f0f0f0; }\n.pop-drawer-brand { font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 1.15rem; letter-spacing: 0.08em; color: #111827; text-transform: uppercase; }\n.pop-drawer-close-btn { background: #f4f4f5; border: none; width: 32px; height: 32px; border-radius: 50%; font-size: 0.85rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #4b5563; transition: all 0.15s ease; }\n.pop-drawer-close-btn:hover { background: #111827; color: #ffffff; }\n.pop-drawer-search { padding: 16px 24px 8px; }\n.pop-drawer-search-input { width: 100%; padding: 10px 14px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 0.86rem; background: #f9fafb; outline: none; transition: border-color 0.15s ease; box-sizing: border-box; }\n.pop-drawer-nav { padding: 8px 16px; flex: 1; }\n.pop-drawer-menu { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }\n.pop-drawer-menu li { list-style: none; padding: 0; margin: 0; }\n.pop-drawer-link { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; font-size: 0.95rem; font-weight: 600; color: #374151; text-decoration: none; border-radius: 6px; transition: all 0.15s ease; }\n.pop-drawer-link:hover, .pop-drawer-link.is-active { background: #f3f4f6; color: #111827; padding-left: 16px; }\n.pop-drawer-arrow { font-size: 0.9rem; color: #9ca3af; transition: transform 0.15s ease; }\n.pop-drawer-link:hover .pop-drawer-arrow { transform: translateX(3px); color: #111827; }\n.pop-drawer-promo { margin: 16px 20px; padding: 16px; background: #faf9f6; border: 1px solid #f0eee6; border-radius: 10px; }\n.pop-drawer-promo-badge { font-size: 0.7rem; font-weight: 700; color: #b45309; letter-spacing: 0.05em; margin-bottom: 6px; text-transform: uppercase; }\n.pop-drawer-promo-title { font-weight: 700; font-size: 0.92rem; color: #18181b; margin-bottom: 4px; }\n.pop-drawer-promo-desc { font-size: 0.8rem; color: #71717a; line-height: 1.45; margin: 0 0 10px 0; }\n.pop-drawer-cta-btn { display: inline-block; background: #18181b; color: #ffffff; padding: 7px 14px; border-radius: 6px; font-size: 0.78rem; font-weight: 700; text-decoration: none; }\n.pop-drawer-cta-btn:hover { background: #27272a; }\n.pop-drawer-footer { padding: 18px 24px; border-top: 1px solid #f0f0f0; background: #ffffff; }\n.pop-drawer-socials { display: flex; gap: 10px; margin-bottom: 12px; }\n.pop-drawer-social-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; background: #f4f4f5; text-decoration: none; font-size: 0.88rem; transition: background 0.15s ease; }\n.pop-drawer-social-icon:hover { background: #e4e4e7; }\n.pop-drawer-contact-info { font-size: 0.78rem; color: #9ca3af; margin: 0; }\n.pop-drawer-contact-info a { color: #4b5563; font-weight: 600; text-decoration: underline; }"
+    "html": "<body><header data-global-template-id=\"tpl-global-furnisite-navbar\" class=\"block-furnisite-navbar pop-drawer-component\"><div class=\"bfn-container\"><div class=\"c654\"><button type=\"button\" aria-label=\"Toggle navigation drawer\" title=\"Click to pop out drawer\" class=\"pop-drawer-trigger-btn c657\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><line x1=\"3\" y1=\"12\" x2=\"21\" y2=\"12\"></line><line x1=\"3\" y1=\"6\" x2=\"21\" y2=\"6\"></line><line x1=\"3\" y1=\"18\" x2=\"21\" y2=\"18\"></line></svg></button><a href=\"/\" class=\"bfn-brand\">INFURNISH</a></div><nav><ul class=\"bfn-nav\"><li><a href=\"/\" class=\"bfn-nav-link is-active\">Home</a></li><li><a href=\"/about\" class=\"bfn-nav-link\">About</a></li><li><a href=\"/products\" class=\"bfn-nav-link\">Shop</a></li><li><a href=\"/blog\" class=\"bfn-nav-link\">Blog</a></li><li><a href=\"/contact\" class=\"bfn-nav-link\">Contact</a></li></ul></nav><div class=\"bfn-actions\"><a href=\"/products\" title=\"Search\" class=\"bfn-icon-btn\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"11\" cy=\"11\" r=\"8\"></circle><line x1=\"21\" y1=\"21\" x2=\"16.65\" y2=\"16.65\"></line></svg></a><a href=\"/products\" title=\"Shopping Bag\" class=\"bfn-icon-btn c943\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z\"></path><line x1=\"3\" y1=\"6\" x2=\"21\" y2=\"6\"></line><path d=\"M16 10a4 4 0 0 1-8 0\"></path></svg><span class=\"c982\">0</span></a><a href=\"/products\" class=\"c1012\">Explore Catalog</a></div></div><div class=\"pop-drawer-overlay\"><div class=\"pop-drawer-backdrop\"></div><aside class=\"pop-drawer-panel\"><div class=\"pop-drawer-header\"><div class=\"pop-drawer-brand\">INFURNISH</div><button type=\"button\" aria-label=\"Close Drawer\" title=\"Close\" class=\"pop-drawer-close-btn\">✕</button></div><div class=\"pop-drawer-search\"><input type=\"text\" placeholder=\"Search furniture, styles...\" class=\"pop-drawer-search-input\"/></div><nav class=\"pop-drawer-nav\"><ul class=\"pop-drawer-menu\"><li><a href=\"/\" class=\"pop-drawer-link is-active\"><span>Home</span><span class=\"pop-drawer-arrow\">→</span></a></li><li><a href=\"/about\" class=\"pop-drawer-link\"><span>About Our Studio</span><span class=\"pop-drawer-arrow\">→</span></a></li><li><a href=\"/products\" class=\"pop-drawer-link\"><span>Shop Catalog</span><span class=\"pop-drawer-arrow\">→</span></a></li><li><a href=\"/blog\" class=\"pop-drawer-link\"><span>Living Space Journal</span><span class=\"pop-drawer-arrow\">→</span></a></li><li><a href=\"/contact\" class=\"pop-drawer-link\"><span>Showrooms &amp; Contact</span><span class=\"pop-drawer-arrow\">→</span></a></li></ul></nav><div class=\"pop-drawer-promo\"><div class=\"pop-drawer-promo-badge\">PROMO CODE: LUXE10</div><div class=\"pop-drawer-promo-title\">Enjoy 10% Off Your Initial Order</div><p class=\"pop-drawer-promo-desc\">Thoughtfully crafted furniture designed to transform modern living spaces.</p><a href=\"/products\" class=\"pop-drawer-cta-btn\">Shop Collection →</a></div><div class=\"pop-drawer-footer\"><div class=\"pop-drawer-socials\"><a href=\"#\" title=\"Instagram\" class=\"pop-drawer-social-icon\">📸</a><a href=\"#\" title=\"Pinterest\" class=\"pop-drawer-social-icon\">📌</a><a href=\"#\" title=\"Twitter\" class=\"pop-drawer-social-icon\">🐦</a><a href=\"#\" title=\"Facebook\" class=\"pop-drawer-social-icon\">📘</a></div><p class=\"pop-drawer-contact-info\">Need assistance? <a href=\"/contact\">contact@infurnish.com</a></p></div></aside></div></header></body>",
+    "css": "* { box-sizing: border-box; } body {margin: 0;}.block-furnisite-navbar{background-color:rgb(255, 255, 255);border-bottom-width:1px;border-bottom-style:solid;border-bottom-color:rgb(240, 240, 240);padding-top:14px;padding-right:24px;padding-bottom:14px;padding-left:24px;font-family:\"Plus Jakarta Sans\", -apple-system, sans-serif;width:100%;box-sizing:border-box;}.block-furnisite-navbar .bfn-container{max-width:1240px;margin-top:0px;margin-right:auto;margin-bottom:0px;margin-left:auto;display:flex;align-items:center;justify-content:space-between;row-gap:20px;column-gap:20px;}.block-furnisite-navbar .bfn-brand{font-family:Montserrat, sans-serif;font-size:1.35rem;font-weight:800;letter-spacing:0.08em;color:rgb(17, 24, 39);text-transform:uppercase;text-decoration-line:none;text-decoration-thickness:initial;text-decoration-style:initial;text-decoration-color:initial;}.block-furnisite-navbar .bfn-nav{display:flex;row-gap:28px;column-gap:28px;list-style-position:initial;list-style-image:initial;list-style-type:none;padding-top:0px;padding-right:0px;padding-bottom:0px;padding-left:0px;margin-top:0px;margin-right:0px;margin-bottom:0px;margin-left:0px;}.block-furnisite-navbar .bfn-nav li{list-style-position:initial;list-style-image:initial;list-style-type:none;margin-top:0px;margin-right:0px;margin-bottom:0px;margin-left:0px;padding-top:0px;padding-right:0px;padding-bottom:0px;padding-left:0px;}.block-furnisite-navbar .bfn-nav{display:flex;align-items:center;row-gap:32px;column-gap:32px;list-style-position:initial;list-style-image:initial;list-style-type:none;padding-top:0px;padding-right:0px;padding-bottom:0px;padding-left:0px;margin-top:0px;margin-right:0px;margin-bottom:0px;margin-left:0px;}.block-furnisite-navbar .bfn-nav li{list-style-position:initial;list-style-image:initial;list-style-type:none;margin-top:0px;margin-right:0px;margin-bottom:0px;margin-left:0px;padding-top:0px;padding-right:0px;padding-bottom:0px;padding-left:0px;}.block-furnisite-navbar .bfn-nav a, .block-furnisite-navbar .bfn-nav-link{font-family:\"Plus Jakarta Sans\", -apple-system, sans-serif;font-size:0.92rem;font-weight:500;color:rgb(75, 85, 99);text-decoration-line:none;text-decoration-thickness:initial;text-decoration-style:initial;text-decoration-color:initial;position:relative;padding-top:6px;padding-right:2px;padding-bottom:6px;padding-left:2px;display:inline-block;transition-behavior:normal;transition-duration:0.18s;transition-timing-function:ease;transition-delay:0s;transition-property:color;}.block-furnisite-navbar .bfn-nav a:hover, .block-furnisite-navbar .bfn-nav a.is-active, .block-furnisite-navbar .bfn-nav-link:hover, .block-furnisite-navbar .bfn-nav-link.is-active{color:rgb(17, 24, 39);font-weight:600;}.block-furnisite-navbar .bfn-nav a::after, .block-furnisite-navbar .bfn-nav-link::after{content:\"\";position:absolute;bottom:0px;left:0px;right:0px;height:2px;background-color:rgb(17, 24, 39);transform:scaleX(0);transform-origin:center center;transition-behavior:normal, normal;transition-duration:0.22s, 0.2s;transition-timing-function:cubic-bezier(0.4, 0, 0.2, 1), ease;transition-delay:0s, 0s;transition-property:transform, background-color;border-top-left-radius:1px;border-top-right-radius:1px;border-bottom-right-radius:1px;border-bottom-left-radius:1px;}.block-furnisite-navbar .bfn-nav a:hover::after, .block-furnisite-navbar .bfn-nav-link:hover::after{transform:scaleX(0.5);background-color:rgb(156, 163, 175);}.block-furnisite-navbar .bfn-nav a.is-active::after, .block-furnisite-navbar .bfn-nav-link.is-active::after{transform:scaleX(1);background-color:rgb(17, 24, 39);}.block-furnisite-navbar .bfn-actions{display:flex;align-items:center;row-gap:16px;column-gap:16px;}.block-furnisite-navbar .bfn-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-top-left-radius:50%;border-top-right-radius:50%;border-bottom-right-radius:50%;border-bottom-left-radius:50%;background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(244, 244, 245);color:rgb(24, 24, 27);text-decoration-line:none;text-decoration-thickness:initial;text-decoration-style:initial;text-decoration-color:initial;font-size:1rem;}.block-furnisite-navbar .pop-drawer-trigger-btn{background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:transparent;border-top-width:medium;border-right-width:medium;border-bottom-width:medium;border-left-width:medium;border-top-style:none;border-right-style:none;border-bottom-style:none;border-left-style:none;border-top-color:currentcolor;border-right-color:currentcolor;border-bottom-color:currentcolor;border-left-color:currentcolor;border-image-source:none;border-image-slice:100%;border-image-width:1;border-image-outset:0;border-image-repeat:stretch;cursor:pointer;padding-top:6px;padding-right:6px;padding-bottom:6px;padding-left:6px;display:inline-flex;align-items:center;justify-content:center;color:rgb(17, 24, 39);border-top-left-radius:4px;border-top-right-radius:4px;border-bottom-right-radius:4px;border-bottom-left-radius:4px;transition-behavior:normal;transition-duration:0.15s;transition-timing-function:ease;transition-delay:0s;transition-property:background;}.block-furnisite-navbar .pop-drawer-trigger-btn:hover{background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(244, 244, 245);}.pop-drawer-overlay{position:fixed;top:0px;right:0px;bottom:0px;left:0px;z-index:99999;visibility:hidden;opacity:0;transition-behavior:normal, normal;transition-duration:0.25s, 0.25s;transition-timing-function:ease, ease;transition-delay:0s, 0s;transition-property:opacity, visibility;pointer-events:none;}.pop-drawer-overlay.is-open, .pop-drawer-overlay[data-open=\"true\"]{visibility:visible;opacity:1;pointer-events:auto;}.pop-drawer-backdrop{position:absolute;top:0px;right:0px;bottom:0px;left:0px;background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgba(0, 0, 0, 0.45);backdrop-filter:blur(2px);cursor:pointer;}.pop-drawer-panel{position:absolute;top:0px;left:0px;bottom:0px;width:340px;max-width:85vw;background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(255, 255, 255);box-shadow:rgba(0, 0, 0, 0.15) 4px 0px 24px;transform:translateX(-100%);transition-behavior:normal;transition-duration:0.28s;transition-timing-function:cubic-bezier(0.16, 1, 0.3, 1);transition-delay:0s;transition-property:transform;display:flex;flex-direction:column;overflow-y:auto;z-index:10;}.pop-drawer-overlay.is-open .pop-drawer-panel, .pop-drawer-overlay[data-open=\"true\"] .pop-drawer-panel{transform:translateX(0px);}.pop-drawer-header{display:flex;align-items:center;justify-content:space-between;padding-top:20px;padding-right:24px;padding-bottom:20px;padding-left:24px;border-bottom-width:1px;border-bottom-style:solid;border-bottom-color:rgb(240, 240, 240);}.pop-drawer-brand{font-family:Montserrat, sans-serif;font-weight:800;font-size:1.15rem;letter-spacing:0.08em;color:rgb(17, 24, 39);text-transform:uppercase;}.pop-drawer-close-btn{background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(244, 244, 245);border-top-width:medium;border-right-width:medium;border-bottom-width:medium;border-left-width:medium;border-top-style:none;border-right-style:none;border-bottom-style:none;border-left-style:none;border-top-color:currentcolor;border-right-color:currentcolor;border-bottom-color:currentcolor;border-left-color:currentcolor;border-image-source:none;border-image-slice:100%;border-image-width:1;border-image-outset:0;border-image-repeat:stretch;width:32px;height:32px;border-top-left-radius:50%;border-top-right-radius:50%;border-bottom-right-radius:50%;border-bottom-left-radius:50%;font-size:0.85rem;font-weight:bold;cursor:pointer;display:flex;align-items:center;justify-content:center;color:rgb(75, 85, 99);transition-behavior:normal;transition-duration:0.15s;transition-timing-function:ease;transition-delay:0s;transition-property:all;}.pop-drawer-close-btn:hover{background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(17, 24, 39);color:rgb(255, 255, 255);}.pop-drawer-search{padding-top:16px;padding-right:24px;padding-bottom:8px;padding-left:24px;}.pop-drawer-search-input{width:100%;padding-top:10px;padding-right:14px;padding-bottom:10px;padding-left:14px;border-top-width:1px;border-right-width:1px;border-bottom-width:1px;border-left-width:1px;border-top-style:solid;border-right-style:solid;border-bottom-style:solid;border-left-style:solid;border-top-color:rgb(229, 231, 235);border-right-color:rgb(229, 231, 235);border-bottom-color:rgb(229, 231, 235);border-left-color:rgb(229, 231, 235);border-image-source:none;border-image-slice:100%;border-image-width:1;border-image-outset:0;border-image-repeat:stretch;border-top-left-radius:8px;border-top-right-radius:8px;border-bottom-right-radius:8px;border-bottom-left-radius:8px;font-size:0.86rem;background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(249, 250, 251);outline-color:initial;outline-style:none;outline-width:initial;transition-behavior:normal;transition-duration:0.15s;transition-timing-function:ease;transition-delay:0s;transition-property:border-color;box-sizing:border-box;}.pop-drawer-nav{padding-top:8px;padding-right:16px;padding-bottom:8px;padding-left:16px;flex-grow:1;flex-shrink:1;flex-basis:0%;}.pop-drawer-menu{list-style-position:initial;list-style-image:initial;list-style-type:none;padding-top:0px;padding-right:0px;padding-bottom:0px;padding-left:0px;margin-top:0px;margin-right:0px;margin-bottom:0px;margin-left:0px;display:flex;flex-direction:column;row-gap:4px;column-gap:4px;}.pop-drawer-menu li{list-style-position:initial;list-style-image:initial;list-style-type:none;padding-top:0px;padding-right:0px;padding-bottom:0px;padding-left:0px;margin-top:0px;margin-right:0px;margin-bottom:0px;margin-left:0px;}.pop-drawer-link{display:flex;align-items:center;justify-content:space-between;padding-top:10px;padding-right:12px;padding-bottom:10px;padding-left:12px;font-size:0.95rem;font-weight:600;color:rgb(55, 65, 81);text-decoration-line:none;text-decoration-thickness:initial;text-decoration-style:initial;text-decoration-color:initial;border-top-left-radius:6px;border-top-right-radius:6px;border-bottom-right-radius:6px;border-bottom-left-radius:6px;transition-behavior:normal;transition-duration:0.15s;transition-timing-function:ease;transition-delay:0s;transition-property:all;}.pop-drawer-link:hover{background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(243, 244, 246);color:rgb(17, 24, 39);padding-left:16px;}.pop-drawer-link.is-active{background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(243, 244, 246);color:rgb(17, 24, 39);padding-left:16px;}.pop-drawer-arrow{font-size:0.9rem;color:rgb(156, 163, 175);transition-behavior:normal;transition-duration:0.15s;transition-timing-function:ease;transition-delay:0s;transition-property:transform;}.pop-drawer-link:hover .pop-drawer-arrow{transform:translateX(3px);color:rgb(17, 24, 39);}.pop-drawer-promo{margin-top:16px;margin-right:20px;margin-bottom:16px;margin-left:20px;padding-top:16px;padding-right:16px;padding-bottom:16px;padding-left:16px;background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(250, 249, 246);border-top-width:1px;border-right-width:1px;border-bottom-width:1px;border-left-width:1px;border-top-style:solid;border-right-style:solid;border-bottom-style:solid;border-left-style:solid;border-top-color:rgb(240, 238, 230);border-right-color:rgb(240, 238, 230);border-bottom-color:rgb(240, 238, 230);border-left-color:rgb(240, 238, 230);border-image-source:none;border-image-slice:100%;border-image-width:1;border-image-outset:0;border-image-repeat:stretch;border-top-left-radius:10px;border-top-right-radius:10px;border-bottom-right-radius:10px;border-bottom-left-radius:10px;}.pop-drawer-promo-badge{font-size:0.7rem;font-weight:700;color:rgb(180, 83, 9);letter-spacing:0.05em;margin-bottom:6px;text-transform:uppercase;}.pop-drawer-promo-title{font-weight:700;font-size:0.92rem;color:rgb(24, 24, 27);margin-bottom:4px;}.pop-drawer-promo-desc{font-size:0.8rem;color:rgb(113, 113, 122);line-height:1.45;margin-top:0px;margin-right:0px;margin-bottom:10px;margin-left:0px;}.pop-drawer-cta-btn{display:inline-block;background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(24, 24, 27);color:rgb(255, 255, 255);padding-top:7px;padding-right:14px;padding-bottom:7px;padding-left:14px;border-top-left-radius:6px;border-top-right-radius:6px;border-bottom-right-radius:6px;border-bottom-left-radius:6px;font-size:0.78rem;font-weight:700;text-decoration-line:none;text-decoration-thickness:initial;text-decoration-style:initial;text-decoration-color:initial;}.pop-drawer-cta-btn:hover{background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(39, 39, 42);}.pop-drawer-footer{padding-top:18px;padding-right:24px;padding-bottom:18px;padding-left:24px;border-top-width:1px;border-top-style:solid;border-top-color:rgb(240, 240, 240);background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(255, 255, 255);}.pop-drawer-socials{display:flex;row-gap:10px;column-gap:10px;margin-bottom:12px;}.pop-drawer-social-icon{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-top-left-radius:50%;border-top-right-radius:50%;border-bottom-right-radius:50%;border-bottom-left-radius:50%;background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(244, 244, 245);text-decoration-line:none;text-decoration-thickness:initial;text-decoration-style:initial;text-decoration-color:initial;font-size:0.88rem;transition-behavior:normal;transition-duration:0.15s;transition-timing-function:ease;transition-delay:0s;transition-property:background;}.pop-drawer-social-icon:hover{background-image:initial;background-position-x:initial;background-position-y:initial;background-size:initial;background-repeat:initial;background-attachment:initial;background-origin:initial;background-clip:initial;background-color:rgb(228, 228, 231);}.pop-drawer-contact-info{font-size:0.78rem;color:rgb(156, 163, 175);margin-top:0px;margin-right:0px;margin-bottom:0px;margin-left:0px;}.pop-drawer-contact-info a{color:rgb(75, 85, 99);font-weight:600;text-decoration-line:underline;text-decoration-thickness:initial;text-decoration-style:initial;text-decoration-color:initial;}.bfn-container{color:black;}.bfn-nav{color:black;}.block-furnisite-navbar.pop-drawer-component{color:black;}.block-furnisite-navbar .bfn-container > div:first-child,.block-furnisite-navbar .bfn-brand-group{display:inline-flex;align-items:center;gap:14px;}.block-furnisite-navbar .bfn-brand{display:inline-flex;align-items:center;line-height:1;}.block-furnisite-navbar .pop-drawer-trigger-btn svg{display:block;}",
+    "projectData": {
+      "dataSources": [],
+      "assets": [
+        {
+          "type": "image",
+          "src": "/uploads/1794733764491-copy-of-modify-pillar-page-des.png",
+          "unitDim": "px",
+          "height": 0,
+          "width": 0
+        },
+        {
+          "type": "image",
+          "src": "/uploads/1794241000000-unused-sample-banner.png",
+          "unitDim": "px",
+          "height": 0,
+          "width": 0
+        },
+        {
+          "type": "image",
+          "src": "/uploads/1794195200403-franchise-support-get-simple-b.webp",
+          "unitDim": "px",
+          "height": 0,
+          "width": 0
+        },
+        {
+          "type": "image",
+          "src": "/uploads/1794195191027-franchise-support-get-simple-b.webp",
+          "unitDim": "px",
+          "height": 0,
+          "width": 0
+        },
+        {
+          "type": "image",
+          "src": "/uploads/1793954693097-brian-land-hunter-head-shot-20.webp",
+          "unitDim": "px",
+          "height": 0,
+          "width": 0
+        },
+        {
+          "type": "image",
+          "src": "/uploads/1793946875432-brian-land-hunter-head-shot-20.webp",
+          "unitDim": "px",
+          "height": 0,
+          "width": 0
+        }
+      ],
+      "styles": [
+        {
+          "selectors": [
+            "block-furnisite-navbar"
+          ],
+          "style": {
+            "background-color": "rgb(255, 255, 255)",
+            "border-bottom-width": "1px",
+            "border-bottom-style": "solid",
+            "border-bottom-color": "rgb(240, 240, 240)",
+            "padding-top": "14px",
+            "padding-right": "24px",
+            "padding-bottom": "14px",
+            "padding-left": "24px",
+            "font-family": "\"Plus Jakarta Sans\", -apple-system, sans-serif",
+            "width": "100%",
+            "box-sizing": "border-box"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".block-furnisite-navbar .bfn-container",
+          "style": {
+            "max-width": "1240px",
+            "margin-top": "0px",
+            "margin-right": "auto",
+            "margin-bottom": "0px",
+            "margin-left": "auto",
+            "display": "flex",
+            "align-items": "center",
+            "justify-content": "space-between",
+            "row-gap": "20px",
+            "column-gap": "20px"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".block-furnisite-navbar .bfn-brand",
+          "style": {
+            "font-family": "Montserrat, sans-serif",
+            "font-size": "1.35rem",
+            "font-weight": "800",
+            "letter-spacing": "0.08em",
+            "color": "rgb(17, 24, 39)",
+            "text-transform": "uppercase",
+            "text-decoration-line": "none",
+            "text-decoration-thickness": "initial",
+            "text-decoration-style": "initial",
+            "text-decoration-color": "initial"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".block-furnisite-navbar .bfn-nav",
+          "style": {
+            "display": "flex",
+            "row-gap": "28px",
+            "column-gap": "28px",
+            "list-style-position": "initial",
+            "list-style-image": "initial",
+            "list-style-type": "none",
+            "padding-top": "0px",
+            "padding-right": "0px",
+            "padding-bottom": "0px",
+            "padding-left": "0px",
+            "margin-top": "0px",
+            "margin-right": "0px",
+            "margin-bottom": "0px",
+            "margin-left": "0px"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".block-furnisite-navbar .bfn-nav li",
+          "style": {
+            "list-style-position": "initial",
+            "list-style-image": "initial",
+            "list-style-type": "none",
+            "margin-top": "0px",
+            "margin-right": "0px",
+            "margin-bottom": "0px",
+            "margin-left": "0px",
+            "padding-top": "0px",
+            "padding-right": "0px",
+            "padding-bottom": "0px",
+            "padding-left": "0px"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".block-furnisite-navbar .bfn-nav",
+          "style": {
+            "display": "flex",
+            "align-items": "center",
+            "row-gap": "32px",
+            "column-gap": "32px",
+            "list-style-position": "initial",
+            "list-style-image": "initial",
+            "list-style-type": "none",
+            "padding-top": "0px",
+            "padding-right": "0px",
+            "padding-bottom": "0px",
+            "padding-left": "0px",
+            "margin-top": "0px",
+            "margin-right": "0px",
+            "margin-bottom": "0px",
+            "margin-left": "0px"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".block-furnisite-navbar .bfn-nav li",
+          "style": {
+            "list-style-position": "initial",
+            "list-style-image": "initial",
+            "list-style-type": "none",
+            "margin-top": "0px",
+            "margin-right": "0px",
+            "margin-bottom": "0px",
+            "margin-left": "0px",
+            "padding-top": "0px",
+            "padding-right": "0px",
+            "padding-bottom": "0px",
+            "padding-left": "0px"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".block-furnisite-navbar .bfn-nav a, .block-furnisite-navbar .bfn-nav-link",
+          "style": {
+            "font-family": "\"Plus Jakarta Sans\", -apple-system, sans-serif",
+            "font-size": "0.92rem",
+            "font-weight": "500",
+            "color": "rgb(75, 85, 99)",
+            "text-decoration-line": "none",
+            "text-decoration-thickness": "initial",
+            "text-decoration-style": "initial",
+            "text-decoration-color": "initial",
+            "position": "relative",
+            "padding-top": "6px",
+            "padding-right": "2px",
+            "padding-bottom": "6px",
+            "padding-left": "2px",
+            "display": "inline-block",
+            "transition-behavior": "normal",
+            "transition-duration": "0.18s",
+            "transition-timing-function": "ease",
+            "transition-delay": "0s",
+            "transition-property": "color"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".block-furnisite-navbar .bfn-nav a:hover, .block-furnisite-navbar .bfn-nav a.is-active, .block-furnisite-navbar .bfn-nav-link:hover, .block-furnisite-navbar .bfn-nav-link.is-active",
+          "style": {
+            "color": "rgb(17, 24, 39)",
+            "font-weight": "600"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".block-furnisite-navbar .bfn-nav a::after, .block-furnisite-navbar .bfn-nav-link::after",
+          "style": {
+            "content": "\"\"",
+            "position": "absolute",
+            "bottom": "0px",
+            "left": "0px",
+            "right": "0px",
+            "height": "2px",
+            "background-color": "rgb(17, 24, 39)",
+            "transform": "scaleX(0)",
+            "transform-origin": "center center",
+            "transition-behavior": "normal, normal",
+            "transition-duration": "0.22s, 0.2s",
+            "transition-timing-function": "cubic-bezier(0.4, 0, 0.2, 1), ease",
+            "transition-delay": "0s, 0s",
+            "transition-property": "transform, background-color",
+            "border-top-left-radius": "1px",
+            "border-top-right-radius": "1px",
+            "border-bottom-right-radius": "1px",
+            "border-bottom-left-radius": "1px"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".block-furnisite-navbar .bfn-nav a:hover::after, .block-furnisite-navbar .bfn-nav-link:hover::after",
+          "style": {
+            "transform": "scaleX(0.5)",
+            "background-color": "rgb(156, 163, 175)"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".block-furnisite-navbar .bfn-nav a.is-active::after, .block-furnisite-navbar .bfn-nav-link.is-active::after",
+          "style": {
+            "transform": "scaleX(1)",
+            "background-color": "rgb(17, 24, 39)"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".block-furnisite-navbar .bfn-actions",
+          "style": {
+            "display": "flex",
+            "align-items": "center",
+            "row-gap": "16px",
+            "column-gap": "16px"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".block-furnisite-navbar .bfn-icon-btn",
+          "style": {
+            "display": "inline-flex",
+            "align-items": "center",
+            "justify-content": "center",
+            "width": "36px",
+            "height": "36px",
+            "border-top-left-radius": "50%",
+            "border-top-right-radius": "50%",
+            "border-bottom-right-radius": "50%",
+            "border-bottom-left-radius": "50%",
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(244, 244, 245)",
+            "color": "rgb(24, 24, 27)",
+            "text-decoration-line": "none",
+            "text-decoration-thickness": "initial",
+            "text-decoration-style": "initial",
+            "text-decoration-color": "initial",
+            "font-size": "1rem"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".block-furnisite-navbar .pop-drawer-trigger-btn",
+          "style": {
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "transparent",
+            "border-top-width": "medium",
+            "border-right-width": "medium",
+            "border-bottom-width": "medium",
+            "border-left-width": "medium",
+            "border-top-style": "none",
+            "border-right-style": "none",
+            "border-bottom-style": "none",
+            "border-left-style": "none",
+            "border-top-color": "currentcolor",
+            "border-right-color": "currentcolor",
+            "border-bottom-color": "currentcolor",
+            "border-left-color": "currentcolor",
+            "border-image-source": "none",
+            "border-image-slice": "100%",
+            "border-image-width": "1",
+            "border-image-outset": "0",
+            "border-image-repeat": "stretch",
+            "cursor": "pointer",
+            "padding-top": "6px",
+            "padding-right": "6px",
+            "padding-bottom": "6px",
+            "padding-left": "6px",
+            "display": "inline-flex",
+            "align-items": "center",
+            "justify-content": "center",
+            "color": "rgb(17, 24, 39)",
+            "border-top-left-radius": "4px",
+            "border-top-right-radius": "4px",
+            "border-bottom-right-radius": "4px",
+            "border-bottom-left-radius": "4px",
+            "transition-behavior": "normal",
+            "transition-duration": "0.15s",
+            "transition-timing-function": "ease",
+            "transition-delay": "0s",
+            "transition-property": "background"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".block-furnisite-navbar .pop-drawer-trigger-btn:hover",
+          "style": {
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(244, 244, 245)"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-overlay"
+          ],
+          "style": {
+            "position": "fixed",
+            "top": "0px",
+            "right": "0px",
+            "bottom": "0px",
+            "left": "0px",
+            "z-index": "99999",
+            "visibility": "hidden",
+            "opacity": "0",
+            "transition-behavior": "normal, normal",
+            "transition-duration": "0.25s, 0.25s",
+            "transition-timing-function": "ease, ease",
+            "transition-delay": "0s, 0s",
+            "transition-property": "opacity, visibility",
+            "pointer-events": "none"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-overlay",
+            "is-open"
+          ],
+          "selectorsAdd": ".pop-drawer-overlay[data-open=\"true\"]",
+          "style": {
+            "visibility": "visible",
+            "opacity": "1",
+            "pointer-events": "auto"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-backdrop"
+          ],
+          "style": {
+            "position": "absolute",
+            "top": "0px",
+            "right": "0px",
+            "bottom": "0px",
+            "left": "0px",
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgba(0, 0, 0, 0.45)",
+            "backdrop-filter": "blur(2px)",
+            "cursor": "pointer"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-panel"
+          ],
+          "style": {
+            "position": "absolute",
+            "top": "0px",
+            "left": "0px",
+            "bottom": "0px",
+            "width": "340px",
+            "max-width": "85vw",
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(255, 255, 255)",
+            "box-shadow": "rgba(0, 0, 0, 0.15) 4px 0px 24px",
+            "transform": "translateX(-100%)",
+            "transition-behavior": "normal",
+            "transition-duration": "0.28s",
+            "transition-timing-function": "cubic-bezier(0.16, 1, 0.3, 1)",
+            "transition-delay": "0s",
+            "transition-property": "transform",
+            "display": "flex",
+            "flex-direction": "column",
+            "overflow-y": "auto",
+            "z-index": "10"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".pop-drawer-overlay.is-open .pop-drawer-panel, .pop-drawer-overlay[data-open=\"true\"] .pop-drawer-panel",
+          "style": {
+            "transform": "translateX(0px)"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-header"
+          ],
+          "style": {
+            "display": "flex",
+            "align-items": "center",
+            "justify-content": "space-between",
+            "padding-top": "20px",
+            "padding-right": "24px",
+            "padding-bottom": "20px",
+            "padding-left": "24px",
+            "border-bottom-width": "1px",
+            "border-bottom-style": "solid",
+            "border-bottom-color": "rgb(240, 240, 240)"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-brand"
+          ],
+          "style": {
+            "font-family": "Montserrat, sans-serif",
+            "font-weight": "800",
+            "font-size": "1.15rem",
+            "letter-spacing": "0.08em",
+            "color": "rgb(17, 24, 39)",
+            "text-transform": "uppercase"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-close-btn"
+          ],
+          "style": {
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(244, 244, 245)",
+            "border-top-width": "medium",
+            "border-right-width": "medium",
+            "border-bottom-width": "medium",
+            "border-left-width": "medium",
+            "border-top-style": "none",
+            "border-right-style": "none",
+            "border-bottom-style": "none",
+            "border-left-style": "none",
+            "border-top-color": "currentcolor",
+            "border-right-color": "currentcolor",
+            "border-bottom-color": "currentcolor",
+            "border-left-color": "currentcolor",
+            "border-image-source": "none",
+            "border-image-slice": "100%",
+            "border-image-width": "1",
+            "border-image-outset": "0",
+            "border-image-repeat": "stretch",
+            "width": "32px",
+            "height": "32px",
+            "border-top-left-radius": "50%",
+            "border-top-right-radius": "50%",
+            "border-bottom-right-radius": "50%",
+            "border-bottom-left-radius": "50%",
+            "font-size": "0.85rem",
+            "font-weight": "bold",
+            "cursor": "pointer",
+            "display": "flex",
+            "align-items": "center",
+            "justify-content": "center",
+            "color": "rgb(75, 85, 99)",
+            "transition-behavior": "normal",
+            "transition-duration": "0.15s",
+            "transition-timing-function": "ease",
+            "transition-delay": "0s",
+            "transition-property": "all"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-close-btn"
+          ],
+          "style": {
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(17, 24, 39)",
+            "color": "rgb(255, 255, 255)"
+          },
+          "state": "hover"
+        },
+        {
+          "selectors": [
+            "pop-drawer-search"
+          ],
+          "style": {
+            "padding-top": "16px",
+            "padding-right": "24px",
+            "padding-bottom": "8px",
+            "padding-left": "24px"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-search-input"
+          ],
+          "style": {
+            "width": "100%",
+            "padding-top": "10px",
+            "padding-right": "14px",
+            "padding-bottom": "10px",
+            "padding-left": "14px",
+            "border-top-width": "1px",
+            "border-right-width": "1px",
+            "border-bottom-width": "1px",
+            "border-left-width": "1px",
+            "border-top-style": "solid",
+            "border-right-style": "solid",
+            "border-bottom-style": "solid",
+            "border-left-style": "solid",
+            "border-top-color": "rgb(229, 231, 235)",
+            "border-right-color": "rgb(229, 231, 235)",
+            "border-bottom-color": "rgb(229, 231, 235)",
+            "border-left-color": "rgb(229, 231, 235)",
+            "border-image-source": "none",
+            "border-image-slice": "100%",
+            "border-image-width": "1",
+            "border-image-outset": "0",
+            "border-image-repeat": "stretch",
+            "border-top-left-radius": "8px",
+            "border-top-right-radius": "8px",
+            "border-bottom-right-radius": "8px",
+            "border-bottom-left-radius": "8px",
+            "font-size": "0.86rem",
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(249, 250, 251)",
+            "outline-color": "initial",
+            "outline-style": "none",
+            "outline-width": "initial",
+            "transition-behavior": "normal",
+            "transition-duration": "0.15s",
+            "transition-timing-function": "ease",
+            "transition-delay": "0s",
+            "transition-property": "border-color",
+            "box-sizing": "border-box"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-nav"
+          ],
+          "style": {
+            "padding-top": "8px",
+            "padding-right": "16px",
+            "padding-bottom": "8px",
+            "padding-left": "16px",
+            "flex-grow": "1",
+            "flex-shrink": "1",
+            "flex-basis": "0%"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-menu"
+          ],
+          "style": {
+            "list-style-position": "initial",
+            "list-style-image": "initial",
+            "list-style-type": "none",
+            "padding-top": "0px",
+            "padding-right": "0px",
+            "padding-bottom": "0px",
+            "padding-left": "0px",
+            "margin-top": "0px",
+            "margin-right": "0px",
+            "margin-bottom": "0px",
+            "margin-left": "0px",
+            "display": "flex",
+            "flex-direction": "column",
+            "row-gap": "4px",
+            "column-gap": "4px"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".pop-drawer-menu li",
+          "style": {
+            "list-style-position": "initial",
+            "list-style-image": "initial",
+            "list-style-type": "none",
+            "padding-top": "0px",
+            "padding-right": "0px",
+            "padding-bottom": "0px",
+            "padding-left": "0px",
+            "margin-top": "0px",
+            "margin-right": "0px",
+            "margin-bottom": "0px",
+            "margin-left": "0px"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-link"
+          ],
+          "style": {
+            "display": "flex",
+            "align-items": "center",
+            "justify-content": "space-between",
+            "padding-top": "10px",
+            "padding-right": "12px",
+            "padding-bottom": "10px",
+            "padding-left": "12px",
+            "font-size": "0.95rem",
+            "font-weight": "600",
+            "color": "rgb(55, 65, 81)",
+            "text-decoration-line": "none",
+            "text-decoration-thickness": "initial",
+            "text-decoration-style": "initial",
+            "text-decoration-color": "initial",
+            "border-top-left-radius": "6px",
+            "border-top-right-radius": "6px",
+            "border-bottom-right-radius": "6px",
+            "border-bottom-left-radius": "6px",
+            "transition-behavior": "normal",
+            "transition-duration": "0.15s",
+            "transition-timing-function": "ease",
+            "transition-delay": "0s",
+            "transition-property": "all"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-link"
+          ],
+          "style": {
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(243, 244, 246)",
+            "color": "rgb(17, 24, 39)",
+            "padding-left": "16px"
+          },
+          "state": "hover"
+        },
+        {
+          "selectors": [
+            "pop-drawer-link",
+            "is-active"
+          ],
+          "style": {
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(243, 244, 246)",
+            "color": "rgb(17, 24, 39)",
+            "padding-left": "16px"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-arrow"
+          ],
+          "style": {
+            "font-size": "0.9rem",
+            "color": "rgb(156, 163, 175)",
+            "transition-behavior": "normal",
+            "transition-duration": "0.15s",
+            "transition-timing-function": "ease",
+            "transition-delay": "0s",
+            "transition-property": "transform"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".pop-drawer-link:hover .pop-drawer-arrow",
+          "style": {
+            "transform": "translateX(3px)",
+            "color": "rgb(17, 24, 39)"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-promo"
+          ],
+          "style": {
+            "margin-top": "16px",
+            "margin-right": "20px",
+            "margin-bottom": "16px",
+            "margin-left": "20px",
+            "padding-top": "16px",
+            "padding-right": "16px",
+            "padding-bottom": "16px",
+            "padding-left": "16px",
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(250, 249, 246)",
+            "border-top-width": "1px",
+            "border-right-width": "1px",
+            "border-bottom-width": "1px",
+            "border-left-width": "1px",
+            "border-top-style": "solid",
+            "border-right-style": "solid",
+            "border-bottom-style": "solid",
+            "border-left-style": "solid",
+            "border-top-color": "rgb(240, 238, 230)",
+            "border-right-color": "rgb(240, 238, 230)",
+            "border-bottom-color": "rgb(240, 238, 230)",
+            "border-left-color": "rgb(240, 238, 230)",
+            "border-image-source": "none",
+            "border-image-slice": "100%",
+            "border-image-width": "1",
+            "border-image-outset": "0",
+            "border-image-repeat": "stretch",
+            "border-top-left-radius": "10px",
+            "border-top-right-radius": "10px",
+            "border-bottom-right-radius": "10px",
+            "border-bottom-left-radius": "10px"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-promo-badge"
+          ],
+          "style": {
+            "font-size": "0.7rem",
+            "font-weight": "700",
+            "color": "rgb(180, 83, 9)",
+            "letter-spacing": "0.05em",
+            "margin-bottom": "6px",
+            "text-transform": "uppercase"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-promo-title"
+          ],
+          "style": {
+            "font-weight": "700",
+            "font-size": "0.92rem",
+            "color": "rgb(24, 24, 27)",
+            "margin-bottom": "4px"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-promo-desc"
+          ],
+          "style": {
+            "font-size": "0.8rem",
+            "color": "rgb(113, 113, 122)",
+            "line-height": "1.45",
+            "margin-top": "0px",
+            "margin-right": "0px",
+            "margin-bottom": "10px",
+            "margin-left": "0px"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-cta-btn"
+          ],
+          "style": {
+            "display": "inline-block",
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(24, 24, 27)",
+            "color": "rgb(255, 255, 255)",
+            "padding-top": "7px",
+            "padding-right": "14px",
+            "padding-bottom": "7px",
+            "padding-left": "14px",
+            "border-top-left-radius": "6px",
+            "border-top-right-radius": "6px",
+            "border-bottom-right-radius": "6px",
+            "border-bottom-left-radius": "6px",
+            "font-size": "0.78rem",
+            "font-weight": "700",
+            "text-decoration-line": "none",
+            "text-decoration-thickness": "initial",
+            "text-decoration-style": "initial",
+            "text-decoration-color": "initial"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-cta-btn"
+          ],
+          "style": {
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(39, 39, 42)"
+          },
+          "state": "hover"
+        },
+        {
+          "selectors": [
+            "pop-drawer-footer"
+          ],
+          "style": {
+            "padding-top": "18px",
+            "padding-right": "24px",
+            "padding-bottom": "18px",
+            "padding-left": "24px",
+            "border-top-width": "1px",
+            "border-top-style": "solid",
+            "border-top-color": "rgb(240, 240, 240)",
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(255, 255, 255)"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-socials"
+          ],
+          "style": {
+            "display": "flex",
+            "row-gap": "10px",
+            "column-gap": "10px",
+            "margin-bottom": "12px"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-social-icon"
+          ],
+          "style": {
+            "display": "inline-flex",
+            "align-items": "center",
+            "justify-content": "center",
+            "width": "32px",
+            "height": "32px",
+            "border-top-left-radius": "50%",
+            "border-top-right-radius": "50%",
+            "border-bottom-right-radius": "50%",
+            "border-bottom-left-radius": "50%",
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(244, 244, 245)",
+            "text-decoration-line": "none",
+            "text-decoration-thickness": "initial",
+            "text-decoration-style": "initial",
+            "text-decoration-color": "initial",
+            "font-size": "0.88rem",
+            "transition-behavior": "normal",
+            "transition-duration": "0.15s",
+            "transition-timing-function": "ease",
+            "transition-delay": "0s",
+            "transition-property": "background"
+          }
+        },
+        {
+          "selectors": [
+            "pop-drawer-social-icon"
+          ],
+          "style": {
+            "background-image": "initial",
+            "background-position-x": "initial",
+            "background-position-y": "initial",
+            "background-size": "initial",
+            "background-repeat": "initial",
+            "background-attachment": "initial",
+            "background-origin": "initial",
+            "background-clip": "initial",
+            "background-color": "rgb(228, 228, 231)"
+          },
+          "state": "hover"
+        },
+        {
+          "selectors": [
+            "pop-drawer-contact-info"
+          ],
+          "style": {
+            "font-size": "0.78rem",
+            "color": "rgb(156, 163, 175)",
+            "margin-top": "0px",
+            "margin-right": "0px",
+            "margin-bottom": "0px",
+            "margin-left": "0px"
+          }
+        },
+        {
+          "selectors": [],
+          "selectorsAdd": ".pop-drawer-contact-info a",
+          "style": {
+            "color": "rgb(75, 85, 99)",
+            "font-weight": "600",
+            "text-decoration-line": "underline",
+            "text-decoration-thickness": "initial",
+            "text-decoration-style": "initial",
+            "text-decoration-color": "initial"
+          }
+        },
+        {
+          "selectors": [
+            "bfn-container"
+          ],
+          "style": {
+            "color": "black"
+          }
+        },
+        {
+          "selectors": [
+            "bfn-nav"
+          ],
+          "style": {
+            "color": "black"
+          }
+        },
+        {
+          "selectors": [
+            "block-furnisite-navbar",
+            "pop-drawer-component"
+          ],
+          "style": {
+            "color": "black"
+          }
+        }
+      ],
+      "pages": [
+        {
+          "frames": [
+            {
+              "component": {
+                "type": "wrapper",
+                "stylable": [
+                  "background",
+                  "background-color",
+                  "background-image",
+                  "background-repeat",
+                  "background-attachment",
+                  "background-position",
+                  "background-size"
+                ],
+                "components": [
+                  {
+                    "tagName": "header",
+                    "classes": [
+                      "block-furnisite-navbar",
+                      "pop-drawer-component"
+                    ],
+                    "attributes": {
+                      "data-global-template-id": "tpl-global-furnisite-navbar"
+                    },
+                    "components": [
+                      {
+                        "classes": [
+                          "bfn-container"
+                        ],
+                        "components": [
+                          {
+                            "classes": [
+                              "c654"
+                            ],
+                            "components": [
+                              {
+                                "tagName": "button",
+                                "classes": [
+                                  "pop-drawer-trigger-btn",
+                                  "c657"
+                                ],
+                                "attributes": {
+                                  "type": "button",
+                                  "aria-label": "Toggle navigation drawer",
+                                  "title": "Click to pop out drawer"
+                                },
+                                "components": [
+                                  {
+                                    "type": "svg",
+                                    "removable": false,
+                                    "draggable": false,
+                                    "droppable": false,
+                                    "badgable": false,
+                                    "copyable": false,
+                                    "resizable": {
+                                      "ratioDefault": true
+                                    },
+                                    "layerable": false,
+                                    "selectable": false,
+                                    "hoverable": false,
+                                    "attributes": {
+                                      "width": "22",
+                                      "height": "22",
+                                      "viewBox": "0 0 24 24",
+                                      "fill": "none",
+                                      "stroke": "currentColor",
+                                      "stroke-width": "2",
+                                      "stroke-linecap": "round"
+                                    },
+                                    "components": [
+                                      {
+                                        "tagName": "line",
+                                        "type": "svg-in",
+                                        "removable": false,
+                                        "draggable": false,
+                                        "droppable": false,
+                                        "badgable": false,
+                                        "copyable": false,
+                                        "resizable": {
+                                          "ratioDefault": true
+                                        },
+                                        "attributes": {
+                                          "x1": "3",
+                                          "y1": "12",
+                                          "x2": "21",
+                                          "y2": "12"
+                                        }
+                                      },
+                                      {
+                                        "tagName": "line",
+                                        "type": "svg-in",
+                                        "removable": false,
+                                        "draggable": false,
+                                        "droppable": false,
+                                        "badgable": false,
+                                        "copyable": false,
+                                        "resizable": {
+                                          "ratioDefault": true
+                                        },
+                                        "attributes": {
+                                          "x1": "3",
+                                          "y1": "6",
+                                          "x2": "21",
+                                          "y2": "6"
+                                        }
+                                      },
+                                      {
+                                        "tagName": "line",
+                                        "type": "svg-in",
+                                        "removable": false,
+                                        "draggable": false,
+                                        "droppable": false,
+                                        "badgable": false,
+                                        "copyable": false,
+                                        "resizable": {
+                                          "ratioDefault": true
+                                        },
+                                        "attributes": {
+                                          "x1": "3",
+                                          "y1": "18",
+                                          "x2": "21",
+                                          "y2": "18"
+                                        }
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "link",
+                                "classes": [
+                                  "bfn-brand"
+                                ],
+                                "attributes": {
+                                  "href": "/"
+                                },
+                                "components": [
+                                  {
+                                    "type": "textnode",
+                                    "content": "INFURNISH"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "tagName": "nav",
+                            "components": [
+                              {
+                                "tagName": "ul",
+                                "classes": [
+                                  "bfn-nav"
+                                ],
+                                "components": [
+                                  {
+                                    "tagName": "li",
+                                    "components": [
+                                      {
+                                        "type": "link",
+                                        "classes": [
+                                          "bfn-nav-link",
+                                          "is-active"
+                                        ],
+                                        "attributes": {
+                                          "href": "/"
+                                        },
+                                        "components": [
+                                          {
+                                            "type": "textnode",
+                                            "content": "Home"
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tagName": "li",
+                                    "components": [
+                                      {
+                                        "type": "link",
+                                        "classes": [
+                                          "bfn-nav-link"
+                                        ],
+                                        "attributes": {
+                                          "href": "/about"
+                                        },
+                                        "components": [
+                                          {
+                                            "type": "textnode",
+                                            "content": "About"
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tagName": "li",
+                                    "components": [
+                                      {
+                                        "type": "link",
+                                        "classes": [
+                                          "bfn-nav-link"
+                                        ],
+                                        "attributes": {
+                                          "href": "/products"
+                                        },
+                                        "components": [
+                                          {
+                                            "type": "textnode",
+                                            "content": "Shop"
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tagName": "li",
+                                    "components": [
+                                      {
+                                        "type": "link",
+                                        "classes": [
+                                          "bfn-nav-link"
+                                        ],
+                                        "attributes": {
+                                          "href": "/blog"
+                                        },
+                                        "components": [
+                                          {
+                                            "type": "textnode",
+                                            "content": "Blog"
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tagName": "li",
+                                    "components": [
+                                      {
+                                        "type": "link",
+                                        "classes": [
+                                          "bfn-nav-link"
+                                        ],
+                                        "attributes": {
+                                          "href": "/contact"
+                                        },
+                                        "components": [
+                                          {
+                                            "type": "textnode",
+                                            "content": "Contact"
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "classes": [
+                              "bfn-actions"
+                            ],
+                            "components": [
+                              {
+                                "type": "link",
+                                "editable": false,
+                                "classes": [
+                                  "bfn-icon-btn"
+                                ],
+                                "attributes": {
+                                  "href": "/products",
+                                  "title": "Search"
+                                },
+                                "components": [
+                                  {
+                                    "type": "svg",
+                                    "removable": false,
+                                    "draggable": false,
+                                    "droppable": false,
+                                    "badgable": false,
+                                    "copyable": false,
+                                    "resizable": {
+                                      "ratioDefault": true
+                                    },
+                                    "layerable": false,
+                                    "selectable": false,
+                                    "hoverable": false,
+                                    "attributes": {
+                                      "width": "18",
+                                      "height": "18",
+                                      "viewBox": "0 0 24 24",
+                                      "fill": "none",
+                                      "stroke": "currentColor",
+                                      "stroke-width": "2"
+                                    },
+                                    "components": [
+                                      {
+                                        "tagName": "circle",
+                                        "type": "svg-in",
+                                        "resizable": {
+                                          "ratioDefault": true
+                                        },
+                                        "attributes": {
+                                          "cx": "11",
+                                          "cy": "11",
+                                          "r": "8"
+                                        }
+                                      },
+                                      {
+                                        "tagName": "line",
+                                        "type": "svg-in",
+                                        "removable": false,
+                                        "draggable": false,
+                                        "droppable": false,
+                                        "badgable": false,
+                                        "copyable": false,
+                                        "resizable": {
+                                          "ratioDefault": true
+                                        },
+                                        "attributes": {
+                                          "x1": "21",
+                                          "y1": "21",
+                                          "x2": "16.65",
+                                          "y2": "16.65"
+                                        }
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "link",
+                                "editable": false,
+                                "classes": [
+                                  "bfn-icon-btn",
+                                  "c943"
+                                ],
+                                "attributes": {
+                                  "href": "/products",
+                                  "title": "Shopping Bag"
+                                },
+                                "components": [
+                                  {
+                                    "type": "svg",
+                                    "removable": false,
+                                    "draggable": false,
+                                    "droppable": false,
+                                    "badgable": false,
+                                    "copyable": false,
+                                    "resizable": {
+                                      "ratioDefault": true
+                                    },
+                                    "layerable": false,
+                                    "selectable": false,
+                                    "hoverable": false,
+                                    "attributes": {
+                                      "width": "18",
+                                      "height": "18",
+                                      "viewBox": "0 0 24 24",
+                                      "fill": "none",
+                                      "stroke": "currentColor",
+                                      "stroke-width": "2"
+                                    },
+                                    "components": [
+                                      {
+                                        "tagName": "path",
+                                        "type": "svg-in",
+                                        "removable": false,
+                                        "draggable": false,
+                                        "droppable": false,
+                                        "badgable": false,
+                                        "copyable": false,
+                                        "resizable": {
+                                          "ratioDefault": true
+                                        },
+                                        "attributes": {
+                                          "d": "M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"
+                                        }
+                                      },
+                                      {
+                                        "tagName": "line",
+                                        "type": "svg-in",
+                                        "removable": false,
+                                        "draggable": false,
+                                        "droppable": false,
+                                        "badgable": false,
+                                        "copyable": false,
+                                        "resizable": {
+                                          "ratioDefault": true
+                                        },
+                                        "attributes": {
+                                          "x1": "3",
+                                          "y1": "6",
+                                          "x2": "21",
+                                          "y2": "6"
+                                        }
+                                      },
+                                      {
+                                        "tagName": "path",
+                                        "type": "svg-in",
+                                        "removable": false,
+                                        "draggable": false,
+                                        "droppable": false,
+                                        "badgable": false,
+                                        "copyable": false,
+                                        "resizable": {
+                                          "ratioDefault": true
+                                        },
+                                        "attributes": {
+                                          "d": "M16 10a4 4 0 0 1-8 0"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tagName": "span",
+                                    "type": "text",
+                                    "classes": [
+                                      "c982"
+                                    ],
+                                    "components": [
+                                      {
+                                        "type": "textnode",
+                                        "content": "0"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "link",
+                                "classes": [
+                                  "c1012"
+                                ],
+                                "attributes": {
+                                  "href": "/products"
+                                },
+                                "components": [
+                                  {
+                                    "type": "textnode",
+                                    "content": "Explore Catalog"
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "classes": [
+                          "pop-drawer-overlay"
+                        ],
+                        "components": [
+                          {
+                            "classes": [
+                              "pop-drawer-backdrop"
+                            ]
+                          },
+                          {
+                            "tagName": "aside",
+                            "classes": [
+                              "pop-drawer-panel"
+                            ],
+                            "components": [
+                              {
+                                "classes": [
+                                  "pop-drawer-header"
+                                ],
+                                "components": [
+                                  {
+                                    "type": "text",
+                                    "classes": [
+                                      "pop-drawer-brand"
+                                    ],
+                                    "components": [
+                                      {
+                                        "type": "textnode",
+                                        "content": "INFURNISH"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tagName": "button",
+                                    "type": "text",
+                                    "classes": [
+                                      "pop-drawer-close-btn"
+                                    ],
+                                    "attributes": {
+                                      "type": "button",
+                                      "aria-label": "Close Drawer",
+                                      "title": "Close"
+                                    },
+                                    "components": [
+                                      {
+                                        "type": "textnode",
+                                        "content": "✕"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "classes": [
+                                  "pop-drawer-search"
+                                ],
+                                "components": [
+                                  {
+                                    "tagName": "input",
+                                    "void": true,
+                                    "classes": [
+                                      "pop-drawer-search-input"
+                                    ],
+                                    "attributes": {
+                                      "type": "text",
+                                      "placeholder": "Search furniture, styles..."
+                                    }
+                                  }
+                                ]
+                              },
+                              {
+                                "tagName": "nav",
+                                "classes": [
+                                  "pop-drawer-nav"
+                                ],
+                                "components": [
+                                  {
+                                    "tagName": "ul",
+                                    "classes": [
+                                      "pop-drawer-menu"
+                                    ],
+                                    "components": [
+                                      {
+                                        "tagName": "li",
+                                        "components": [
+                                          {
+                                            "type": "link",
+                                            "editable": false,
+                                            "classes": [
+                                              "pop-drawer-link",
+                                              "is-active"
+                                            ],
+                                            "attributes": {
+                                              "href": "/"
+                                            },
+                                            "components": [
+                                              {
+                                                "tagName": "span",
+                                                "type": "text",
+                                                "components": [
+                                                  {
+                                                    "type": "textnode",
+                                                    "content": "Home"
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tagName": "span",
+                                                "type": "text",
+                                                "classes": [
+                                                  "pop-drawer-arrow"
+                                                ],
+                                                "components": [
+                                                  {
+                                                    "type": "textnode",
+                                                    "content": "→"
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "tagName": "li",
+                                        "components": [
+                                          {
+                                            "type": "link",
+                                            "editable": false,
+                                            "classes": [
+                                              "pop-drawer-link"
+                                            ],
+                                            "attributes": {
+                                              "href": "/about"
+                                            },
+                                            "components": [
+                                              {
+                                                "tagName": "span",
+                                                "type": "text",
+                                                "components": [
+                                                  {
+                                                    "type": "textnode",
+                                                    "content": "About Our Studio"
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tagName": "span",
+                                                "type": "text",
+                                                "classes": [
+                                                  "pop-drawer-arrow"
+                                                ],
+                                                "components": [
+                                                  {
+                                                    "type": "textnode",
+                                                    "content": "→"
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "tagName": "li",
+                                        "components": [
+                                          {
+                                            "type": "link",
+                                            "editable": false,
+                                            "classes": [
+                                              "pop-drawer-link"
+                                            ],
+                                            "attributes": {
+                                              "href": "/products"
+                                            },
+                                            "components": [
+                                              {
+                                                "tagName": "span",
+                                                "type": "text",
+                                                "components": [
+                                                  {
+                                                    "type": "textnode",
+                                                    "content": "Shop Catalog"
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tagName": "span",
+                                                "type": "text",
+                                                "classes": [
+                                                  "pop-drawer-arrow"
+                                                ],
+                                                "components": [
+                                                  {
+                                                    "type": "textnode",
+                                                    "content": "→"
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "tagName": "li",
+                                        "components": [
+                                          {
+                                            "type": "link",
+                                            "editable": false,
+                                            "classes": [
+                                              "pop-drawer-link"
+                                            ],
+                                            "attributes": {
+                                              "href": "/blog"
+                                            },
+                                            "components": [
+                                              {
+                                                "tagName": "span",
+                                                "type": "text",
+                                                "components": [
+                                                  {
+                                                    "type": "textnode",
+                                                    "content": "Living Space Journal"
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tagName": "span",
+                                                "type": "text",
+                                                "classes": [
+                                                  "pop-drawer-arrow"
+                                                ],
+                                                "components": [
+                                                  {
+                                                    "type": "textnode",
+                                                    "content": "→"
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "tagName": "li",
+                                        "components": [
+                                          {
+                                            "type": "link",
+                                            "editable": false,
+                                            "classes": [
+                                              "pop-drawer-link"
+                                            ],
+                                            "attributes": {
+                                              "href": "/contact"
+                                            },
+                                            "components": [
+                                              {
+                                                "tagName": "span",
+                                                "type": "text",
+                                                "components": [
+                                                  {
+                                                    "type": "textnode",
+                                                    "content": "Showrooms & Contact"
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "tagName": "span",
+                                                "type": "text",
+                                                "classes": [
+                                                  "pop-drawer-arrow"
+                                                ],
+                                                "components": [
+                                                  {
+                                                    "type": "textnode",
+                                                    "content": "→"
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "classes": [
+                                  "pop-drawer-promo"
+                                ],
+                                "components": [
+                                  {
+                                    "type": "text",
+                                    "classes": [
+                                      "pop-drawer-promo-badge"
+                                    ],
+                                    "components": [
+                                      {
+                                        "type": "textnode",
+                                        "content": "PROMO CODE: LUXE10"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "type": "text",
+                                    "classes": [
+                                      "pop-drawer-promo-title"
+                                    ],
+                                    "components": [
+                                      {
+                                        "type": "textnode",
+                                        "content": "Enjoy 10% Off Your Initial Order"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tagName": "p",
+                                    "type": "text",
+                                    "classes": [
+                                      "pop-drawer-promo-desc"
+                                    ],
+                                    "components": [
+                                      {
+                                        "type": "textnode",
+                                        "content": "Thoughtfully crafted furniture designed to transform modern living spaces."
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "type": "link",
+                                    "classes": [
+                                      "pop-drawer-cta-btn"
+                                    ],
+                                    "attributes": {
+                                      "href": "/products"
+                                    },
+                                    "components": [
+                                      {
+                                        "type": "textnode",
+                                        "content": "Shop Collection →"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "classes": [
+                                  "pop-drawer-footer"
+                                ],
+                                "components": [
+                                  {
+                                    "classes": [
+                                      "pop-drawer-socials"
+                                    ],
+                                    "components": [
+                                      {
+                                        "type": "link",
+                                        "classes": [
+                                          "pop-drawer-social-icon"
+                                        ],
+                                        "attributes": {
+                                          "href": "#",
+                                          "title": "Instagram"
+                                        },
+                                        "components": [
+                                          {
+                                            "type": "textnode",
+                                            "content": "📸"
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "type": "link",
+                                        "classes": [
+                                          "pop-drawer-social-icon"
+                                        ],
+                                        "attributes": {
+                                          "href": "#",
+                                          "title": "Pinterest"
+                                        },
+                                        "components": [
+                                          {
+                                            "type": "textnode",
+                                            "content": "📌"
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "type": "link",
+                                        "classes": [
+                                          "pop-drawer-social-icon"
+                                        ],
+                                        "attributes": {
+                                          "href": "#",
+                                          "title": "Twitter"
+                                        },
+                                        "components": [
+                                          {
+                                            "type": "textnode",
+                                            "content": "🐦"
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "type": "link",
+                                        "classes": [
+                                          "pop-drawer-social-icon"
+                                        ],
+                                        "attributes": {
+                                          "href": "#",
+                                          "title": "Facebook"
+                                        },
+                                        "components": [
+                                          {
+                                            "type": "textnode",
+                                            "content": "📘"
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tagName": "p",
+                                    "type": "text",
+                                    "classes": [
+                                      "pop-drawer-contact-info"
+                                    ],
+                                    "components": [
+                                      {
+                                        "type": "textnode",
+                                        "content": "Need assistance? "
+                                      },
+                                      {
+                                        "type": "link",
+                                        "attributes": {
+                                          "href": "/contact"
+                                        },
+                                        "components": [
+                                          {
+                                            "type": "textnode",
+                                            "content": "contact@infurnish.com"
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "head": {
+                  "type": "head"
+                },
+                "docEl": {
+                  "tagName": "html"
+                }
+              },
+              "id": "9n9L3GeUD8GbxapJ"
+            }
+          ],
+          "type": "main",
+          "id": "gT1Wc2lMoim36ll6"
+        }
+      ],
+      "symbols": []
+    },
+    "isCustomized": true,
+    "updatedAt": "2026-11-24T22:40:56.793Z"
   },
   {
     "id": "tpl-global-furnisite-footer",

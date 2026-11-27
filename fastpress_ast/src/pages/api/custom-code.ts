@@ -2,9 +2,9 @@ import type { APIRoute } from 'astro';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { getDataFile } from '../../core/tenantContext';
 export const prerender = false;
 
-const CUSTOM_CODE_FILE = path.join(process.cwd(), 'src', 'data', 'customCode.json');
 
 const DEFAULT_CODE = {
   headScripts: '',
@@ -16,7 +16,7 @@ const DEFAULT_CODE = {
 
 async function readCustomCode() {
   try {
-    const raw = await fs.readFile(CUSTOM_CODE_FILE, 'utf-8');
+    const raw = await fs.readFile(getDataFile('customCode.json'), 'utf-8');
     const parsed = JSON.parse(raw);
     const bodyEnd = typeof parsed.bodyEndScripts === 'string' ? parsed.bodyEndScripts : (typeof parsed.bodyScripts === 'string' ? parsed.bodyScripts : '');
     return {
@@ -32,7 +32,7 @@ async function readCustomCode() {
 }
 
 async function writeCustomCode(data: { headScripts: string; bodyStartScripts: string; bodyEndScripts: string; bodyScripts: string; customCss: string }) {
-  await fs.writeFile(CUSTOM_CODE_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  await fs.writeFile(getDataFile('customCode.json'), JSON.stringify(data, null, 2), 'utf-8');
 }
 
 export const GET: APIRoute = async () => {

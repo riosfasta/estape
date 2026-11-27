@@ -4,14 +4,13 @@ import path from 'node:path';
 import { defaultCategories, type Category } from '../../data/categories';
 import { defaultPosts, type Post } from '../../data/posts';
 
+import { getDataFile } from '../../core/tenantContext';
 export const prerender = false;
 
-const CATEGORIES_FILE = path.join(process.cwd(), 'src', 'data', 'categories.json');
-const POSTS_FILE = path.join(process.cwd(), 'src', 'data', 'posts.json');
 
 async function readCategories(): Promise<Category[]> {
   try {
-    const raw = await fs.readFile(CATEGORIES_FILE, 'utf-8');
+    const raw = await fs.readFile(getDataFile('categories.json'), 'utf-8');
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
       return parsed;
@@ -23,12 +22,12 @@ async function readCategories(): Promise<Category[]> {
 }
 
 async function writeCategories(list: Category[]): Promise<void> {
-  await fs.writeFile(CATEGORIES_FILE, JSON.stringify(list, null, 2), 'utf-8');
+  await fs.writeFile(getDataFile('categories.json'), JSON.stringify(list, null, 2), 'utf-8');
 }
 
 async function readPosts(): Promise<Post[]> {
   try {
-    const raw = await fs.readFile(POSTS_FILE, 'utf-8');
+    const raw = await fs.readFile(getDataFile('posts.json'), 'utf-8');
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
       return parsed;
@@ -40,7 +39,7 @@ async function readPosts(): Promise<Post[]> {
 }
 
 async function writePosts(postsList: Post[]): Promise<void> {
-  await fs.writeFile(POSTS_FILE, JSON.stringify(postsList, null, 2), 'utf-8');
+  await fs.writeFile(getDataFile('posts.json'), JSON.stringify(postsList, null, 2), 'utf-8');
 }
 
 export const GET: APIRoute = async () => {

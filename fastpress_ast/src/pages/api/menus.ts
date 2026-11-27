@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { getDataFile } from '../../core/tenantContext';
 import {
   getMenus,
   getMenuById,
@@ -13,9 +14,6 @@ import {
 
 export const prerender = false;
 
-const PAGES_FILE = path.join(process.cwd(), 'src', 'data', 'pages.json');
-const POSTS_FILE = path.join(process.cwd(), 'src', 'data', 'posts.json');
-const CATEGORIES_FILE = path.join(process.cwd(), 'src', 'data', 'categories.json');
 
 async function getAvailableResources() {
   let pages: Array<{ title: string; url: string }> = [];
@@ -23,7 +21,7 @@ async function getAvailableResources() {
   let categories: Array<{ title: string; url: string }> = [];
 
   try {
-    const rawPages = await fs.readFile(PAGES_FILE, 'utf-8');
+    const rawPages = await fs.readFile(getDataFile('pages.json'), 'utf-8');
     const parsedPages = JSON.parse(rawPages);
     pages = Object.entries(parsedPages).map(([slug, p]: [string, any]) => ({
       title: p.title || (slug === 'home' ? 'Home' : slug),
@@ -43,7 +41,7 @@ async function getAvailableResources() {
   }
 
   try {
-    const rawPosts = await fs.readFile(POSTS_FILE, 'utf-8');
+    const rawPosts = await fs.readFile(getDataFile('posts.json'), 'utf-8');
     const parsedPosts = JSON.parse(rawPosts);
     if (Array.isArray(parsedPosts)) {
       posts = parsedPosts.slice(0, 15).map((post: any) => ({
@@ -56,7 +54,7 @@ async function getAvailableResources() {
   }
 
   try {
-    const rawCats = await fs.readFile(CATEGORIES_FILE, 'utf-8');
+    const rawCats = await fs.readFile(getDataFile('categories.json'), 'utf-8');
     const parsedCats = JSON.parse(rawCats);
     if (Array.isArray(parsedCats)) {
       categories = parsedCats.map((cat: any) => ({

@@ -633,16 +633,12 @@ func (s *Server) marketplaceFreelancers(c *gin.Context) {
 		}
 		filter["finished_jobs"] = bson.M{"$gte": n}
 	}
-	page, _ := strconv.Atoi(c.Query("page"))
-	if page < 1 {
-		page = 1
-	}
-	if page > 10000 {
-		page = 10000
-	}
+	pag := s.parseListPagination(c)
+	page := pag.Page
+	limit := pag.Limit
 	ctx := c.Request.Context()
 	// Join account status to avoid publishing suspended or deleted accounts.
-	pipeline := mongo.Pipeline{{{Key: "$match", Value: filter}}, {{Key: "$lookup", Value: bson.M{"from": "users", "localField": "_id", "foreignField": "_id", "as": "account"}}}, {{Key: "$match", Value: bson.M{"account.status": bson.M{"$ne": models.StatusSuspended}, "account.email_verified": true, "account.0": bson.M{"$exists": true}}}}, {{Key: "$sort", Value: bson.D{{Key: "rating", Value: -1}, {Key: "_id", Value: 1}}}}, {{Key: "$skip", Value: (page - 1) * 24}}, {{Key: "$limit", Value: 25}}}
+	pipeline := mongo.Pipeline{{{Key: "$match", Value: filter}}, {{Key: "$lookup", Value: bson.M{"from": "users", "localField": "_id", "foreignField": "_id", "as": "account"}}}, {{Key: "$match", Value: bson.M{"account.status": bson.M{"$ne": models.StatusSuspended}, "account.email_verified": true, "account.0": bson.M{"$exists": true}}}}, {{Key: "$sort", Value: bson.D{{Key: "rating", Value: -1}, {Key: "_id", Value: 1}}}}, {{Key: "$skip", Value: (page - 1) * limit}}, {{Key: "$limit", Value: limit + 1}}}
 	cur, err := s.store.C("freelancer_profiles").Aggregate(ctx, pipeline)
 	if marketplaceError(c, err) {
 		return
@@ -652,15 +648,21 @@ func (s *Server) marketplaceFreelancers(c *gin.Context) {
 	if marketplaceError(c, cur.All(ctx, &profiles)) {
 		return
 	}
-	more := len(profiles) > 24
+	more := len(profiles) > limit
 	if more {
-		profiles = profiles[:24]
+		profiles = profiles[:limit]
 	}
 	out := []gin.H{}
 	for _, p := range profiles {
 		out = append(out, publicFreelancer(p))
 	}
-	c.JSON(200, gin.H{"freelancers": out, "has_more": more, "page": page})
+	c.JSON(200, gin.H{
+		"freelancers":   out,
+		"has_more":      more,
+		"page":          page,
+		"limit":         limit,
+		"default_limit": pag.DefaultLimit,
+	})
 }
 
 type userReviewItem struct {
@@ -1055,14 +1057,22 @@ func (s *Server) marketplaceJobs(c *gin.Context) {
 		}
 		filter["$or"] = []bson.M{{"title": bson.M{"$regex": regexp.QuoteMeta(q), "$options": "i"}}, {"description": bson.M{"$regex": regexp.QuoteMeta(q), "$options": "i"}}}
 	}
-	page, _ := strconv.Atoi(c.Query("page"))
-	if page < 1 {
-		page = 1
+	pag := s.parseListPagination(c)
+	page := pag.Page
+	limit := pag.Limit
+	total, err := s.store.C("marketplace_jobs").CountDocuments(ctx, filter)
+	if marketplaceError(c, err) {
+		return
 	}
-	if page > 10000 {
-		page = 10000
-	}
-	cur, err := s.store.C("marketplace_jobs").Find(ctx, filter, options.Find().SetSkip(int64((page-1)*24)).SetLimit(25).SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: 1}}))
+	meta := buildPaginationMeta(page, limit, total)
+	cur, err := s.store.C("marketplace_jobs").Find(
+		ctx,
+		filter,
+		options.Find().
+			SetSkip(int64((meta.Page-1)*meta.Limit)).
+			SetLimit(int64(meta.Limit)).
+			SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: 1}}),
+	)
 	if marketplaceError(c, err) {
 		return
 	}
@@ -1071,12 +1081,15 @@ func (s *Server) marketplaceJobs(c *gin.Context) {
 	if marketplaceError(c, cur.All(ctx, &jobs)) {
 		return
 	}
-	more := len(jobs) > 24
-	if more {
-		jobs = jobs[:24]
-	}
 	s.enrichJobsWithOwnerDetails(ctx, jobs)
-	c.JSON(200, gin.H{"jobs": jobs, "has_more": more, "page": page})
+	c.JSON(200, gin.H{
+		"jobs":          jobs,
+		"has_more":      meta.HasNext,
+		"page":          meta.Page,
+		"limit":         meta.Limit,
+		"pagination":    meta,
+		"default_limit": pag.DefaultLimit,
+	})
 }
 
 func (s *Server) enrichJobsWithOwnerDetails(ctx context.Context, jobs []models.MarketplaceJob) {

@@ -1,22 +1,25 @@
 ---
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { getActiveHeader, type HeaderConfig } from '../../../data/headers';
+import { getActiveHeaderForTheme, type HeaderConfig } from '../../../data/headers';
+import { getTemplateById, syncGlobalTemplates, cleanLiveContent, applyActiveNavToTemplateHtml } from '../../../data/templates';
 import '../styles/header.css';
 
+import { getDataFile } from '../../../core/tenantContext';
 interface Props {
   activePage?: string;
   customConfig?: HeaderConfig;
+  theme?: string;
 }
 
-const { activePage = 'home', customConfig } = Astro.props;
+const { activePage = 'home', customConfig, theme = 'default' } = Astro.props;
 
 let headerConfig: HeaderConfig;
 if (customConfig) {
   headerConfig = customConfig;
 } else {
   try {
-    headerConfig = getActiveHeader();
+    headerConfig = getActiveHeaderForTheme(theme);
   } catch (e) {
     const { defaultSampleHeaders } = await import('../../../data/headers');
     headerConfig = defaultSampleHeaders[0];
@@ -70,20 +73,62 @@ const logoPos = layout.logoPosition || 'left';
 const containerClass = layout.containerType === 'full' ? 'header-container-full' : (layout.containerType === 'wide' ? 'header-container-wide' : 'header-container-boxed');
 const isCustomCode = headerConfig.builderType === 'custom-code' && headerConfig.customCode?.enabled;
 
-// Resolve Website Global Identity from siteConfig.json as fallback
+// Resolve Website Global Identity from siteConfig.json (default theme config)
 let siteConfig: any = null;
 try {
-  const configFile = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
+  const configFile = getDataFile('siteConfig.json');
   const rawConfig = await fs.readFile(configFile, 'utf-8');
   siteConfig = JSON.parse(rawConfig);
 } catch {}
 
-const effectiveLogoImg = (logo.imageUrl && logo.imageUrl.trim()) || (siteConfig?.logoUrl && siteConfig.logoUrl.trim()) || '';
-const effectiveBrandText = (logo.text && logo.text.trim()) || siteConfig?.brandName || 'Better SaaS';
-const effectiveTagline = logo.tagline !== undefined && logo.tagline !== '' ? logo.tagline : (siteConfig?.tagline || '');
+const defaultThemeConfig = siteConfig?.themeConfigs?.[theme] || siteConfig?.themeConfigs?.default || siteConfig || {};
+const effectiveLogoImg = (logo.imageUrl && logo.imageUrl.trim()) || (defaultThemeConfig?.logoUrl && defaultThemeConfig.logoUrl.trim()) || '';
+const effectiveBrandText = (logo.text && logo.text.trim()) || (defaultThemeConfig?.brandName && defaultThemeConfig.brandName.trim()) || 'Better';
+const effectiveTagline = logo.tagline !== undefined
+  ? logo.tagline
+  : (defaultThemeConfig?.tagline || '');
+const effectiveMenu = (Array.isArray(menu) && menu.length > 0)
+  ? menu
+  : (Array.isArray(defaultThemeConfig?.navItems)
+      ? defaultThemeConfig.navItems.map((item: any) => ({
+          id: item.id || String(item.name || '').toLowerCase().replace(/[^a-z0-9]/g, '-'),
+          label: item.name || '',
+          url: item.href || '/',
+          type: 'link' as const,
+          target: '_self' as const,
+        }))
+      : []);
+
+// Template mode support (when "Use Header from Template" is checked in Header Builder)
+let templateHtml = '';
+let templateCss = '';
+const useTemplateMode = Boolean((headerConfig as any).useTemplate);
+if (useTemplateMode) {
+  try {
+    const targetTplId = (headerConfig as any).selectedTemplateId || 'tpl-global-furnisite-navbar';
+    const chosenTpl = getTemplateById(targetTplId);
+    if (chosenTpl && chosenTpl.html) {
+      const cleanedHtml = cleanLiveContent(syncGlobalTemplates(chosenTpl.html))
+        .replace(/<\/?body[^>]*>/gi, '')
+        .trim();
+      templateHtml = applyActiveNavToTemplateHtml(
+        cleanedHtml,
+        Astro.url.pathname,
+        activePage,
+        styling?.navIndicatorStyle || 'underline'
+      );
+      templateCss = chosenTpl.css || '';
+    }
+  } catch {}
+}
 ---
 
-{isCustomCode ? (
+{useTemplateMode && templateHtml ? (
+  <div class="fp-template-header-wrap" data-nav-indicator={styling?.navIndicatorStyle || 'underline'}>
+    {templateCss && <style is:inline set:html={templateCss} />}
+    <Fragment set:html={templateHtml} />
+  </div>
+) : isCustomCode ? (
   <header
     class:list={[
       'fastpress-site-header',
@@ -223,7 +268,7 @@ const effectiveTagline = logo.tagline !== undefined && logo.tagline !== '' ? log
     <!-- NAVIGATION MENU (DESKTOP) -->
     <nav class:list={['header-desktop-nav', `align-${logoPos}`]} aria-label="Main navigation">
       <ul class="header-nav-list">
-        {menu.map((item) => {
+        {effectiveMenu.map((item: any) => {
           const isCurrent = activePage === item.id || (item.url !== '/' && Astro.url.pathname.startsWith(item.url));
           const hasDropdown = item.type === 'dropdown' && item.dropdownItems && item.dropdownItems.length > 0;
           const hasMegaMenu = item.type === 'megamenu' && item.megaMenu && item.megaMenu.columns?.length > 0;
@@ -448,7 +493,7 @@ const effectiveTagline = logo.tagline !== undefined && logo.tagline !== '' ? log
   <div class="hp-mobile-drawer" id="hpMobileDrawer" aria-hidden="true">
     <div class="hp-mobile-inner">
       <ul class="hp-mobile-nav-list">
-        {menu.map((item) => {
+        {effectiveMenu.map((item: any) => {
           const hasSubs = (item.type === 'dropdown' && item.dropdownItems?.length) || (item.type === 'megamenu' && item.megaMenu?.columns?.length);
           return (
             <li class="hp-mobile-item">
@@ -520,12 +565,12 @@ const effectiveTagline = logo.tagline !== undefined && logo.tagline !== '' ? log
 )}
 
 {/* Injected Custom Header CSS (for Visual Mode) */}
-{!isCustomCode && headerConfig.customCode?.customCss && (
+{!useTemplateMode && !isCustomCode && headerConfig.customCode?.customCss && (
   <style set:html={headerConfig.customCode.customCss} />
 )}
 
 {/* Injected Custom Header Scripts (for Visual Mode) */}
-{!isCustomCode && headerConfig.customCode?.customJs && (
+{!useTemplateMode && !isCustomCode && headerConfig.customCode?.customJs && (
   <script is:inline set:html={headerConfig.customCode.customJs} />
 )}
 

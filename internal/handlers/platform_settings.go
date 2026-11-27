@@ -70,6 +70,9 @@ type siteSettingsUpdateRequest struct {
 	CloudflareAccountID      string              `json:"cloudflare_account_id"`
 	CloudflareZoneID         string              `json:"cloudflare_zone_id"`
 	ClearCloudflareAPIToken  bool                `json:"clear_cloudflare_api_token"`
+	CustomDomainMonthlyCents *int64              `json:"custom_domain_monthly_cents"`
+	CustomDomainYearlyCents  *int64              `json:"custom_domain_yearly_cents"`
+	DefaultListLimit         *int                `json:"default_list_limit"`
 }
 
 func (s *Server) loadSiteSettings(ctx context.Context) (models.SiteSettings, error) {
@@ -115,11 +118,14 @@ func (s *Server) defaultSiteSettings(now time.Time) models.SiteSettings {
 		PayPalClientSecret:      s.cfg.PayPalClientSecret,
 		PayPalWebhookID:         s.cfg.PayPalWebhookID,
 		PublicNavCompanyName:    s.cfg.AppName,
-		PublicNavButtonText:     "Get Started",
-		PublicNavButtonURL:      "/register",
-		PublicNavButtonStyle:    "primary",
-		PublicNavItems:          defaultPublicNavItems(),
-		UpdatedAt:               now,
+		PublicNavButtonText:      "Get Started",
+		PublicNavButtonURL:       "/register",
+		PublicNavButtonStyle:     "primary",
+		PublicNavItems:           defaultPublicNavItems(),
+		CustomDomainMonthlyCents: 1500,
+		CustomDomainYearlyCents:  20000,
+		DefaultListLimit:         DefaultListLimit,
+		UpdatedAt:                now,
 	}
 }
 
@@ -225,6 +231,15 @@ func (s *Server) settingsWithConfigFallback(settings models.SiteSettings) models
 	}
 	settings.PublicNavButtonURL = normalizePublicNavURL(settings.PublicNavButtonURL, "/register")
 	settings.PublicNavButtonStyle = normalizePublicNavButtonStyle(settings.PublicNavButtonStyle)
+	if !settings.CustomDomainPricingSet {
+		if settings.CustomDomainMonthlyCents <= 0 {
+			settings.CustomDomainMonthlyCents = 1500
+		}
+		if settings.CustomDomainYearlyCents <= 0 {
+			settings.CustomDomainYearlyCents = 20000
+		}
+	}
+	settings.DefaultListLimit = clampListLimit(settings.DefaultListLimit, DefaultListLimit)
 	return settings
 }
 
@@ -277,10 +292,13 @@ func (s *Server) sanitizedSiteSettings(settings models.SiteSettings) gin.H {
 		"custom_head_html":          settings.CustomHeadHTML,
 		"custom_body_start_html":    settings.CustomBodyStartHTML,
 		"custom_body_end_html":      settings.CustomBodyEndHTML,
-		"cloudflare_account_id":      settings.CloudflareAccountID,
-		"cloudflare_zone_id":         settings.CloudflareZoneID,
-		"cloudflare_api_token_set":   secretSet(settings.CloudflareAPIToken),
-		"updated_at":                settings.UpdatedAt,
+		"cloudflare_account_id":       settings.CloudflareAccountID,
+		"cloudflare_zone_id":          settings.CloudflareZoneID,
+		"cloudflare_api_token_set":    secretSet(settings.CloudflareAPIToken),
+		"custom_domain_monthly_cents": settings.CustomDomainMonthlyCents,
+		"custom_domain_yearly_cents":  settings.CustomDomainYearlyCents,
+		"default_list_limit":          settings.DefaultListLimit,
+		"updated_at":                  settings.UpdatedAt,
 	}
 	for key, value := range publicThemeSettings(settings) {
 		payload[key] = value
@@ -292,18 +310,19 @@ func (s *Server) publicPlatformSettings(ctx context.Context) gin.H {
 	settings, _ := s.loadSiteSettings(ctx)
 	settings = s.settingsWithConfigFallback(settings)
 	payload := gin.H{
-		"site_name":        settings.SiteName,
-		"company_slogan":   settings.CompanySlogan,
-		"company_email":    settings.CompanyEmail,
-		"company_contact":  settings.CompanyContact,
-		"owner_name":       settings.OwnerName,
-		"logo_url":         settings.LogoURL,
-		"favicon_url":      settings.FaviconURL,
-		"support_phone":    settings.SupportPhone,
-		"time_zone":        settings.TimeZone,
-		"public_nav":       s.publicNavSettingsPayload(settings),
-		"public_nav_items": settings.PublicNavItems,
-		"social_links":     normalizeSocialLinks(settings.SocialLinks),
+		"site_name":          settings.SiteName,
+		"company_slogan":     settings.CompanySlogan,
+		"company_email":      settings.CompanyEmail,
+		"company_contact":    settings.CompanyContact,
+		"owner_name":         settings.OwnerName,
+		"logo_url":           settings.LogoURL,
+		"favicon_url":        settings.FaviconURL,
+		"support_phone":      settings.SupportPhone,
+		"time_zone":          settings.TimeZone,
+		"default_list_limit": settings.DefaultListLimit,
+		"public_nav":         s.publicNavSettingsPayload(settings),
+		"public_nav_items":   settings.PublicNavItems,
+		"social_links":       normalizeSocialLinks(settings.SocialLinks),
 		"google_signin_enabled": googleOAuthRuntimeConfig{
 			Enabled:      settings.GoogleSigninEnabled,
 			ClientID:     strings.TrimSpace(settings.GoogleClientID),

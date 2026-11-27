@@ -3,13 +3,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getTemplates, type Template, defaultTemplates } from '../../data/templates';
 
+import { getDataFile } from '../../core/tenantContext';
 export const prerender = false;
 
-const TEMPLATES_FILE = path.join(process.cwd(), 'src', 'data', 'templates.json');
 
 async function readTemplates(): Promise<Template[]> {
   try {
-    const raw = await fs.readFile(TEMPLATES_FILE, 'utf-8');
+    const raw = await fs.readFile(getDataFile('templates.json'), 'utf-8');
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) return parsed;
   } catch {}
@@ -17,7 +17,7 @@ async function readTemplates(): Promise<Template[]> {
 }
 
 async function writeTemplates(templates: Template[]): Promise<void> {
-  await fs.writeFile(TEMPLATES_FILE, JSON.stringify(templates, null, 2), 'utf-8');
+  await fs.writeFile(getDataFile('templates.json'), JSON.stringify(templates, null, 2), 'utf-8');
 }
 
 // GET: fetch all templates or a specific template

@@ -7,11 +7,11 @@ import { getPosts, defaultPosts, type Post } from '../data/posts';
 import { getCategories, type Category } from '../data/categories';
 import { getBlogLayouts, type BlogLayout } from '../data/blog-layouts';
 import WorkspaceSwitcher from '../components/admin/WorkspaceSwitcher.astro';
-import { getActiveThemeName } from '../core/theme';
+import { resolveThemeName } from '../core/theme';
 
 export const prerender = false;
 
-const activeTheme = getActiveThemeName();
+const activeTheme = resolveThemeName(Astro.url, Astro.request.headers);
 const postsList = getPosts();
 const categoriesList = getCategories();
 const blogLayoutsList = getBlogLayouts();

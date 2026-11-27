@@ -6,25 +6,25 @@ import {
   writeHeadersData,
   getHeaders,
   getActiveHeader,
+  getActiveHeaderForTheme,
   saveHeader,
   setActiveHeader,
   deleteHeader,
   duplicateHeader,
   type HeaderConfig
 } from '../../data/headers';
+import { resolveThemeName, getThemePages } from '../../core/theme';
 
+import { getDataFile } from '../../core/tenantContext';
 export const prerender = false;
 
-const PAGES_FILE = path.join(process.cwd(), 'src', 'data', 'pages.json');
-const POSTS_FILE = path.join(process.cwd(), 'src', 'data', 'posts.json');
 
-async function getAvailableResources() {
+async function getAvailableResources(themeName?: string) {
   let pages: Array<{ slug: string; title: string; url: string }> = [];
   let posts: Array<{ slug: string; title: string; category?: string; url: string }> = [];
 
   try {
-    const rawPages = await fs.readFile(PAGES_FILE, 'utf-8');
-    const parsedPages = JSON.parse(rawPages);
+    const parsedPages = getThemePages(themeName);
     pages = Object.entries(parsedPages).map(([slug, p]: [string, any]) => ({
       slug,
       title: p.title || (slug === 'home' ? 'Home' : slug),
@@ -42,7 +42,7 @@ async function getAvailableResources() {
   }
 
   try {
-    const rawPosts = await fs.readFile(POSTS_FILE, 'utf-8');
+    const rawPosts = await fs.readFile(getDataFile('posts.json'), 'utf-8');
     const parsedPosts = JSON.parse(rawPosts);
     if (Array.isArray(parsedPosts)) {
       posts = parsedPosts.map((post: any) => ({
@@ -59,11 +59,13 @@ async function getAvailableResources() {
   return { pages, posts };
 }
 
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = async ({ url, request }) => {
   try {
+    const theme = resolveThemeName(url, request.headers);
     const id = url.searchParams.get('id');
     const store = readHeadersData();
-    const resources = await getAvailableResources();
+    const resources = await getAvailableResources(theme);
+    const activeForTheme = getActiveHeaderForTheme(theme);
 
     if (id) {
       const header = store.headers.find(h => h.id === id);
@@ -81,7 +83,8 @@ export const GET: APIRoute = async ({ url }) => {
 
     return new Response(
       JSON.stringify({
-        activeHeaderId: store.activeHeaderId,
+        activeHeaderId: activeForTheme.id,
+        activeHeaderIds: store.activeHeaderIds || {},
         headers: store.headers,
         resources,
       }),
@@ -156,7 +159,7 @@ export const POST: APIRoute = async ({ request }) => {
   }
 };
 
-export const PUT: APIRoute = async ({ request }) => {
+export const PUT: APIRoute = async ({ request, url }) => {
   try {
     const body = await request.json();
     const { activeHeaderId } = body;
@@ -168,11 +171,13 @@ export const PUT: APIRoute = async ({ request }) => {
       });
     }
 
-    const updatedStore = setActiveHeader(activeHeaderId);
+    const theme = resolveThemeName(url, request.headers, body.theme);
+    const updatedStore = setActiveHeader(activeHeaderId, theme);
     return new Response(
       JSON.stringify({
         success: true,
-        activeHeaderId: updatedStore.activeHeaderId,
+        activeHeaderId: getActiveHeaderForTheme(theme).id,
+        activeHeaderIds: updatedStore.activeHeaderIds || {},
         headers: updatedStore.headers,
       }),
       {

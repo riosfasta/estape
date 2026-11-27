@@ -7,9 +7,19 @@ import { getProducts, getProductCategoriesArray, type Product } from '../data/pr
 import { getProductCategories, type ProductCategory } from '../data/product-categories';
 import { getProductLayouts, type ProductLayout } from '../data/product-layouts';
 import { getTemplates } from '../data/templates';
-import { getActiveThemeName } from '../core/theme';
+import { resolveThemeName } from '../core/theme';
 
-const activeTheme = getActiveThemeName();
+const activeTheme = resolveThemeName(Astro.url, Astro.request.headers);
+const tenantParam = Astro.url.searchParams.get('tenant') || Astro.request.headers.get('x-tenant-slug') || '';
+const host = Astro.url.hostname.replace(/^(www\.|builder\.)/, '');
+const proto = Astro.url.protocol;
+const port = Astro.url.port ? `:${Astro.url.port}` : '';
+const tenantBaseUrl = tenantParam ? `${proto}//${tenantParam}.${host}${port}` : '';
+const previewQuery = [
+  tenantParam ? `tenant=${encodeURIComponent(tenantParam)}` : '',
+  activeTheme ? `theme=${encodeURIComponent(activeTheme)}` : '',
+].filter(Boolean).join('&');
+const previewBase = `/preview/${encodeURIComponent(activeTheme)}`;
 const productsList: Product[] = getProducts();
 const categoriesList: ProductCategory[] = getProductCategories();
 const layoutsList: ProductLayout[] = getProductLayouts();
@@ -878,7 +888,7 @@ const activeLayoutObj =
           <button type="button" id="btnProductScripts" class="btn-tool">Scripts</button>
           <a
             id="btnViewLive"
-            href={activeProduct ? `/products/${activeProduct.slug}` : '/products'}
+            href={activeProduct ? `${tenantBaseUrl}/products/${encodeURIComponent(activeProduct.slug)}` : `${tenantBaseUrl}/products`}
             target="_blank"
             class="btn-tool"
           >
@@ -1257,7 +1267,9 @@ const activeLayoutObj =
               <div id="previewFrameShell" class="preview-frame-shell">
                 <iframe
                   id="productLiveIframe"
-                  src={activeProduct ? `/products/${activeProduct.slug}` : '/products'}
+                  src={activeProduct
+                    ? `${previewBase}/products/${encodeURIComponent(activeProduct.slug)}${previewQuery ? `?${previewQuery}` : ''}`
+                    : `${previewBase}/products${previewQuery ? `?${previewQuery}` : ''}`}
                   title="Live Product Preview"
                 ></iframe>
               </div>
@@ -1313,8 +1325,8 @@ const activeLayoutObj =
                   </div>
                 </div>
                 <div style="display: flex; gap: 6px;">
-                  <a href={`/edit-product?slug=${encodeURIComponent(p.slug)}`} class="btn-tool primary">Edit</a>
-                  <a href={`/products/${encodeURIComponent(p.slug)}`} target="_blank" class="btn-tool">View</a>
+                  <a href={`/edit-product?slug=${encodeURIComponent(p.slug)}${previewQuery ? `&${previewQuery}` : ''}`} class="btn-tool primary">Edit</a>
+                  <a href={`${tenantBaseUrl}/products/${encodeURIComponent(p.slug)}`} target="_blank" class="btn-tool">View</a>
                 </div>
               </div>
             );
@@ -1436,6 +1448,8 @@ const activeLayoutObj =
         initialProduct: activeProduct,
         initialLayouts: layoutsList,
         initialTemplates: templatesList,
+        activeThemeName: activeTheme,
+        tenantBaseUrl: tenantBaseUrl,
       }}
     >
       window.currentProduct = JSON.parse(JSON.stringify(initialProduct || {}));
@@ -1523,7 +1537,14 @@ const activeLayoutObj =
         function refreshPreviewIframe() {
           const iframe = document.getElementById('productLiveIframe');
           if (!iframe || !window.currentProduct?.slug) return;
-          iframe.src = `/products/${encodeURIComponent(window.currentProduct.slug)}?_t=${Date.now()}`;
+          const urlParams = new URLSearchParams(window.location.search);
+          const tenantVal = urlParams.get('tenant') || '';
+          const themeVal = urlParams.get('theme') || activeThemeName || 'default';
+          const q = new URLSearchParams();
+          if (tenantVal) q.set('tenant', tenantVal);
+          if (themeVal) q.set('theme', themeVal);
+          q.set('_t', String(Date.now()));
+          iframe.src = `/preview/${encodeURIComponent(themeVal)}/products/${encodeURIComponent(window.currentProduct.slug)}?${q.toString()}`;
         }
         document.getElementById('btnRefreshPreview')?.addEventListener('click', refreshPreviewIframe);
 
@@ -1976,7 +1997,8 @@ const activeLayoutObj =
 
             const oldSlug = window.currentProduct.slug;
             window.currentProduct = data.product;
-            document.getElementById('btnViewLive')?.setAttribute('href', `/products/${encodeURIComponent(data.product.slug)}`);
+            const liveBase = (typeof tenantBaseUrl !== 'undefined' && tenantBaseUrl) ? tenantBaseUrl : '';
+            document.getElementById('btnViewLive')?.setAttribute('href', `${liveBase}/products/${encodeURIComponent(data.product.slug)}`);
 
             if (oldSlug !== data.product.slug) {
               const nextUrl = new URL(window.location.href);

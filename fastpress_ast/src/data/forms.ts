@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { getDataFile } from '../core/tenantContext';
 export interface FieldOption {
   label: string;
   value: string;
@@ -144,7 +145,6 @@ export interface FormsStore {
   forms: FormConfig[];
 }
 
-const FORMS_FILE = path.join(process.cwd(), 'src', 'data', 'forms.json');
 
 export const defaultSampleForms: FormConfig[] = [
   {
@@ -369,12 +369,12 @@ export const defaultSampleForms: FormConfig[] = [
 
 export function readFormsData(): FormsStore {
   try {
-    if (!fs.existsSync(FORMS_FILE)) {
+    if (!fs.existsSync(getDataFile('forms.json'))) {
       const initialStore: FormsStore = { forms: defaultSampleForms };
       writeFormsData(initialStore);
       return initialStore;
     }
-    const raw = fs.readFileSync(FORMS_FILE, 'utf-8');
+    const raw = fs.readFileSync(getDataFile('forms.json'), 'utf-8');
     const parsed = JSON.parse(raw);
     if (!parsed || !Array.isArray(parsed.forms)) {
       return { forms: defaultSampleForms };
@@ -388,11 +388,11 @@ export function readFormsData(): FormsStore {
 
 export function writeFormsData(data: FormsStore): void {
   try {
-    const dir = path.dirname(FORMS_FILE);
+    const dir = path.dirname(getDataFile('forms.json'));
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(FORMS_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    fs.writeFileSync(getDataFile('forms.json'), JSON.stringify(data, null, 2), 'utf-8');
   } catch (err) {
     console.error('Failed to write forms.json:', err);
   }

@@ -6,6 +6,7 @@ import {
   writeFootersData,
   getFooters,
   getActiveFooter,
+  getActiveFooterForTheme,
   getFooterById,
   saveFooter,
   setActiveFooter,
@@ -15,19 +16,18 @@ import {
   type FooterConfig,
   type FootersStore
 } from '../../data/footers';
+import { resolveThemeName, getThemePages } from '../../core/theme';
 
+import { getDataFile } from '../../core/tenantContext';
 export const prerender = false;
 
-const PAGES_FILE = path.join(process.cwd(), 'src', 'data', 'pages.json');
-const POSTS_FILE = path.join(process.cwd(), 'src', 'data', 'posts.json');
 
-async function getAvailableResources() {
+async function getAvailableResources(themeName?: string) {
   let pages: Array<{ slug: string; title: string; url: string }> = [];
   let posts: Array<{ slug: string; title: string; category?: string; url: string }> = [];
 
   try {
-    const rawPages = await fs.readFile(PAGES_FILE, 'utf-8');
-    const parsedPages = JSON.parse(rawPages);
+    const parsedPages = getThemePages(themeName);
     pages = Object.entries(parsedPages).map(([slug, p]: [string, any]) => ({
       slug,
       title: p.title || (slug === 'home' ? 'Home' : slug),
@@ -45,7 +45,7 @@ async function getAvailableResources() {
   }
 
   try {
-    const rawPosts = await fs.readFile(POSTS_FILE, 'utf-8');
+    const rawPosts = await fs.readFile(getDataFile('posts.json'), 'utf-8');
     const parsedPosts = JSON.parse(rawPosts);
     if (Array.isArray(parsedPosts)) {
       posts = parsedPosts.map((post: any) => ({
@@ -62,11 +62,13 @@ async function getAvailableResources() {
   return { pages, posts };
 }
 
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = async ({ url, request }) => {
   try {
+    const theme = resolveThemeName(url, request.headers);
     const id = url.searchParams.get('id');
     const store = readFootersData();
-    const resources = await getAvailableResources();
+    const resources = await getAvailableResources(theme);
+    const activeForTheme = getActiveFooterForTheme(theme);
 
     if (id) {
       const footer = store.footers.find(f => f.id === id);
@@ -84,7 +86,8 @@ export const GET: APIRoute = async ({ url }) => {
 
     return new Response(
       JSON.stringify({
-        activeFooterId: store.activeFooterId,
+        activeFooterId: activeForTheme.id,
+        activeFooterIds: store.activeFooterIds || {},
         footers: store.footers,
         resources,
       }),
@@ -164,7 +167,7 @@ export const POST: APIRoute = async ({ request }) => {
   }
 };
 
-export const PUT: APIRoute = async ({ request }) => {
+export const PUT: APIRoute = async ({ request, url }) => {
   try {
     const body = await request.json();
     const { activeFooterId } = body;
@@ -176,11 +179,13 @@ export const PUT: APIRoute = async ({ request }) => {
       });
     }
 
-    const updatedStore = setActiveFooter(activeFooterId);
+    const theme = resolveThemeName(url, request.headers, body.theme);
+    const updatedStore = setActiveFooter(activeFooterId, theme);
     return new Response(
       JSON.stringify({
         success: true,
-        activeFooterId: updatedStore.activeFooterId,
+        activeFooterId: getActiveFooterForTheme(theme).id,
+        activeFooterIds: updatedStore.activeFooterIds || {},
         footers: updatedStore.footers,
       }),
       {

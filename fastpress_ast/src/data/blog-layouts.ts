@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { Post } from './posts';
 import { syncGlobalTemplates, cleanLiveContent } from './templates';
 
+import { getDataFile } from '../core/tenantContext';
 export interface BlogLayout {
   id: string;
   name: string;
@@ -16,7 +17,6 @@ export interface BlogLayout {
   updatedAt?: string;
 }
 
-const LAYOUTS_FILE = path.join(process.cwd(), 'src', 'data', 'blog-layouts.json');
 
 export const defaultBlogLayouts: BlogLayout[] = [
   {
@@ -468,8 +468,8 @@ export const defaultBlogLayouts: BlogLayout[] = [
 
 export function getBlogLayouts(): BlogLayout[] {
   try {
-    if (fs.existsSync(LAYOUTS_FILE)) {
-      const data = fs.readFileSync(LAYOUTS_FILE, 'utf-8');
+    if (fs.existsSync(getDataFile('blog-layouts.json'))) {
+      const data = fs.readFileSync(getDataFile('blog-layouts.json'), 'utf-8');
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
@@ -480,7 +480,7 @@ export function getBlogLayouts(): BlogLayout[] {
 }
 
 export function writeBlogLayoutsSync(layouts: BlogLayout[]): void {
-  fs.writeFileSync(LAYOUTS_FILE, JSON.stringify(layouts, null, 2), 'utf-8');
+  fs.writeFileSync(getDataFile('blog-layouts.json'), JSON.stringify(layouts, null, 2), 'utf-8');
 }
 
 export function getBlogLayoutById(id?: string): BlogLayout {

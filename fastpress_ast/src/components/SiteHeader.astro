@@ -4,6 +4,7 @@ import path from 'node:path';
 import { getActiveHeader, type HeaderConfig } from '../data/headers';
 import '../styles/header.css';
 
+import { getDataFile } from '../core/tenantContext';
 interface Props {
   activePage?: string;
   customConfig?: HeaderConfig;
@@ -73,7 +74,7 @@ const isCustomCode = headerConfig.builderType === 'custom-code' && headerConfig.
 // Resolve Website Global Identity from siteConfig.json as fallback
 let siteConfig: any = null;
 try {
-  const configFile = path.join(process.cwd(), 'src', 'data', 'siteConfig.json');
+  const configFile = getDataFile('siteConfig.json');
   const rawConfig = await fs.readFile(configFile, 'utf-8');
   siteConfig = JSON.parse(rawConfig);
 } catch {}

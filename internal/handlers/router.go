@@ -29,17 +29,21 @@ import (
 )
 
 type Server struct {
-	assetVersion atomic.Int64
-	cfg          config.Config
-	logger       *log.Logger
-	store        *store.Store
-	tokens       *auth.TokenManager
-	mailer       *email.Worker
-	hub          *realtime.Hub
-	push         *PushService
-	payments     map[string]billing.PaymentProvider
-	integrations map[string]integrations.TaskIntegrationProvider
-	signupLimits *registrationRateLimiter
+	assetVersion            atomic.Int64
+	cfg                     config.Config
+	logger                  *log.Logger
+	store                   *store.Store
+	tokens                  *auth.TokenManager
+	mailer                  *email.Worker
+	hub                     *realtime.Hub
+	push                    *PushService
+	payments                map[string]billing.PaymentProvider
+	integrations            map[string]integrations.TaskIntegrationProvider
+	signupLimits            *registrationRateLimiter
+	tenantsRootOverride     string
+	nginxSitesAvailOverride string
+	nginxSitesEnabOverride  string
+	disableSystemNginx      bool
 }
 
 func New(cfg config.Config, logger *log.Logger, store *store.Store, tokens *auth.TokenManager, mailer *email.Worker, hub *realtime.Hub, payments map[string]billing.PaymentProvider, taskIntegrations map[string]integrations.TaskIntegrationProvider) *Server {
@@ -52,11 +56,11 @@ func (s *Server) Router() *gin.Engine {
 	router.Use(frontendCacheHeaders())
 	_ = router.SetTrustedProxies([]string{"127.0.0.1", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"})
 	router.MaxMultipartMemory = 16 << 20
+	router.Use(s.securityHeaders())
+	router.Use(s.tenantHostMiddleware())
 	router.Static("/static", "web/static")
 	router.Static("/uploads", s.cfg.UploadDir)
 	router.LoadHTMLGlob("web/templates/*.gohtml")
-	router.Use(s.securityHeaders())
-	router.Use(s.tenantHostMiddleware())
 
 	router.GET("/", s.homePage)
 	router.GET("/pricing", s.homePage)
@@ -93,6 +97,8 @@ func (s *Server) Router() *gin.Engine {
 	router.GET("/admin/blogs/:id/edit", s.appPage)
 	router.GET("/admin/backup", s.appPage)
 	router.GET("/admin/deleted-projects", s.appPage)
+	router.GET("/admin/websites", s.appPage)
+	router.GET("/admin/themes", s.appPage)
 	router.GET("/settings/company", s.appPage)
 	router.GET("/settings/billing", s.appPage)
 	router.GET("/team/integrations", s.appPage)
@@ -119,6 +125,8 @@ func (s *Server) Router() *gin.Engine {
 	api.GET("/pages/:slug", s.getPublicPage)
 	api.GET("/paypal/return", s.payPalCheckoutReturn)
 	api.GET("/paypal/cancel", s.payPalCheckoutCancel)
+	api.GET("/paypal/domain-return", s.payPalDomainReturn)
+	api.GET("/paypal/domain-cancel", s.payPalDomainCancel)
 	api.POST("/webhooks/paypal", s.paymentWebhook("paypal"))
 	api.OPTIONS("/widget/annotations", s.widgetOptions)
 	api.OPTIONS("/widget/annotations/:annotation_id", s.widgetOptions)
@@ -262,17 +270,22 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/subscriptions/:teamId/invoices", s.listInvoices)
 
 	authed.POST("/tenants", s.createTenant)
+	authed.GET("/themes/market", s.listThemeMarket)
 	authed.GET("/tenants", s.listMyTenants)
+	authed.GET("/tenants/domain-pricing", s.getTenantDomainPricing)
 	authed.GET("/tenants/:id", s.getTenant)
 	authed.PUT("/tenants/:id", s.updateTenant)
 	authed.GET("/tenants/:id/submissions", s.listTenantSubmissions)
 	authed.POST("/tenants/:id/publish", s.publishTenant)
+	authed.POST("/tenants/:id/domain/checkout", s.createTenantDomainCheckout)
+	authed.POST("/tenants/:id/domain/checkout/:orderId/capture", s.captureTenantDomainCheckout)
 	authed.POST("/tenants/:id/domain", s.setTenantCustomDomain)
 	authed.POST("/tenants/:id/domain/verify", s.verifyTenantDomainPropagation)
 	authed.POST("/tenants/:id/ssl/provision", s.provisionTenantSSL)
 	authed.GET("/tenants/:id/ssl/status", s.getTenantSSLStatus)
 	authed.DELETE("/tenants/:id/domain", s.removeTenantCustomDomain)
 	authed.DELETE("/tenants/:id", s.deleteTenant)
+	authed.POST("/tenants/:id/unlist", s.unlistTenant)
 	authed.POST("/tenants/:id/restore", s.restoreTenant)
 	authed.DELETE("/tenants/:id/permanent", s.permanentDeleteTenant)
 
@@ -364,6 +377,15 @@ func (s *Server) Router() *gin.Engine {
 	owner.GET("/deleted-projects", s.adminListDeletedProjects)
 	owner.POST("/deleted-projects/:id/restore", s.adminRestoreDeletedProject)
 	owner.DELETE("/deleted-projects/:id/permanent", s.adminPermanentDeleteProject)
+	owner.GET("/websites", s.adminListWebsites)
+	owner.POST("/websites/:id/grant-domain", s.adminGrantTenantDomainPlan)
+	owner.PATCH("/domain-pricing", s.adminUpdateDomainPricing)
+	owner.GET("/themes", s.adminListThemes)
+	owner.POST("/themes", s.adminCreateTheme)
+	owner.POST("/themes/fetch-github", s.adminFetchGithubTheme)
+	owner.POST("/themes/:id/sync", s.adminSyncGithubTheme)
+	owner.PUT("/themes/:id", s.adminUpdateTheme)
+	owner.DELETE("/themes/:id", s.adminDeleteTheme)
 
 	router.NoRoute(func(c *gin.Context) {
 		p := strings.ToLower(c.Request.URL.Path)
@@ -525,17 +547,7 @@ func publicPlanPriceLine(plan models.Plan, period string) string {
 }
 
 func publicPlanLimitsLine(plan models.Plan) string {
-	parts := []string{}
-	if plan.SeatLimit > 0 {
-		parts = append(parts, fmt.Sprintf("%d seats", plan.SeatLimit))
-	}
-	if plan.ProjectLimit > 0 {
-		parts = append(parts, fmt.Sprintf("%d projects", plan.ProjectLimit))
-	}
-	if len(parts) == 0 {
-		return "Custom limits"
-	}
-	return strings.Join(parts, " - ")
+	return "Per published domain"
 }
 
 func publicPlanTrialLine(plan models.Plan) string {

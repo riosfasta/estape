@@ -82,6 +82,29 @@ func (s *Server) createTenant(c *gin.Context) {
 		return
 	}
 
+	// Enforce maximum 3 subdomain websites per user (active + soft-deleted in Trash; client-unlisted websites free the slot)
+	if user.Role != models.RoleOwnerAdmin {
+		owned, err := s.store.ListTenantsByOwner(c.Request.Context(), user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check website quota: " + err.Error()})
+			return
+		}
+		activeOrTrashCount := 0
+		for _, t := range owned {
+			if !t.ClientHidden {
+				activeOrTrashCount++
+			}
+		}
+		if activeOrTrashCount >= MaxWebsitesPerUser {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":         fmt.Sprintf("Website limit reached: you can create up to %d websites per account (including deleted websites in Trash).", MaxWebsitesPerUser),
+				"website_count": activeOrTrashCount,
+				"max_websites":  MaxWebsitesPerUser,
+			})
+			return
+		}
+	}
+
 	// Check if already taken
 	existing, err := s.store.GetTenantBySubdomain(c.Request.Context(), slug)
 	if err == nil && existing != nil {
@@ -89,9 +112,25 @@ func (s *Server) createTenant(c *gin.Context) {
 		return
 	}
 
-	activeTheme := strings.ToLower(strings.TrimSpace(req.ActiveTheme))
-	if activeTheme == "" {
+	requestedTheme := strings.ToLower(strings.TrimSpace(req.ActiveTheme))
+	if requestedTheme == "" {
+		requestedTheme = "default"
+	}
+	activeTheme := requestedTheme
+	marketThemeSlug := requestedTheme
+	marketThemeName := ""
+	if s.store != nil {
+		if marketTheme, tErr := s.store.GetWebsiteThemeBySlug(c.Request.Context(), requestedTheme); tErr == nil && marketTheme != nil && marketTheme.IsActive {
+			activeTheme = sanitizeBaseTheme(marketTheme.BaseTheme)
+			marketThemeSlug = marketTheme.Slug
+			marketThemeName = marketTheme.Name
+		} else if activeTheme != "furnisite" && activeTheme != "default" {
+			activeTheme = "default"
+			marketThemeSlug = "default"
+		}
+	} else if activeTheme != "furnisite" && activeTheme != "default" {
 		activeTheme = "default"
+		marketThemeSlug = "default"
 	}
 
 	companyName := strings.TrimSpace(req.CompanyName)
@@ -100,11 +139,13 @@ func (s *Server) createTenant(c *gin.Context) {
 	}
 
 	tenant := models.Tenant{
-		OwnerUserID: user.ID,
-		Subdomain:   slug,
-		CompanyName: companyName,
-		ActiveTheme: activeTheme,
-		Status:      models.TenantStatusDraft,
+		OwnerUserID:     user.ID,
+		Subdomain:       slug,
+		CompanyName:     companyName,
+		ActiveTheme:     activeTheme,
+		MarketThemeSlug: marketThemeSlug,
+		MarketThemeName: marketThemeName,
+		Status:          models.TenantStatusDraft,
 		AutoResponder: models.TenantAutoResponder{
 			Enabled: true,
 			Subject: fmt.Sprintf("Welcome to %s! Thank you for contacting us", companyName),
@@ -117,7 +158,7 @@ func (s *Server) createTenant(c *gin.Context) {
 		return
 	}
 
-	go s.autoProvisionTenantStaticDist(tenant.Subdomain, tenant.ActiveTheme)
+	go s.ensureTenantDevDirectory(tenant.Subdomain, tenant.ActiveTheme)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "store created successfully",
@@ -131,39 +172,107 @@ func (s *Server) listMyTenants(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
+	ctx := c.Request.Context()
+	pag := s.parseListPagination(c)
 
 	// Purge expired soft-deleted stores (>30 days) in background
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_, _ = s.store.PurgeExpiredDeletedTenants(ctx)
+		_, _ = s.store.PurgeExpiredDeletedTenants(bgCtx)
 	}()
 
-	filter := bson.M{"owner_user_id": user.ID}
-	if user.Role == models.RoleOwnerAdmin && c.Query("all") == "true" {
-		filter = bson.M{}
+	baseFilter := bson.M{
+		"client_hidden": bson.M{"$ne": true},
+	}
+	if !(user.Role == models.RoleOwnerAdmin && c.Query("all") == "true") {
+		baseFilter["owner_user_id"] = user.ID
 	}
 
-	allTenants, err := s.store.ListTenants(c.Request.Context(), filter)
+	deletedCond := bson.M{"$or": []bson.M{
+		{"is_deleted": true},
+		{"status": models.TenantStatusDeleted},
+	}}
+	activeCond := bson.M{
+		"is_deleted": bson.M{"$ne": true},
+		"status":     bson.M{"$ne": models.TenantStatusDeleted},
+	}
+
+	activeBaseFilter := bson.M{"$and": []bson.M{baseFilter, activeCond}}
+	trashBaseFilter := bson.M{"$and": []bson.M{baseFilter, deletedCond}}
+
+	activeTotal, _ := s.store.CountTenants(ctx, activeBaseFilter)
+	trashTotal, _ := s.store.CountTenants(ctx, trashBaseFilter)
+
+	totalOwned := int(activeTotal + trashTotal)
+	remainingWebsites := MaxWebsitesPerUser - totalOwned
+	if remainingWebsites < 0 {
+		remainingWebsites = 0
+	}
+
+	q := strings.TrimSpace(c.Query("q"))
+	activeQueryFilter := activeBaseFilter
+	trashQueryFilter := trashBaseFilter
+	if q != "" {
+		pat := regexp.QuoteMeta(q)
+		searchCond := bson.M{"$or": []bson.M{
+			{"company_name": bson.M{"$regex": pat, "$options": "i"}},
+			{"subdomain": bson.M{"$regex": pat, "$options": "i"}},
+			{"custom_domain": bson.M{"$regex": pat, "$options": "i"}},
+		}}
+		activeQueryFilter = bson.M{"$and": []bson.M{activeBaseFilter, searchCond}}
+		trashQueryFilter = bson.M{"$and": []bson.M{trashBaseFilter, searchCond}}
+	}
+
+	activeFilteredTotal := activeTotal
+	trashFilteredTotal := trashTotal
+	if q != "" {
+		activeFilteredTotal, _ = s.store.CountTenants(ctx, activeQueryFilter)
+		trashFilteredTotal, _ = s.store.CountTenants(ctx, trashQueryFilter)
+	}
+
+	tab := strings.ToLower(strings.TrimSpace(c.Query("tab")))
+	activePage := 1
+	trashPage := 1
+	if tab == "trash" {
+		trashPage = pag.Page
+	} else {
+		activePage = pag.Page
+	}
+
+	activeMeta := buildPaginationMeta(activePage, pag.Limit, activeFilteredTotal)
+	trashMeta := buildPaginationMeta(trashPage, pag.Limit, trashFilteredTotal)
+
+	sortOrder := bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}
+	active, err := s.store.ListTenantsPaginated(ctx, activeQueryFilter, sortOrder, int64((activeMeta.Page-1)*activeMeta.Limit), int64(activeMeta.Limit))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list stores: " + err.Error()})
 		return
 	}
+	deleted, err := s.store.ListTenantsPaginated(ctx, trashQueryFilter, sortOrder, int64((trashMeta.Page-1)*trashMeta.Limit), int64(trashMeta.Limit))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list deleted stores: " + err.Error()})
+		return
+	}
 
-	active := make([]models.Tenant, 0)
-	deleted := make([]models.Tenant, 0)
-	for _, t := range allTenants {
-		if t.IsDeleted || t.Status == models.TenantStatusDeleted {
-			deleted = append(deleted, t)
-		} else {
-			active = append(active, t)
-		}
+	currentPagination := activeMeta
+	if tab == "trash" {
+		currentPagination = trashMeta
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"tenants":           active,
-		"deleted_tenants":   deleted,
-		"is_platform_owner": user.Role == models.RoleOwnerAdmin,
+		"tenants":            active,
+		"deleted_tenants":    deleted,
+		"active_total":       activeTotal,
+		"trash_total":        trashTotal,
+		"active_pagination":  activeMeta,
+		"trash_pagination":   trashMeta,
+		"pagination":         currentPagination,
+		"default_limit":      pag.DefaultLimit,
+		"is_platform_owner":  user.Role == models.RoleOwnerAdmin,
+		"website_count":      totalOwned,
+		"max_websites":       MaxWebsitesPerUser,
+		"remaining_websites": remainingWebsites,
 	})
 }
 
@@ -233,6 +342,16 @@ func (s *Server) updateTenant(c *gin.Context) {
 	}
 	if req.CustomDomain != "" {
 		custom := strings.ToLower(strings.TrimSpace(req.CustomDomain))
+		if !strings.EqualFold(custom, strings.TrimSpace(tenant.CustomDomain)) && !s.tenantHasActiveDomainPlan(c.Request.Context(), tenant) {
+			monthly, yearly, _ := s.customDomainPricing(c.Request.Context())
+			c.JSON(http.StatusPaymentRequired, gin.H{
+				"error":            "Connecting a custom domain requires an active Custom Domain plan.",
+				"payment_required": true,
+				"monthly_cents":    monthly,
+				"yearly_cents":     yearly,
+			})
+			return
+		}
 		// Check uniqueness
 		existing, err := s.store.GetTenantByCustomDomain(c.Request.Context(), custom)
 		if err == nil && existing != nil && existing.ID != tenant.ID {
@@ -284,13 +403,21 @@ func (s *Server) listTenantSubmissions(c *gin.Context) {
 		return
 	}
 
-	submissions, err := s.store.ListTenantFormSubmissions(c.Request.Context(), tenant.ID, 100)
+	pag := s.parseListPagination(c)
+	ctx := c.Request.Context()
+	total, _ := s.store.C("tenant_form_submissions").CountDocuments(ctx, bson.M{"tenant_id": tenant.ID})
+	meta := buildPaginationMeta(pag.Page, pag.Limit, total)
+	submissions, err := s.store.ListTenantFormSubmissions(ctx, tenant.ID, int64(meta.Limit))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list submissions: " + err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"submissions": submissions})
+	c.JSON(http.StatusOK, gin.H{
+		"submissions":   submissions,
+		"pagination":    meta,
+		"default_limit": pag.DefaultLimit,
+	})
 }
 
 func (s *Server) publishTenant(c *gin.Context) {
@@ -317,69 +444,52 @@ func (s *Server) publishTenant(c *gin.Context) {
 		return
 	}
 
-	// Prepare output and deployment information
-	cfProject := tenant.Subdomain
-	var cfURL string
-	if strings.TrimSpace(tenant.CustomDomain) != "" {
-		cfURL = fmt.Sprintf("https://%s", strings.TrimSpace(tenant.CustomDomain))
-	} else {
-		cfURL = fmt.Sprintf("https://%s.bugmega.com", tenant.Subdomain)
+	// Plan B (VPS-hosted): publishing pushes the site live to custom domain (clientdomain.com) in isolated published/ directory
+	ctx := c.Request.Context()
+	customDomain := strings.TrimSpace(tenant.CustomDomain)
+	if user.Role != models.RoleOwnerAdmin {
+		if !s.tenantHasActiveDomainPlan(ctx, tenant) {
+			c.JSON(http.StatusPaymentRequired, gin.H{
+				"error": "Active custom domain plan required to publish to clientdomain.com. Your subdomain is already publicly accessible.",
+				"code":  "CUSTOM_DOMAIN_PAYMENT_REQUIRED",
+			})
+			return
+		}
+		if customDomain == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Connect your custom domain (clientdomain.com) before publishing live. Your subdomain is already publicly accessible.",
+				"code":  "CUSTOM_DOMAIN_REQUIRED",
+			})
+			return
+		}
+	}
+
+	baseDomain := s.tenantBaseDomain()
+	liveURL := fmt.Sprintf("https://%s.%s", tenant.Subdomain, baseDomain)
+	if customDomain != "" {
+		liveURL = fmt.Sprintf("https://%s", customDomain)
 	}
 	now := time.Now()
 
-	// Load Cloudflare credentials from database first, then fallback to environment
-	cfToken := os.Getenv("CLOUDFLARE_API_TOKEN")
-	cfAccount := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
-	if siteSettings, err := s.loadSiteSettings(c.Request.Context()); err == nil {
-		if strings.TrimSpace(siteSettings.CloudflareAPIToken) != "" {
-			cfToken = strings.TrimSpace(siteSettings.CloudflareAPIToken)
-		}
-		if strings.TrimSpace(siteSettings.CloudflareAccountID) != "" {
-			cfAccount = strings.TrimSpace(siteSettings.CloudflareAccountID)
-		}
+	pubRes, pubErr := s.buildAndPublishTenantStaticSite(ctx, tenant, "")
+	if pubErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to publish site to published directory: " + pubErr.Error(),
+		})
+		return
 	}
-	distDir := fmt.Sprintf("/var/www/tenants/%s/dist", tenant.Subdomain)
 
-	var deployLog string
-	if cfToken != "" && cfAccount != "" {
-		if _, err := os.Stat(distDir); err == nil {
-			cmdCtx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Minute)
-			defer cancel()
-
-			cmd := exec.CommandContext(cmdCtx, "wrangler", "pages", "deploy", distDir,
-				"--project-name="+cfProject,
-				"--commit-dirty=true")
-			cmd.Env = append(os.Environ(),
-				"CLOUDFLARE_API_TOKEN="+cfToken,
-				"CLOUDFLARE_ACCOUNT_ID="+cfAccount)
-
-			out, err := cmd.CombinedOutput()
-			deployLog = string(out)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"error":  "cloudflare deployment failed: " + err.Error(),
-					"output": deployLog,
-				})
-				return
-			}
-
-			// Automatically register the real domain with Cloudflare Pages API
-			targetDomain := fmt.Sprintf("%s.bugmega.com", tenant.Subdomain)
-			if strings.TrimSpace(tenant.CustomDomain) != "" {
-				targetDomain = strings.TrimSpace(tenant.CustomDomain)
-			}
-			go attachCloudflareCustomDomain(cfToken, cfAccount, cfProject, targetDomain)
-		}
+	if customDomain != "" {
+		go s.autoConfigureCustomDomainSSL(tenant.ID, customDomain, tenant.Subdomain)
 	}
 
 	updates := bson.M{
-		"status":             models.TenantStatusActive,
-		"published_at":       now,
-		"cloudflare_project": cfProject,
-		"cloudflare_url":     cfURL,
+		"status":         models.TenantStatusActive,
+		"published_at":   now,
+		"cloudflare_url": liveURL,
 	}
 
-	if err := s.store.UpdateTenant(c.Request.Context(), tenant.ID, updates); err != nil {
+	if err := s.store.UpdateTenant(ctx, tenant.ID, updates); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update publish status: " + err.Error()})
 		return
 	}
@@ -387,9 +497,11 @@ func (s *Server) publishTenant(c *gin.Context) {
 	updated, _ := s.store.GetTenantByID(c.Request.Context(), tenant.ID)
 	c.JSON(http.StatusOK, gin.H{
 		"message":        "site published successfully",
-		"cloudflare_url": cfURL,
+		"live_url":       liveURL,
+		"cloudflare_url": liveURL,
+		"published_dir":  pubRes.PublishedDistDir,
+		"pages_rendered": pubRes.PagesRendered,
 		"tenant":         updated,
-		"deploy_log":     deployLog,
 	})
 }
 
@@ -440,6 +552,17 @@ func (s *Server) setTenantCustomDomain(c *gin.Context) {
 		return
 	}
 
+	if !s.tenantHasActiveDomainPlan(c.Request.Context(), tenant) {
+		monthly, yearly, _ := s.customDomainPricing(c.Request.Context())
+		c.JSON(http.StatusPaymentRequired, gin.H{
+			"error":            "Connecting a custom domain requires a paid monthly or yearly Custom Domain plan.",
+			"payment_required": true,
+			"monthly_cents":    monthly,
+			"yearly_cents":     yearly,
+		})
+		return
+	}
+
 	var req SetDomainRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "custom_domain is required"})
@@ -478,12 +601,21 @@ func (s *Server) setTenantCustomDomain(c *gin.Context) {
 		return
 	}
 
-	targetCNAME := fmt.Sprintf("%s.bugmega.com", tenant.Subdomain)
+	// Prepare Nginx HTTP vhost immediately and auto-configure VPS SSL if DNS already points here
+	vhostErr := s.ensureNginxTenantVhost(domain)
+	go s.autoConfigureCustomDomainSSL(tenant.ID, domain, tenant.Subdomain)
+
+	targetCNAME := fmt.Sprintf("%s.%s", tenant.Subdomain, s.tenantBaseDomain())
+	respMsg := "Custom domain saved and Nginx vhost prepared. Point your DNS CNAME record; SSL will be configured automatically on the VPS."
+	if vhostErr != nil && !s.disableSystemNginx {
+		respMsg = fmt.Sprintf("Custom domain saved. Note: VPS Nginx vhost setup reported: %v", vhostErr)
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"message":              "Custom domain saved. Please configure your DNS CNAME record.",
+		"message":              respMsg,
 		"custom_domain":        domain,
 		"custom_domain_status": "pending",
 		"target_cname":         targetCNAME,
+		"nginx_vhost_ready":    vhostErr == nil,
 	})
 }
 
@@ -559,12 +691,11 @@ func (s *Server) verifyTenantDomainPropagation(c *gin.Context) {
 
 	now := time.Now()
 	if verified {
+		// Automatically configure VPS Nginx + Certbot SSL as soon as DNS propagation is verified
+		validTLS, issuer, tlsMsg := s.provisionVPSSSLForDomain(domain)
 		sslStatus := "pending"
-		var sslIssuer string
-		validTLS, issuer, tlsMsg := verifyDomainTLS(domain)
 		if validTLS {
 			sslStatus = "active"
-			sslIssuer = issuer
 		}
 
 		updates := bson.M{
@@ -575,40 +706,25 @@ func (s *Server) verifyTenantDomainPropagation(c *gin.Context) {
 		}
 		if validTLS {
 			updates["ssl_verified_at"] = &now
-			updates["ssl_cert_issuer"] = sslIssuer
+			updates["ssl_cert_issuer"] = issuer
 			updates["ssl_last_error"] = ""
 		} else {
 			updates["ssl_last_error"] = tlsMsg
 		}
 		_ = s.store.UpdateTenant(c.Request.Context(), tenant.ID, updates)
 
-		// Also register with Cloudflare Pages API for SSL provisioning
-		cfToken := os.Getenv("CLOUDFLARE_API_TOKEN")
-		cfAccount := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
-		if siteSettings, err := s.loadSiteSettings(c.Request.Context()); err == nil {
-			if strings.TrimSpace(siteSettings.CloudflareAPIToken) != "" {
-				cfToken = strings.TrimSpace(siteSettings.CloudflareAPIToken)
-			}
-			if strings.TrimSpace(siteSettings.CloudflareAccountID) != "" {
-				cfAccount = strings.TrimSpace(siteSettings.CloudflareAccountID)
-			}
-		}
-		proj := tenant.CloudflareProject
-		if proj == "" {
-			proj = tenant.Subdomain
-		}
-		go attachCloudflareCustomDomain(cfToken, cfAccount, proj, domain)
-
 		c.JSON(http.StatusOK, gin.H{
-			"verified":   true,
-			"status":     "active",
-			"ssl_status": sslStatus,
-			"ssl_active": validTLS,
-			"domain":     domain,
-			"cname":      cnameClean,
-			"target":     expectedTarget,
-			"reason":     reason,
-			"message":    "DNS propagation verified! Your custom domain is live.",
+			"verified":    true,
+			"status":      "active",
+			"ssl_status":  sslStatus,
+			"ssl_active":  validTLS,
+			"ssl_issuer":  issuer,
+			"ssl_message": tlsMsg,
+			"domain":      domain,
+			"cname":       cnameClean,
+			"target":      expectedTarget,
+			"reason":      reason,
+			"message":     "DNS propagation verified! VPS SSL auto-configuration completed.",
 		})
 		return
 	}
@@ -647,15 +763,19 @@ func (s *Server) removeTenantCustomDomain(c *gin.Context) {
 		return
 	}
 
+	if strings.TrimSpace(tenant.CustomDomain) != "" {
+		_ = s.removeNginxTenantVhost(tenant.CustomDomain)
+	}
+
 	updates := bson.M{
 		"custom_domain":             "",
 		"custom_domain_status":      "",
 		"custom_domain_verified_at": nil,
 		"ssl_status":                "",
-		"ssl_verified_at":          nil,
+		"ssl_verified_at":           nil,
 		"ssl_cert_issuer":           "",
 		"ssl_last_error":            "",
-		"cloudflare_url":            fmt.Sprintf("https://%s.bugmega.com", tenant.Subdomain),
+		"cloudflare_url":            fmt.Sprintf("https://%s.%s", tenant.Subdomain, s.tenantBaseDomain()),
 	}
 
 	if err := s.store.UpdateTenant(c.Request.Context(), tenant.ID, updates); err != nil {
@@ -743,39 +863,11 @@ func (s *Server) provisionTenantSSL(c *gin.Context) {
 
 	domain := strings.TrimSpace(tenant.CustomDomain)
 	if domain == "" {
-		domain = fmt.Sprintf("%s.bugmega.com", tenant.Subdomain)
+		domain = fmt.Sprintf("%s.%s", tenant.Subdomain, s.tenantBaseDomain())
 	}
 
-	isSubdomain := strings.HasSuffix(domain, ".bugmega.com") || tenant.CustomDomain == ""
-	var vpsMsg string
-
-	if isSubdomain {
-		// Subdomain is hosted locally on the VPS - run VPS certbot provisioning
-		_, vpsMsg = provisionVPSSubdomainSSL(domain)
-	} else {
-		// External custom domain: Trigger registration with Cloudflare Pages API for Edge SSL
-		cfToken := os.Getenv("CLOUDFLARE_API_TOKEN")
-		cfAccount := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
-		if siteSettings, err := s.loadSiteSettings(c.Request.Context()); err == nil {
-			if strings.TrimSpace(siteSettings.CloudflareAPIToken) != "" {
-				cfToken = strings.TrimSpace(siteSettings.CloudflareAPIToken)
-			}
-			if strings.TrimSpace(siteSettings.CloudflareAccountID) != "" {
-				cfAccount = strings.TrimSpace(siteSettings.CloudflareAccountID)
-			}
-		}
-		proj := tenant.CloudflareProject
-		if proj == "" {
-			proj = tenant.Subdomain
-		}
-
-		if cfToken != "" && cfAccount != "" {
-			attachCloudflareCustomDomain(cfToken, cfAccount, proj, domain)
-		}
-	}
-
-	// 2. Perform live TLS handshake test on domain:443
-	validTLS, issuer, tlsMsg := verifyDomainTLS(domain)
+	// Provision & verify SSL directly on the VPS via Nginx + Certbot (or wildcard cert for *.bugmega.com)
+	validTLS, issuer, tlsMsg := s.provisionVPSSSLForDomain(domain)
 	now := time.Now()
 
 	if validTLS {
@@ -803,17 +895,10 @@ func (s *Server) provisionTenantSSL(c *gin.Context) {
 	}
 	_ = s.store.UpdateTenant(c.Request.Context(), tenant.ID, updates)
 
-	var feedbackMsg string
-	if isSubdomain {
-		feedbackMsg = fmt.Sprintf("VPS SSL check for %s: %s. (%s)", domain, tlsMsg, vpsMsg)
-	} else {
-		feedbackMsg = fmt.Sprintf("SSL provisioning request sent to Cloudflare Edge for %s. Handshake: %s.", domain, tlsMsg)
-	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"ssl_active": false,
 		"ssl_status": "pending",
-		"message":    feedbackMsg,
+		"message":    fmt.Sprintf("VPS SSL provisioning status for %s: %s", domain, tlsMsg),
 		"domain":     domain,
 	})
 }
@@ -896,13 +981,18 @@ func (s *Server) deleteTenant(c *gin.Context) {
 		return
 	}
 
-	// Platform Owner can trigger immediate hard/permanent delete via ?hard=true or ?permanent=true
+	// Only Platform Owner performs actual permanent deletion; store owners unlist the website from the client end
+	// while keeping it in the Platform Owner retention archive (/admin/deleted-projects).
 	if c.Query("hard") == "true" || c.Query("permanent") == "true" {
-		if user.Role != models.RoleOwnerAdmin {
-			c.JSON(http.StatusForbidden, gin.H{"error": "only the platform owner can perform permanent deletion"})
+		if user.Role == models.RoleOwnerAdmin {
+			s.performPermanentTenantDelete(c, tenant)
 			return
 		}
-		s.performPermanentTenantDelete(c, tenant)
+		if tenant.OwnerUserID != user.ID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+		s.unlistTenantForClient(c, tenant, user.ID)
 		return
 	}
 
@@ -959,11 +1049,13 @@ func (s *Server) restoreTenant(c *gin.Context) {
 	}
 
 	updates := bson.M{
-		"is_deleted": false,
-		"status":     restoreStatus,
-		"deleted_at": nil,
-		"purge_at":   nil,
-		"deleted_by": nil,
+		"is_deleted":         false,
+		"status":             restoreStatus,
+		"deleted_at":         nil,
+		"purge_at":           nil,
+		"deleted_by":         nil,
+		"client_hidden":      false,
+		"client_unlisted_at": nil,
 	}
 
 	if err := s.store.UpdateTenant(c.Request.Context(), tenant.ID, updates); err != nil {
@@ -984,11 +1076,6 @@ func (s *Server) permanentDeleteTenant(c *gin.Context) {
 		return
 	}
 
-	if user.Role != models.RoleOwnerAdmin {
-		c.JSON(http.StatusForbidden, gin.H{"error": "only the platform owner can permanently wipe stores and directory files"})
-		return
-	}
-
 	tenantID, err := primitive.ObjectIDFromHex(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant id"})
@@ -1001,21 +1088,90 @@ func (s *Server) permanentDeleteTenant(c *gin.Context) {
 		return
 	}
 
-	s.performPermanentTenantDelete(c, tenant)
+	if tenant.OwnerUserID != user.ID && user.Role != models.RoleOwnerAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+
+	if user.Role == models.RoleOwnerAdmin {
+		s.performPermanentTenantDelete(c, tenant)
+		return
+	}
+	s.unlistTenantForClient(c, tenant, user.ID)
+}
+
+func (s *Server) unlistTenant(c *gin.Context) {
+	user, ok := middleware.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	tenantID, err := primitive.ObjectIDFromHex(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant id"})
+		return
+	}
+	tenant, err := s.store.GetTenantByID(c.Request.Context(), tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "store not found"})
+		return
+	}
+	if tenant.OwnerUserID != user.ID && user.Role != models.RoleOwnerAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	s.unlistTenantForClient(c, tenant, user.ID)
+}
+
+func (s *Server) unlistTenantForClient(c *gin.Context, tenant *models.Tenant, actorID primitive.ObjectID) {
+	now := time.Now()
+	deletedAt := now
+	if tenant.DeletedAt != nil {
+		deletedAt = *tenant.DeletedAt
+	}
+	purgeAt := deletedAt.Add(30 * 24 * time.Hour)
+	if tenant.PurgeAt != nil {
+		purgeAt = *tenant.PurgeAt
+	}
+	updates := bson.M{
+		"is_deleted":         true,
+		"status":             models.TenantStatusDeleted,
+		"deleted_at":         &deletedAt,
+		"purge_at":           &purgeAt,
+		"deleted_by":         &actorID,
+		"client_hidden":      true,
+		"client_unlisted_at": &now,
+	}
+	if err := s.store.UpdateTenant(c.Request.Context(), tenant.ID, updates); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove website: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "Website removed from your account and archived under platform retention.",
+		"unlisted": true,
+		"deleted":  true,
+		"purge_at": purgeAt,
+	})
 }
 
 func (s *Server) performPermanentTenantDelete(c *gin.Context, tenant *models.Tenant) {
 	ctx := c.Request.Context()
 
-	// 1. Delete associated directories and files from disk
+	// 1. Delete associated directories and files from disk (dev + published)
 	deletedDirs := make([]string, 0)
 	candidateDirs := []string{
+		s.tenantRootDir(tenant.Subdomain),
 		fmt.Sprintf("/var/www/tenants/%s", tenant.Subdomain),
 		fmt.Sprintf("/var/www/%s", tenant.Subdomain),
 		fmt.Sprintf("/tmp/tenants/%s", tenant.Subdomain),
 		fmt.Sprintf("tenants/%s", tenant.Subdomain),
 	}
+	seenDir := map[string]bool{}
 	for _, dir := range candidateDirs {
+		if seenDir[dir] {
+			continue
+		}
+		seenDir[dir] = true
 		if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
 			if err := os.RemoveAll(dir); err == nil {
 				deletedDirs = append(deletedDirs, dir)
@@ -1023,22 +1179,10 @@ func (s *Server) performPermanentTenantDelete(c *gin.Context, tenant *models.Ten
 		}
 	}
 
-	// 2. Cloudflare API cleanup: delete custom domain and pages project
-	cfToken := os.Getenv("CLOUDFLARE_API_TOKEN")
-	cfAccount := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
-	if siteSettings, err := s.loadSiteSettings(ctx); err == nil {
-		if strings.TrimSpace(siteSettings.CloudflareAPIToken) != "" {
-			cfToken = strings.TrimSpace(siteSettings.CloudflareAPIToken)
-		}
-		if strings.TrimSpace(siteSettings.CloudflareAccountID) != "" {
-			cfAccount = strings.TrimSpace(siteSettings.CloudflareAccountID)
-		}
+	// 2. Clean up VPS Nginx vhost & SSL cert if custom domain was configured
+	if strings.TrimSpace(tenant.CustomDomain) != "" {
+		_ = s.removeNginxTenantVhost(tenant.CustomDomain)
 	}
-	proj := tenant.CloudflareProject
-	if proj == "" {
-		proj = tenant.Subdomain
-	}
-	go deleteCloudflarePagesProject(cfToken, cfAccount, proj, tenant.CustomDomain)
 
 	// 3. Delete database records: form submissions, store customers, and tenant record
 	if err := s.store.PurgeTenantData(ctx, tenant.ID); err != nil {
@@ -1107,6 +1251,14 @@ var astroEditorAPIPrefixes = []string{
 	"/api/upload",
 }
 
+func isPublicTenantFormSubmit(c *gin.Context, path string) bool {
+	if c == nil || c.Request == nil {
+		return false
+	}
+	clean := strings.TrimRight(strings.ToLower(strings.TrimSpace(path)), "/")
+	return c.Request.Method == http.MethodPost && clean == "/api/forms/submit"
+}
+
 func isAstroEditorAPI(path string) bool {
 	p := strings.ToLower(path)
 	for _, prefix := range astroEditorAPIPrefixes {
@@ -1136,11 +1288,61 @@ func isAstroEditorAsset(path string) bool {
 func isEditorOrBuilderPath(path string) bool {
 	p := strings.ToLower(path)
 	if p == "/editor" || strings.HasPrefix(p, "/editor/") ||
+		p == "/preview" || strings.HasPrefix(p, "/preview/") ||
 		strings.Contains(p, "builder") || strings.Contains(p, "edit-") ||
 		strings.HasSuffix(p, "-editor") || strings.HasSuffix(p, "-builder") {
 		return true
 	}
 	return false
+}
+
+func isSensitiveEditorAsset(path string) bool {
+	p := strings.ToLower(path)
+	return strings.HasPrefix(p, "/editor-") || strings.HasPrefix(p, "/public/editor-")
+}
+
+func (s *Server) requireAuthenticatedTenantEditorAccess(c *gin.Context, redirectToLogin bool) (*middleware.UserContext, *models.Tenant, bool) {
+	user, ok := s.authenticateUserFromRequest(c)
+	if !ok {
+		if redirectToLogin {
+			c.Redirect(http.StatusFound, "/login?redirect="+url.QueryEscape(c.Request.RequestURI))
+		} else {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		}
+		c.Abort()
+		return nil, nil, false
+	}
+
+	tenantSlug := extractEditorTenantSlug(c)
+	if tenantSlug != "" && s.store != nil {
+		tenant, err := s.store.GetTenantBySubdomain(c.Request.Context(), tenantSlug)
+		if err != nil || tenant == nil {
+			c.String(http.StatusNotFound, "404 store not found")
+			c.Abort()
+			return user, nil, false
+		}
+		if tenant.OwnerUserID != user.ID && user.Role != models.RoleOwnerAdmin {
+			if redirectToLogin {
+				c.String(http.StatusForbidden, "403 Forbidden: You do not have permission to edit this store.")
+			} else {
+				c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: store ownership required"})
+			}
+			c.Abort()
+			return user, nil, false
+		}
+		return user, tenant, true
+	}
+
+	if tenantSlug == "" && user.Role != models.RoleOwnerAdmin {
+		if redirectToLogin {
+			c.String(http.StatusForbidden, "403 Forbidden: Please open an editor for a store you own.")
+		} else {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: tenant selection required"})
+		}
+		c.Abort()
+		return user, nil, false
+	}
+	return user, nil, true
 }
 
 func (s *Server) authenticateUserFromRequest(c *gin.Context) (*middleware.UserContext, bool) {
@@ -1201,34 +1403,99 @@ func (s *Server) tenantHostMiddleware() gin.HandlerFunc {
 
 		// Exact matches for the main platform (bugmega.com)
 		if host == baseDomain || host == "www."+baseDomain || host == "localhost" || host == "127.0.0.1" {
-			// 1. Editor and builder HTML routes: require authentication and store ownership!
-			if isEditorOrBuilderPath(path) {
+			// 0. Theme Market live preview (/preview/:theme/...): require authenticated user (no tenant selection required).
+			lowerPath := strings.ToLower(path)
+			if lowerPath == "/preview" || strings.HasPrefix(lowerPath, "/preview/") {
 				user, ok := s.authenticateUserFromRequest(c)
 				if !ok {
 					c.Redirect(http.StatusFound, "/login?redirect="+url.QueryEscape(c.Request.RequestURI))
 					c.Abort()
 					return
 				}
-
-				tenantSlug := strings.TrimSpace(c.Query("tenant"))
-				if tenantSlug != "" {
-					tenant, err := s.store.GetTenantBySubdomain(c.Request.Context(), tenantSlug)
-					if err == nil && tenant != nil {
-						if tenant.OwnerUserID != user.ID && user.Role != models.RoleOwnerAdmin {
-							c.String(http.StatusForbidden, "403 Forbidden: You do not have permission to edit this store.")
-							c.Abort()
-							return
+				if htmlDoc, ok := s.tryRenderUploadedThemePreview(path); ok {
+					c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(htmlDoc))
+					c.Abort()
+					return
+				}
+				if tenantSlug := extractEditorTenantSlug(c); tenantSlug != "" && s.store != nil {
+					if tenant, err := s.store.GetTenantBySubdomain(c.Request.Context(), strings.ToLower(tenantSlug)); err == nil && tenant != nil && !tenant.IsDeleted {
+						if tenant.OwnerUserID == user.ID || user.Role == models.RoleOwnerAdmin {
+							setProxyTenantContext(c, tenant)
+							c.Set("proxyTenantMode", "dev")
 						}
 					}
 				}
-
+				if !isPortOpen("127.0.0.1:4321") {
+					s.ensureAstroRunning()
+				}
 				s.proxyToAstro(c, "http://127.0.0.1:4321", path)
 				c.Abort()
 				return
 			}
 
-			// 2. Editor static assets & editor API endpoints on bugmega.com: proxy to Astro
-			if isAstroEditorAsset(path) || isAstroEditorAPI(path) {
+			// 1. Editor and builder HTML routes: require authentication and store ownership!
+			if isEditorOrBuilderPath(path) {
+				_, tenant, ok := s.requireAuthenticatedTenantEditorAccess(c, true)
+				if !ok {
+					return
+				}
+				if tenant != nil {
+					setProxyTenantContext(c, tenant)
+				}
+				c.Set("proxyTenantMode", "dev")
+				s.proxyToAstro(c, "http://127.0.0.1:4321", path)
+				c.Abort()
+				return
+			}
+
+			// 1b. Tenant dev uploads served cleanly while editing in the builder, or platform uploads from s.cfg.UploadDir
+			if strings.HasPrefix(strings.ToLower(path), "/uploads/") {
+				relUpload := strings.TrimPrefix(filepath.Clean(path), "/uploads/")
+				relUpload = strings.TrimPrefix(relUpload, string(filepath.Separator))
+				if relUpload != "" && relUpload != "." && !strings.Contains(relUpload, "..") {
+					if tenantSlug := extractEditorTenantSlug(c); tenantSlug != "" && validSubdomainRegex.MatchString(strings.ToLower(tenantSlug)) {
+						devUpload := filepath.Join(s.tenantDevUploadsDir(tenantSlug), relUpload)
+						if info, err := os.Stat(devUpload); err == nil && !info.IsDir() {
+							c.File(devUpload)
+							c.Abort()
+							return
+						}
+					}
+					uploadRoot := strings.TrimSpace(s.cfg.UploadDir)
+					if uploadRoot == "" {
+						uploadRoot = "uploads"
+					}
+					platformUpload := filepath.Join(uploadRoot, relUpload)
+					if info, err := os.Stat(platformUpload); err == nil && !info.IsDir() {
+						c.Next()
+						return
+					}
+				}
+			}
+
+			// 2. Editor static scripts and editor APIs on bugmega.com: require authentication & store ownership (except public POST /api/forms/submit)
+			if isSensitiveEditorAsset(path) || (isAstroEditorAPI(path) && !isPublicTenantFormSubmit(c, path)) {
+				_, tenant, ok := s.requireAuthenticatedTenantEditorAccess(c, false)
+				if !ok {
+					return
+				}
+				if tenant != nil {
+					setProxyTenantContext(c, tenant)
+				}
+				c.Set("proxyTenantMode", "dev")
+				s.proxyToAstro(c, "http://127.0.0.1:4321", path)
+				c.Abort()
+				return
+			}
+
+			// 3. Remaining Astro storefront assets (fonts, themes, nav-menu, _astro, public form submit)
+			if isAstroEditorAsset(path) || isPublicTenantFormSubmit(c, path) {
+				if tenantSlug := extractEditorTenantSlug(c); tenantSlug != "" && s.store != nil {
+					if tenant, err := s.store.GetTenantBySubdomain(c.Request.Context(), tenantSlug); err == nil && tenant != nil {
+						setProxyTenantContext(c, tenant)
+					}
+				}
+				c.Set("proxyTenantMode", "dev")
 				s.proxyToAstro(c, "http://127.0.0.1:4321", path)
 				c.Abort()
 				return
@@ -1249,6 +1516,7 @@ func (s *Server) tenantHostMiddleware() gin.HandlerFunc {
 
 		// Check if it's a tenant subdomain: <slug>.<baseDomain>
 		var tenant *models.Tenant
+		isCustomDomain := false
 		if strings.HasSuffix(host, "."+baseDomain) {
 			subdomain := strings.TrimSuffix(host, "."+baseDomain)
 			if !reservedSubdomains[subdomain] {
@@ -1259,11 +1527,12 @@ func (s *Server) tenantHostMiddleware() gin.HandlerFunc {
 			}
 		}
 
-		// Or check if it's a custom domain
+		// Or check if it's a custom domain (clientdomain.com)
 		if tenant == nil {
 			t, err := s.store.GetTenantByCustomDomain(c.Request.Context(), host)
 			if err == nil && t != nil && !t.IsDeleted && t.Status != models.TenantStatusDeleted {
 				tenant = t
+				isCustomDomain = true
 			}
 		}
 
@@ -1273,116 +1542,172 @@ func (s *Server) tenantHostMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// It is a tenant request! Serve the client store
-		s.serveTenantWebsite(c, tenant)
+		// It is a tenant request! Serve the client website (public subdomain or published custom domain)
+		s.serveTenantWebsite(c, tenant, isCustomDomain)
 		c.Abort()
 	}
 }
 
-func (s *Server) serveTenantWebsite(c *gin.Context, tenant *models.Tenant) {
+func (s *Server) serveTenantWebsite(c *gin.Context, tenant *models.Tenant, isCustomDomain bool) {
 	reqPath := c.Request.URL.Path
 	if reqPath == "" {
 		reqPath = "/"
 	}
+	lowerPath := strings.ToLower(reqPath)
 
-	// CRITICAL SECURITY: Block all editor and builder routes on the public storefront!
-	if isEditorOrBuilderPath(reqPath) || isAstroEditorAPI(reqPath) {
+	// CRITICAL SECURITY: Block all editor, builder, preview, and editor-asset/API routes on BOTH subdomains and custom domains!
+	if isEditorOrBuilderPath(reqPath) ||
+		(isAstroEditorAPI(reqPath) && !isPublicTenantFormSubmit(c, reqPath)) ||
+		strings.HasPrefix(lowerPath, "/preview") ||
+		strings.HasPrefix(lowerPath, "/editor-") ||
+		strings.HasPrefix(lowerPath, "/public/editor-") ||
+		isEditorPublishArtifact(strings.TrimPrefix(lowerPath, "/")) {
 		c.String(http.StatusNotFound, "404 page not found")
 		c.Abort()
 		return
 	}
 
-	// 0. Auto-provision static dist from fastpress_ast if not already created
-	s.autoProvisionTenantStaticDist(tenant.Subdomain, tenant.ActiveTheme)
+	pubDistDir := s.tenantPublishedDistDir(tenant.Subdomain)
+	pubDataDir := s.tenantPublishedDataDir(tenant.Subdomain)
+	pubUploadsDir := s.tenantPublishedUploadsDir(tenant.Subdomain)
+	devUploadsDir := s.tenantDevUploadsDir(tenant.Subdomain)
 
-	// 1. Check if tenant static dist directory exists on disk
-	candidateDirs := []string{
-		fmt.Sprintf("/var/www/tenants/%s/dist", tenant.Subdomain),
-		fmt.Sprintf("/var/www/tenants/%s", tenant.Subdomain),
-		fmt.Sprintf("tenants/%s/dist", tenant.Subdomain),
-	}
-
-	for _, distDir := range candidateDirs {
-		if fi, err := os.Stat(distDir); err == nil && fi.IsDir() {
-			cleanSubPath := strings.TrimPrefix(filepath.Clean(reqPath), "/")
-			if cleanSubPath != "" && cleanSubPath != "." {
-				targetFile := filepath.Join(distDir, cleanSubPath)
-				if info, err := os.Stat(targetFile); err == nil && !info.IsDir() {
-					c.File(targetFile)
+	// Serve tenant uploads: custom domains use published/ uploads only; subdomains can also load dev/uploads.
+	if strings.HasPrefix(lowerPath, "/uploads/") {
+		relUpload := strings.TrimPrefix(filepath.Clean(reqPath), "/uploads/")
+		relUpload = strings.TrimPrefix(relUpload, string(filepath.Separator))
+		if relUpload != "" && relUpload != "." && !strings.Contains(relUpload, "..") {
+			uploadDirs := []string{devUploadsDir, filepath.Join(pubDistDir, "uploads"), pubUploadsDir}
+			if isCustomDomain {
+				uploadDirs = []string{filepath.Join(pubDistDir, "uploads"), pubUploadsDir}
+			}
+			for _, dir := range uploadDirs {
+				candidate := filepath.Join(dir, relUpload)
+				if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+					c.File(candidate)
 					return
 				}
 			}
-			indexFile := filepath.Join(distDir, "index.html")
-			if _, err := os.Stat(indexFile); err == nil {
-				c.File(indexFile)
-				return
-			}
 		}
-	}
-
-	// 2. Ensure Astro SSR server is running on port 4321
-	if !isPortOpen("127.0.0.1:4321") {
-		s.ensureAstroRunning()
-	}
-
-	astroURL := "http://127.0.0.1:4321"
-	if isPortOpen("127.0.0.1:4321") {
-		theme := tenant.ActiveTheme
-		if theme == "" {
-			theme = "furnisite"
-		}
-
-		astroPath := reqPath
-		if strings.HasPrefix(reqPath, "/_astro") || strings.HasPrefix(reqPath, "/images") || strings.HasPrefix(reqPath, "/css") || strings.HasPrefix(reqPath, "/js") || strings.HasPrefix(reqPath, "/favicon") {
-			astroPath = reqPath
-		} else if reqPath == "/" {
-			astroPath = fmt.Sprintf("/preview/%s", theme)
-		} else if !strings.HasPrefix(reqPath, "/preview") {
-			astroPath = fmt.Sprintf("/preview/%s%s", theme, reqPath)
-		}
-
-		s.proxyToAstro(c, astroURL, astroPath)
+		c.Status(http.StatusNotFound)
 		return
 	}
 
-	// 3. Fallback: render store landing with theme info
-	c.Header("Content-Type", "text/html; charset=utf-8")
-	themeName := tenant.ActiveTheme
-	if themeName == "" {
-		themeName = "furnisite"
+	if !isCustomDomain {
+		// Subdomain (<sub >.bugmega.com): immediately accessible by everyone publicly (no Draft placeholder),
+		// rendered with X-Tenant-Mode=subdomain (loads dev/data while blocking ALL editor/builder pages & APIs).
+		if !isPortOpen("127.0.0.1:4321") {
+			s.ensureAstroRunning()
+		}
+		if isPortOpen("127.0.0.1:4321") {
+			setProxyTenantContext(c, tenant)
+			c.Set("proxyTenantMode", "subdomain")
+			s.proxyToAstro(c, "http://127.0.0.1:4321", reqPath)
+			return
+		}
+		c.String(http.StatusServiceUnavailable, "Website preview service is starting. Please refresh in a moment.")
+		return
 	}
-	html := fmt.Sprintf(`<!DOCTYPE html>
+
+	// Custom domain (clientdomain.com): require an actual published snapshot! Never serve dev/ editing files.
+	_, distErr := os.Stat(pubDistDir)
+	_, dataErr := os.Stat(pubDataDir)
+	if tenant.PublishedAt == nil && distErr != nil && dataErr != nil {
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		themeName := tenant.ActiveTheme
+		if themeName == "" {
+			themeName = "default"
+		}
+		html := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>%s | Storefront</title>
+  <title>%s | Coming Soon</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 40px 20px; background: #f8fafc; color: #1e293b; text-align: center; }
     .card { max-width: 640px; margin: 60px auto; background: white; padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; }
     h1 { margin: 0 0 10px 0; color: #0f172a; font-size: 2rem; }
     p { color: #64748b; font-size: 1.05rem; line-height: 1.6; margin: 8px 0; }
     .badge { display: inline-block; background: #dbeafe; color: #1d4ed8; padding: 6px 14px; border-radius: 999px; font-size: 0.85rem; font-weight: 600; text-transform: uppercase; margin-bottom: 20px; }
-    .info-box { background: #f1f5f9; border-radius: 8px; padding: 16px; margin: 20px 0; text-align: left; font-size: 0.9rem; }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="badge">Theme: %s</div>
+    <div class="badge">Theme: %s · Pending Domain Publish</div>
     <h1>%s</h1>
-    <p>Welcome to our storefront! The store is provisioned and ready.</p>
-    <div class="info-box">
-      <strong>Store Details:</strong><br>
-      • Subdomain: <code>%s.bugmega.com</code><br>
-      • Active Theme: <code>%s</code><br>
-      • Status: <code>%s</code>
-    </div>
-    <p><small style="color:#94a3b8;">Click "Publish" in the Website Builder or start the Astro service on port 4321 to render the live storefront.</small></p>
+    <p>This custom domain has not been published yet.</p>
+    <p><small style="color:#94a3b8;">Owner: click <strong>Publish</strong> in the Website Builder to push your site live to this domain.</small></p>
   </div>
 </body>
-</html>`, template.HTMLEscapeString(tenant.CompanyName), template.HTMLEscapeString(themeName), template.HTMLEscapeString(tenant.CompanyName), template.HTMLEscapeString(tenant.Subdomain), template.HTMLEscapeString(themeName), template.HTMLEscapeString(string(tenant.Status)))
+</html>`, template.HTMLEscapeString(tenant.CompanyName), template.HTMLEscapeString(themeName), template.HTMLEscapeString(tenant.CompanyName))
+		c.String(http.StatusOK, html)
+		return
+	}
 
-	c.String(http.StatusOK, html)
+	// 1. Serve static files strictly from /var/www/tenants/<subdomain>/published/dist
+	if fi, err := os.Stat(pubDistDir); err == nil && fi.IsDir() {
+		cleanSubPath := strings.TrimPrefix(filepath.Clean(reqPath), "/")
+		if cleanSubPath == "" || cleanSubPath == "." {
+			indexFile := filepath.Join(pubDistDir, "index.html")
+			if _, err := os.Stat(indexFile); err == nil {
+				c.File(indexFile)
+				return
+			}
+		} else if !strings.Contains(cleanSubPath, "..") {
+			targetFile := filepath.Join(pubDistDir, cleanSubPath)
+			if info, err := os.Stat(targetFile); err == nil {
+				if !info.IsDir() {
+					c.File(targetFile)
+					return
+				}
+				subIndex := filepath.Join(targetFile, "index.html")
+				if _, err := os.Stat(subIndex); err == nil {
+					c.File(subIndex)
+					return
+				}
+			}
+		}
+	}
+
+	// 2. Dynamic storefront fallback (only in published mode, reading strictly from published/data)
+	if !isPortOpen("127.0.0.1:4321") {
+		s.ensureAstroRunning()
+	}
+	if isPortOpen("127.0.0.1:4321") {
+		setProxyTenantContext(c, tenant)
+		c.Set("proxyTenantMode", "published")
+		s.proxyToAstro(c, "http://127.0.0.1:4321", reqPath)
+		return
+	}
+
+	c.String(http.StatusNotFound, "404 page not found")
+}
+
+func extractEditorTenantSlug(c *gin.Context) string {
+	if tenant := strings.TrimSpace(c.Query("tenant")); tenant != "" {
+		return tenant
+	}
+	if ref := strings.TrimSpace(c.Request.Referer()); ref != "" {
+		if u, err := url.Parse(ref); err == nil {
+			if tenant := strings.TrimSpace(u.Query().Get("tenant")); tenant != "" {
+				return tenant
+			}
+		}
+	}
+	return ""
+}
+
+func setProxyTenantContext(c *gin.Context, tenant *models.Tenant) {
+	if c == nil || tenant == nil {
+		return
+	}
+	c.Set("proxyTenantSubdomain", tenant.Subdomain)
+	theme := strings.ToLower(strings.TrimSpace(tenant.ActiveTheme))
+	if theme == "" {
+		theme = "default"
+	}
+	c.Set("proxyTenantTheme", theme)
 }
 
 func (s *Server) proxyToAstro(c *gin.Context, targetURL, rewritePath string) {
@@ -1392,6 +1717,13 @@ func (s *Server) proxyToAstro(c *gin.Context, targetURL, rewritePath string) {
 		return
 	}
 
+	tenantSub := strings.TrimSpace(c.GetString("proxyTenantSubdomain"))
+	if tenantSub == "" {
+		tenantSub = strings.TrimSpace(c.Query("tenant"))
+	}
+	tenantTheme := strings.TrimSpace(c.GetString("proxyTenantTheme"))
+	tenantMode := strings.TrimSpace(c.GetString("proxyTenantMode"))
+
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	origDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
@@ -1399,8 +1731,14 @@ func (s *Server) proxyToAstro(c *gin.Context, targetURL, rewritePath string) {
 		req.Host = target.Host
 		req.Header.Set("X-Forwarded-Host", c.Request.Host)
 		req.Header.Set("X-Forwarded-Proto", "https")
-		if tenant := c.Query("tenant"); tenant != "" {
-			req.Header.Set("X-Tenant-Subdomain", tenant)
+		if tenantSub != "" {
+			req.Header.Set("X-Tenant-Subdomain", tenantSub)
+		}
+		if tenantTheme != "" {
+			req.Header.Set("X-Tenant-Theme", tenantTheme)
+		}
+		if tenantMode != "" {
+			req.Header.Set("X-Tenant-Mode", tenantMode)
 		}
 		if rewritePath != "" {
 			req.URL.Path = rewritePath

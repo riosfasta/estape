@@ -3,10 +3,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getProducts } from '../data/products';
 
+import { getDataFile } from '../core/tenantContext';
 export const prerender = false;
 
-const PAGES_FILE = path.join(process.cwd(), 'src', 'data', 'pages.json');
-const POSTS_FILE = path.join(process.cwd(), 'src', 'data', 'posts.json');
 
 function formatDate(dateStr?: string | null): string {
   if (!dateStr) return new Date().toISOString().split('T')[0];
@@ -51,7 +50,7 @@ export const GET: APIRoute = async ({ url }) => {
     // 1. Baca Pages
     let pagesData: Record<string, any> = {};
     try {
-      const rawPages = await fs.readFile(PAGES_FILE, 'utf-8');
+      const rawPages = await fs.readFile(getDataFile('pages.json'), 'utf-8');
       pagesData = JSON.parse(rawPages);
     } catch {
       pagesData = {};
@@ -60,7 +59,7 @@ export const GET: APIRoute = async ({ url }) => {
     // 2. Baca Posts
     let postsData: any[] = [];
     try {
-      const rawPosts = await fs.readFile(POSTS_FILE, 'utf-8');
+      const rawPosts = await fs.readFile(getDataFile('posts.json'), 'utf-8');
       postsData = JSON.parse(rawPosts);
       if (!Array.isArray(postsData)) postsData = [];
     } catch {

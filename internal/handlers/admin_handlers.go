@@ -23,6 +23,8 @@ import (
 )
 
 func (s *Server) adminUsers(c *gin.Context) {
+	ctx := c.Request.Context()
+	pag := s.parseListPagination(c)
 	filter := bson.M{}
 	if role := firstNonEmpty(strings.TrimSpace(c.Query("level")), strings.TrimSpace(c.Query("role"))); role != "" {
 		filter["role"] = role
@@ -38,31 +40,84 @@ func (s *Server) adminUsers(c *gin.Context) {
 			{"username": bson.M{"$regex": pattern, "$options": "i"}},
 		}
 	}
-	cursor, err := s.store.C("users").Find(c.Request.Context(), filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(500))
+	membership := strings.TrimSpace(c.Query("membership"))
+	payment := strings.ToLower(strings.TrimSpace(c.Query("payment")))
+
+	if membership == "" && payment == "" {
+		total, err := s.store.C("users").CountDocuments(ctx, filter)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count users"})
+			return
+		}
+		meta := buildPaginationMeta(pag.Page, pag.Limit, total)
+		skip := int64((meta.Page - 1) * meta.Limit)
+		cursor, err := s.store.C("users").Find(
+			ctx,
+			filter,
+			options.Find().
+				SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}).
+				SetSkip(skip).
+				SetLimit(int64(meta.Limit)),
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load users"})
+			return
+		}
+		defer cursor.Close(ctx)
+		var users []models.User
+		if err := cursor.All(ctx, &users); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not decode users"})
+			return
+		}
+		if users == nil {
+			users = []models.User{}
+		}
+		rows := s.adminUserRows(ctx, users)
+		c.JSON(http.StatusOK, gin.H{
+			"users":         rows,
+			"pagination":    meta,
+			"default_limit": pag.DefaultLimit,
+		})
+		return
+	}
+
+	// When computed membership/payment filters are requested, hydrate in bounded batches until we have enough to paginate.
+	cursor, err := s.store.C("users").Find(
+		ctx,
+		filter,
+		options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}).SetLimit(1000),
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load users"})
 		return
 	}
-	defer cursor.Close(c.Request.Context())
+	defer cursor.Close(ctx)
 	var users []models.User
-	if err := cursor.All(c.Request.Context(), &users); err != nil {
+	if err := cursor.All(ctx, &users); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not decode users"})
 		return
 	}
-	if users == nil {
-		users = []models.User{}
-	}
-	rows := s.adminUserRows(c.Request.Context(), users)
-	if membership := strings.TrimSpace(c.Query("membership")); membership != "" {
-		filtered := []gin.H{}
-		for _, row := range rows {
-			if row["membership_status"] == membership {
-				filtered = append(filtered, row)
+	allRows := s.adminUserRows(ctx, users)
+	filtered := make([]gin.H, 0, len(allRows))
+	for _, row := range allRows {
+		if membership != "" && row["membership_status"] != membership {
+			continue
+		}
+		if payment != "" {
+			methods, _ := row["payment_methods"].([]string)
+			paymentStr := strings.ToLower(strings.Join(methods, " "))
+			if !strings.Contains(paymentStr, payment) {
+				continue
 			}
 		}
-		rows = filtered
+		filtered = append(filtered, row)
 	}
-	c.JSON(http.StatusOK, gin.H{"users": rows})
+	pageRows, meta := paginateSlice(filtered, pag.Page, pag.Limit)
+	c.JSON(http.StatusOK, gin.H{
+		"users":         pageRows,
+		"pagination":    meta,
+		"default_limit": pag.DefaultLimit,
+	})
 }
 
 func (s *Server) adminCreateUser(c *gin.Context) {
@@ -1470,6 +1525,30 @@ func (s *Server) updateSettings(c *gin.Context) {
 	} else if req.ClearCloudflareAPIToken {
 		unset["cloudflare_api_token"] = ""
 	}
+	if req.CustomDomainMonthlyCents != nil {
+		if *req.CustomDomainMonthlyCents < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "custom_domain_monthly_cents cannot be negative"})
+			return
+		}
+		set["custom_domain_monthly_cents"] = *req.CustomDomainMonthlyCents
+		set["custom_domain_pricing_set"] = true
+	}
+	if req.CustomDomainYearlyCents != nil {
+		if *req.CustomDomainYearlyCents < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "custom_domain_yearly_cents cannot be negative"})
+			return
+		}
+		set["custom_domain_yearly_cents"] = *req.CustomDomainYearlyCents
+		set["custom_domain_pricing_set"] = true
+	}
+	if req.DefaultListLimit != nil {
+		if *req.DefaultListLimit < 1 || *req.DefaultListLimit > MaxListLimitCap {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("default_list_limit must be between 1 and %d", MaxListLimitCap)})
+			return
+		}
+		set["default_list_limit"] = *req.DefaultListLimit
+		set["default_list_limit_set"] = true
+	}
 	update := bson.M{"$set": set}
 	if len(unset) > 0 {
 		update["$unset"] = unset
@@ -1485,25 +1564,55 @@ func (s *Server) updateSettings(c *gin.Context) {
 }
 
 func (s *Server) adminPages(c *gin.Context) {
+	ctx := c.Request.Context()
 	userCtx, _ := currentUser(c)
-	_ = s.ensureEditableHomePage(c.Request.Context(), userCtx.ID)
-	cursor, err := s.store.C("static_pages").Find(c.Request.Context(), bson.M{}, options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}}))
+	_ = s.ensureEditableHomePage(ctx, userCtx.ID)
+	pag := s.parseListPagination(c)
+	filter := bson.M{}
+	if q := strings.TrimSpace(c.Query("q")); q != "" {
+		pat := regexp.QuoteMeta(q)
+		filter["$or"] = []bson.M{
+			{"title": bson.M{"$regex": pat, "$options": "i"}},
+			{"slug": bson.M{"$regex": pat, "$options": "i"}},
+		}
+	}
+	total, err := s.store.C("static_pages").CountDocuments(ctx, filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count pages"})
+		return
+	}
+	meta := buildPaginationMeta(pag.Page, pag.Limit, total)
+	skip := int64((meta.Page - 1) * meta.Limit)
+	cursor, err := s.store.C("static_pages").Find(
+		ctx,
+		filter,
+		options.Find().
+			SetSort(bson.D{{Key: "updated_at", Value: -1}, {Key: "_id", Value: -1}}).
+			SetSkip(skip).
+			SetLimit(int64(meta.Limit)),
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load pages"})
 		return
 	}
-	defer cursor.Close(c.Request.Context())
+	defer cursor.Close(ctx)
 	var pages []models.StaticPage
-	if err := cursor.All(c.Request.Context(), &pages); err != nil {
+	if err := cursor.All(ctx, &pages); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not decode pages"})
 		return
 	}
 	if pages == nil {
 		pages = []models.StaticPage{}
 	}
-	settings, _ := s.loadSiteSettings(c.Request.Context())
+	settings, _ := s.loadSiteSettings(ctx)
 	settings = s.settingsWithConfigFallback(settings)
-	c.JSON(http.StatusOK, gin.H{"pages": pages, "nav_items": settings.PublicNavItems, "nav_settings": s.publicNavSettingsPayload(settings)})
+	c.JSON(http.StatusOK, gin.H{
+		"pages":         pages,
+		"nav_items":     settings.PublicNavItems,
+		"nav_settings":  s.publicNavSettingsPayload(settings),
+		"pagination":    meta,
+		"default_limit": pag.DefaultLimit,
+	})
 }
 
 func (s *Server) ensureEditableHomePage(ctx context.Context, userID primitive.ObjectID) error {

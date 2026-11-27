@@ -2,9 +2,9 @@ import type { APIRoute } from 'astro';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { getDataFile } from '../../core/tenantContext';
 export const prerender = false;
 
-const FONTS_FILE = path.join(process.cwd(), 'src', 'data', 'fonts.json');
 const FONTS_DIR = path.join(process.cwd(), 'public', 'fonts');
 
 interface CustomFont {
@@ -22,7 +22,7 @@ interface CustomFont {
 
 async function readFonts(): Promise<CustomFont[]> {
   try {
-    const raw = await fs.readFile(FONTS_FILE, 'utf-8');
+    const raw = await fs.readFile(getDataFile('fonts.json'), 'utf-8');
     return JSON.parse(raw);
   } catch {
     const defaults: CustomFont[] = [
@@ -41,13 +41,13 @@ async function readFonts(): Promise<CustomFont[]> {
         url: 'https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap',
       },
     ];
-    await fs.writeFile(FONTS_FILE, JSON.stringify(defaults, null, 2), 'utf-8');
+    await fs.writeFile(getDataFile('fonts.json'), JSON.stringify(defaults, null, 2), 'utf-8');
     return defaults;
   }
 }
 
 async function writeFonts(fonts: CustomFont[]) {
-  await fs.writeFile(FONTS_FILE, JSON.stringify(fonts, null, 2), 'utf-8');
+  await fs.writeFile(getDataFile('fonts.json'), JSON.stringify(fonts, null, 2), 'utf-8');
 }
 
 export const GET: APIRoute = async () => {

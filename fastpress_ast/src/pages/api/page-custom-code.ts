@@ -2,12 +2,9 @@ import type { APIRoute } from 'astro';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { getDataFile } from '../../core/tenantContext';
 export const prerender = false;
 
-const PAGES_FILE = path.join(process.cwd(), 'src', 'data', 'pages.json');
-const HOMEPAGE_FILE = path.join(process.cwd(), 'src', 'data', 'savedHomepage.json');
-const POSTS_FILE = path.join(process.cwd(), 'src', 'data', 'posts.json');
-const PRODUCTS_FILE = path.join(process.cwd(), 'src', 'data', 'products.json');
 
 const EMPTY_CODE = {
   headScripts: '',
@@ -25,7 +22,7 @@ export const GET: APIRoute = async ({ url }) => {
     if (type === 'post') {
       let posts: any[] = [];
       try {
-        const raw = await fs.readFile(POSTS_FILE, 'utf-8');
+        const raw = await fs.readFile(getDataFile('posts.json'), 'utf-8');
         posts = JSON.parse(raw);
       } catch {}
       const post = posts.find((p: any) => p.slug === rawSlug || p.id === rawSlug);
@@ -45,7 +42,7 @@ export const GET: APIRoute = async ({ url }) => {
     if (type === 'product') {
       let products: any[] = [];
       try {
-        const raw = await fs.readFile(PRODUCTS_FILE, 'utf-8');
+        const raw = await fs.readFile(getDataFile('products.json'), 'utf-8');
         products = JSON.parse(raw);
       } catch {}
       const product = products.find((p: any) => p.slug === rawSlug || p.id === rawSlug);
@@ -66,7 +63,7 @@ export const GET: APIRoute = async ({ url }) => {
     const pageKey = rawSlug === '/' || rawSlug === '' ? 'home' : rawSlug;
     let pages: any = {};
     try {
-      const raw = await fs.readFile(PAGES_FILE, 'utf-8');
+      const raw = await fs.readFile(getDataFile('pages.json'), 'utf-8');
       pages = JSON.parse(raw);
     } catch {}
 
@@ -114,7 +111,7 @@ export const POST: APIRoute = async ({ request }) => {
     if (type === 'post') {
       let posts: any[] = [];
       try {
-        const raw = await fs.readFile(POSTS_FILE, 'utf-8');
+        const raw = await fs.readFile(getDataFile('posts.json'), 'utf-8');
         posts = JSON.parse(raw);
       } catch {}
 
@@ -128,7 +125,7 @@ export const POST: APIRoute = async ({ request }) => {
 
       posts[postIdx].customCode = customCode;
       posts[postIdx].updatedAt = new Date().toISOString();
-      await fs.writeFile(POSTS_FILE, JSON.stringify(posts, null, 2), 'utf-8');
+      await fs.writeFile(getDataFile('posts.json'), JSON.stringify(posts, null, 2), 'utf-8');
 
       return new Response(
         JSON.stringify({
@@ -144,7 +141,7 @@ export const POST: APIRoute = async ({ request }) => {
     if (type === 'product') {
       let products: any[] = [];
       try {
-        const raw = await fs.readFile(PRODUCTS_FILE, 'utf-8');
+        const raw = await fs.readFile(getDataFile('products.json'), 'utf-8');
         products = JSON.parse(raw);
       } catch {}
 
@@ -158,7 +155,7 @@ export const POST: APIRoute = async ({ request }) => {
 
       products[prodIdx].customCode = customCode;
       products[prodIdx].updatedAt = new Date().toISOString();
-      await fs.writeFile(PRODUCTS_FILE, JSON.stringify(products, null, 2), 'utf-8');
+      await fs.writeFile(getDataFile('products.json'), JSON.stringify(products, null, 2), 'utf-8');
 
       return new Response(
         JSON.stringify({
@@ -175,7 +172,7 @@ export const POST: APIRoute = async ({ request }) => {
     const pageKey = rawSlug === '/' || rawSlug === '' ? 'home' : rawSlug;
     let pages: any = {};
     try {
-      const raw = await fs.readFile(PAGES_FILE, 'utf-8');
+      const raw = await fs.readFile(getDataFile('pages.json'), 'utf-8');
       pages = JSON.parse(raw);
     } catch {}
 
@@ -190,19 +187,19 @@ export const POST: APIRoute = async ({ request }) => {
 
     pages[pageKey].customCode = customCode;
     pages[pageKey].updatedAt = new Date().toISOString();
-    await fs.writeFile(PAGES_FILE, JSON.stringify(pages, null, 2), 'utf-8');
+    await fs.writeFile(getDataFile('pages.json'), JSON.stringify(pages, null, 2), 'utf-8');
 
     // Sync to savedHomepage.json if editing home
     if (pageKey === 'home') {
       try {
         let homeJson: any = {};
         try {
-          const rawHome = await fs.readFile(HOMEPAGE_FILE, 'utf-8');
+          const rawHome = await fs.readFile(getDataFile('savedHomepage.json'), 'utf-8');
           homeJson = JSON.parse(rawHome);
         } catch {}
         homeJson.customCode = customCode;
         homeJson.updatedAt = new Date().toISOString();
-        await fs.writeFile(HOMEPAGE_FILE, JSON.stringify(homeJson, null, 2), 'utf-8');
+        await fs.writeFile(getDataFile('savedHomepage.json'), JSON.stringify(homeJson, null, 2), 'utf-8');
       } catch {}
     }
 

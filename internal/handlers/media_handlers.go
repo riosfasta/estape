@@ -109,6 +109,8 @@ func (s *Server) adminListMedia(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "platform owner access required"})
 		return
 	}
+	pag := s.parseListPagination(c)
+	q := strings.ToLower(strings.TrimSpace(c.Query("q")))
 	base, urlPrefix, err := s.adminMediaRoot(user.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare platform owner media folder"})
@@ -122,6 +124,9 @@ func (s *Server) adminListMedia(c *gin.Context) {
 		}
 		ext := strings.ToLower(filepath.Ext(d.Name()))
 		if !adminMediaImageExtensions[ext] {
+			return nil
+		}
+		if q != "" && !strings.Contains(strings.ToLower(d.Name()), q) {
 			return nil
 		}
 		rel, relErr := filepath.Rel(base, path)
@@ -145,7 +150,12 @@ func (s *Server) adminListMedia(c *gin.Context) {
 		return items[i].UpdatedAt.After(items[j].UpdatedAt)
 	})
 
-	c.JSON(http.StatusOK, gin.H{"media": items})
+	pageItems, meta := paginateSlice(items, pag.Page, pag.Limit)
+	c.JSON(http.StatusOK, gin.H{
+		"media":         pageItems,
+		"pagination":    meta,
+		"default_limit": pag.DefaultLimit,
+	})
 }
 
 func (s *Server) adminDeleteMedia(c *gin.Context) {

@@ -45,11 +45,41 @@
         "scaleOnShrink": false
       },
       "menu": [
-        { "id": "fnav-home", "label": "Home", "url": "/", "type": "link", "target": "_self" },
-        { "id": "fnav-about", "label": "About", "url": "/about", "type": "link", "target": "_self" },
-        { "id": "fnav-shop", "label": "Shop", "url": "/products", "type": "link", "target": "_self" },
-        { "id": "fnav-blog", "label": "Blog", "url": "/blog", "type": "link", "target": "_self" },
-        { "id": "fnav-contact", "label": "Contact", "url": "/contact", "type": "link", "target": "_self" }
+        {
+          "id": "fnav-home",
+          "label": "Home",
+          "url": "/",
+          "type": "link",
+          "target": "_self"
+        },
+        {
+          "id": "fnav-about",
+          "label": "About",
+          "url": "/about",
+          "type": "link",
+          "target": "_self"
+        },
+        {
+          "id": "fnav-shop",
+          "label": "Shop",
+          "url": "/products",
+          "type": "link",
+          "target": "_self"
+        },
+        {
+          "id": "fnav-blog",
+          "label": "Blog",
+          "url": "/blog",
+          "type": "link",
+          "target": "_self"
+        },
+        {
+          "id": "fnav-contact",
+          "label": "Contact",
+          "url": "/contact",
+          "type": "link",
+          "target": "_self"
+        }
       ],
       "actions": [
         {
@@ -99,7 +129,8 @@
         "text": "Better SaaS",
         "tagline": "Modern Platform",
         "linkUrl": "/",
-        "scaleOnShrink": true
+        "scaleOnShrink": true,
+        "logoSource": "default"
       },
       "menu": [
         {
@@ -254,7 +285,7 @@
           }
         ]
       },
-      "updatedAt": "2026-11-10T07:20:03.441Z",
+      "updatedAt": "2026-11-25T02:38:49.088Z",
       "builderType": "visual",
       "customCode": {
         "enabled": false,
@@ -263,7 +294,9 @@
         "mobileHtml": "",
         "customCss": "",
         "customJs": ""
-      }
+      },
+      "useTemplate": true,
+      "selectedTemplateId": "tpl-global-furnisite-navbar"
     },
     {
       "id": "sample-centered-luxury",

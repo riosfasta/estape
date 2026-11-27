@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -31,8 +32,10 @@ func ownerWorkspaceProjectFilter(user middleware.UserContext) bson.M {
 }
 
 func (s *Server) listClientProjects(c *gin.Context) {
+	ctx := c.Request.Context()
 	userCtx, _ := currentUser(c)
-	if user, err := s.loadUser(c.Request.Context(), userCtx.ID); err == nil {
+	pag := s.parseListPagination(c)
+	if user, err := s.loadUser(ctx, userCtx.ID); err == nil {
 		if user.Status != models.StatusActive {
 			c.JSON(http.StatusForbidden, gin.H{"error": "user account is not active"})
 			return
@@ -40,12 +43,18 @@ func (s *Server) listClientProjects(c *gin.Context) {
 		userCtx.Role = user.Role
 		userCtx.TeamID = user.TeamID
 	}
-	access := s.clientAccessSets(c.Request.Context(), userCtx)
+	access := s.clientAccessSets(ctx, userCtx)
 	filter := ownerWorkspaceProjectFilter(userCtx)
 	if userCtx.Role != models.RoleOwnerAdmin {
 		clientIDs := uniqueObjectIDs(append(append([]primitive.ObjectID{}, access.FullClientIDs...), access.DomainClientIDs...))
 		if len(clientIDs) == 0 {
-			c.JSON(http.StatusOK, gin.H{"clients": []models.ClientProject{}, "websites": []models.ClientWebsite{}})
+			emptyMeta := buildPaginationMeta(1, pag.Limit, 0)
+			c.JSON(http.StatusOK, gin.H{
+				"clients":       []models.ClientProject{},
+				"websites":      []models.ClientWebsite{},
+				"pagination":    emptyMeta,
+				"default_limit": pag.DefaultLimit,
+			})
 			return
 		}
 		filter = bson.M{"_id": bson.M{"$in": clientIDs}}
@@ -54,14 +63,36 @@ func (s *Server) listClientProjects(c *gin.Context) {
 		}
 	}
 	filter["deleted_at"] = bson.M{"$in": []any{nil, primitive.Null{}}}
-	cursor, err := s.store.C("client_projects").Find(c.Request.Context(), filter, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
+	if q := strings.TrimSpace(c.Query("q")); q != "" {
+		pat := regexp.QuoteMeta(q)
+		filter["$or"] = []bson.M{
+			{"name": bson.M{"$regex": pat, "$options": "i"}},
+			{"company_email": bson.M{"$regex": pat, "$options": "i"}},
+			{"contact_name": bson.M{"$regex": pat, "$options": "i"}},
+		}
+	}
+	total, err := s.store.C("client_projects").CountDocuments(ctx, filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count client projects"})
+		return
+	}
+	meta := buildPaginationMeta(pag.Page, pag.Limit, total)
+	skip := int64((meta.Page - 1) * meta.Limit)
+	cursor, err := s.store.C("client_projects").Find(
+		ctx,
+		filter,
+		options.Find().
+			SetSort(bson.D{{Key: "name", Value: 1}, {Key: "_id", Value: 1}}).
+			SetSkip(skip).
+			SetLimit(int64(meta.Limit)),
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load client projects"})
 		return
 	}
-	defer cursor.Close(c.Request.Context())
+	defer cursor.Close(ctx)
 	var clients []models.ClientProject
-	if err := cursor.All(c.Request.Context(), &clients); err != nil {
+	if err := cursor.All(ctx, &clients); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not decode client projects"})
 		return
 	}
@@ -92,13 +123,18 @@ func (s *Server) listClientProjects(c *gin.Context) {
 				siteFilter["$or"] = or
 			}
 		}
-		siteCursor, err := s.store.C("client_websites").Find(c.Request.Context(), siteFilter, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
+		siteCursor, err := s.store.C("client_websites").Find(ctx, siteFilter, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
 		if err == nil {
-			defer siteCursor.Close(c.Request.Context())
-			_ = siteCursor.All(c.Request.Context(), &websites)
+			defer siteCursor.Close(ctx)
+			_ = siteCursor.All(ctx, &websites)
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"clients": clients, "websites": websites})
+	c.JSON(http.StatusOK, gin.H{
+		"clients":       clients,
+		"websites":      websites,
+		"pagination":    meta,
+		"default_limit": pag.DefaultLimit,
+	})
 }
 
 type clientAccessSet struct {
@@ -1606,7 +1642,9 @@ func (s *Server) listAssignedClientTasks(c *gin.Context) {
 			clientIDs = append(clientIDs, client.ID)
 		}
 	}
+	pag := s.parseListPagination(c)
 	allowedTasks := []models.ClientTask{}
+	var tasksMeta PaginationMeta
 	if len(clientIDs) > 0 {
 		taskAccessFilter := bson.M{"client_id": bson.M{"$in": clientIDs}}
 		if userCtx.Role != models.RoleOwnerAdmin {
@@ -1626,6 +1664,23 @@ func (s *Server) listAssignedClientTasks(c *gin.Context) {
 		andList := []bson.M{taskAccessFilter, {"deleted_at": bson.M{"$in": []any{nil, primitive.Null{}}}}}
 		if !userCtx.TeamID.IsZero() {
 			andList = append(andList, bson.M{"team_id": userCtx.TeamID})
+		}
+		if clientParam := strings.TrimSpace(c.Query("client_id")); clientParam != "" {
+			if targetCID, err := objectIDFromString(clientParam); err == nil {
+				andList = append(andList, bson.M{"client_id": targetCID})
+			}
+		}
+		if siteParam := strings.TrimSpace(c.Query("website_id")); siteParam != "" {
+			if targetWID, err := objectIDFromString(siteParam); err == nil {
+				andList = append(andList, bson.M{"website_id": targetWID})
+			}
+		}
+		if q := strings.TrimSpace(c.Query("q")); q != "" {
+			pat := regexp.QuoteMeta(q)
+			andList = append(andList, bson.M{"$or": []bson.M{
+				{"title": bson.M{"$regex": pat, "$options": "i"}},
+				{"description": bson.M{"$regex": pat, "$options": "i"}},
+			}})
 		}
 		if assignedOnly {
 			andList = append(andList, bson.M{"$or": []bson.M{
@@ -1648,7 +1703,21 @@ func (s *Server) listAssignedClientTasks(c *gin.Context) {
 			}
 		}
 		taskFilter := bson.M{"$and": andList}
-		cursor, err := s.store.C("client_tasks").Find(c.Request.Context(), taskFilter, options.Find().SetSort(bson.D{{Key: "due_date", Value: 1}, {Key: "created_at", Value: -1}}))
+		totalTasks, err := s.store.C("client_tasks").CountDocuments(c.Request.Context(), taskFilter)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count tasks"})
+			return
+		}
+		tasksMeta = buildPaginationMeta(pag.Page, pag.Limit, totalTasks)
+		skip := int64((tasksMeta.Page - 1) * tasksMeta.Limit)
+		cursor, err := s.store.C("client_tasks").Find(
+			c.Request.Context(),
+			taskFilter,
+			options.Find().
+				SetSort(bson.D{{Key: "due_date", Value: 1}, {Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}).
+				SetSkip(skip).
+				SetLimit(int64(tasksMeta.Limit)),
+		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load tasks"})
 			return
@@ -1658,6 +1727,8 @@ func (s *Server) listAssignedClientTasks(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not decode tasks"})
 			return
 		}
+	} else {
+		tasksMeta = buildPaginationMeta(1, pag.Limit, 0)
 	}
 
 	websites := []models.ClientWebsite{}
@@ -1777,6 +1848,8 @@ func (s *Server) listAssignedClientTasks(c *gin.Context) {
 		"tabs":                tabs,
 		"members":             members,
 		"scope":               scope,
+		"pagination":          tasksMeta,
+		"default_limit":       pag.DefaultLimit,
 		"can_create_tasks":    canCreateTasks,
 		"can_update_progress": true,
 	})
